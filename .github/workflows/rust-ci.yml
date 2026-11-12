@@ -11,6 +11,16 @@ on:
   schedule:
     - cron: "23 4 * * 1"
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Full validation, or affected validation from an explicit real base SHA
+        type: choice
+        options: [full, affected]
+        default: full
+      base:
+        description: Full 40-character base commit SHA for affected validation (otherwise full)
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -26,36 +36,51 @@ jobs:
     timeout-minutes: 15
     outputs:
       run_native: ${{ steps.select.outputs.run_native }}
+      matrix: ${{ steps.select.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up source-plan Python
+        timeout-minutes: 2
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
       - name: Test impact graph, executor and existing preflight contracts
         run: >-
           node --test rust/scripts/impact-plan.test.cjs
           rust/scripts/validate-impact.test.cjs
+          rust/scripts/validation-process.test.cjs
+          rust/scripts/execution-evidence.test.cjs
           rust/scripts/validation-checks.test.cjs
           rust/scripts/rust-fast-check.test.cjs
           rust/scripts/rust-coverage.test.cjs
+          rust/scripts/impact-shards.test.cjs
+          rust/scripts/impact-ci.test.cjs
+          rust/scripts/impact-cache.test.cjs
+      - name: Test exact engineering preflight receipt helper
+        run: python -I -B -m unittest discover -s rust/scripts -p test_engineering_preflight.py -v
       - name: Select capability targets, Cargo consumers and feature contracts
         id: select
         env:
           IMPACT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          IMPACT_SCOPE: ${{ inputs.scope }}
+          IMPACT_DISPATCH_BASE: ${{ inputs.base }}
         run: node rust/scripts/impact-ci.cjs select "$RUNNER_TEMP/rust-impact-selection"
       - name: Retain explainable selection and immutable request
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rust-impact-selection
+          name: rust-impact-selection-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rust-impact-selection
           if-no-files-found: error
 
   native:
-    name: Native checks (${{ matrix.os }})
+    name: Native checks (${{ matrix.os }} / ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.run_native == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.os == 'windows-2025' && 150 || 120 }}
+    timeout-minutes: 15
     env:
       CARGO_BUILD_JOBS: "2"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -64,41 +89,99 @@ jobs:
       RUST_TEST_THREADS: "1"
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
+      CARGO_HTTP_TIMEOUT: "30"
+      CARGO_NET_RETRY: "2"
+      RUSTUP_MAX_RETRIES: "2"
+      SEGMENT_DOWNLOAD_TIMEOUT_MINS: "2"
+      IMPACT_PLATFORM: ${{ matrix.platform }}
+      IMPACT_SHARD: ${{ matrix.shard }}
+      IMPACT_CACHE_GROUP: ${{ matrix.cache_group }}
     defaults:
       run:
         shell: bash
     strategy:
       fail-fast: false
-      matrix:
-        os: [windows-2025, ubuntu-24.04, macos-15]
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     steps:
+      - name: Start native setup measurement
+        id: clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Restore selection request
+        timeout-minutes: 2
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: rust-impact-selection
+          name: rust-impact-selection-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rust-impact-selection
       - name: Set up development-only Python oracle
+        timeout-minutes: 2
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      - name: Recompute and verify the same dependency selection on this host
+        timeout-minutes: 3
+        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
+      - name: Start Cargo cache measurement
+        id: cache-clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Restore native Cargo dependencies and build outputs
+        timeout-minutes: 3
+        id: dependency-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-deps-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-v1
+      - name: Restore bounded compilation cohort
+        id: cargo-cache
+        timeout-minutes: 3
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/target
+          key: rust-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-jobs2-dev0-test0-incr0-${{ matrix.cache_group }}-v1
+      - name: Record Cargo cache timing
+        id: cache-time
+        env:
+          CACHE_STARTED: ${{ steps.cache-clock.outputs.started }}
+        run: echo "seconds=$(( $(date +%s) - CACHE_STARTED ))" >> "$GITHUB_OUTPUT"
       - name: Record actual native toolchain and restore locked dependencies
+        timeout-minutes: 3
         working-directory: rust
         run: |
           cargo --version
           rustc --version --verbose
           rustup show active-toolchain
           cargo fetch --locked
-      - name: Recompute and verify the same dependency selection on this host
-        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
+      - name: Measure shared dependency cache candidate
+        if: matrix.dependency_cache_writer
+        id: dependency-size
+        env:
+          IMPACT_SETUP_STARTED: ${{ steps.clock.outputs.started }}
+          IMPACT_CACHE_WRITER: ${{ matrix.dependency_cache_writer }}
+        run: node rust/scripts/impact-cache.cjs dependencies "$RUNNER_TEMP/rust-impact-selection/cache-dependencies.json"
+      - name: Save one bounded dependency cache per native host
+        if: matrix.dependency_cache_writer && steps.dependency-cache.outputs.cache-hit != 'true' && steps.dependency-size.outputs.eligible == 'true'
+        timeout-minutes: 1
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
       - name: Set up optional semantic-model TOM runtime
+        if: matrix.dotnet
+        timeout-minutes: 2
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
         with:
           dotnet-version: "8.0.425"
       - name: Select explicit optional TOM host library
+        if: matrix.dotnet
         shell: pwsh
         run: |
           $fxr = Get-ChildItem "$env:DOTNET_ROOT/host/fxr" -Directory |
@@ -109,105 +192,60 @@ jobs:
           $hostfxr = Join-Path $fxr.FullName $library
           if (-not (Test-Path $hostfxr)) { throw 'The explicitly installed .NET 8 host library is missing.' }
           "FABRIC_BPA_TEST_HOSTFXR=$hostfxr" >> $env:GITHUB_ENV
-      - name: Check bounded engineering cleanup before native compilation
-        run: |
-          python -I -B - "$GITHUB_WORKSPACE/rust/scripts" "$RUNNER_TEMP/rust-engineering-unit" <<'PY'
-          import json
-          import os
-          import pathlib
-          import platform
-          import sys
-          import unittest
-          from unittest.mock import patch
-
-          source = pathlib.Path(sys.argv[1]).resolve()
-          artifacts = pathlib.Path(sys.argv[2]).resolve()
-          artifacts.mkdir(parents=True, exist_ok=False)
-          os.chdir(artifacts)
-          report = {"kind": "engineering-unit-preflight", "head": os.environ["GITHUB_SHA"],
-                    "host": platform.system(), "suites": [], "pty_receipts": [], "passed": False}
-          def persist():
-              pathlib.Path("receipt.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-              print(json.dumps(report))
-          persist()
-          pattern, count = "test_native_acceptance*.py", 38
-          suite = unittest.defaultTestLoader.discover(str(source), pattern=pattern)
-          discovered = suite.countTestCases()
-          if discovered != count:
-              report["suites"].append({"pattern": pattern, "expected": count,
-                                       "discovered": discovered, "run": 0,
-                                       "passed": False, "reason": "inventory_mismatch"})
-              persist()
-              raise SystemExit(1)
-          import native_acceptance as acceptance
-          original_execute = acceptance.execute
-          def observe_execute(*args, **kwargs):
-              captured = original_execute(*args, **kwargs)
-              if kwargs.get("terminal") is not None:
-                  report["pty_receipts"].append(captured[0])
-              return captured
-          with open("native-acceptance.log", "w", encoding="utf-8") as log:
-              with patch.object(acceptance, "execute", observe_execute):
-                  result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
-          skips = [(test.id(), reason) for test, reason in result.skipped]
-          expected = [("test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
-                       "requires_native_POSIX_PTY")] if os.name == "nt" else []
-          success = result.wasSuccessful() and result.testsRun == count and not result.expectedFailures and skips == expected
-          report["suites"].append({"pattern": pattern, "expected": count,
-                                   "discovered": discovered, "run": result.testsRun,
-                                   "failures": len(result.failures), "errors": len(result.errors),
-                                   "expected_failures": len(result.expectedFailures),
-                                   "skipped": skips, "passed": success})
-          report["passed"] = success
-          persist()
-          raise SystemExit(0 if success else 1)
-          PY
-      - name: Preflight every current feature and target under strict native lints
-        if: success() || failure()
-        working-directory: rust
-        run: |
-          node scripts/source-inventory.cjs "$RUNNER_TEMP/rust-source-inventory/before-preflight.json"
-          cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings
-      - name: Verify preflight source integrity with exact per-file evidence
-        if: always()
-        run: >-
-          node rust/scripts/source-inventory.cjs
-          "$RUNNER_TEMP/rust-source-inventory/after-preflight.json"
-          "$RUNNER_TEMP/rust-source-inventory/before-preflight.json"
-      - name: Exercise complete native CLI targets before the full feature plan
+      - name: Record setup and cache measurement
+        id: setup
         env:
-          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
-          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
-          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
-          IMPACT_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
-        working-directory: rust
+          SETUP_STARTED: ${{ steps.clock.outputs.started }}
+          CACHE_HIT: ${{ steps.cargo-cache.outputs.cache-hit }}
+          CACHE_SECONDS: ${{ steps.cache-time.outputs.seconds }}
+          DEPENDENCY_CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
         run: |
-          mkdir -p "$FAB_IDENTITY_TEST_ROOT"
-          cargo test --offline --locked -p fabric-cli --all-targets --all-features --no-fail-fast
-      - name: Verify CLI preflight source integrity with exact per-file evidence
-        if: always()
-        run: >-
-          node rust/scripts/source-inventory.cjs
-          "$RUNNER_TEMP/rust-source-inventory/after-cli.json"
-          "$RUNNER_TEMP/rust-source-inventory/after-preflight.json"
+          node -e 'const fs=require("node:fs"),p=require("node:path"),elapsed=Math.max(0,Date.now()/1000-Number(process.env.SETUP_STARTED));fs.writeFileSync(p.join(process.env.RUNNER_TEMP,"rust-impact-selection","timing.json"),JSON.stringify({platform:process.env.IMPACT_PLATFORM,shard:process.env.IMPACT_SHARD,cache_group:process.env.IMPACT_CACHE_GROUP,setup_seconds:elapsed,cache_seconds:Number(process.env.CACHE_SECONDS),cache_hit:process.env.CACHE_HIT==="true",dependency_cache_hit:process.env.DEPENDENCY_CACHE_HIT==="true"}));fs.appendFileSync(process.env.GITHUB_OUTPUT,"budget_seconds="+Math.max(1,Math.min(720,840-Math.ceil(elapsed)))+"\n")'
       - name: Execute the shared local and CI validation plan
         run: >-
           node rust/scripts/validate-impact.cjs
           --plan "$RUNNER_TEMP/rust-impact-selection/native-plan.json"
           --artifacts "$RUNNER_TEMP/rust-impact-results"
+          --shard "${{ matrix.shard }}"
+          --command-timeout-seconds 600
+          --budget-seconds "${{ steps.setup.outputs.budget_seconds }}"
           --restore-oracle-deps --execute
+      - name: Measure compilation cache candidate without removing validation obligations
+        if: always()
+        id: target-size
+        env:
+          IMPACT_SETUP_STARTED: ${{ steps.clock.outputs.started }}
+          IMPACT_CACHE_WRITER: ${{ matrix.cache_writer }}
+        run: node rust/scripts/impact-cache.cjs target "$RUNNER_TEMP/rust-impact-selection/cache-target.json"
+      - name: Retain small exact native receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-receipt-${{ github.run_attempt }}-${{ matrix.os }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/rust-impact-results/receipt.json
+            ${{ runner.temp }}/rust-engineering-unit/engineering-receipt.json
+            ${{ runner.temp }}/rust-impact-selection/timing.json
+            ${{ runner.temp }}/rust-impact-selection/cache-dependencies.json
+            ${{ runner.temp }}/rust-impact-selection/cache-target.json
+          if-no-files-found: error
+      - name: Save only the bounded designated compilation cohort
+        if: success() && matrix.cache_writer && steps.cargo-cache.outputs.cache-hit != 'true' && steps.target-size.outputs.eligible == 'true'
+        timeout-minutes: 1
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
       - name: Retain plan and actual command exits, hashes and coverage
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rust-impact-${{ matrix.os }}
+          name: rust-impact-${{ github.run_attempt }}-${{ matrix.os }}-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/rust-impact-selection
             ${{ runner.temp }}/rust-impact-results
             ${{ runner.temp }}/rust-engineering-unit/*.log
-            ${{ runner.temp }}/rust-engineering-unit/receipt.json
-            ${{ runner.temp }}/rust-cli-preflight
-            ${{ runner.temp }}/rust-source-inventory
+            ${{ runner.temp }}/rust-engineering-unit/engineering-receipt.json
           if-no-files-found: error
 
   validation:
@@ -221,18 +259,45 @@ jobs:
       RUN_NATIVE: ${{ needs.changes.outputs.run_native }}
       NATIVE_RESULT: ${{ needs.native.result }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up aggregation Python
+        if: needs.changes.result == 'success'
+        timeout-minutes: 2
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Restore source-bound selection
+        if: needs.changes.result == 'success'
+        timeout-minutes: 2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: rust-impact-selection-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rust-impact-selection
+      - name: Download every small native receipt
+        if: needs.changes.outputs.run_native == 'true'
+        timeout-minutes: 2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          # A partial rerun must fail closed instead of reusing prior receipts.
+          pattern: rust-receipt-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/rust-native-receipts
       - name: Require successful selection and every selected native check
+        if: always()
         shell: bash
         run: |
           if [[ "$SELECTION_RESULT" != success ]]; then
             echo "::error::Dependency impact selection did not succeed."
             exit 1
           fi
-          if [[ "$RUN_NATIVE" == true && "$NATIVE_RESULT" == success ]]; then
-            echo "Selected dependency contracts passed on every native runner."
-          elif [[ "$RUN_NATIVE" == false && "$NATIVE_RESULT" == skipped ]]; then
-            echo "No Rust build or contract inputs changed."
-          else
-            echo "::error::Selected native checks did not complete successfully."
-            exit 1
-          fi
+          node rust/scripts/impact-ci.cjs aggregate "$RUNNER_TEMP/rust-impact-selection" "$RUNNER_TEMP/rust-native-receipts"
+      - name: Retain aggregate proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-validation-aggregate-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rust-impact-selection/aggregate.json
+          if-no-files-found: warn

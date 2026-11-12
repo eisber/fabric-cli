@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
+const {executeOwned} = require('./validation-process.cjs');
 
 const PLATFORMS = {win32: 'windows', linux: 'linux', darwin: 'macos'};
 function requireThat(condition, message) {
@@ -191,60 +192,218 @@ function buildEnvironment(environment = process.env) {
     .map(name => [name, environment[name]]));
 }
 
-function commandResult(command, context, execute = spawnSync) {
-  const started = Date.now();
-  const environment = {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
+function commandEnvironment(command, context) {
+  const {targetDir} = require('./execution-evidence.cjs').executionContext(context);
+  requireThat(command.env?.CARGO_TARGET_DIR === undefined ||
+    path.resolve(context.root, 'rust', command.env.CARGO_TARGET_DIR) === targetDir,
+  'Command CARGO_TARGET_DIR differs from the execution metadata context');
+  return {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
     FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
-    FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env};
-  const result = execute(command.program, command.args, {
-    cwd: command.cwd || path.join(context.root, 'rust'),
-    env: environment,
-    encoding: 'utf8',
-    timeout: Math.min(context.commandTimeout,
-      Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now())),
-    maxBuffer: 64 * 1024 * 1024,
-    windowsHide: true,
-    shell: false,
-  });
+    FAB_IDENTITY_TEST_ROOT: context.artifacts, CARGO_TARGET_DIR: targetDir, ...command.env};
+}
+
+function commandIdentity(command, context) {
+  const environment = commandEnvironment(command, context);
+  return crypto.createHash('sha256').update(JSON.stringify({
+    cwd: path.resolve(command.cwd || path.join(context.root, 'rust')),
+    program: command.program, args: command.args,
+    env: Object.keys(environment).sort().map(key => [key, environment[key]]),
+  })).digest('hex');
+}
+
+function deduplicateCoreCommands(commands, context) {
+  const unique = new Map();
+  for (const command of commands) {
+    // This function is called only on planner-generated core Cargo obligations,
+    // never on contracts whose ordering or repeated side effects may matter.
+    requireThat(command.program === 'cargo', 'Only core Cargo obligations may be deduplicated');
+    const identity = commandIdentity(command, context);
+    const aliases = [...new Set([command.id, ...(command.aliases || [])])];
+    if (unique.has(identity)) {
+      const previous = unique.get(identity);
+      previous.aliases = [...new Set([...previous.aliases, ...aliases])];
+    } else {
+      unique.set(identity, {...command, aliases, execution_identity: identity});
+    }
+  }
+  return [...unique.values()];
+}
+
+function commandClass(command) {
+  if (command.program === 'cargo' &&
+    ['build', 'check', 'clippy', 'run', 'rustc'].includes(command.args[0])) return 'compilation';
+  if (command.test || (command.program === 'cargo' && command.args[0] === 'test') ||
+    command.args.includes('--test') || command.args.includes('unittest')) return 'test';
+  return 'tool';
+}
+
+function engineeringReceipt(expected) {
+  let report = expected.report;
+  if (report === undefined) {
+    requireThat(fs.statSync(expected.receipt).size <= 1024 * 1024,
+      'Engineering preflight receipt exceeded 1 MiB');
+    report = JSON.parse(fs.readFileSync(expected.receipt, 'utf8'));
+  }
+  const inventory = require('./engineering-inventory.json');
+  const suites = report.suites;
+  const skips = expected.platform === 'windows' ? inventory.windows_skips : [];
+  requireThat(report.kind === 'engineering-unit-preflight' && report.head === expected.head &&
+    report.platform === expected.platform && report.shard === expected.shard &&
+    report.passed === true && Array.isArray(suites) && suites.length === 1 &&
+    suites[0].pattern === inventory.pattern && suites[0].expected === inventory.count &&
+    suites[0].discovered === inventory.count && suites[0].run === inventory.count &&
+    suites[0].passed === true &&
+    suites[0].failures === 0 && suites[0].errors === 0 && suites[0].expected_failures === 0 &&
+    JSON.stringify(suites[0].skipped) === JSON.stringify(skips),
+  'Engineering preflight did not pass its exact native inventory');
+  return {tests_passed: inventory.count - skips.length, tests_ignored: skips.length};
+}
+
+function summarizeLogs(stdout, stderr) {
+  const totals = {tests_passed: 0, tests_ignored: 0, summaries: 0, pythonCount: 0, skipped: 0};
+  const inspect = (line, isStderr) => {
+    for (const match of line.matchAll(/test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored/g)) {
+      totals.tests_passed += Number(match[1]);
+      totals.tests_ignored += Number(match[3]);
+    }
+    const summary = /^Ran (\d+) tests? in [^\r\n]+\r?$/.exec(line);
+    if (summary) { totals.summaries++; totals.pythonCount += Number(summary[1]); }
+    if (isStderr) totals.skipped += Number(/(?:^|\W)skipped=(\d+)/.exec(line)?.[1] || 0);
+  };
+  const scan = file => {
+    const hash = crypto.createHash('sha256');
+    const fd = fs.openSync(file, 'r');
+    const buffer = Buffer.alloc(65536);
+    let tail = '';
+    try {
+      let size;
+      while ((size = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+        hash.update(buffer.subarray(0, size));
+        const lines = (tail + buffer.toString('utf8', 0, size)).split('\n');
+        tail = lines.pop().slice(-8192);
+        for (const line of lines) inspect(line, file === stderr);
+      }
+      if (tail) inspect(tail, file === stderr);
+    } finally { fs.closeSync(fd); }
+    return hash.digest('hex');
+  };
+  const stdout_sha256 = scan(stdout);
+  const stderr_sha256 = scan(stderr);
+  return {...totals, stdout_sha256, stderr_sha256};
+}
+
+function commandResult(command, context, execute) {
+  const started = Date.now();
+  const environment = commandEnvironment(command, context);
+  const descriptorDigest = require('./execution-evidence.cjs').descriptorDigest(command, context, environment);
+  const budgetClass = commandClass(command);
+  const classBudget = {tool: 120000, test: 300000, compilation: 600000}[budgetClass];
+  const timeout = Math.max(0, Math.min(context.commandTimeout || 600000, classBudget,
+    (context.deadline || Infinity) - started, (command.deadline || Infinity) - started));
   const commandId = String(command.id || 'contract');
   const safeId = commandId.replace(/[^a-zA-Z0-9._-]/g, '_');
   const label = safeId.length > 64 ?
     `${safeId.slice(0, 40)}-${crypto.createHash('sha256').update(commandId).digest('hex').slice(0, 16)}` :
     safeId;
   const prefix = `${String(context.results.length).padStart(3, '0')}-${label}`;
-  const stdout = result.stdout || '';
-  const stderr = result.stderr || '';
   const stdoutFile = path.join(context.artifacts, `${prefix}.stdout.log`);
   const stderrFile = path.join(context.artifacts, `${prefix}.stderr.log`);
-  fs.writeFileSync(stdoutFile, stdout);
-  fs.writeFileSync(stderrFile, stderr);
-  if (command.stdout) fs.writeFileSync(command.stdout, stdout);
-  const digest = value => crypto.createHash('sha256').update(value).digest('hex');
-  const counts = [...stdout.matchAll(/test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored/g)];
-  const unittest = command.test === 'unittest';
-  const summaries = unittest ? [...`${stdout}\n${stderr}`.matchAll(
-    /^Ran (\d+) tests? in [^\r\n]+\r?$/gm)] : [];
-  const skipped = unittest ? Number(/(?:^|\W)skipped=(\d+)/m.exec(stderr)?.[1] || 0) : 0;
-  const pythonCount = summaries.length === 1 ? Number(summaries[0][1]) : 0;
-  const record = {
-    id: command.id, program: command.program, args: command.args,
-    cwd: command.cwd || path.join(context.root, 'rust'), elapsed_ms: Date.now() - started,
-    build_environment: buildEnvironment(environment),
-    exit: result.status, signal: result.signal || null, error: result.error?.message || null,
-    stdout: stdoutFile, stderr: stderrFile,
-    stdout_sha256: digest(stdout), stderr_sha256: digest(stderr),
-    tests_passed: counts.reduce((total, match) => total + Number(match[1]), 0) +
-      (result.status === 0 ? Math.max(0, pythonCount - skipped) : 0),
-    tests_ignored: counts.reduce((total, match) => total + Number(match[3]), 0) + skipped,
+  fs.writeFileSync(stdoutFile, '');
+  fs.writeFileSync(stderrFile, '');
+  console.log(`${new Date(started).toISOString()} START ${commandId}: ` +
+    `${command.program} ${JSON.stringify(command.args)}; ${budgetClass}; ${timeout}ms budget`);
+  const finish = result => {
+    if (result.stdout !== undefined) fs.writeFileSync(stdoutFile, result.stdout || '');
+    if (result.stderr !== undefined) fs.writeFileSync(stderrFile, result.stderr || '');
+    if (command.stdout) fs.copyFileSync(stdoutFile, command.stdout);
+    const totals = summarizeLogs(stdoutFile, stderrFile);
+    const unittest = command.test === 'unittest';
+    const timedOut = Boolean(result.timed_out || result.error?.code === 'ETIMEDOUT');
+    const cancelled = Boolean(result.cancelled || result.error?.code === 'ECANCELLED');
+    const noTests = unittest && result.status === 0 && !result.error && !result.signal &&
+      !(totals.summaries === 1 && totals.pythonCount > totals.skipped);
+    let engineering = {tests_passed: 0, tests_ignored: 0}, engineeringError;
+    if (command.engineering && result.status === 0 && !result.error && !result.signal) {
+      try { engineering = engineeringReceipt(command.engineering); }
+      catch (error) { engineeringError = error.message; }
+    }
+    const oversized = !execute && (command.kind === 'prepare-oracle' || command.capture) &&
+      fs.statSync(stdoutFile).size > 1024 * 1024;
+    const error = result.error?.message || engineeringError || (oversized ?
+      `Captured command output exceeded 1 MiB: ${commandId}` : null) ||
+      (noTests ? 'No executed unittest cases' : null);
+    const passed = !error && result.status === 0 && !result.signal && !timedOut && !cancelled &&
+      result.cleanup_confirmed !== false;
+    const record = {
+      schema: 1, id: command.id, aliases: command.aliases || [command.id],
+      execution_identity: command.execution_identity || commandIdentity(command, context),
+      descriptor_sha256: descriptorDigest,
+      program: command.program, args: command.args,
+      cwd: command.cwd || path.join(context.root, 'rust'),
+      started_at: new Date(started).toISOString(), finished_at: new Date().toISOString(),
+      elapsed_ms: Date.now() - started, budget_class: budgetClass,
+      timeout_ms: timeout, timed_out: timedOut, cancelled,
+      status: passed ? 'passed' : timedOut ? 'timed_out' : cancelled ? 'cancelled' : 'failed',
+      cleanup_confirmed: result.cleanup_confirmed ?? null,
+      cleanup_method: result.cleanup_method || null,
+      cleanup_errors: result.cleanup_errors || [], pid: result.pid || null,
+      build_environment: buildEnvironment(environment),
+      exit: result.status ?? null, signal: result.signal || null, error,
+      stdout: stdoutFile, stderr: stderrFile,
+      stdout_sha256: totals.stdout_sha256, stderr_sha256: totals.stderr_sha256,
+      tests_passed: (command.engineering ? 0 : totals.tests_passed) +
+        (unittest && result.status === 0 ? Math.max(0, totals.pythonCount - totals.skipped) : 0) +
+        engineering.tests_passed,
+      tests_ignored: (command.engineering ? 0 : totals.tests_ignored) +
+        (unittest ? totals.skipped : 0) + engineering.tests_ignored,
+      ...(command.engineering ? {engineering_receipt: command.engineering.receipt} : {}),
+    };
+    context.results.push(record);
+    fs.writeFileSync(path.join(context.artifacts, 'commands.json'), `${JSON.stringify(context.results, null, 2)}\n`);
+    console.log(`${record.finished_at} END ${commandId}: ${record.status}; exit ${record.exit}; ` +
+      `${(record.elapsed_ms / 1000).toFixed(1)}s elapsed; logs: ${stdoutFile}, ${stderrFile}`);
+    requireThat(!noTests, `Validation discovered no executed unittest cases: ${commandId}`);
+    requireThat(passed, `Validation failed: ${commandId} (exit ${record.exit}; ` +
+      `${error || record.signal || 'see command logs'})`);
+    if (execute) return result.stdout || '';
+    if (command.kind === 'prepare-oracle' || command.capture) {
+      return fs.readFileSync(stdoutFile, 'utf8');
+    }
+    return '';
   };
-  context.results.push(record);
-  fs.writeFileSync(path.join(context.artifacts, 'commands.json'), `${JSON.stringify(context.results, null, 2)}\n`);
-  requireThat(!result.error && result.status === 0 && !result.signal,
-    `Validation failed: ${command.id || command.program} (exit ${result.status}; ` +
-    `${result.error?.message || result.signal || 'see command logs'})`);
-  requireThat(!unittest || (summaries.length === 1 && pythonCount > skipped),
-    `Validation discovered no executed unittest cases: ${command.id || command.program}`);
-  return stdout;
+  const launch = {cwd: command.cwd || path.join(context.root, 'rust'), env: environment,
+    encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024, windowsHide: true, shell: false,
+    deadline: started + timeout, stdout: stdoutFile, stderr: stderrFile,
+    python: context.python, signal: context.signal};
+  const exhausted = timeout <= 0 || Date.now() >= started + timeout;
+  if (exhausted || context.signal?.aborted) {
+    return finish({status: null, timed_out: exhausted, cancelled: Boolean(context.signal?.aborted),
+      cleanup_confirmed: true, error: Object.assign(new Error(
+        exhausted ? 'ETIMEDOUT: validation deadline exhausted before launch' : 'ECANCELLED'),
+      {code: exhausted ? 'ETIMEDOUT' : 'ECANCELLED'})});
+  }
+  if (execute) {
+    try { return finish(execute(command.program, command.args, launch)); }
+    catch (error) {
+      if (context.results.at(-1)?.stdout === stdoutFile) throw error;
+      return finish({status: null, error});
+    }
+  }
+  return executeOwned(command.program, command.args, launch).then(finish,
+    error => finish({status: null, cleanup_confirmed: false, error}));
+}
+
+function after(value, continuation) {
+  return value && typeof value.then === 'function' ? value.then(continuation) : continuation(value);
+}
+
+function series(items, action, index = 0) {
+  for (; index < items.length; index++) {
+    const result = action(items[index]);
+    if (result && typeof result.then === 'function') {
+      return result.then(() => series(items, action, index + 1));
+    }
+  }
 }
 
 function oracleVersions(rust, requirement, seen = new Set()) {
@@ -283,7 +442,7 @@ function restoreOracleDependencies(context, run, probeCommand = spawnSync) {
     probes.push({module: 'requests, urllib3, yaml, jsonpath_ng',
       requirement: path.join('scripts', 'rust-fast-requirements.txt')});
   }
-  for (const probe of probes) {
+  return series(probes, probe => {
     const versions = oracleVersions(path.join(context.root, 'rust'), probe.requirement);
     const script = `import ${probe.module}; import importlib.metadata as m, json; ` +
       `expected = json.loads(${JSON.stringify(JSON.stringify(versions))}); ` +
@@ -292,75 +451,120 @@ function restoreOracleDependencies(context, run, probeCommand = spawnSync) {
     const result = probeCommand(context.python, ['-c', script], {
       cwd: path.join(context.root, 'rust'), encoding: 'utf8', timeout: 30000,
     });
-    if (!result.error && result.status === 0) continue;
+    if (!result.error && result.status === 0) return;
     requireThat(result.status === 42 || (result.status !== null && result.stderr?.includes('ModuleNotFoundError')),
       `Oracle dependency probe failed: ${result.error?.message || result.stderr}`);
     requireThat(context.restoreOracleDeps,
       `Missing oracle dependencies or unsupported versions (${result.stdout?.trim() || 'module unavailable'}); ` +
       `restore ${probe.requirement} or use --restore-oracle-deps`);
-    run({id: 'oracle:restore', program: context.python,
+    return run({id: 'oracle:restore', program: context.python,
       args: ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', probe.requirement]});
-  }
+  });
 }
 
 function runContracts(context, registry, run, probeCommand = spawnSync) {
   const graph = JSON.parse(fs.readFileSync(path.join(context.root, 'rust', 'validation', 'impact-graph.json'), 'utf8'));
   registry.validateRegistry(graph);
-  const selected = new Set(context.plan.checks);
+  const checks = context.checks || context.plan.checks;
+  const selected = new Set(checks);
   const visited = new Set();
+  context.completedChecks ||= [];
   let prepared = false;
   const execute = id => {
     if (visited.has(id) || id === 'frozen-verify') return;
     const check = graph.checks.find(item => item.id === id);
     requireThat(check, `Unknown selected contract: ${id}`);
     if (check.platforms && !check.platforms.includes(context.platform)) return;
-    for (const dependency of check.depends_on || []) execute(dependency);
-    visited.add(id);
-    const deadline = Math.min(context.deadline || Infinity,
-      Date.now() + (registry.CHECK_BUDGETS?.[id] || Infinity));
-    const checkRun = command => {
-      requireThat(Date.now() < deadline, `Validation contract budget exhausted: ${id}`);
-      return run({...command, deadline});
-    };
-    const commands = registry.commandsFor(id, context);
-    if (!commands.length) {
-      requireThat(context.plan.profiles.some(profile => profile.checks?.includes(id) &&
-        profile.platforms.includes(context.platform) &&
-        profileTests(context.plan, profile).length > 0),
-      `No execution profile with test targets satisfies ${id}`);
-    }
-    for (const command of commands) {
-      command.id ||= id;
-      if (command.kind === 'prepare-oracle') {
-        restoreOracleDependencies(context, checkRun, probeCommand);
-        const output = checkRun({...command, id: 'oracle:prepare', kind: 'command'});
-        context.pinnedRust = JSON.parse(output).rust_root;
-        requireThat(context.pinnedRust && fs.existsSync(context.pinnedRust), 'Oracle preparation returned no source');
-        prepared = true;
-      } else if (command.kind === 'transport-graphs') {
-        const graphs = Object.fromEntries(command.graphs.defaults.map(graph =>
-          [graph.package, fs.readFileSync(graph.path, 'utf8')]));
-        const optin = fs.readFileSync(command.graphs.optin, 'utf8');
-        registry.assertTransportGraphs(graphs, optin);
-      } else {
-        checkRun(command);
+    return after(series(check.depends_on || [], execute), () => {
+      visited.add(id);
+      const deadline = Math.min(context.deadline || Infinity,
+        Date.now() + (registry.CHECK_BUDGETS?.[id] || Infinity));
+      const checkRun = command => {
+        requireThat(Date.now() < deadline, `Validation contract budget exhausted: ${id}`);
+        return run({...command, deadline});
+      };
+      const commands = registry.commandsFor(id, context);
+      const completed = {id, descriptors: [], profiles: []};
+      if (!commands.length) {
+        const profiles = context.plan.profiles.filter(profile => profile.checks?.includes(id) &&
+          profile.platforms.includes(context.platform) &&
+          profileTests(context.plan, profile).length > 0);
+        requireThat(profiles.length > 0,
+        `No execution profile with test targets satisfies ${id}`);
+        completed.profiles = profiles.map(profile => profile.id);
       }
-    }
+      const recordCommand = command => {
+        const descriptor = require('./execution-evidence.cjs').descriptorDigest(command, context);
+        return after(checkRun(command), output => {
+          completed.descriptors.push({kind: command.kind || 'command',
+            command: context.results?.length - 1, descriptor_sha256: descriptor});
+          return output;
+        });
+      };
+      return after(series(commands, original => {
+        const command = {...original, id: original.id || id};
+        if (command.kind === 'prepare-oracle') {
+          const descriptor = require('./execution-evidence.cjs').descriptorDigest(command, context);
+          return after(restoreOracleDependencies(context, checkRun, probeCommand), () =>
+            after(checkRun({...command, id: 'oracle:prepare'}), output => {
+              completed.descriptors.push({kind: command.kind, command: context.results?.length - 1,
+                descriptor_sha256: descriptor});
+              context.pinnedRust = JSON.parse(output).rust_root;
+              requireThat(context.pinnedRust && fs.existsSync(context.pinnedRust),
+                'Oracle preparation returned no source');
+              prepared = true;
+            }));
+        } else if (command.kind === 'transport-graphs') {
+          const descriptor = require('./execution-evidence.cjs').descriptorDigest(command, context);
+          const graphs = Object.fromEntries(command.graphs.defaults.map(graph =>
+            [graph.package, fs.readFileSync(graph.path, 'utf8')]));
+          const optin = fs.readFileSync(command.graphs.optin, 'utf8');
+          registry.assertTransportGraphs(graphs, optin);
+          completed.descriptors.push({kind: command.kind, passed: true,
+            inputs: completed.descriptors.map(descriptor => descriptor.command),
+            descriptor_sha256: descriptor});
+        } else {
+          return recordCommand(command);
+        }
+      }), () => { context.completedChecks.push(completed); });
+    });
   };
-  try {
-    for (const id of context.plan.checks) execute(id);
-  } finally {
+  const frozen = () => {
     if (prepared) {
       requireThat(selected.has('frozen-verify'), 'Oracle execution did not select its integrity gate');
-      for (const command of registry.commandsFor('frozen-verify', context)) {
-        run({...command, id: 'frozen-verify'});
-      }
+      const completed = {id: 'frozen-verify', descriptors: [], profiles: []};
+      return after(series(registry.commandsFor('frozen-verify', context), command => {
+        const descriptor = require('./execution-evidence.cjs').descriptorDigest(command, context);
+        return after(run({...command, id: 'frozen-verify'}), () => {
+          completed.descriptors.push({kind: command.kind || 'command',
+            command: context.results?.length - 1, descriptor_sha256: descriptor});
+        });
+      }), () => { context.completedChecks.push(completed); });
     }
+  };
+  const fail = error => {
+    const rethrow = () => { throw error; };
+    try {
+      const cleanup = frozen();
+      return cleanup?.then ? cleanup.then(rethrow, cleanupError => {
+        throw new Error(`${error.message}; frozen integrity gate also failed: ${cleanupError.message}`);
+      }) : rethrow();
+    } catch (cleanupError) {
+      if (cleanupError === error) throw error;
+      throw new Error(`${error.message}; frozen integrity gate also failed: ${cleanupError.message}`);
+    }
+  };
+  let result;
+  try { result = series(checks, execute); }
+  catch (error) { return fail(error); }
+  if (result?.then) {
+    return result.then(frozen, fail);
   }
+  return frozen();
 }
 
 function options(argv) {
-  const options = {execute: false, stage: 'all', commandTimeout: 1800000, budget: 7200000};
+  const options = {execute: false, stage: 'all', commandTimeout: 600000, budget: 7200000};
   const seen = new Set();
   for (let index = 0; index < argv.length; index++) {
     const key = argv[index];
@@ -370,7 +574,7 @@ function options(argv) {
     else if (key === '--restore-oracle-deps') options.restoreOracleDeps = true;
     else {
       const name = {'--root': 'root', '--plan': 'planFile', '--artifacts': 'artifacts',
-        '--platform': 'platform', '--stage': 'stage', '--python': 'python',
+        '--platform': 'platform', '--stage': 'stage', '--python': 'python', '--shard': 'shard',
         '--command-timeout-seconds': 'commandTimeout', '--budget-seconds': 'budget'}[key];
       requireThat(name && argv[index + 1] && !argv[index + 1].startsWith('--'), `Invalid option: ${key}`);
       options[name] = argv[++index];
@@ -382,6 +586,7 @@ function options(argv) {
     }
   }
   requireThat(['all', 'core', 'contracts'].includes(options.stage), 'Stage must be all, core or contracts');
+  requireThat(!options.shard || options.stage === 'all', '--shard cannot be combined with a partial stage');
   requireThat(options.planFile && path.isAbsolute(options.planFile), '--plan must name an absolute plan file');
   requireThat(options.artifacts && path.isAbsolute(options.artifacts), '--artifacts must be absolute');
   options.root = fs.realpathSync(options.root || path.resolve(__dirname, '..', '..'));
@@ -395,64 +600,107 @@ function options(argv) {
   return options;
 }
 
-function main(argv) {
+async function main(argv, execute) {
   const opts = options(argv);
   const plan = JSON.parse(fs.readFileSync(opts.planFile, 'utf8'));
   requireThat(plan.schema === 1 && Array.isArray(plan.packages) && Array.isArray(plan.tests) &&
     Array.isArray(plan.profiles) && Array.isArray(plan.checks), 'Invalid impact plan');
-  const commands = coreCommands(plan, opts.platform);
+  let commands = coreCommands(plan, opts.platform);
+  const shard = opts.shard ?
+    require('./impact-shards.cjs').selectShard(plan, opts.platform, opts.shard, commands) : null;
+  if (shard) commands = shard.commands;
+  const checks = shard?.checks || plan.checks;
   if (!opts.execute) {
-    console.log(JSON.stringify({core: commands, checks: plan.checks, profiles: plan.profiles,
+    console.log(JSON.stringify({core: commands, checks, profiles: plan.profiles,
+      ...(shard ? {shard: shard.id, obligations: shard.obligations,
+        selection_digest: shard.selection_digest} : {}),
       scope: 'Planned commands only; no validation executed'}, null, 2));
     return;
   }
   const planner = require('./impact-plan.cjs');
   const registry = require('./validation-checks.cjs');
   requireThat(typeof planner.verifyPlan === 'function', 'Impact planner must support source-bound verification');
-  planner.verifyPlan(plan, {root: opts.root});
+  const verifiedBefore = planner.verifyPlan(plan, {root: opts.root});
   requireThat(!fs.existsSync(opts.artifacts), 'Execution requires a new artifact directory');
   fs.mkdirSync(opts.artifacts, {recursive: true});
-  const context = {...opts, plan, results: [], deadline: Date.now() + opts.budget,
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  const started = Date.now();
+  const context = {...opts, plan, checks, results: [], deadline: started + opts.budget,
+    signal: controller.signal,
     pinnedOutput: path.join(opts.artifacts, 'pinned-python'),
     parameterRoot: path.join(opts.artifacts, 'fabric-cicd-parameter-source')};
+  const nativeContext = require('./execution-evidence.cjs').executionContext(context);
+  context.targetDir = nativeContext.targetDir;
+  context.targetSource = nativeContext.targetSource;
   const before = sourceDigest(opts.root);
   const inventoryBefore = sourceInventory(opts.root);
   requireThat(before === inventoryBefore.digest, 'Source changed before validation');
   fs.writeFileSync(path.join(opts.artifacts, 'source-before.json'), `${JSON.stringify(inventoryBefore, null, 2)}\n`);
   const toolchain = {};
-  for (const [name, program, args] of [
-    ['cargo', 'cargo', ['--version']], ['rustc', 'rustc', ['--version', '--verbose']],
-    ['rustup', 'rustup', ['show', 'active-toolchain']],
-  ]) {
-    const result = spawnSync(program, args, {cwd: path.join(opts.root, 'rust'),
-      encoding: 'utf8', timeout: 30000, windowsHide: true});
-    requireThat(!result.error && result.status === 0, `Cannot record ${name} toolchain identity`);
-    toolchain[name] = result.stdout.trim();
-  }
-  const expectedHost = {windows: /host: .+-pc-windows-/, linux: /host: .+-unknown-linux-/,
-    macos: /host: .+-apple-darwin/}[opts.platform];
-  requireThat(expectedHost.test(toolchain.rustc), 'Rust compiler host does not match the execution platform');
   const receipt = {
-    schema: 1, plan_fingerprint: plan.fingerprint, platform: opts.platform, stage: opts.stage,
+    schema: 1, plan_fingerprint: plan.fingerprint, head: plan.head ?? null,
+    platform: opts.platform, stage: opts.stage,
+    shard: shard?.id || null,
+    selection_digest: shard?.selection_digest || require('./impact-ci.cjs').selectionDigest(plan),
+    obligations: shard?.obligations || [
+      ...(opts.stage === 'contracts' ? [] : commands.map(command => `${opts.platform}:core:${command.id}`)),
+      ...(opts.stage === 'core' ? [] : checks.map(id => `${opts.platform}:check:${id}`)),
+    ].sort(),
     complete_plan: false,
     toolchain,
     build_environment: buildEnvironment(),
-    source_before: before, started_at: new Date().toISOString(), status: 'running',
+    source_before: before, started_at: new Date(started).toISOString(), status: 'running',
     scope: opts.stage !== 'all' ? `Partial ${opts.stage} stage only on this host` :
       plan.mode === 'full' ? 'Full configured offline checks on this host' :
       'Affected configured offline checks on this host; not full workspace or GA acceptance',
   };
   const receiptFile = path.join(opts.artifacts, 'receipt.json');
-  const run = command => {
-    requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
-    console.log(`${command.id || 'contract'}: ${command.program} ${JSON.stringify(command.args)}`);
-    return commandResult(command, context);
-  };
+  const run = command => commandResult(command, context, execute);
   fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
+  process.on('SIGINT', cancel);
+  process.on('SIGTERM', cancel);
   let failure;
   try {
-    if (opts.stage !== 'contracts') for (const command of commands) run(command);
-    if (opts.stage !== 'core') runContracts(context, registry, run);
+    for (const [name, program, args] of [
+      ['cargo', 'cargo', ['--version']], ['rustc', 'rustc', ['--version', '--verbose']],
+      ['rustup', 'rustup', ['show', 'active-toolchain']],
+    ]) {
+      toolchain[name] = (await run({id: `toolchain:${name}`, program, args, capture: true})).trim();
+    }
+    const expectedHost = {windows: /host: .+-pc-windows-/, linux: /host: .+-unknown-linux-/,
+      macos: /host: .+-apple-darwin/}[opts.platform];
+    requireThat(expectedHost.test(toolchain.rustc), 'Rust compiler host does not match the execution platform');
+    if (shard?.engineering) {
+      requireThat(/^[a-f0-9]{40}$/.test(plan.head), 'Engineering preflight requires the exact source head');
+      const artifacts = path.join(path.dirname(opts.artifacts), 'rust-engineering-unit');
+      await run({id: 'preflight:engineering-unit', program: opts.python, test: 'engineering',
+        cwd: opts.artifacts,
+        env: {TMPDIR: opts.artifacts, TEMP: opts.artifacts, TMP: opts.artifacts},
+        args: ['-I', '-B', path.join(opts.root, 'rust', 'scripts', 'engineering_preflight.py'),
+          '--source', path.join(opts.root, 'rust', 'scripts'), '--artifacts', artifacts,
+          '--head', plan.head, '--platform', opts.platform, '--shard', shard.id],
+        deadline: Math.min(context.deadline, Date.now() + 120000),
+        engineering: {head: plan.head, platform: opts.platform, shard: shard.id,
+          receipt: path.join(artifacts, 'engineering-receipt.json')}});
+    }
+    const cargoCommands = commands.filter(command => command.program === 'cargo');
+    const deduplicated = deduplicateCoreCommands(cargoCommands, context);
+    // Preflight shard descriptors can also contain ordinary non-Cargo commands.
+    const unique = new Map(deduplicated.map(command => [command.execution_identity, command]));
+    const executed = new Set();
+    if (opts.stage !== 'contracts') {
+      for (const command of commands) {
+        const selected = command.program === 'cargo' ?
+          unique.get(commandIdentity(command, context)) : command;
+        if (executed.has(selected)) continue;
+        executed.add(selected);
+        await run(selected);
+      }
+    }
+    if (opts.stage !== 'core') await runContracts(context, registry, run);
+    requireThat(!controller.signal.aborted, 'Validation cancelled');
+    requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
   } catch (error) {
     receipt.status = 'failed';
     receipt.error = error.message;
@@ -462,9 +710,16 @@ function main(argv) {
       receipt.source_after = recordSourceAfter(opts.root, opts.artifacts, inventoryBefore);
       requireThat(before === receipt.source_after, 'Source changed during validation');
       if (!failure) {
-        planner.verifyPlan(plan, {root: opts.root});
-        receipt.complete_plan = opts.stage === 'all';
-        receipt.status = receipt.complete_plan ? 'passed' : 'partial_passed';
+        const verifiedAfter = planner.verifyPlan(plan, {root: opts.root});
+        const inventoryAfter = JSON.parse(fs.readFileSync(
+          path.join(opts.artifacts, 'source-after.json'), 'utf8'));
+        receipt.provenance = require('./execution-evidence.cjs').provenance(
+          plan, inventoryBefore, inventoryAfter, verifiedBefore, verifiedAfter);
+        await new Promise(resolve => setImmediate(resolve));
+        requireThat(!controller.signal.aborted, 'Validation cancelled');
+        requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
+        receipt.complete_plan = !shard && opts.stage === 'all';
+        receipt.status = opts.stage === 'all' ? 'passed' : 'partial_passed';
       }
     } catch (error) {
       receipt.source_integrity_error = error.message;
@@ -475,18 +730,38 @@ function main(argv) {
       }
     }
     receipt.finished_at = new Date().toISOString();
+    receipt.elapsed_ms = Date.now() - started;
+    receipt.budget_ms = opts.budget;
+    receipt.timed_out = context.results.some(item => item.timed_out) || Date.now() >= context.deadline;
+    receipt.cancelled = controller.signal.aborted || context.results.some(item => item.cancelled);
     receipt.commands = context.results.length;
     receipt.tests_passed = context.results.reduce((total, item) => total + item.tests_passed, 0);
     receipt.tests_ignored = context.results.reduce((total, item) => total + item.tests_ignored, 0);
-    fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
+    try {
+      const evidence = require('./execution-evidence.cjs');
+      const manifest = evidence.createManifest(context, receipt);
+      receipt.execution_manifest = {sha256: evidence.digest(manifest), data: manifest};
+      requireThat(Buffer.byteLength(JSON.stringify(receipt)) + 1 <= evidence.MAX_RECEIPT_BYTES,
+        'Execution receipt exceeded 512 KiB');
+    } catch (error) {
+      delete receipt.execution_manifest;
+      receipt.status = 'failed';
+      receipt.error ||= error.message;
+      failure ||= error;
+    }
+    try { fs.writeFileSync(receiptFile, `${JSON.stringify(receipt)}\n`); }
+    finally {
+      process.removeListener('SIGINT', cancel);
+      process.removeListener('SIGTERM', cancel);
+    }
   }
   if (failure) throw failure;
 }
 
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
   sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter, oracleVersions,
-  restoreOracleDependencies, runContracts, options, buildEnvironment};
+  restoreOracleDependencies, runContracts, options, buildEnvironment,
+  commandIdentity, deduplicateCoreCommands, commandClass, engineeringReceipt, summarizeLogs, main};
 if (require.main === module) {
-  try { main(process.argv.slice(2)); }
-  catch (error) { console.error(error.message); process.exitCode = 1; }
+  main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });
 }

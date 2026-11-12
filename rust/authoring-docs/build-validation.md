@@ -21,9 +21,9 @@ The command registry and executor are identical locally and in CI. The
 historical results below describe their recorded checkpoints, not a pass of a
 newly generated impact plan.
 
-Formatting is checked with one `cargo fmt --package <name> -- --check`
-invocation per selected package. This preserves the formatting gate while
-avoiding Windows' aggregate rustfmt command-line length limit.
+On Windows, formatting uses one `cargo fmt --package <name> -- --check`
+invocation per selected package, avoiding the aggregate rustfmt command-line
+length limit. POSIX hosts combine the selected packages.
 The acceptance inventory is checked against captured, locked/offline Cargo
 metadata, not a hand-maintained target list. Empty/all-skipped test execution
 and empty dependency graphs cannot satisfy a selected check.
@@ -37,21 +37,22 @@ Certificate profiles inherit the headless host. Their offline checks retain
 the same exit, stream, sanitization and credential-isolation assertions, with
 the diagnostic expected for the selected feature profile.
 
-The native workflow first runs all 33 existing engineering-harness tests and
-five additional bounded-PTY unit tests with an explicit inventory and the
-original Windows-only POSIX-PTY skip. It then
-preflights every workspace target and feature under strict Clippy and exercises
-all CLI targets with every feature before the
-unchanged full dependency-selected plan. Failure in either preflight remains
-blocking; these early checks do not replace native feature profiles or frozen
-source comparisons. Engineering receipts record the exact source SHA, host,
-case counts and observed PTY cleanup data.
+The native workflow partitions the dependency-selected plan across bounded
+native jobs. One shard per OS runs the engineering harness against the explicit
+inventory in `rust/scripts/engineering-inventory.json`, including the exact
+Windows-only POSIX-PTY skips. Engineering receipts record the exact source SHA,
+host, case counts and observed PTY cleanup data.
+Full plans also preflight every workspace target and feature under strict
+Clippy and exercise all CLI targets with every feature, as separate shards.
+Failure remains blocking; these checks do not replace isolated feature profiles
+or frozen source comparisons. Affected plans run their selected target and
+feature obligations instead of unconditional all-workspace preflights.
 The CLI preflight keeps executing remaining targets after a failed target to
 expose all failures in one bounded run; its final failure still blocks the plan.
 
-Early CLI tests and the shared validator provide explicit artifact-only identity
-and updater fixture roots. The preflight creates its directory under
-`RUNNER_TEMP`; the full validator injects its existing artifact root. Tests do
+CLI tests and the shared validator provide explicit artifact-only identity
+and updater fixture roots. Each shard injects its owned artifact root under
+`RUNNER_TEMP`. Tests do
 not require a writable ambient profile or fall back to source-tree fixtures.
 Batch authentication expectations follow the actual selected platform/provider:
 on POSIX, the default device-code method either reports missing explicit
@@ -76,8 +77,8 @@ their actual Windows-broker and interactive callers. POSIX broker-only builds
 retain their explicit unsupported-provider behavior without an unused
 presentation helper or a lint suppression.
 
-The complete CLI preflight creates its isolated test directory under
-`RUNNER_TEMP` and supplies the identity, updater and impact test-root bindings.
+The complete CLI preflight receives an isolated test directory under
+`RUNNER_TEMP` and the identity and updater test-root bindings.
 Its artifacts are retained with the native results; tests never need a fallback
 directory inside the checkout.
 

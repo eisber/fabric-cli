@@ -44,60 +44,68 @@ const inside = (parent, child) => {
     !path.isAbsolute(relative), `${child} is not contained in ${parent}`);
 };
 
-test('native preflights preserve exact engineering inventory and the mandatory full matrix', () => {
+test('native preflights preserve exact engineering inventory and scheduled full obligations', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
-  assert.match(workflow, /pattern, count = "test_native_acceptance\*\.py", 38/);
-  assert.ok(workflow.includes('result.testsRun == count and not result.expectedFailures and skips == expected'));
-  assert.ok(workflow.includes('requires_native_POSIX_PTY'));
-  assert.ok(workflow.includes('with open("native-acceptance.log", "w", encoding="utf-8")'));
-  assert.ok(!workflow.includes('with open(pattern + ".log"'));
-  assert.ok(workflow.includes('cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings'));
-  assert.ok(workflow.includes('cargo test --offline --locked -p fabric-cli --all-targets --all-features --no-fail-fast'));
-  assert.ok(workflow.includes('FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight'));
-  assert.ok(workflow.includes('FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight'));
-  assert.ok(workflow.includes('mkdir -p "$FAB_IDENTITY_TEST_ROOT"'));
-  assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
-    workflow.indexOf('Preflight every current feature and target under strict native lints'));
-  assert.ok(workflow.indexOf('Preflight every current feature and target under strict native lints') <
-    workflow.indexOf('Exercise complete native CLI targets before the full feature plan'));
-  assert.ok(workflow.indexOf('Exercise complete native CLI targets before the full feature plan') <
-    workflow.indexOf('Execute the shared local and CI validation plan'));
-  const cliPreflight = workflow.slice(
-    workflow.indexOf('      - name: Exercise complete native CLI targets before the full feature plan'),
-    workflow.indexOf('      - name: Execute the shared local and CI validation plan'));
-  const preflightRoot = '${{ runner.temp }}/rust-cli-preflight';
-  for (const name of ['FAB_IDENTITY_TEST_ROOT', 'FAB_UPDATE_TEST_ROOT', 'IMPACT_TEST_ROOT']) {
-    assert.ok(cliPreflight.includes(`${name}: ${preflightRoot}`));
+  const engineering = fs.readFileSync(path.join(__dirname, 'engineering_preflight.py'), 'utf8');
+  const executor = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
+  const {matrixForPlan, selectShard} = require('./impact-shards.cjs');
+  const {coreCommands} = require('./validate-impact.cjs');
+  const full = {mode: 'full', files: [], packages: ['fabric-cli'], tests: [],
+    profiles: [], checks: []};
+  const matrix = matrixForPlan(full, coreCommands).include;
+  assert.ok(executor.includes("'engineering_preflight.py'"));
+  assert.match(workflow, /test_engineering_preflight\.py/);
+  const inventory = require('./engineering-inventory.json');
+  assert.equal(inventory.pattern, 'test_native_acceptance*.py');
+  assert.ok(Number.isSafeInteger(inventory.count) && inventory.count > 0);
+  assert.match(engineering, /_PATTERN, _COUNT = _INVENTORY\["pattern"\], _INVENTORY\["count"\]/);
+  assert.match(engineering, /result\.testsRun == _COUNT[\s\S]*not result\.expectedFailures[\s\S]*skips == expected/);
+  assert.ok(inventory.windows_skips.every(([, reason]) => reason === 'requires_native_POSIX_PTY'));
+  assert.ok(engineering.includes('_WINDOWS_SKIPS'));
+  assert.ok(engineering.includes('(artifacts / "native-acceptance.log").open("w", encoding="utf-8")'));
+  assert.ok(!engineering.includes('with open(pattern + ".log"'));
+  for (const platform of ['windows', 'linux', 'macos']) {
+    const entries = matrix.filter(entry => entry.platform === platform);
+    assert.equal(entries.filter(entry => entry.engineering).length, 1);
+    const commands = entries.flatMap(entry =>
+      selectShard(full, platform, entry.shard, coreCommands).commands);
+    const clippy = commands.filter(command => command.id === 'preflight:clippy-all-features');
+    const cli = commands.filter(command => command.id === 'preflight:cli-all-features');
+    assert.equal(clippy.length, 1);
+    assert.equal(cli.length, 1);
+    assert.deepEqual(clippy[0].args, ['clippy', '--offline', '--locked', '--workspace',
+      '--all-targets', '--all-features', '--', '-D', 'warnings']);
+    assert.deepEqual(cli[0].args, ['test', '--offline', '--locked', '-p', 'fabric-cli',
+      '--all-targets', '--all-features', '--no-fail-fast']);
+    assert.equal(cli[0].test, true);
   }
-  assert.ok(cliPreflight.includes('mkdir -p "$FAB_IDENTITY_TEST_ROOT"'));
-  assert.ok(cliPreflight.indexOf('mkdir -p "$FAB_IDENTITY_TEST_ROOT"') <
-    cliPreflight.indexOf('cargo test --offline --locked'));
+  assert.ok(executor.indexOf('if (shard?.engineering)') <
+    executor.indexOf('const cargoCommands = commands.filter('));
+  assert.match(executor, /if \(shard\?\.engineering\)/);
+  assert.equal((executor.match(/args: \['-I', '-B', path\.join\(opts\.root, 'rust', 'scripts', 'engineering_preflight\.py'\)/g) || []).length, 1);
+  assert.ok(!workflow.includes('python -I -B rust/scripts/engineering_preflight.py'));
+  assert.match(workflow, /if: matrix\.dotnet/);
   const retainedArtifacts = workflow.slice(
     workflow.indexOf('      - name: Retain plan and actual command exits, hashes and coverage'));
-  assert.ok(retainedArtifacts.includes(preflightRoot));
+  assert.ok(retainedArtifacts.includes('rust-engineering-unit/engineering-receipt.json'));
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));
-  assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
-  assert.ok(workflow.includes("timeout-minutes: ${{ matrix.os == 'windows-2025' && 150 || 120 }}"));
+  assert.deepEqual([...new Set(matrix.map(entry => entry.os))].sort(),
+    ['macos-15', 'ubuntu-24.04', 'windows-2025']);
   assert.ok(workflow.includes('contents: read'));
   assert.ok(!workflow.includes('continue-on-error'));
 });
 
-test('native job budgets give only Windows finite headroom without changing the matrix', () => {
+test('native shards have a 15-minute ceiling and bounded concurrency on every OS', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
   const start = workflow.indexOf('\n  native:\n'), end = workflow.indexOf('\n  validation:\n');
   assert.ok(start >= 0 && end > start, 'Native job must precede the unchanged stable gate');
   const native = workflow.slice(start, end);
-  const budget = native.match(
-    /^    timeout-minutes: \$\{\{ matrix\.os == '([^']+)' && (\d+) \|\| (\d+) \}\}$/m);
-  assert.ok(budget, 'Expected a finite platform-specific native timeout');
-  assert.equal(budget[1], 'windows-2025');
-  const selected = Number(budget[2]), otherwise = Number(budget[3]);
-  for (const [os, minutes] of [['windows-2025', 150], ['ubuntu-24.04', 120], ['macos-15', 120]]) {
-    const actual = os === budget[1] ? selected : otherwise;
-    assert.equal(actual, minutes);
-    assert.ok(actual > 0 && actual <= 150);
-  }
-  assert.match(native, /os: \[windows-2025, ubuntu-24\.04, macos-15\]/);
+  assert.match(native, /^    timeout-minutes: 15$/m);
+  assert.match(native, /^      max-parallel: 12$/m);
+  assert.match(native, /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.matrix\) \}\}/);
+  assert.match(native, /--shard "\$\{\{ matrix\.shard \}\}"/);
+  assert.match(native, /--budget-seconds "\$\{\{ steps\.setup\.outputs\.budget_seconds \}\}"/);
+  assert.match(native, /Math\.min\(720,840-Math\.ceil\(elapsed\)\)/);
   assert.match(native, /--restore-oracle-deps --execute/);
   assert.ok(!native.includes('continue-on-error'));
 });
@@ -270,6 +278,11 @@ test('selector tests include coverage tooling with absolute source paths and art
   assert.deepEqual(command.args, ['--test',
     path.join(rust, 'scripts', 'impact-plan.test.cjs'),
     path.join(rust, 'scripts', 'validate-impact.test.cjs'),
+    path.join(rust, 'scripts', 'validation-process.test.cjs'),
+    path.join(rust, 'scripts', 'execution-evidence.test.cjs'),
+    path.join(rust, 'scripts', 'impact-shards.test.cjs'),
+    path.join(rust, 'scripts', 'impact-ci.test.cjs'),
+    path.join(rust, 'scripts', 'impact-cache.test.cjs'),
     path.join(rust, 'scripts', 'validation-checks.test.cjs'),
     path.join(rust, 'scripts', 'rust-fast-check.test.cjs'),
     path.join(rust, 'scripts', 'rust-coverage.test.cjs'),
@@ -345,15 +358,20 @@ test('release assembly validation honors controller isolation without changing s
 
 test('native CI front-loads exact engineering suites without replacing the full gate', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
-  assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
-    workflow.indexOf('Preflight every current feature and target under strict native lints'));
-  assert.ok(workflow.includes('pattern, count = "test_native_acceptance*.py", 38'));
-  assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
-  assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
-  assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
-  assert.ok(workflow.includes('persist()\n              raise SystemExit(1)'));
-  assert.ok(workflow.includes('report["pty_receipts"].append(captured[0])'));
-  assert.ok(workflow.includes('return captured'));
+  const engineering = fs.readFileSync(path.join(__dirname, 'engineering_preflight.py'), 'utf8');
+  const executor = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
+  assert.ok(executor.indexOf('if (shard?.engineering)') <
+    executor.indexOf('const cargoCommands = commands.filter('));
+  assert.match(executor, /if \(shard\?\.engineering\)/);
+  assert.ok(executor.includes("'engineering_preflight.py'"));
+  assert.ok(engineering.includes('engineering-inventory.json'));
+  assert.ok(engineering.includes('acceptance.os is os'));
+  assert.match(engineering, /not result\.expectedFailures[\s\S]*skips == expected/);
+  assert.match(engineering, /"discovered": discovered,[\s\S]*"run": 0/);
+  assert.match(engineering, /"passed": False,[\s\S]*"reason": "inventory_mismatch"/);
+  assert.match(engineering, /persist\(\)\r?\n\s+return 1/);
+  assert.ok(engineering.includes('report["pty_receipts"].append(captured[0])'));
+  assert.ok(engineering.includes('return captured'));
   assert.ok(workflow.includes('Execute the shared local and CI validation plan'));
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));
   assert.ok(workflow.includes('Require successful selection and every selected native check'));

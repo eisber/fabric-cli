@@ -3,6 +3,47 @@
   "schema": 1,
   "components": [
     {
+      "id": "dataflow",
+      "package": "fabric-sdk-dataflow",
+      "inputs": [
+        "rust/engine/data-plane/dataflow/src/**",
+        "rust/engine/data-plane/dataflow/tests/**",
+        "rust/engine/data-plane/dataflow/README.md"
+      ],
+      "depends_on": ["operations", "sdk-workspaces"],
+      "tests": [
+        {"package": "fabric-sdk-dataflow", "target": "lib"},
+        {"package": "fabric-sdk-dataflow", "target": "test:execute_query"}
+      ],
+      "profiles": [],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-execute",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/execute.rs",
+        "rust/clients/cli/app/src/execute_host.rs",
+        "rust/clients/cli/app/src/native_execute.rs",
+        "rust/clients/cli/app/src/native_execute_tests.rs",
+        "rust/clients/cli/app/tests/execute_arguments.rs",
+        "rust/clients/cli/app/tests/execute_host.rs",
+        "rust/clients/cli/app/tests/execute_cli_contract.rs"
+      ],
+      "depends_on": ["dataflow", "operations", "output", "http"],
+      "tests": [
+        {"package": "fabric-cli", "target": "lib"},
+        {"package": "fabric-cli", "target": "bin:fab-rs"},
+        {"package": "fabric-cli", "target": "test:execute_arguments"},
+        {"package": "fabric-cli", "target": "test:execute_host"},
+        {"package": "fabric-cli", "target": "test:execute_cli_contract"},
+        {"package": "fabric-cli", "target": "test:native_tabular"},
+        {"package": "fabric-cli", "target": "test:job_arguments"}
+      ],
+      "profiles": ["native-read", "headless", "interactive"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "engine-query",
       "package": "fabric-sdk-query",
       "inputs": [

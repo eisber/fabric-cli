@@ -723,8 +723,8 @@ test('full native matrix restores the pinned deployment oracle before comparison
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));
   const runner = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
   assert.ok(runner.includes("path.join('scripts', 'rust-fast-requirements.txt')"));
-  const restore = runner.indexOf('restoreOracleDependencies(context, checkRun, probeCommand);');
-  assert.ok(restore >= 0 && runner.indexOf('checkRun({...command', restore) > restore);
+  const restore = runner.indexOf('return after(restoreOracleDependencies(context, checkRun, probeCommand), () =>');
+  assert.ok(restore >= 0 && runner.indexOf('after(checkRun({...command', restore) > restore);
   assert.ok(runner.includes("['definitions-oracle', 'parameters-oracle', 'import-oracle', 'export-oracle']"));
 });
 

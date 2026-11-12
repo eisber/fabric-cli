@@ -4,7 +4,6 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
@@ -18,8 +17,9 @@ const {plan: impactPlan} = require('./impact-plan.cjs');
 const validationRegistry = require('./validation-checks.cjs');
 
 function temporary(t) {
-  const directory = fs.mkdtempSync(path.join(process.env.IMPACT_TEST_ROOT ||
-    process.env.RUNNER_TEMP || os.tmpdir(), 'fabric-impact-runner-'));
+  const base = process.env.IMPACT_TEST_ROOT || path.join(__dirname, '..', 'target', 'validation-tests');
+  fs.mkdirSync(base, {recursive: true});
+  const directory = fs.mkdtempSync(path.join(base, 'fabric-impact-runner-'));
   t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
   return directory;
 }
@@ -365,6 +365,52 @@ test('recorded command execution retains failures, output hashes, counts and lit
   assert.equal(context.results[1].exit, null);
 });
 
+test('command timeouts respect command, contract and run budgets and retain timeout failures', t => {
+  const root = temporary(t);
+  const now = Date.now();
+  const context = {root, artifacts: root, commandTimeout: 600000,
+    deadline: now + 7200000, results: []};
+  const command = {id: 'bounded-command', program: 'cargo', args: ['check']};
+  commandResult(command, context, (_, __, opts) => {
+    assert.equal(opts.timeout, 600000);
+    return {status: 0};
+  });
+  assert.equal(context.results[0].timeout_ms, 600000);
+  assert.equal(context.results[0].timed_out, false);
+  commandResult({...command, deadline: now + 300000}, context, (_, __, opts) => {
+    assert.ok(opts.timeout > 0 && opts.timeout <= 300000);
+    return {status: 0};
+  });
+  context.deadline = now + 100000;
+  assert.throws(() => commandResult(command, context, (_, __, opts) => {
+    assert.ok(opts.timeout > 0 && opts.timeout <= 100000);
+    return {status: null, error: Object.assign(new Error('fixture timed out'), {code: 'ETIMEDOUT'}),
+      stdout: 'partial output', stderr: 'partial diagnostics'};
+  }), /Validation failed: bounded-command/);
+  const record = context.results.at(-1);
+  assert.equal(record.timed_out, true);
+  assert.equal(record.exit, null);
+  assert.equal(fs.readFileSync(record.stdout, 'utf8'), 'partial output');
+  assert.equal(fs.readFileSync(record.stderr, 'utf8'), 'partial diagnostics');
+});
+
+test('a real stalled command times out and cannot produce a successful receipt', async t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 200,
+    deadline: Date.now() + 10000, results: []};
+  await assert.rejects(async () => commandResult({
+    id: 'stalled-process', program: process.execPath,
+    args: ['-e', 'setTimeout(() => {}, 60000)'], cwd: root,
+  }, context), /Validation failed: stalled-process/);
+  const record = context.results[0];
+  assert.equal(record.timed_out, true);
+  assert.equal(record.timeout_ms, 200);
+  assert.notEqual(record.exit, 0);
+  assert.match(record.error, /ETIMEDOUT/);
+  assert.ok(record.elapsed_ms < 10000);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'commands.json'))), context.results);
+});
+
 test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
   const root = temporary(t);
   const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
@@ -662,7 +708,10 @@ test('CI comparison rejects changed default availability and per-profile executa
 test('the executor refuses unbounded timeouts, in-checkout artifacts and execution platform impersonation', t => {
   const artifact = temporary(t);
   const root = path.resolve(__dirname, '..', '..');
-  const args = ['--plan', path.join(artifact, 'plan.json'), '--artifacts', path.join(artifact, 'logs')];
+  const fixtureRoot = path.join(artifact, 'checkout');
+  fs.mkdirSync(fixtureRoot);
+  const args = ['--root', fixtureRoot, '--plan', path.join(artifact, 'plan.json'),
+    '--artifacts', path.join(artifact, 'logs')];
   assert.throws(() => options([...args, '--budget-seconds', 'Infinity']), /Invalid timeout/);
   assert.throws(() => options(['--plan', path.join(artifact, 'plan.json'),
     '--artifacts', root]), /outside the checkout/);
@@ -677,6 +726,7 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /merge_group:/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /node --test rust\/scripts\/impact-plan\.test\.cjs/);
+  assert.match(workflow, /rust\/scripts\/validation-process\.test\.cjs/);
   assert.match(workflow, /rust\/scripts\/rust-coverage\.test\.cjs/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs select/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs native/);
@@ -684,13 +734,51 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /name: Rust validation/);
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /needs: \[changes, native\]/);
-  assert.match(workflow, /"\$RUN_NATIVE" == true && "\$NATIVE_RESULT" == success/);
-  assert.match(workflow, /"\$RUN_NATIVE" == false && "\$NATIVE_RESULT" == skipped/);
-  assert.equal((workflow.match(/fetch-depth: 0/g) || []).length, 2,
-    'Both selection and native checkout need historical Python Git objects');
-  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2);
+  assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs aggregate/);
+  assert.match(workflow, /NATIVE_RESULT: \$\{\{ needs\.native\.result \}\}/);
+  assert.match(workflow, /RUN_NATIVE: \$\{\{ needs\.changes\.outputs\.run_native \}\}/);
+  assert.equal((workflow.match(/fetch-depth: 0/g) || []).length, 3,
+    'Selection, native and aggregate checkout retain verified Git history');
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3);
   assert.match(workflow, /--restore-oracle-deps --execute/);
+  assert.match(workflow, /max-parallel: 12/);
+  assert.match(workflow, /timeout-minutes: 15/);
+  assert.match(workflow, /--shard "\$\{\{ matrix\.shard \}\}"/);
+  assert.match(workflow, /--budget-seconds "\$\{\{ steps\.setup\.outputs\.budget_seconds \}\}"/);
+  assert.ok(workflow.includes('Math.min(720,840-Math.ceil(elapsed))'),
+    'Execution must account for setup time and retain cleanup headroom');
   assert.ok(!workflow.includes('function select(files'));
+});
+
+test('native CI restores compatible build outputs before Cargo and bounds each validator command', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const cache = workflow.indexOf('name: Restore native Cargo dependencies and build outputs');
+  assert.ok(cache > 0 && cache < workflow.indexOf('cargo fetch --locked'));
+  const cacheStep = workflow.slice(cache, workflow.indexOf('      - name:', cache + 1));
+  const target = workflow.indexOf('name: Restore bounded compilation cohort');
+  assert.ok(target > cache && target < workflow.indexOf('cargo fetch --locked'));
+  const targetStep = workflow.slice(target, workflow.indexOf('      - name:', target + 1));
+  assert.ok(cacheStep.includes('actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
+  assert.ok(targetStep.includes('actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
+  for (const input of ['runner.os', 'runner.arch', 'rust/rust-toolchain.toml',
+    'rust/Cargo.lock', 'rust/**/Cargo.toml']) {
+    assert.ok(cacheStep.includes(input), `Dependency cache identity must include ${input}`);
+    assert.ok(targetStep.includes(input), `Compilation cache identity must include ${input}`);
+  }
+  for (const directory of ['~/.cargo/registry', '~/.cargo/git']) {
+    assert.ok(cacheStep.includes(directory));
+  }
+  assert.ok(targetStep.includes('rust/target'));
+  assert.ok(targetStep.includes('matrix.cache_group'));
+  assert.ok(targetStep.includes('jobs2-dev0-test0-incr0'));
+  for (const step of [cacheStep, targetStep]) {
+    assert.ok(!step.includes('rust-impact-results'));
+    assert.ok(!step.includes('github.sha'), 'Cache generations must not multiply by source revision');
+  }
+  assert.ok(workflow.includes('actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
+  assert.ok(workflow.includes('matrix.cache_writer'));
+  assert.ok(workflow.includes('steps.target-size.outputs.eligible'));
+  assert.match(workflow, /--command-timeout-seconds 600/);
 });
 
 test('the common v2 branch runs the existing combined-candidate gate without privileged merge automation', () => {
@@ -708,7 +796,10 @@ test('the common v2 branch runs the existing combined-candidate gate without pri
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.ok(!workflow.includes('pull_request_target:'));
   assert.ok(!workflow.includes('contents: write'));
-  assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
+  assert.ok(workflow.includes('matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}'));
+  const {matrixForPlan} = require('./impact-shards.cjs');
+  assert.deepEqual([...new Set(matrixForPlan(plan()).include.map(item => item.os))].sort(),
+    ['macos-15', 'ubuntu-24.04', 'windows-2025']);
   assert.ok(workflow.includes('github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before'));
   assert.ok(workflow.includes('persist-credentials: false'));
 });
