@@ -7,6 +7,9 @@
 #[path = "http.rs"]
 mod http;
 
+#[path = "status.rs"]
+mod status;
+
 use super::*;
 use fabric_cli::{
     create_command::{

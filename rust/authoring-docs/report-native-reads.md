@@ -195,6 +195,13 @@ same-name items of other known types; multiple Reports, wrong-kind-only matches,
 malformed matching identities and wrong workspace evidence still reject.
 `folderIdObserved` distinguishes an omitted source field from an explicit null
 root-folder observation; neither invents a child folder identity.
+An operation-result response with an unexpected success-class status (including
+201, 202 or 204 where the result contract requires 200) remains nonzero and
+`unknown` with an `InvalidResponse` receipt. The original shared-engine typed
+HTTP error and status remain available; the receipt does not turn them into a
+definitive provider rejection or claim the initial Report submission was undone.
+Actual provider HTTP failures and failed operation states retain their separate
+failure classification. None of these cases replays the Report POST.
 
 ## API references
 
