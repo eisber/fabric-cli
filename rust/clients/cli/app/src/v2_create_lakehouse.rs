@@ -39,7 +39,9 @@ impl CreateInputValidator for LakehouseCreateBinding {
         schema: &SchemaRef,
         supplied: Option<&Value>,
     ) -> Result<InputDisposition, CreateError> {
-        LakehouseCreateSchema.validate(target, schema, supplied)
+        let disposition = LakehouseCreateSchema.validate(target, schema, supplied)?;
+        require_workspace_root(supplied)?;
+        Ok(disposition)
     }
 }
 
@@ -70,6 +72,7 @@ impl CreateBinding for LakehouseCreateBinding {
         }
         let request =
             LakehouseCreateRequest::from_plan(plan).map_err(|_| CreateError::InputRejected)?;
+        require_workspace_root(Some(request.body()))?;
         let operation = request
             .operation(if wait {
                 CompletionPolicy::WaitForResult
@@ -84,7 +87,9 @@ impl CreateBinding for LakehouseCreateBinding {
         &self,
         plan: &CreatePlan,
     ) -> Result<Vec<AnticipatedCreateEffect>, CreateError> {
-        LakehouseCreateRequest::from_plan(plan).map_err(|_| CreateError::InputRejected)?;
+        let request =
+            LakehouseCreateRequest::from_plan(plan).map_err(|_| CreateError::InputRejected)?;
+        require_workspace_root(Some(request.body()))?;
         Ok(vec![AnticipatedCreateEffect::new(
             CreateEffectKind::ChildResourceCreation,
             Some("SQLEndpoint"),
@@ -95,4 +100,14 @@ impl CreateBinding for LakehouseCreateBinding {
              @3893b03d0246df2a1978058f5542399274d1b243",
         )?])
     }
+}
+
+fn require_workspace_root(body: Option<&Value>) -> Result<(), CreateError> {
+    if body
+        .and_then(|body| body.get("folderId"))
+        .is_some_and(|folder| !folder.is_null())
+    {
+        return Err(CreateError::InputRejected);
+    }
+    Ok(())
 }

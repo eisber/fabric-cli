@@ -27,6 +27,7 @@ use fabric_sdk::{
         create::{
             CreateAction, CreateError, CreateTarget, LeafState, NativeId, Preflight, TargetScope,
         },
+        lakehouse_create::LakehouseCreateSchema,
     },
 };
 use fabric_sdk_http::{
@@ -461,6 +462,11 @@ async fn native_201_full_host_preserves_raw_approval_body_and_actual_metadata() 
     assert_eq!(report.value()["meta"]["operationHandle"], Value::Null);
     assert_eq!(report.value()["meta"]["completed"], true);
     assert_eq!(report.value()["meta"]["submission"]["httpStatus"], 201);
+    assert_eq!(report.value()["meta"]["folderIdObserved"], false);
+    assert_eq!(
+        report.value()["meta"]["submission"]["folderIdObserved"],
+        false
+    );
     assert_eq!(
         report.value()["meta"]["anticipatedEffects"][0]["resourceType"],
         "SQLEndpoint"
@@ -476,7 +482,7 @@ async fn native_201_full_host_preserves_raw_approval_body_and_actual_metadata() 
     assert_eq!(requests[0].method, Method::Get);
     assert_eq!(
         requests[0].url,
-        format!("{ORIGIN}/v1/workspaces/{WORKSPACE}/items")
+        format!("{ORIGIN}/v1/workspaces/{WORKSPACE}/items?recursive=false")
     );
     assert_eq!(requests[1].method, Method::Post);
     assert_eq!(
@@ -710,6 +716,132 @@ async fn one_exact_lakehouse_and_unrelated_same_name_type_are_not_ambiguous() {
 }
 
 #[tokio::test]
+async fn root_scope_survives_paging_and_ignores_only_valid_nested_same_name_items() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in [None, Some(Value::Null)] {
+        let mut root = created();
+        if let Some(folder) = &folder {
+            root["folderId"] = folder.clone();
+        }
+        let fixture = Fixture::new(vec![
+            reply(
+                200,
+                &json!({
+                    "value":[{
+                        "id":OPERATION,"displayName":"Lakehouse_1","type":"Lakehouse",
+                        "workspaceId":WORKSPACE,"folderId":OPERATION
+                    }],
+                    "continuationToken":"next-page"
+                })
+                .to_string(),
+                &[],
+            ),
+            listing(json!([root])),
+        ]);
+        let mut approval = approval(false);
+        let delivery = execute(
+            preflight(
+                temp.path(),
+                &["--if-exists", "skip", "--project", "missingField"],
+            ),
+            &fixture,
+            &mut approval,
+            false,
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        let mut stdout = Vec::new();
+        delivery.deliver(&mut stdout).unwrap();
+        let value: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(value["meta"]["folderId"], Value::Null);
+        assert_eq!(value["meta"]["folderIdObserved"], folder.is_some());
+        assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], false);
+        let requests = fixture.network.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|request| request.method == Method::Get));
+        assert_eq!(
+            requests[0].url,
+            format!("{ORIGIN}/v1/workspaces/{WORKSPACE}/items?recursive=false")
+        );
+        assert_eq!(
+            requests[1].url,
+            format!(
+                "{ORIGIN}/v1/workspaces/{WORKSPACE}/items?recursive=false&continuationToken=next-page"
+            )
+        );
+        assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn nested_only_malformed_or_duplicate_root_matches_never_approve_or_post() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = created();
+    let mut cases = vec![json!([root.clone(), root.clone()])];
+    for folder in [
+        json!(OPERATION),
+        json!("invalid-folder"),
+        json!(""),
+        json!(false),
+        json!([]),
+        json!({}),
+        json!(0),
+    ] {
+        let mut candidate = created();
+        candidate["folderId"] = folder.clone();
+        cases.push(json!([candidate.clone()]));
+        if folder != json!(OPERATION) {
+            cases.push(json!([root.clone(), candidate]));
+        }
+    }
+    for rows in cases {
+        let fixture = Fixture::new(vec![listing(rows)]);
+        let mut approval = approval(false);
+        assert!(
+            execute(
+                preflight(temp.path(), &["--if-exists", "skip"]),
+                &fixture,
+                &mut approval,
+                false,
+                pending(),
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        assert_eq!(fixture.network.requests.lock().unwrap().len(), 1);
+        assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn case_changed_root_is_not_an_exact_skip() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut different_name = created();
+    different_name["displayName"] = json!("lakehouse_1");
+    let fixture = Fixture::new(vec![listing(json!([different_name]))]);
+    let mut approval = approval(false);
+    assert!(matches!(
+        execute(
+            preflight(temp.path(), &["--if-exists", "skip"]),
+            &fixture,
+            &mut approval,
+            false,
+            pending(),
+        )
+        .await,
+        Err(CreateCommandError::Policy(CreateError::NameChanged))
+    ));
+    assert_eq!(approval.calls, 0);
+    assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn later_discovery_page_failure_never_treats_partial_listing_as_missing() {
     let temp = tempfile::tempdir().unwrap();
     let fixture = Fixture::new(vec![
@@ -731,6 +863,176 @@ async fn later_discovery_page_failure_never_treats_partial_listing_as_missing() 
     assert_eq!(approval.calls, 0);
     assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
     assert_eq!(fixture.network.requests.lock().unwrap().len(), 2);
+    let requests = fixture.network.requests.lock().unwrap();
+    assert!(requests[0].url.contains("/items?recursive=false"));
+    assert!(
+        requests[1]
+            .url
+            .contains("recursive=false&continuationToken=next-page")
+    );
+}
+
+#[test]
+fn root_binding_rejects_non_root_explicit_input_even_for_existing_skip() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = format!("/{WORKSPACE}.Workspace/Lakehouse_1.Lakehouse");
+    let binding = LakehouseCreateBinding::new().unwrap();
+    let bytes = format!(r#"{{"displayName":"Lakehouse_1","folderId":"{OPERATION}"}}"#);
+    for policy in ["error", "skip"] {
+        let command =
+            v2_create::parse_args(["create", &path, "--input", "-", "--if-exists", policy])
+                .unwrap();
+        assert!(matches!(
+            PreparedCreateCommand::preflight(
+                command,
+                &binding,
+                temp.path(),
+                &mut bytes.as_bytes(),
+                false,
+            ),
+            Err(CreateCommandError::Policy(CreateError::InputRejected))
+        ));
+    }
+    let command = v2_create::parse_args(["create", path.as_str()]).unwrap();
+    let target = CreateTarget::new(
+        TargetScope::NamedLeaf,
+        NativeId::new(WORKSPACE).unwrap(),
+        "Lakehouse_1",
+        "Lakehouse",
+    )
+    .unwrap();
+    let plan = command
+        .plan(
+            target,
+            Preflight::Leaf(LeafState::Missing),
+            &binding.capabilities(),
+            Some(serde_json::from_str(&bytes).unwrap()),
+            &LakehouseCreateSchema,
+        )
+        .unwrap();
+    assert!(
+        binding
+            .operation(&plan, Some(bytes.as_bytes()), false)
+            .is_err()
+    );
+    assert!(binding.anticipated_effects(&plan).is_err());
+}
+
+#[tokio::test]
+async fn explicit_native_null_folder_remains_unchanged_root_in_approval_wire_and_receipt() {
+    let temp = tempfile::tempdir().unwrap();
+    static INPUT: &[u8] = br#"{"displayName":"Lakehouse_1","folderId":null}"#;
+    let mut actual = created();
+    actual["folderId"] = Value::Null;
+    let fixture = Fixture::new(vec![
+        listing(json!([])),
+        reply(201, &actual.to_string(), &[]),
+    ]);
+    let mut approval = approval(true);
+    approval.raw = Some(INPUT);
+    let delivery = execute(
+        preflight_input(temp.path(), &["--project", "missingField"], Some(INPUT)),
+        &fixture,
+        &mut approval,
+        false,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    let mut stdout = Vec::new();
+    delivery.deliver(&mut stdout).unwrap();
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(value["data"], Value::Null);
+    assert_eq!(value["meta"]["folderId"], Value::Null);
+    assert_eq!(value["meta"]["folderIdObserved"], true);
+    assert_eq!(value["meta"]["submission"]["folderId"], Value::Null);
+    assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+    let requests = fixture.network.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        approval.approved_request,
+        Some((requests[1].url.clone(), requests[1].body.clone()))
+    );
+    assert!(!requests[1].url.contains('?'));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&requests[1].body).unwrap()["folderId"],
+        Value::Null
+    );
+}
+
+#[tokio::test]
+async fn completed_nested_or_malformed_folder_never_claims_root_creation_success() {
+    let temp = tempfile::tempdir().unwrap();
+    for wait in [false, true] {
+        for folder in [json!(OPERATION), json!("bad"), json!([]), json!(false)] {
+            let mut actual = created();
+            actual["folderId"] = folder.clone();
+            let mut replies = vec![listing(json!([]))];
+            if wait {
+                let mut initial = created();
+                initial["folderId"] = Value::Null;
+                replies.push(reply(
+                    202,
+                    &initial.to_string(),
+                    &[
+                        ("Location", &operation_url()),
+                        ("x-ms-operation-id", OPERATION),
+                    ],
+                ));
+                replies.push(reply(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("Location", &format!("{}/result", operation_url()))],
+                ));
+                replies.push(reply(200, &actual.to_string(), &[]));
+            } else {
+                replies.push(reply(201, &actual.to_string(), &[]));
+            }
+            let fixture = Fixture::new(replies);
+            let mut approval = approval(true);
+            let delivery = execute(
+                preflight(
+                    temp.path(),
+                    if wait {
+                        &["--wait", "--project", "missingField"]
+                    } else {
+                        &["--project", "missingField"]
+                    },
+                ),
+                &fixture,
+                &mut approval,
+                false,
+                pending(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            assert_eq!(delivery.report().value()["meta"]["completed"], false);
+            assert_eq!(
+                delivery.report().value()["error"]["code"],
+                "InvalidResponse"
+            );
+            let mut stdout = Vec::new();
+            delivery.deliver(&mut stdout).unwrap();
+            let value: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(value["data"], Value::Null);
+            assert_eq!(value["meta"]["resourceId"], ITEM);
+            assert_eq!(value["meta"]["folderId"], folder);
+            assert_eq!(value["meta"]["folderIdObserved"], true);
+            assert_eq!(
+                value["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            assert_eq!(
+                value["meta"]["submission"]["folderId"],
+                if wait { Value::Null } else { folder }
+            );
+            assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+            assert_eq!(value["meta"]["remoteReplayed"], false);
+            assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+        }
+    }
 }
 
 #[tokio::test]

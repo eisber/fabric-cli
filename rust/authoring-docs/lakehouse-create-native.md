@@ -35,7 +35,9 @@ the caller's selected identity is authorized or that live acceptance was tested.
 
 The advertised schema is `fabric.lakehouse.create.metadata/v1`. It admits only
 exact named-leaf `error` and `skip` policies. The shared host resolves the
-workspace and an exhaustive exact-name item snapshot before planning. Missing
+workspace and an exhaustive bounded direct-root item snapshot before planning.
+Discovery uses the generic Core `/items?recursive=false` route and preserves
+paging; it does not add that parameter to the typed create endpoint. Missing
 parents, multiple exact matches and wrong-kind matches remain explicit failures.
 An exact existing target fails for `error`; `skip` leaves its ID unchanged without
 claiming content equality or issuing a POST. Explicit input is validated first.
@@ -47,6 +49,15 @@ is retained; it is not converted into a skip, an update, or an automatic retry.
 The released host uses ASCII-case-insensitive discovery and preserves the
 requested body spelling. This leaf adds no Unicode normalization or additional
 lookup rules. A service rejection for another spelling remains a native failure.
+
+The selected destination is at the workspace root. Discovery treats omitted or
+native null `folderId` as root, excludes valid nested folder IDs from root
+cardinality, and rejects malformed or nested-only same-name matches before
+approval or mutation. A matching root plus a same-name nested item selects only
+the root. Case-insensitive collision detection does not authorize skipping a
+different display-name spelling. A completed response with a nested or malformed
+folder is unverified, not successful root creation; actual folder evidence
+survives in protected receipt metadata, even after projection.
 
 There is no documented complete identity-preserving replacement or repeated-name
 fresh-identity guarantee here. `overwrite`, `--force` and `duplicate` must fail
@@ -63,7 +74,7 @@ inserted into an incomplete explicit body. Native input can also contain:
 | Property | Accepted representation |
 | --- | --- |
 | `description` | String of at most 256 Unicode scalar values, including empty. |
-| `folderId` | Omitted, explicit native null, or a hyphenated UUID; retained unchanged. |
+| `folderId` | Omitted or explicit native null for this workspace-root executable mount; retained unchanged. |
 | `creationPayload` | Exactly `{"enableSchemas": true}`; no injected default. |
 | `sensitivityLabelSettings` | Native label UUID and optional `ApplyOrFail` or `Ignore` strategy. |
 | `definition` | Metadata-only public definition described below. |
@@ -73,6 +84,10 @@ explicit null outside `folderId`, malformed JSON and duplicate members at any
 depth are rejected locally. The strict input wrapper retains raw source bytes
 before decoding, including whitespace and CRLF, and bounds input at 4 MiB.
 The host still owns bounded file/stdin reading and the total deadline.
+The reusable native SDK schema separately accepts documented folder UUID input,
+but the root-only executable binding rejects a non-null `folderId` locally.
+This avoids approving a root target while creating in another folder; it does
+not add nested-folder selector grammar or change the backend's native schema.
 
 ### Metadata-only public definition
 
@@ -114,6 +129,9 @@ engine; approval does not reserialize or substitute another body.
 Projection applies only to receipt data, preserving identity, effects and
 operation handles. Output failure, timeout and cancellation retain uncertainty;
 they never authorize rollback or replay.
+The receipt also retains `meta.folderId` and `folderIdObserved`, and their
+initial-submission counterparts. These distinguish an omitted native field from
+explicit null without inventing a folder ID or hiding a returned scope mismatch.
 
 Protected `meta.submission` retains the initial POST status, operation handle
 and available accepted resource identity independently of later
