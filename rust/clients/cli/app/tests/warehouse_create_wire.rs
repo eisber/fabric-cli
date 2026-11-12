@@ -68,6 +68,8 @@ impl TokenCredential for Credential {
 enum Reply {
     Http(StatusCode, Headers, Vec<u8>),
     Pending,
+    PendingBody(Headers, Arc<tokio::sync::Notify>),
+    BrokenBody(Headers),
 }
 
 fn reply(status: StatusCode, body: Value) -> Reply {
@@ -117,6 +119,27 @@ impl HttpClient for Wire {
                 Ok(AsyncRawResponse::from_bytes(status, headers, body))
             }
             Reply::Pending => pending().await,
+            Reply::PendingBody(headers, suspended) => {
+                let body = futures_util::stream::poll_fn(move |_| {
+                    suspended.notify_one();
+                    std::task::Poll::<Option<azure_core::Result<azure_core::Bytes>>>::Pending
+                });
+                Ok(AsyncRawResponse::new(
+                    StatusCode::Accepted,
+                    headers,
+                    Box::pin(body),
+                ))
+            }
+            Reply::BrokenBody(headers) => Ok(AsyncRawResponse::new(
+                StatusCode::Accepted,
+                headers,
+                Box::pin(futures_util::stream::iter([Err(
+                    azure_core::Error::with_message(
+                        azure_core::error::ErrorKind::Io,
+                        "synthetic body failure",
+                    ),
+                )])),
+            )),
         }
     }
 }
@@ -224,6 +247,8 @@ impl Harness {
 struct Approval {
     deny: bool,
     calls: usize,
+    expected_name: Option<&'static str>,
+    expected_write: Option<bool>,
 }
 impl CreateApproval for Approval {
     fn authorize<'a>(
@@ -231,7 +256,11 @@ impl CreateApproval for Approval {
         request: CreateApprovalRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<(), CreateApprovalError>> + Send + 'a>> {
         self.calls += 1;
-        assert_eq!(request.plan().target().name(), "Exact");
+        assert_eq!(
+            request.plan().target().name(),
+            self.expected_name.unwrap_or("Exact")
+        );
+        assert_eq!(request.remote_write(), self.expected_write.unwrap_or(true));
         assert_eq!(request.plan().target().parent_id().as_str(), WS);
         assert_eq!(request.context().selection().account(), "synthetic-owner");
         assert_eq!(request.context().selection().tenant(), WS);
@@ -262,7 +291,15 @@ fn prepare(
     input: Option<&[u8]>,
     options: &[&str],
 ) -> Result<PreparedCreateCommand, CreateCommandError> {
-    let mut args = vec!["create", TARGET];
+    prepare_at(TARGET, input, options)
+}
+
+fn prepare_at(
+    target: &str,
+    input: Option<&[u8]>,
+    options: &[&str],
+) -> Result<PreparedCreateCommand, CreateCommandError> {
+    let mut args = vec!["create", target];
     if input.is_some() {
         args.extend(["--input", "-"]);
     }
@@ -473,7 +510,7 @@ async fn approval_denial_makes_only_the_bounded_lookup() {
     let harness = Harness::new(vec![listing(json!([]))]);
     let mut approval = Approval {
         deny: true,
-        calls: 0,
+        ..Approval::default()
     };
     assert!(matches!(
         harness
@@ -512,7 +549,10 @@ async fn error_skip_and_ambiguity_never_mutate_an_existing_or_wrong_kind_target(
         ),
     ] {
         let harness = Harness::new(vec![listing(items)]);
-        let mut approval = Approval::default();
+        let mut approval = Approval {
+            expected_write: Some(false),
+            ..Approval::default()
+        };
         let result = harness
             .execute(
                 prepare(Some(b"{}"), &options).unwrap(),
@@ -886,6 +926,122 @@ fn literal_names_preserve_guid_shaped_and_unicode_spelling_and_bound_raw_bytes()
             )
             .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn literal_guid_and_unicode_names_reach_only_the_warehouses_post_verbatim() {
+        for name in [ITEM, "With spaces.and-dashes", "Caf\u{e9}"] {
+            let target = format!("/{WS}.Workspace/{name}.Warehouse");
+            let mut response = resource();
+            response["displayName"] = json!(name);
+            let harness = Harness::new(vec![
+                listing(json!([])),
+                reply(StatusCode::Created, response),
+            ]);
+            let mut approval = Approval {
+                expected_name: Some(name),
+                ..Approval::default()
+            };
+            let delivery = harness
+                .execute(
+                    prepare_at(&target, None, &["--if-exists", "skip"]).unwrap(),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                delivery.report().exit_code(),
+                0,
+                "{}",
+                delivery.report().value()
+            );
+            assert_eq!(delivery.report().value()["meta"]["action"], "create");
+            assert_eq!(approval.calls, 1);
+            harness.assert_requests(&paths(true));
+            let requests = harness.wire.requests.lock().unwrap();
+            let Body::Bytes(bytes) = requests[1].body() else {
+                panic!("native JSON bytes")
+            };
+            assert_eq!(
+                serde_json::from_slice::<Value>(bytes).unwrap()["displayName"],
+                name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_accepted_body_never_invents_a_resource_identity_or_completion() {
+        let Reply::Http(status, headers, _) = accepted(Value::Null, "0") else {
+            unreachable!()
+        };
+        let harness = Harness::new(vec![
+            listing(json!([])),
+            Reply::Http(status, headers, Vec::new()),
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(None, &[]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["status"], "accepted");
+        assert_eq!(delivery.report().value()["meta"]["completed"], false);
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
+        assert_eq!(
+            delivery.report().value()["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        harness.assert_requests(&paths(true));
+    }
+
+    #[tokio::test]
+    async fn accepted_headers_survive_suspended_or_failed_body_without_replay() {
+        for cancelled in [false, true] {
+            let Reply::Http(_, headers, _) = accepted(Value::Null, "0") else {
+                unreachable!()
+            };
+            let suspended = Arc::new(tokio::sync::Notify::new());
+            let response = if cancelled {
+                Reply::PendingBody(headers, suspended.clone())
+            } else {
+                Reply::BrokenBody(headers)
+            };
+            let harness = Harness::new(vec![listing(json!([])), response]);
+            let interrupted = async {
+                if cancelled {
+                    suspended.notified().await;
+                } else {
+                    pending().await
+                }
+            };
+            let delivery = harness
+                .execute(
+                    prepare(None, &[]).unwrap(),
+                    &mut Approval::default(),
+                    interrupted,
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            assert_eq!(delivery.report().value()["meta"]["completed"], false);
+            assert_eq!(delivery.report().value()["meta"]["httpStatus"], 202);
+            assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
+            assert_eq!(
+                delivery.report().value()["meta"]["operationHandle"],
+                format!("/operations/{OP}")
+            );
+            assert_eq!(
+                delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+                true
+            );
+            assert_eq!(delivery.report().value()["meta"]["remoteReplayed"], false);
+            assert_eq!(delivery.report().value()["meta"]["remoteCancelled"], false);
+            harness.assert_requests(&paths(true));
+        }
     }
     let target = format!("/{WS}.Workspace/{}.Warehouse", "a".repeat(257));
     assert!(
