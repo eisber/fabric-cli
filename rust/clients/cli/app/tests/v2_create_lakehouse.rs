@@ -15,7 +15,8 @@ use azure_core::{
 use fabric_cli::{
     create_command::{
         CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding,
-        CreateCommandError, CreateDelivery, PreparedCreateCommand, v2_create,
+        CreateCommandError, CreateDelivery, CreateExecution, CreateTransportEvidence,
+        PreparedCreateCommand, v2_create,
     },
     v2_create_lakehouse::LakehouseCreateBinding,
 };
@@ -29,7 +30,7 @@ use fabric_sdk::{
     },
 };
 use fabric_sdk_http::{
-    ExecutionError, ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor,
+    ExecutionError, ExecutionFuture, ExecutionOptions, ExecutionTimer, ExecutionTrace, HttpExecutor,
 };
 use fabric_sdk_operations::{
     OperationExecutionError, OperationExecutor, OperationRequest, OperationResponse,
@@ -324,14 +325,26 @@ async fn execute(
     interrupted: impl Future<Output = ()> + Send,
 ) -> Result<CreateDelivery, CreateCommandError> {
     let http = fixture.http();
+    let trace = ExecutionTrace::default();
+    let operation_http = fixture.http().with_trace(trace.clone());
+    let observe = || {
+        let evidence = trace.snapshot();
+        CreateTransportEvidence {
+            http_status: evidence.status,
+            operation_id: evidence.operation_id,
+        }
+    };
     prepared
         .execute(
             &LakehouseCreateBinding::new().unwrap(),
             &fixture.client(Audience::Fabric),
             &http as &dyn ItemExecutor,
-            OperationHttp {
-                http: &http,
-                timeout_poll,
+            CreateExecution {
+                executor: OperationHttp {
+                    http: &operation_http,
+                    timeout_poll,
+                },
+                observe: &observe,
             },
             approval,
             interrupted,
@@ -443,6 +456,61 @@ async fn existing_skip_retains_identity_without_comparing_or_writing_content() {
     );
     assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
     assert_eq!(approval.calls, 1);
+}
+
+#[tokio::test]
+async fn preflight_conflict_ambiguity_wrong_kind_and_wrong_workspace_never_approve_or_post() {
+    let temp = tempfile::tempdir().unwrap();
+    let existing = json!({
+        "id":ITEM,"displayName":"Lakehouse_1","type":"Lakehouse","workspaceId":WORKSPACE
+    });
+    for rows in [
+        json!([existing.clone()]),
+        json!([existing.clone(), existing]),
+        json!([{"id":ITEM,"displayName":"Lakehouse_1","type":"Notebook"}]),
+        json!([{"id":ITEM,"displayName":"Lakehouse_1","type":"Lakehouse","workspaceId":OPERATION}]),
+    ] {
+        let fixture = Fixture::new(vec![listing(rows)]);
+        let mut approval = approval(true);
+        assert!(
+            execute(
+                preflight(temp.path(), &[]),
+                &fixture,
+                &mut approval,
+                false,
+                pending()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+        assert_eq!(fixture.network.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn later_discovery_page_failure_never_treats_partial_listing_as_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = Fixture::new(vec![
+        reply(200, r#"{"value":[],"continuationToken":"next-page"}"#, &[]),
+        reply(403, r#"{"errorCode":"Denied","message":"synthetic"}"#, &[]),
+    ]);
+    let mut approval = approval(true);
+    assert!(matches!(
+        execute(
+            preflight(temp.path(), &[]),
+            &fixture,
+            &mut approval,
+            false,
+            pending()
+        )
+        .await,
+        Err(CreateCommandError::Discovery)
+    ));
+    assert_eq!(approval.calls, 0);
+    assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.network.requests.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -568,6 +636,48 @@ async fn acceptance_timeout_and_cancellation_retain_handles_without_rollback_or_
         assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
         assert_eq!(fixture.network.requests.lock().unwrap().len(), 2);
     }
+}
+
+#[tokio::test]
+async fn accepted_native_resource_identity_survives_later_poll_timeout_and_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let actual = created();
+    let fixture = Fixture::new(vec![
+        listing(json!([])),
+        reply(
+            202,
+            &actual.to_string(),
+            &[
+                ("Location", &operation_url()),
+                ("x-ms-operation-id", OPERATION),
+                ("Retry-After", "1"),
+            ],
+        ),
+    ]);
+    let mut approval = approval(true);
+    let delivery = execute(
+        preflight(temp.path(), &["--wait", "--project", "missingField"]),
+        &fixture,
+        &mut approval,
+        true,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+    assert_eq!(delivery.report().value()["data"], actual);
+    let mut stdout = Vec::new();
+    delivery.deliver(&mut stdout).unwrap();
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(
+        value["meta"]["operationHandle"],
+        format!("/operations/{OPERATION}")
+    );
+    assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(value["data"], Value::Null);
+    assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
 }
 
 struct FailedWriter;
@@ -710,6 +820,10 @@ async fn selected_context_mismatch_or_interruption_before_discovery_has_zero_ide
     for wrong_context in [false, true] {
         let fixture = Fixture::new(Vec::new());
         let http = fixture.http();
+        let observe = || CreateTransportEvidence {
+            http_status: None,
+            operation_id: None,
+        };
         let client = fixture.client(if wrong_context {
             Audience::Arm
         } else {
@@ -723,9 +837,12 @@ async fn selected_context_mismatch_or_interruption_before_discovery_has_zero_ide
                     &LakehouseCreateBinding::new().unwrap(),
                     &client,
                     &http,
-                    OperationHttp {
-                        http: &http,
-                        timeout_poll: false,
+                    CreateExecution {
+                        executor: OperationHttp {
+                            http: &http,
+                            timeout_poll: false,
+                        },
+                        observe: &observe,
                     },
                     &mut approval,
                     pending(),
@@ -737,9 +854,12 @@ async fn selected_context_mismatch_or_interruption_before_discovery_has_zero_ide
                     &LakehouseCreateBinding::new().unwrap(),
                     &client,
                     &http,
-                    OperationHttp {
-                        http: &http,
-                        timeout_poll: false,
+                    CreateExecution {
+                        executor: OperationHttp {
+                            http: &http,
+                            timeout_poll: false,
+                        },
+                        observe: &observe,
                     },
                     &mut approval,
                     ready(()),
@@ -750,5 +870,140 @@ async fn selected_context_mismatch_or_interruption_before_discovery_has_zero_ide
         assert_eq!(approval.calls, 0);
         assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 0);
         assert!(fixture.network.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[cfg(feature = "headless")]
+mod executable {
+    use super::*;
+    use std::{
+        process::{Command, Output, Stdio},
+        thread,
+        time::Instant,
+    };
+
+    fn invoke(binary: &str, args: &[&str], hold_stdin: bool) -> Output {
+        let mut command = Command::new(binary);
+        command
+            .env_clear()
+            .env("FAB_RUST_AUTH_MODE", "sensitive-invalid-mode")
+            .env("FAB_RUST_CLIENT_SECRET", "synthetic-secret-never-used")
+            .stdin(if hold_stdin {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .args(args);
+        let mut child = command.spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while child.try_wait().unwrap().is_none() {
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("bounded create process did not terminate");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let result = child.wait_with_output().unwrap();
+        assert!(result.stdout.len() <= 32 * 1024);
+        assert!(result.stderr.len() <= 4 * 1024);
+        assert!(!String::from_utf8_lossy(&result.stdout).contains("synthetic-secret"));
+        assert!(!String::from_utf8_lossy(&result.stderr).contains("sensitive-invalid-mode"));
+        assert!(!String::from_utf8_lossy(&result.stderr).contains("synthetic-secret"));
+        result
+    }
+
+    fn create(args: &[&str]) -> Output {
+        invoke(env!("CARGO_BIN_EXE_fab-cli-v2"), args, false)
+    }
+
+    #[test]
+    fn help_selects_lakehouse_without_identity_and_keeps_v1_alias() {
+        for args in [vec!["--help"], vec!["create", "--help"]] {
+            let result = create(&args);
+            assert!(result.status.success());
+            assert!(result.stderr.is_empty());
+            let help = String::from_utf8_lossy(&result.stdout);
+            assert!(help.contains("Lakehouse"));
+            assert!(help.contains("create"));
+        }
+        let result = invoke(env!("CARGO_BIN_EXE_fab-rs"), &["create", "--help"], false);
+        assert!(result.status.success());
+        assert!(result.stderr.is_empty());
+        let help = String::from_utf8_lossy(&result.stdout);
+        assert!(help.contains("mkdir"));
+        assert!(!help.contains("Selected native owner"));
+    }
+
+    #[test]
+    fn absent_terminal_approval_and_unsupported_policy_never_enter_identity() {
+        let path = format!("/{WORKSPACE}.Workspace/Lakehouse_1.Lakehouse");
+        let result = create(&["create", &path]);
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "ApprovalRequired");
+        for extra in [
+            vec!["--force"],
+            vec!["--if-exists", "overwrite"],
+            vec!["--if-exists", "duplicate"],
+        ] {
+            let mut args = vec!["create", path.as_str()];
+            args.extend(extra);
+            let result = create(&args);
+            assert_eq!(result.status.code(), Some(2));
+            assert!(result.stdout.is_empty());
+            let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+            assert_eq!(error["error"]["code"], "CreatePolicyRejected");
+            assert_eq!(error["evidence"]["mutationMayHaveOccurred"], false);
+        }
+    }
+
+    #[test]
+    fn missing_parent_other_owner_facade_and_invented_flags_are_local_errors() {
+        for args in [
+            vec!["create", "Lakehouse_1.Lakehouse"],
+            vec!["create", "/Name.Workspace/Lakehouse_1.Lakehouse"],
+            vec![
+                "create",
+                "/11111111-1111-4111-8111-111111111111.Workspace/Other.Notebook",
+            ],
+            vec![
+                "create",
+                "/11111111-1111-4111-8111-111111111111.Workspace/Other.Report",
+            ],
+            vec!["create", "/11111111-1111-4111-8111-111111111111.Workspace"],
+            vec![
+                "create",
+                "/11111111-1111-4111-8111-111111111111.Workspace/Lakehouse_1.Lakehouse",
+                "--name",
+                "invented",
+            ],
+        ] {
+            let result = create(&args);
+            assert_eq!(result.status.code(), Some(2));
+            assert!(result.stdout.is_empty());
+            let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+            assert!(matches!(
+                error["error"]["code"].as_str(),
+                Some("InvalidInput" | "InvalidArguments")
+            ));
+        }
+    }
+
+    #[test]
+    fn blocked_stdin_preflight_obeys_total_timeout_without_identity_or_mutation() {
+        let path = format!("/{WORKSPACE}.Workspace/Lakehouse_1.Lakehouse");
+        let result = invoke(
+            env!("CARGO_BIN_EXE_fab-cli-v2"),
+            &["create", &path, "--input", "-", "--timeout", "10ms"],
+            true,
+        );
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "TimedOut");
     }
 }

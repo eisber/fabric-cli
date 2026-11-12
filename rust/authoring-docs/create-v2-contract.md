@@ -6,13 +6,19 @@ This document records owner-approved creation policy behavior and the separate
 CLI v2 implementation contract. Precise option grammar, exit and receipt-envelope
 details, timing, and source revision pins are implementation-contract details,
 not a claim of explicit owner approval for every broader user experience choice.
-It is not a command reference for the current executable. The current Rust
-executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
+It is not a general command reference for the default executable. The default
+Rust executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
+The separately opt-in `headless,v2-create` experimental `fab-cli-v2` head now
+selects the bounded [native Lakehouse create binding](lakehouse-create-native.md).
+That binding does not imply support for other kinds, collections, overwrite or
+duplicate, or qualification of all policies described in this contract.
 
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+The pure planner is not an executable host. The opt-in typed Lakehouse mount
+uses the [released shared create host](create-host.md); source availability and
+offline fixtures are not live backend or complete platform acceptance evidence.
 
 ## Target grammar
 
@@ -202,8 +208,8 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
-| Resource backend | No backend proof establishes that a resource implements all requested policies. |
+| Executable integration | Opt-in typed Lakehouse root/service-host source is available; generic and other-kind support is not implied. |
+| Resource backend | The Lakehouse binding advertises only its documented native creation conflict and unchanged-skip capabilities, not all requested policies. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 
 CLI planning delegates to the SDK planner as the single shared policy authority.

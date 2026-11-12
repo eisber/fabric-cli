@@ -240,6 +240,17 @@ fn validate_target(target: &CreateTarget) -> Result<(), ResourceError> {
 }
 
 fn validate_body(target: &CreateTarget, value: &Value) -> Result<(), ResourceError> {
+    if !value.is_object()
+        || ["creationPayload", "sensitivityLabelSettings", "definition"]
+            .iter()
+            .any(|field| value.get(field).is_some_and(|value| !value.is_object()))
+        || value
+            .pointer("/definition/parts")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| parts.iter().any(|part| !part.is_object()))
+    {
+        return Err(ResourceError::input());
+    }
     let body: CreateBody =
         serde_json::from_value(value.clone()).map_err(|_| ResourceError::input())?;
     if body.display_name != target.name()
@@ -333,8 +344,11 @@ fn validate_definition(definition: Definition) -> Result<(), ResourceError> {
         .decode(&part.payload)
         .map_err(|_| ResourceError::input())?;
     let text = std::str::from_utf8(&bytes).map_err(|_| ResourceError::input())?;
-    let _: LakehouseMetadata =
-        serde_json::from_value(parse_link_json(text)?).map_err(|_| ResourceError::input())?;
+    let value = parse_link_json(text)?;
+    if !value.is_object() {
+        return Err(ResourceError::input());
+    }
+    let _: LakehouseMetadata = serde_json::from_value(value).map_err(|_| ResourceError::input())?;
     Ok(())
 }
 

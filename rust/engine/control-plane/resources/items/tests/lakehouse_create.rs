@@ -175,6 +175,7 @@ fn explicit_invalid_metadata_is_rejected_even_before_existing_skip() {
     for body in [
         Value::Null,
         json!([]),
+        json!([NAME]),
         json!({}),
         json!({"displayName":null}),
         json!({"displayName":"another"}),
@@ -185,11 +186,13 @@ fn explicit_invalid_metadata_is_rejected_even_before_existing_skip() {
         json!({"displayName":NAME,"folderId":false}),
         json!({"displayName":NAME,"folderId":"../items"}),
         json!({"displayName":NAME,"creationPayload":null}),
+        json!({"displayName":NAME,"creationPayload":[true]}),
         json!({"displayName":NAME,"creationPayload":{}}),
         json!({"displayName":NAME,"creationPayload":{"enableSchemas":false}}),
         json!({"displayName":NAME,"creationPayload":{"enableSchemas":null}}),
         json!({"displayName":NAME,"creationPayload":{"enableSchemas":true,"other":true}}),
         json!({"displayName":NAME,"sensitivityLabelSettings":null}),
+        json!({"displayName":NAME,"sensitivityLabelSettings":[LABEL]}),
         json!({"displayName":NAME,"sensitivityLabelSettings":{}}),
         json!({"displayName":NAME,"sensitivityLabelSettings":{"labelId":"bad"}}),
         json!({"displayName":NAME,"sensitivityLabelSettings":{"labelId":LABEL,"sensitivityLabelApplyStrategy":null}}),
@@ -232,10 +235,15 @@ fn metadata_definition_rejects_null_duplicates_unknown_schema_and_unsupported_pa
     }
     for (pointer, value) in [
         ("/definition", Value::Null),
+        ("/definition", json!([])),
         ("/definition/format", Value::Null),
         ("/definition/format", json!("Other")),
         ("/definition/parts", json!([])),
         ("/definition/parts", Value::Null),
+        (
+            "/definition/parts/0",
+            json!(["lakehouse.metadata.json", "e30=", "InlineBase64"]),
+        ),
         (
             "/definition/parts/0/path",
             json!("../lakehouse.metadata.json"),

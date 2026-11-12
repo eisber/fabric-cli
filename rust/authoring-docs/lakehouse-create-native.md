@@ -7,9 +7,19 @@ for the separate [v2 create contract](create-v2-contract.md). The SDK facade
 reexports the same module as `fabric_sdk::items::lakehouse_create`. It does not
 change v1 `mkdir`, install a transport, or acquire an identity.
 `fabric_cli::v2_create_lakehouse::LakehouseCreateBinding` composes that SDK with
-the released `v2-create` host. Executable registration depends on the separate
-native shared host; an injectable binding alone does not establish a runnable
-command.
+the released `v2-create` host. With `headless,v2-create`, the experimental
+`fab-cli-v2` binary routes root `create` to this Lakehouse-only binding through
+the shared native runner. Other item kinds are rejected rather than inferred.
+The default build and v1 `create` alias remain unchanged.
+
+```text
+fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Lakehouse [--input FILE|-] [--wait] [--if-exists error|skip] [--format json] [--output FILE|-] [--project EXPR] [--timeout DURATION]
+```
+
+The root parser still recognizes all original policy spellings, but this binding
+rejects unsupported policies. It adds no `--name`, autotype, implicit parent,
+collection or artifact facade. An actual write requires explicit selected
+identity configuration and immediate approval through a dedicated terminal.
 
 ## Native contract and capabilities
 
@@ -108,7 +118,7 @@ and the existing CLI/SDK create modules supplied only pure policy contracts.
 | [Lakehouse definition](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/lakehouse-definition) | `cbf487710506ba99809e8c200232edf2a465bdd8` |
 | [Manage a Lakehouse with the REST API](https://learn.microsoft.com/en-us/fabric/data-engineering/lakehouse-api) | `3893b03d0246df2a1978058f5542399274d1b243` |
 
-Offline SDK schema and parser-to-scripted-HTTP tests are source contracts, not
-live Fabric proof. Final executable approval/context/output/process coverage
-requires the released shared host and exact combined-revision checks. No live
+Offline SDK schema, parser-to-host-to-scripted-HTTP and native process tests are
+source contracts, not live Fabric proof. Native execution and full gates must
+be verified against the exact combined revision before delivery. No live
 Fabric authentication, read, create or compute operation is authorized here.
