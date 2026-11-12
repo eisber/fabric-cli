@@ -22,6 +22,7 @@ pub mod livy;
 pub mod livy_arrow;
 pub mod metadata;
 pub mod models;
+pub mod notebook_create;
 pub mod notebook_observability;
 pub mod notebook_runtime;
 pub mod notebooks;

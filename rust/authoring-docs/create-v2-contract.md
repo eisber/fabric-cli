@@ -6,13 +6,95 @@ This document records owner-approved creation policy behavior and the separate
 CLI v2 implementation contract. Precise option grammar, exit and receipt-envelope
 details, timing, and source revision pins are implementation-contract details,
 not a claim of explicit owner approval for every broader user experience choice.
-It is not a command reference for the current executable. The current Rust
-executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
+The v1 `fab-rs` executable retains `create` as an alias for `mkdir`.
+The separate `fab-cli-v2` head has a bounded, opt-in Notebook-only mount described
+below; this does not enable every target or policy in the broader contract.
 
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
-policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+policy and CLI parsing. The shared [create host](create-host.md) composes those
+libraries without installing a generic artifact backend or another policy engine.
+
+## Opt-in native Notebook mount
+
+Build `fabric-cli` with `headless,v2-create` to enable the existing root grammar:
+
+```text
+fab-cli-v2 create /11111111-1111-1111-1111-111111111111.Workspace/Example.Notebook --input notebook-create.json
+```
+
+This example uses a synthetic parent ID, not an authorized live resource.
+The first native mount requires an explicit workspace GUID and a literal
+Notebook display name. Workspace-name resolution, parent collections, folders,
+profiles, artifact facades and other item types are not mounted. There is no
+new `--name` option, implicit display name, or type inferred from a local filename.
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+For an exact destination, omitted input creates a shell Notebook with precisely
+the name in that destination. Empty input and explicit JSON null are invalid.
+An explicit body must include `displayName` equal to the selected destination:
+
+```json
+{"displayName":"Example","description":"Optional description"}
+```
+
+Input is bounded strict UTF-8 JSON, not a local ipynb/source file. Supported
+fields are `displayName`, optional `description` (at most 256 characters), and
+optional native `definition`. Definitions retain their original format, ordered
+parts, inline base64 payloads, and `.platform` metadata. No content conversion,
+cell editing, execution, publishing or dependent-resource creation occurs.
+Unknown/null fields, duplicate JSON keys, invalid part paths and unsupported
+fields such as folder or sensitivity-label settings fail explicitly.
+
+The typed `fabric_sdk::notebook_create` binding uses
+`POST /v1/workspaces/{workspaceId}/notebooks`. The current public
+[Create Notebook contract](https://learn.microsoft.com/en-us/rest/api/fabric/notebook/items/create-notebook)
+(documentation revision `edc068545c34ad50e4d543d40139cd360a3a2f7d`) documents
+201 Created, 202 Accepted with operation headers, and
+`ItemDisplayNameAlreadyInUse` rejection. This native collision guarantee, not a
+preflight absence observation, supports create-only `error` and missing-target
+`skip`. Existing-target `skip` validates explicit input first and reports unchanged
+without a content-equality claim.
+
+| Policy | Native Notebook mount |
+| --- | --- |
+| `error` | Enabled; native creation rejects an existing-name collision, including one introduced after discovery. |
+| `skip` | Enabled; an exact discovered existing Notebook is unchanged, otherwise the same native create-only request runs. |
+| `overwrite`, `--force` | Rejected before discovery; no complete identity-preserving replacement guarantee is advertised. |
+| `duplicate` | Rejected before discovery; repeated-name fresh identity and explicit collection grammar are not advertised. |
+
+The mount reuses explicit headless identity and the native HTTP/operation engine.
+It never starts interactive sign-in, falls back to another credential, or treats
+`--force` as approval. Native execution requires immediate explicit terminal
+approval of the immutable target, body, selected account/tenant/endpoint, effects,
+and output intent. Structured stdin cannot approve itself: confirmation uses the
+dedicated terminal, with an empty answer declining. Embedders inject
+`CreateApproval`; denial or an unavailable host submits nothing.
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
+The original timeout includes preflight, discovery, approval, submission,
+waiting and local receipt delivery. If it expires before delivery, no new file
+write starts; the unprojected report remains in the stderr timeout diagnostic.
+Without `--wait`, a 202 receipt says `accepted`, never `completed`.
+Polling failure, local cancellation/deadline, response limits, lost responses and
+receipt write/flush failures retain known handles and mutation uncertainty.
+This includes an operation UUID already received in 202 headers before a later
+body streaming failure or cancellation.
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
+There is no automatic replay or rollback. The exact output file is never
+overwritten; projection applies only to `data`, retaining identity and operation
+metadata outside it. No live Fabric, identity or resource-creation acceptance
+is established by the offline tests.
 
 ## Target grammar
 
@@ -189,8 +271,9 @@ guidance must not cause automatic mutation replay.
 
 ## Implementation coverage and gaps
 
-Source implementation is available, but compilation and tests remain
-unverified. Source availability does not establish completed contract coverage.
+Pure planning, typed provider binding, host execution and executable boundaries
+have separate tests. Source availability or passing parser tests do not establish
+complete coverage of the broader policy contract.
 The existing
 [resource mutation compatibility record](mutation-compatibility.md) describes
 bounded v1 behavior, not v2 create acceptance. The
@@ -199,11 +282,11 @@ continues to document its existing handlers separately.
 
 | Surface | Coverage boundary |
 | --- | --- |
-| Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
-| SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
-| CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
-| Resource backend | No backend proof establishes that a resource implements all requested policies. |
+| Default/v1 executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
+| SDK and pure policy | `fabric-sdk-items::create` remains the single offline policy and outcome-verification authority. |
+| CLI library and parsing | `fabric-cli-mutations::v2_create` owns the existing root grammar. |
+| Executable integration | Separate `fab-cli-v2` mounts Notebook only with `headless,v2-create`; default feature behavior is unchanged. |
+| Resource backend | Typed Notebook native request/schema and error/skip only; no universal policy support claim. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 
 CLI planning delegates to the SDK planner as the single shared policy authority.
