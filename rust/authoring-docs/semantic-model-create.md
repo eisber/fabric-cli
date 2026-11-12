@@ -69,6 +69,15 @@ case collisions, ambiguity and incomplete discovery fail. Preflight is not an
 atomic reservation. A raced provider rejection, including HTTP 409, is a failure,
 never a skip, overwrite or permission to replay.
 
+The shared root-folder repair `caf2f7f2` uses only the generic Core `/items`
+discovery route with `recursive=false`; the typed SemanticModel POST has no
+discovery query parameters. Paging retains that root scope. Omitted or null
+`folderId` is root; nested-only matches and malformed folder identities reject.
+When both root and nested same-name rows exist, only the root can be selected.
+Completed create results must also identify a root item. Returned folder fields
+and whether they were present remain protected in `meta` and `meta.submission`,
+even when data is projected or a later poll fails.
+
 `--wait` uses the existing native `WaitForResult` policy and `Retry-After`.
 HTTP 202 is accepted, not completed. Resource and operation IDs stay distinct.
 Known acceptance evidence survives poll, body, cancellation and output errors.

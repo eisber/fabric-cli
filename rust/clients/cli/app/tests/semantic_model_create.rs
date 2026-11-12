@@ -74,6 +74,7 @@ struct Wire {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<(String, String, Value)>>,
     raw_bodies: Mutex<Vec<Vec<u8>>>,
+    queries: Mutex<Vec<Vec<(String, String)>>>,
     dispatched: tokio::sync::Notify,
 }
 
@@ -98,6 +99,30 @@ fn accepted_headers() -> Headers {
 impl HttpClient for Wire {
     async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
         assert_eq!(request.url().host_str(), Some("api.fabric.microsoft.com"));
+        let query = request.url().query_pairs().into_owned().collect::<Vec<_>>();
+        if request.url().path() == format!("/v1/workspaces/{WORKSPACE}/items") {
+            assert_eq!(request.method().to_string(), "GET");
+            assert_eq!(
+                query.iter().filter(|(key, _)| key == "recursive").count(),
+                1,
+            );
+            assert!(
+                query
+                    .iter()
+                    .any(|(key, value)| key == "recursive" && value == "false")
+            );
+            assert!(
+                query
+                    .iter()
+                    .all(|(key, _)| matches!(key.as_str(), "recursive" | "continuationToken"))
+            );
+        } else {
+            assert!(
+                query.is_empty(),
+                "root discovery parameters must not reach typed create or operation routes"
+            );
+        }
+        self.queries.lock().unwrap().push(query);
         let body = match request.body() {
             Body::Bytes(bytes) if bytes.is_empty() => Value::Null,
             Body::Bytes(bytes) => serde_json::from_slice(bytes).unwrap(),
@@ -699,6 +724,209 @@ async fn exact_skip_is_unchanged_but_ambiguity_case_collision_and_wrong_kind_fai
         assert_eq!(host.requests().len(), 1);
         assert_eq!(host.approval.calls, 0);
     }
+}
+
+#[tokio::test]
+async fn root_skip_excludes_nested_matches_and_retains_observed_null_separately_from_omission() {
+    for explicit_null in [false, true] {
+        let mut root = resource();
+        if explicit_null {
+            root["folderId"] = Value::Null;
+        }
+        let mut nested = resource();
+        nested["id"] = json!(OPERATION);
+        nested["folderId"] = json!(RESOURCE);
+        let mut host = Host::new();
+        host.reply(200, json!({"value":[nested, root]}));
+        let skipped = host.run(&["--if-exists", "skip"], b"").await.unwrap();
+        let meta = &skipped.report().value()["meta"];
+        assert_eq!(meta["status"], "unchanged");
+        assert_eq!(meta["resourceId"], RESOURCE);
+        assert_eq!(meta["folderId"], Value::Null);
+        assert_eq!(meta["folderIdObserved"], explicit_null);
+        assert_eq!(meta["remoteWrite"], false);
+        assert_eq!(meta["anticipatedEffects"], json!([]));
+        assert_eq!(host.requests().len(), 1);
+        assert_eq!(host.approval.calls, 1);
+        assert!(host.approval.body.is_none());
+    }
+
+    for folder in [
+        json!(RESOURCE),
+        json!("not-a-guid"),
+        json!(42),
+        json!({}),
+        json!([]),
+        json!(""),
+    ] {
+        for include_root in [false, true] {
+            if include_root && folder == json!(RESOURCE) {
+                continue;
+            }
+            let mut item = resource();
+            item["folderId"] = folder.clone();
+            let mut rows = vec![item];
+            if include_root {
+                rows.push(resource());
+            }
+            let mut host = Host::new();
+            host.reply(200, json!({"value":rows}));
+            assert!(host.run(&["--if-exists", "skip"], b"").await.is_err());
+            assert_eq!(host.requests().len(), 1);
+            assert_eq!(host.approval.calls, 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn root_discovery_keeps_recursion_and_encoded_continuation_across_every_page() {
+    let token = "next +/=";
+    let mut host = Host::new();
+    host.reply(200, json!({
+        "value":[], "continuationToken":token,
+        "continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE}/items")
+    }));
+    host.reply(200, json!({"value":[resource()]}));
+    let skipped = host.run(&["--if-exists", "skip"], b"").await.unwrap();
+    assert_eq!(skipped.report().value()["meta"]["resourceId"], RESOURCE);
+    let queries = host.wire.queries.lock().unwrap();
+    assert_eq!(queries[0], vec![("recursive".into(), "false".into())]);
+    assert_eq!(
+        queries[1],
+        vec![
+            ("recursive".into(), "false".into()),
+            ("continuationToken".into(), token.into()),
+        ]
+    );
+    assert_eq!(host.requests().len(), 2);
+    drop(queries);
+
+    let mut host = Host::new();
+    host.reply(
+        200,
+        json!({"value":[resource()],"continuationToken":"next"}),
+    );
+    host.reply(200, json!({"value":[resource()]}));
+    assert!(matches!(
+        host.run(&["--if-exists", "skip"], b"").await,
+        Err(CreateCommandError::Policy(CreateError::AmbiguousLeaf))
+    ));
+    assert_eq!(host.requests().len(), 2);
+    assert_eq!(host.approval.calls, 0);
+
+    let mut host = Host::new();
+    host.reply(200, json!({"value":[],"continuationToken":"next"}));
+    host.reply(403, json!({"errorCode":"Denied"}));
+    assert!(matches!(
+        host.run(&[], b"").await,
+        Err(CreateCommandError::Discovery)
+    ));
+    assert_eq!(host.requests().len(), 2);
+    assert_eq!(host.approval.calls, 0);
+
+    let mut host = Host::new();
+    for page in 0..10 {
+        host.reply(
+            200,
+            json!({"value":[],"continuationToken":format!("page-{page}")}),
+        );
+    }
+    assert!(matches!(
+        host.run(&[], b"").await,
+        Err(CreateCommandError::Discovery)
+    ));
+    assert_eq!(host.requests().len(), 10);
+    assert_eq!(host.approval.calls, 0);
+}
+
+#[tokio::test]
+async fn completed_native_create_revalidates_root_folder_and_preserves_returned_evidence() {
+    for wait in [false, true] {
+        for folder in [Value::Null, json!(RESOURCE), json!("bad-folder"), json!(42)] {
+            let mut created = resource();
+            created["folderId"] = folder.clone();
+            let mut host = Host::new();
+            host.reply(200, json!({"value":[]}));
+            if wait {
+                let mut initial = resource();
+                initial["folderId"] = Value::Null;
+                host.accepted(initial);
+                host.reply(200, json!({"status":"Succeeded"}));
+                host.reply(200, created);
+            } else {
+                host.reply(201, created);
+            }
+            let delivery = host
+                .run(
+                    if wait {
+                        &["--wait", "--project", "displayName"]
+                    } else {
+                        &["--project", "displayName"]
+                    },
+                    b"",
+                )
+                .await
+                .unwrap();
+            let valid_root = folder.is_null();
+            assert_eq!(delivery.report().exit_code(), u8::from(!valid_root));
+            let mut bytes = Vec::new();
+            delivery.deliver(&mut bytes).unwrap();
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value["data"], "Exact");
+            assert_eq!(value["meta"]["completed"], valid_root);
+            assert_eq!(value["meta"]["folderId"], folder);
+            assert_eq!(value["meta"]["folderIdObserved"], true);
+            assert_eq!(
+                value["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            assert_eq!(
+                value["meta"]["submission"]["folderId"],
+                if wait { Value::Null } else { folder }
+            );
+            assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+            assert_eq!(host.requests().len(), if wait { 4 } else { 2 });
+            assert_eq!(
+                host.requests()
+                    .iter()
+                    .filter(|request| request.0 == "POST")
+                    .count(),
+                1
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn accepted_folder_observations_stay_protected_when_later_poll_fails() {
+    let mut initial = resource();
+    initial["folderId"] = json!(RESOURCE);
+    let mut host = Host::new();
+    host.reply(200, json!({"value":[]}));
+    host.accepted(initial);
+    host.reply(500, json!({"errorCode":"SyntheticPollFailure"}));
+    let failed = host
+        .run(&["--wait", "--project", "displayName"], b"")
+        .await
+        .unwrap();
+    assert_eq!(failed.report().exit_code(), 1);
+    let mut bytes = Vec::new();
+    failed.deliver(&mut bytes).unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    let meta = &value["meta"];
+    assert_eq!(value["data"], "Exact");
+    assert_eq!(meta["completed"], false);
+    assert_eq!(meta["submission"]["httpStatus"], 202);
+    assert_eq!(meta["submission"]["folderId"], RESOURCE);
+    assert_eq!(meta["submission"]["folderIdObserved"], true);
+    assert_eq!(meta["submission"]["resource"]["id"], RESOURCE);
+    assert_eq!(
+        meta["submission"]["operationHandle"],
+        format!("/operations/{OPERATION}")
+    );
+    assert_eq!(meta["observation"]["httpStatus"], 500);
+    assert_eq!(meta["remoteReplayed"], false);
+    assert_eq!(host.requests().len(), 3);
 }
 
 #[tokio::test]
