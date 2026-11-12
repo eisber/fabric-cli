@@ -23,6 +23,14 @@ pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 /// The service's maximum query execution duration, not a client deadline.
 pub const SERVICE_QUERY_MAX_SECONDS: u64 = 90;
 
+#[cfg(test)]
+mod ci_measurement {
+    #[test]
+    fn query_name_budget_fits_within_request_budget() {
+        assert!(std::hint::black_box(super::MAX_QUERY_NAME_BYTES) < super::MAX_REQUEST_BYTES);
+    }
+}
+
 /// Explicit response encoding; never automatically retried with another version.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ArrowVersion {
