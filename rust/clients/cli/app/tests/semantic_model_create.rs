@@ -88,10 +88,10 @@ fn accepted_headers() -> Headers {
     let mut headers = Headers::new();
     headers.insert("x-ms-operation-id", OPERATION);
     headers.insert(
-        "Location",
+        "location",
         format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}"),
     );
-    headers.insert("Retry-After", "1");
+    headers.insert("retry-after", "1");
     headers
 }
 
