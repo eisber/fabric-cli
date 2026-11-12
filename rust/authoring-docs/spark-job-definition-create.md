@@ -100,6 +100,12 @@ accepted resource identity separately from later HTTP observations. A failed
 poll or malformed final result cannot erase initial evidence or turn into
 completed success. Malformed no-wait acceptance retains bounded raw response
 bytes for reconciliation and still returns a nonzero result.
+An operation-result response other than the required 200 is not completed
+creation. Unexpected 201, 202 or 204 result responses remain invalid/unknown
+and nonzero, while preserving the original shared-engine typed HTTP error and
+status separately from the receipt classification. Genuine non-success HTTP
+rejections and provider-reported failed/cancelled operations remain failures;
+neither case discards initial acceptance evidence or permits mutation replay.
 
 Offline tests exercise the real parser, `PreparedCreateCommand`, SDK policy and
 `HttpExecutor` with scripted HTTP/synthetic credentials, and actual binary help,

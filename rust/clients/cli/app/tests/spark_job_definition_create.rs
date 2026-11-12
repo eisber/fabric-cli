@@ -1107,6 +1107,129 @@ mod native {
     }
 
     #[tokio::test]
+    async fn unexpected_success_result_status_is_unknown_and_keeps_original_typed_http_cause() {
+        use fabric_sdk_operations::OperationErrorKind;
+
+        for status in [200, 201, 202, 204, 403, 409] {
+            let initial = with_folder(item("Exact", "SparkJobDefinition"), Some(Value::Null));
+            let result_body = if status == 204 {
+                String::new()
+            } else if status >= 400 {
+                json!({"errorCode":"SyntheticResultRejected"}).to_string()
+            } else {
+                item("Exact", "SparkJobDefinition").to_string()
+            };
+            let h = Harness::new(vec![
+                missing(),
+                accepted(&initial.to_string()),
+                response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[(
+                        "location",
+                        &format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+                    )],
+                ),
+                response(status, &result_body, &[]),
+            ]);
+            let delivery = h
+                .execute(prepare(&["--wait"], None), &mut approve(), pending())
+                .await
+                .unwrap();
+            let report = delivery.report();
+            let receipt = report.value();
+            let completed = status == 200;
+            assert_eq!(report.exit_code(), u8::from(!completed), "{receipt}");
+            assert_eq!(receipt["meta"]["completed"], completed);
+            assert_eq!(
+                receipt["meta"]["status"],
+                if completed {
+                    "completed"
+                } else if status < 300 {
+                    "unknown"
+                } else {
+                    "failed"
+                },
+            );
+            if completed {
+                assert!(report.error().is_none());
+            } else {
+                let error = report.error().unwrap();
+                assert!(matches!(
+                    &error.kind,
+                    OperationErrorKind::Http { status: actual, .. } if *actual == status
+                ));
+                assert_eq!(error.operation_id.as_deref(), Some(OP));
+                assert!(error.mutation_may_have_occurred);
+                assert_eq!(
+                    receipt["error"]["code"],
+                    if status < 300 {
+                        "InvalidResponse"
+                    } else {
+                        "ServiceRejected"
+                    },
+                );
+                assert_eq!(receipt["meta"]["httpStatus"], status);
+            }
+            assert_eq!(receipt["meta"]["resourceId"], ITEM);
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+            assert_eq!(receipt["meta"]["submission"]["folderId"], Value::Null);
+            assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+            assert_eq!(
+                receipt["meta"]["submission"]["operationHandle"],
+                format!("/operations/{OP}"),
+            );
+            assert_eq!(receipt["meta"]["observation"]["httpStatus"], status);
+            assert_eq!(
+                receipt["meta"]["operationHandle"],
+                format!("/operations/{OP}")
+            );
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            assert_eq!(receipt["meta"]["remoteCancelled"], false);
+            h.assert_calls(4, 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_provider_failed_or_cancelled_operation_remains_definitive_failure() {
+        use fabric_sdk_operations::OperationErrorKind;
+
+        for state in ["Failed", "Cancelled"] {
+            let h = Harness::new(vec![
+                missing(),
+                accepted(&item("Exact", "SparkJobDefinition").to_string()),
+                response(200, &json!({"status":state}).to_string(), &[]),
+            ]);
+            let delivery = h
+                .execute(prepare(&["--wait"], None), &mut approve(), pending())
+                .await
+                .unwrap();
+            let report = delivery.report();
+            let receipt = report.value();
+            assert_eq!(report.exit_code(), 1);
+            assert_eq!(receipt["meta"]["status"], "failed");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["error"]["code"], "OperationFailed");
+            assert_eq!(receipt["meta"]["operationStatus"], state);
+            assert!(matches!(
+                &report.error().unwrap().kind,
+                OperationErrorKind::OperationFailed { status, .. } if status == state
+            ));
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+            assert_eq!(
+                receipt["meta"]["operationHandle"],
+                format!("/operations/{OP}")
+            );
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            assert_eq!(receipt["meta"]["remoteCancelled"], false);
+            h.assert_calls(3, 1);
+        }
+    }
+
+    #[tokio::test]
     async fn cancellation_deadline_and_body_failure_retain_operation_without_replay() {
         for body_failure in [false, true] {
             let mut headers = Headers::new();
