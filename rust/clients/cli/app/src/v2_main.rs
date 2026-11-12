@@ -30,6 +30,8 @@ use std::{
 #[path = "headless.rs"]
 mod headless;
 mod v2_exists_main;
+#[cfg(feature = "v2-link-lakehouse")]
+mod v2_link_lakehouse_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -141,10 +143,21 @@ fn run() -> Result<(), Failure> {
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-link-lakehouse")]
+        writeln!(io::stdout().lock(), "\nLakehouse link host: link <relationship-path> --input FILE|- [--wait]\n                     artifact lakehouse link <relationship-path> --input FILE|- [--wait]\nLink requires explicit terminal approval; only GUID-qualified .Shortcut relationships are supported.")
+            .map_err(|_| failed("OutputFailed", "Link help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
+    }
+    #[cfg(feature = "v2-link-lakehouse")]
+    if args.first().and_then(|value| value.to_str()) == Some("link")
+        || (args.first().and_then(|value| value.to_str()) == Some("artifact")
+            && args.get(1).and_then(|value| value.to_str()) == Some("lakehouse")
+            && args.get(2).and_then(|value| value.to_str()) == Some("link"))
+    {
+        return v2_link_lakehouse_main::run(args);
     }
     if args
         .first()

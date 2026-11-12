@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add an opt-in bounded Lakehouse shortcut link executable with explicit approval and retained native outcome evidence
+time: 2026-11-11T23:15:00Z
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber

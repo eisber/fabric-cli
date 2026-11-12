@@ -5,9 +5,58 @@
 The additive `fabric_cli_mutations::v2_link` module composes native relationship
 requests with caller-owned resolution, input, approval, and execution. It does
 not replace the Python CLI, Rust `ln`/`mklink`, or their compatibility fixtures.
-Its standalone command schema is not mounted in the production executable.
-Central registry, SDK facade, native file/resolver adapters, and executable
-composition remain separate integration requirements.
+The experimental `fabric-cli` app now mounts only the Lakehouse root/facade
+in the explicitly selected `fab-cli-v2` head with `headless,v2-link-lakehouse`.
+Other owners retain their library-only composition in this slice. Central
+discovery registry integration remains separate; legacy `fab-rs ln` is unchanged.
+
+## Bounded Lakehouse executable host
+
+Build from `rust/` with
+`cargo build --locked -p fabric-cli --bin fab-cli-v2 --features headless,v2-link-lakehouse`.
+The additional feature alone does not install native identity or transport.
+Neither default, broker-only nor headless-without-link builds mount this leaf.
+
+```text
+fab-cli-v2 link /<workspace-guid>.Workspace/<item-guid>.Lakehouse/Files/landing/sales.Shortcut --input shortcut.json
+fab-cli-v2 artifact lakehouse link /<workspace-guid>.Workspace/<item-guid>.Lakehouse/Tables/sales.Shortcut --input - --wait
+```
+
+GUID-qualified typed selectors deliberately avoid name discovery, implicit
+context and ambiguity. The final exact `.Shortcut` marker addresses a
+relationship, not file contents; it is removed only from the final name.
+Nested Files parents are preserved; relationship-marked parents are rejected
+rather than traversed. Tables placement and provider-specific
+target validation remain owned by the existing SDK validator; schema locations
+are not enabled by this host. A Warehouse source ID remains valid, but a
+Warehouse destination fails even if the caller supplied a `.Lakehouse` suffix.
+After approval, one bounded item metadata GET must establish the captured
+Lakehouse ID/type before the sole shortcut POST.
+
+Input is a regular non-symlink file or explicit stdin, at most 1 MiB, strict
+UTF-8 and duplicate-free JSON. Local validation, including body/destination
+conflicts, precedes credential selection and all requests. The local host
+assumes a trusted parent filesystem namespace, not race-proof ancestor pinning.
+`FAB_RUST_AUTH_MODE` must select the existing headless provider explicitly;
+the existing `FAB_RUST_FABRIC_HOST` endpoint binding is reused with no fallback.
+No live authentication or Fabric mutation is part of offline validation.
+
+The native host asks for explicit yes/no confirmation on the controlling
+terminal, independently of JSON stdin. Empty input declines. It displays the
+captured destination, remote-write effect and explicit sensitivity-update
+effect together; no flag or connection ID grants approval. Missing/failed/
+declined approval makes no request. Approval and remote execution share a
+five-minute deadline, bounded responses/request count and the existing shared
+operation session. Expiry or Ctrl+C is local interruption, not remote
+cancellation or rollback. The process never resubmits a write.
+
+Successful stdout is one newline-terminated metadata receipt, distinguishing
+`accepted` from `succeeded`, with the exact relationship destination but no
+native source body. The caller-injected host retains full `LinkReceipt`/
+`LinkFailure`; a delivery error retains its original receipt. Native stderr
+projects status, operation ID and mutation uncertainty for reconciliation, not
+automatic retries. A partial stdout/flush failure is an error, never a new POST.
+This is an experimental host, not live tenant, native-matrix or release proof.
 
 ## Operation and command surface
 

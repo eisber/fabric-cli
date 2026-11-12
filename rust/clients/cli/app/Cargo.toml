@@ -43,6 +43,11 @@ name = "v2_help"
 path = "tests/v2_help.rs"
 required-features = ["v2-discovery"]
 
+[[test]]
+name = "v2_link_lakehouse_binary"
+path = "tests/v2_link_lakehouse_binary.rs"
+required-features = ["headless"]
+
 [[bin]]
 name = "fab-cli-v2"
 path = "src/v2_main.rs"
@@ -79,6 +84,7 @@ workspace-read-v2 = []
 v2-cancel = []
 v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
+v2-link-lakehouse = []
 v2-copy = []
 v2-deploy = []
 v2-discovery = ["dep:fabric-sdk-discovery"]

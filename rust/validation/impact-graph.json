@@ -3002,6 +3002,20 @@
   ],
   "profiles": [
     {
+      "id": "v2-link-lakehouse",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-lakehouse"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-link-lakehouse-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-lakehouse", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless", "dependency-graph"]
+    },
+    {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-refresh"],
