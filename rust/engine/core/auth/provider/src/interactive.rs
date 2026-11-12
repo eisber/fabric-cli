@@ -302,6 +302,14 @@ impl fmt::Debug for InteractiveCredential {
 }
 
 impl InteractiveCredential {
+    /// Enable the fixed public PBI bootstrap scope on this exact selected session.
+    ///
+    /// Refresh stays silent and retains the existing selected-generation checks.
+    /// Access-token principal verification remains a separate required capability.
+    pub fn with_pbi_bootstrap(self: &Arc<Self>) -> Arc<dyn TokenCredential> {
+        Arc::new(PbiCredential(Arc::clone(self)))
+    }
+
     /// Initiates device authorization only on explicit user login intent.
     /// Acquires all three resource tokens before publishing a selected session.
     /// Dropping this future cancels polling; it never opens a browser.
@@ -482,6 +490,27 @@ impl InteractiveCredential {
         state.revision = revision;
         state.tokens.insert(scope, acquired.token.clone());
         Ok(acquired.token)
+    }
+}
+
+#[derive(Debug)]
+struct PbiCredential(Arc<InteractiveCredential>);
+
+#[async_trait]
+impl TokenCredential for PbiCredential {
+    async fn get_token(
+        &self,
+        scopes: &[&str],
+        options: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
+        if scopes == [fabric_core::Audience::PowerBiBootstrap.scope()] {
+            return self
+                .0
+                .acquire(fabric_core::Audience::PowerBiBootstrap.scope())
+                .await
+                .map_err(|error| Error::new(ErrorKind::Credential, error));
+        }
+        self.0.get_token(scopes, options).await
     }
 }
 

@@ -80,6 +80,7 @@ async fn transport_guard_rejects_wrong_authority_path_method_and_redirect_before
         endpoint: Url::parse("https://login.microsoftonline.com/tenant/oauth2/v2.0/token").unwrap(),
         host: None,
         managed_client: None,
+        pbi_bootstrap: false,
     };
     for (url, method) in [
         (

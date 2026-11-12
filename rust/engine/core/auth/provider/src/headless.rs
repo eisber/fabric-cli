@@ -366,6 +366,7 @@ pub struct HeadlessCredential {
     credential: Arc<dyn TokenCredential>,
     host: Option<ManagedHost>,
     pipeline: Option<PipelinesConfig>,
+    pbi_bootstrap: bool,
 }
 
 impl fmt::Debug for HeadlessCredential {
@@ -390,6 +391,29 @@ impl HeadlessCredential {
     pub fn new(
         input: HeadlessInput,
         http: Arc<dyn HttpClient>,
+    ) -> Result<Arc<Self>, HeadlessError> {
+        Self::compose(input, http, false)
+    }
+
+    /// Explicitly enables the fixed public-cloud PBI bootstrap scope.
+    ///
+    /// This does not verify access-token claims or authorize workload egress.
+    /// Consumers must independently verify the selected Fabric/PBI principal.
+    /// All other constructor, host and provider restrictions remain unchanged.
+    ///
+    /// # Errors
+    /// Returns the same sanitized configuration failures as [`Self::new`].
+    pub fn new_with_pbi_bootstrap(
+        input: HeadlessInput,
+        http: Arc<dyn HttpClient>,
+    ) -> Result<Arc<Self>, HeadlessError> {
+        Self::compose(input, http, true)
+    }
+
+    fn compose(
+        input: HeadlessInput,
+        http: Arc<dyn HttpClient>,
+        pbi_bootstrap: bool,
     ) -> Result<Arc<Self>, HeadlessError> {
         let host = match &input {
             HeadlessInput::ManagedIdentity { host, .. } => {
@@ -429,6 +453,7 @@ impl HeadlessCredential {
             inner: http,
             endpoint,
             host: host.clone(),
+            pbi_bootstrap,
             managed_client: match &input {
                 HeadlessInput::ManagedIdentity { client_id, .. } => client_id.clone(),
                 _ => None,
@@ -501,6 +526,7 @@ impl HeadlessCredential {
             credential,
             host,
             pipeline,
+            pbi_bootstrap,
         }))
     }
 }
@@ -518,7 +544,8 @@ impl TokenCredential for HeadlessCredential {
                 | ["https://storage.azure.com/.default"]
                 | ["https://management.azure.com/.default"]
                 | ["https://database.windows.net/.default"]
-        ) {
+        ) && !(self.pbi_bootstrap && scopes == [fabric_core::Audience::PowerBiBootstrap.scope()])
+        {
             return Err(credential_error(HeadlessError::Scope));
         }
         if let Some(host) = &self.host {
@@ -547,6 +574,7 @@ struct CredentialHttp {
     endpoint: Url,
     host: Option<ManagedHost>,
     managed_client: Option<String>,
+    pbi_bootstrap: bool,
 }
 
 impl fmt::Debug for CredentialHttp {
@@ -595,12 +623,13 @@ impl HttpClient for CredentialHttp {
                     .iter()
                     .filter(|(name, value)| {
                         name == "resource"
-                            && matches!(
+                            && (matches!(
                                 value.as_ref(),
                                 "https://api.fabric.microsoft.com"
                                     | "https://storage.azure.com"
                                     | "https://management.azure.com"
-                            )
+                            ) || (self.pbi_bootstrap
+                                && value == "https://analysis.windows.net/powerbi/api"))
                     })
                     .count()
                     != 1

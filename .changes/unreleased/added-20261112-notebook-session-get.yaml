@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in native exact Notebook Jupyter session GET and its Notebook facade with explicit owner-bound MWC authorization, bounded read receipts, and no-clobber delivery.
+time: 2026-11-12T12:00:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

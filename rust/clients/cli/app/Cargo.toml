@@ -71,6 +71,18 @@ path = "tests/v2_preview_entry.rs"
 name = "interactive_arguments"
 required-features = ["interactive"]
 
+[[test]]
+name = "notebook_workload_identity"
+required-features = ["notebook-workload"]
+
+[[test]]
+name = "runtime_notebook_native"
+required-features = ["notebook-workload"]
+
+[[test]]
+name = "runtime_notebook_session"
+required-features = ["headless"]
+
 [features]
 default = []
 semantic-model = ["dep:fabric-cli-semantic-model"]
@@ -90,6 +102,7 @@ windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-b
 native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:chrono"]
 native-read = ["native-host", "windows-broker"]
 headless = ["native-host", "fabric-identity/headless"]
+notebook-workload = ["headless", "runtime-v2", "fabric-sdk-http/notebook-workload"]
 certificate-store-windows = ["headless", "fabric-identity/certificate-store-windows"]
 certificate-store-pkcs11 = ["headless", "fabric-identity/certificate-store-pkcs11"]
 certificate-store-macos = ["headless", "fabric-identity/certificate-store-macos"]
@@ -153,12 +166,18 @@ async-trait.workspace = true
 azure_core.workspace = true
 fabric-sdk-http.workspace = true
 parquet.workspace = true
+ring.workspace = true
 tokio.workspace = true
 
 [[test]]
 name = "runtime_v2"
 path = "tests/runtime_v2.rs"
 required-features = ["runtime-v2"]
+
+[[test]]
+name = "runtime_native_host"
+path = "tests/runtime_native_host.rs"
+required-features = ["runtime-v2", "native-host"]
 
 [[test]]
 name = "graph_refresh_v2"

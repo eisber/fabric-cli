@@ -30,6 +30,10 @@ use std::{
 #[path = "headless.rs"]
 mod headless;
 mod v2_exists_main;
+#[cfg(feature = "notebook-workload")]
+mod v2_notebook_connect;
+#[cfg(feature = "notebook-workload")]
+mod v2_notebook_session_get;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -45,6 +49,10 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "notebook-workload")]
+    if v2_notebook_session_get::claims(&args) {
+        return std::process::ExitCode::from(v2_notebook_session_get::run(args));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -141,6 +149,9 @@ fn run() -> Result<(), Failure> {
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "notebook-workload")]
+        writeln!(io::stdout().lock(), "Experimental Notebook exact-session GET: get /<name>.Workspace/<name>.Notebook/sessions/<explicitJupyterSessionId> (also artifact notebook get). Select FAB_RUST_NOTEBOOK_BINDING; use the exact session path with --help for read bounds. No active/latest selection or readiness claim.")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
@@ -182,32 +193,7 @@ fn run() -> Result<(), Failure> {
         )
     })?;
     let prepared = PreparedGet::preflight(command, &cwd).map_err(command_failure)?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
-        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
-            failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            )
-        })?,
-        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
-        Err(_) => {
-            return Err(failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            ));
-        }
-    };
+    let (selection, endpoint) = capture_fabric_selection()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(2)
@@ -278,6 +264,38 @@ fn run() -> Result<(), Failure> {
     Ok(())
 }
 
+// Child command modules reuse this capture and NativeSession rather than
+// installing a second credential/transport selection chain.
+fn capture_fabric_selection() -> Result<(headless::Selection, EndpointBinding), Failure> {
+    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
+        failed(
+            "NotConfigured",
+            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
+            1,
+        )
+    })?;
+    let selection = headless::Selection::capture(&mode)
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
+        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+            failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            )
+        })?,
+        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
+        Err(_) => {
+            return Err(failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            ));
+        }
+    };
+    Ok((selection, endpoint))
+}
+
 struct NativeSession {
     context: RequestContext,
     storage_selection: CredentialSelection,
@@ -290,6 +308,15 @@ impl NativeSession {
         selection: headless::Selection,
         endpoint: EndpointBinding,
         timeout: Duration,
+    ) -> Result<Self, Failure> {
+        Self::with_provider_policy(selection, endpoint, timeout, false)
+    }
+
+    fn with_provider_policy(
+        selection: headless::Selection,
+        endpoint: EndpointBinding,
+        timeout: Duration,
+        pbi_bootstrap: bool,
     ) -> Result<Self, Failure> {
         let transport = transport_options(timeout);
         let identity_http: Arc<dyn azure_core::http::HttpClient> = match selection
@@ -331,9 +358,12 @@ impl NativeSession {
                     )
                 })?;
         let _explicit_provider_binding = (&selection.client, &selection.binding);
-        let credential = selection
-            .credential(identity_http)
-            .map_err(|(code, message, exit)| failed(code, message, exit))?;
+        let credential = if pbi_bootstrap {
+            selection.credential_with_pbi_policy(identity_http, true)
+        } else {
+            selection.credential(identity_http)
+        }
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
         let service_http: Arc<dyn azure_core::http::HttpClient> =
             Arc::new(NativeHttpClient::new(transport).map_err(|_| {
                 failed(

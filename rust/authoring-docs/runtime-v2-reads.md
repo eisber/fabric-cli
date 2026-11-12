@@ -8,6 +8,14 @@ injected `NativeExecutor`; preparing/printing a request is never remote success.
 It does not replace the Python CLI, Rust v1 parser, or existing executable.
 It is one incremental H1 slice, not implementation of all 28 grouped commands.
 
+The historical H1 qualification statements below describe that library slice.
+The later opt-in `notebook-workload` feature adds the
+[explicit native Notebook connector](runtime-notebook-host.md) and
+[exact Jupyter session GET](runtime-notebook-session-get.md). The common
+library head still creates no identity, transport or runtime itself. Default
+and v1 dispatch are unchanged; later source availability is not native or
+live-service qualification.
+
 ## Selected contracts and source
 
 The selected grouped proposal is Commands
@@ -221,3 +229,46 @@ resolver, atomic no-clobber file sink, terminal stream policy, native platform
 acceptance and credential backend remain explicit host gaps. No WS/network
 streaming, credential/settings discovery, live/auth operation, PR, push or
 merge is part of this slice.
+
+## Shared native host composition
+
+With `runtime-v2,native-host`, `runtime_v2::host` adds an explicit composition
+seam, not a second SDK engine:
+
+- `ExplicitResolver::new(OwnerPath, ResolvedTarget)` binds one exact typed human
+  owner to the caller's existing SDK object. Foreign owners fail before execution.
+- `prepare_destination(label, cwd, deadline, cancelled)` checks output on an
+  owned worker, without creating files. `Destination::check` is the synchronous
+  equivalent for callers already on a blocking worker.
+- `acquire(invocation, executor, resolver, options, destination, deadline,
+  cancelled)` calls the existing `RuntimeHead` and SDK, retaining one complete
+  bounded receipt. `PendingRead::deliver(destination, deadline, cancelled)`
+  consumes the observation once. It atomically uses `create_new` for files.
+- The caller supplies **one original `Instant` deadline**, including preflight,
+  credential acquisition, HTTP streaming, serialization and delivery. Pin one
+  cancellation future and borrow it across phases; do not reinstall a signal
+  listener or restart the timeout between phases. Cancellation is local only.
+
+Delivery reuses the native host's owned-handle worker policy. Workers do not
+hold Rust's global stdout/stderr locks. Raw UTF-8 output to a Windows console is
+rejected by that existing policy; redirect stdout or select a file. Partial
+delivery and abandoned workers are not rolled back or replayed; byte counts are
+snapshots, not a promise that an abandoned OS write has stopped. Front ends must
+bound runtime shutdown. Small ASCII diagnostics use owned stderr and the original
+deadline, with no synchronous fallback when it is blocked or time has expired.
+
+The host **does not authorize Notebook MWC execution**. The production
+`NativeFabricExecutor` still accepts only its exact Fabric `/v1` binding.
+The current endpoint/audience primitives do not establish an approved Notebook
+workload origin/audience/identity binding. In particular, never substitute a
+Fabric token for a `pbidedicated.windows.net` endpoint or relax the adapter's
+guard. Enabling production Notebook reads requires an authoritative workload
+authorization contract and a separately reviewed, explicitly selected adapter.
+No configuration, token acquisition or endpoint discovery is installed here.
+
+`runtime_native_host` tests the real parser, shared host and SDK. Notebook
+fidelity uses a scripted `NativeExecutor` and is **not** production MWC proof.
+A separate supported Fabric-profile test injects an Azure credential and HTTP
+client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor`
+stack; negative Notebook tests verify that stack refuses before requesting a
+token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
