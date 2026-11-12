@@ -17,6 +17,11 @@ The [Report binding](report-native-reads.md#definition-create-schema-adapter)
 documents this branch's bounded opt-in native mount; default and v1 behavior
 remain separate.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 Approval inspects the exact already-prepared method, bound URL and outgoing
 bytes, including the generated body for omitted input. Terminal controls are
 escaped without reserializing the body that will be transmitted. Additional
