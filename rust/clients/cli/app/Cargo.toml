@@ -161,6 +161,11 @@ path = "tests/runtime_v2.rs"
 required-features = ["runtime-v2"]
 
 [[test]]
+name = "livy_session_get_entry"
+path = "tests/livy_session_get_entry.rs"
+required-features = ["headless", "runtime-v2"]
+
+[[test]]
 name = "runtime_native_host"
 path = "tests/runtime_native_host.rs"
 required-features = ["runtime-v2", "native-host"]

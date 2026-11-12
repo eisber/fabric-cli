@@ -30,6 +30,8 @@ use std::{
 #[path = "headless.rs"]
 mod headless;
 mod v2_exists_main;
+#[cfg(feature = "runtime-v2")]
+mod v2_livy_session_get_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -45,6 +47,10 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "runtime-v2")]
+    if v2_livy_session_get_main::claims(&args) {
+        return std::process::ExitCode::from(v2_livy_session_get_main::run(args));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),

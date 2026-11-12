@@ -53,6 +53,20 @@ profile selection or output infrastructure. Collections, Notebook sessions and
 statement/result routes remain unclaimed. The existing Notebook facade does not
 accept Lakehouse or LivyService owners.
 
+The `fab-cli-v2` binary built with `headless,runtime-v2` separately mounts only
+exact classic session GET through `v2_livy_session_get_main`. Its explicit
+production binding is Fabric JSON API `2023-12-01`, using the existing
+`FAB_RUST_AUTH_MODE`, `FAB_RUST_FABRIC_HOST` and `NativeSession` composition.
+Both typed owner selectors must be GUID-qualified; display names fail with
+`ExplicitBindingRequired`, without discovery or treating names as backend IDs.
+The session ID is an opaque SDK identifier, not a GUID requirement.
+The fixed original 30-second deadline includes preflight, identity acquisition,
+HTTP, serialization and output. `get <exact-path> --help` is local and bounded.
+Native `.LivyService` is recognized but fails with `UnsupportedCapability`
+until a separately authorized workload executor is available; it never
+falls back to the Fabric profile. Default/v1 builds and foreign routes are
+unchanged.
+
 Paths are logical resource paths, not Windows file paths or URLs:
 
 ```text
@@ -197,7 +211,7 @@ document. The coordinator must add the optional manifest feature
 pub mod runtime_v2;
 ```
 
-The integration test crate has 30 test functions, starts with
+The original H1 integration test crate has 30 test functions, starts with
 `#![cfg(feature = "runtime-v2")]` and denies `unnameable_test_items`.
 Tests use the actual parser and SDK plus a
 single-response fake implementing `NativeExecutor`, not a mock replacement
@@ -205,6 +219,18 @@ command engine or a production network. They cover content fidelity,
 canonical/facade equality, Jupyter/native/Fabric reads, failed/unknown states,
 existing result JSON, accepted responses, owner/ID/path/type errors, budgets,
 unsupported options, no-clobber preflight and partial sink-delivery failure.
+
+The exact classic-session leaf adds parser/admission and actual
+`NativeFabricExecutor`/`HttpExecutor` scripted-HTTP cases under
+`tests/runtime_v2/livy_session_get.rs`. With `native-host`, additional tests
+compose the released host's explicit resolver, original deadline/cancellation,
+preflight and one-shot file delivery. These are offline injected-stack tests, not authorization for arbitrary native
+Livy origins. `livy_session_get_entry` separately exercises the real optional
+binary's help, owner/SDK-ID preflight, no-clobber and broken stdout without
+identity or HTTP.
+The impact registry includes these submodule inputs and a separate
+`runtime-v2-native-host` profile without changing the existing default/v1 or
+runtime-only profile.
 
 **Actually checked in this lane:** rustfmt parsing/formatting of owned Rust
 sources and source/ownership/whitespace checks. Initial lightweight rustc
@@ -223,8 +249,10 @@ not passing runtime tests. After adding the feature/export, the coordinator's
 serialized validator must run the focused `fabric-cli` runtime-v2 test target,
 all-target checks/lints and affected consumers, then independent reviews.
 
-There is still **no standalone v2 HTTP/auth/output host or executable dispatch**.
-The default CLI is untouched. Caller-injected fakes prove neither deployed
+At the original H1 checkpoint there was **no standalone runtime v2 host or
+executable dispatch**. The additive host and exact Fabric-session mount below
+do not enable other runtime leaves. The default CLI is untouched.
+Caller-injected fakes prove neither deployed
 Notebook/Livy qualification nor real executable remote completion. HTTP
 authorization/redirect/deadline/streaming behavior, actual metadata-backed
 resolver, atomic no-clobber file sink, terminal stream policy, native platform

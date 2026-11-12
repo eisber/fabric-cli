@@ -249,7 +249,7 @@ pub struct ReadReceipt {
     pub effect: ReadEffect,
     /// Read completion versus acceptance, independent of workload success.
     pub status: ReadStatus,
-    /// Bounded JSON representation; list is always an array, accepted-only is null.
+    /// Bounded native JSON; an empty accepted acknowledgement has null data.
     pub data: Value,
     /// Provider/provenance/coverage and separate workload evidence.
     pub meta: ReadMeta,
