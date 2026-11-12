@@ -1707,3 +1707,160 @@ async fn unexpected_success_result_status_is_unknown_not_a_definitive_service_re
         harness.assert_requests(&expected);
     }
 }
+
+#[tokio::test]
+async fn duplicate_keys_in_final_resource_never_replace_accepted_identity_or_prove_completion() {
+    let responses = [
+        format!(
+            r#"{{"id":"{ITEM}","id":"{OP}","workspaceId":"{WS}","type":"Warehouse","displayName":"Exact"}}"#
+        ),
+        format!(
+            r#"{{"id":"{OP}","id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Exact"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","\u0069d":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Exact"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Other","displayName":"Exact"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Exact","folderId":"{OP}","folderId":null}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Exact","properties":{{"collationType":"first","collationType":"second"}}}}"#
+        ),
+    ];
+    for raw in responses {
+        let harness = Harness::new(vec![
+            listing(json!([])),
+            accepted(resource(), "0"),
+            reply(StatusCode::Ok, json!({"status":"Succeeded"})),
+            Reply::Http(StatusCode::Ok, Headers::new(), raw.as_bytes().to_vec()),
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(None, &["--wait", "--project", "`null`"]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        let report = delivery.report();
+        assert_eq!(report.exit_code(), 1);
+        assert!(matches!(
+            report.error().unwrap().kind,
+            fabric_sdk_operations::OperationErrorKind::InvalidResponse
+        ));
+        let mut stdout = Vec::new();
+        delivery.deliver(&mut stdout).unwrap();
+        let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(receipt["error"]["code"], "InvalidResponse");
+        assert_eq!(receipt["meta"]["status"], "unknown");
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(receipt["meta"]["observedResource"]["id"], ITEM);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_eq!(receipt["meta"]["remoteCancelled"], false);
+        assert_eq!(receipt["data"], Value::Null);
+        use base64::Engine;
+        assert_eq!(
+            receipt["meta"]["unparsedResponseBodyBase64"],
+            base64::engine::general_purpose::STANDARD.encode(raw.as_bytes())
+        );
+        let mut expected = paths(true);
+        expected.extend([
+            ("GET", format!("/v1/operations/{OP}")),
+            ("GET", format!("/v1/operations/{OP}/result")),
+        ]);
+        harness.assert_requests(&expected);
+    }
+}
+
+#[tokio::test]
+async fn duplicate_keys_in_initial_created_or_accepted_body_are_not_successful_resource_evidence() {
+    let responses = [
+        format!(
+            r#"{{"id":"{OP}","id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Exact"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Other","displayName":"Exact"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Warehouse","displayName":"Other","\u0064isplayName":"Exact"}}"#
+        ),
+    ];
+    for raw in responses {
+        for accepted_response in [false, true] {
+            let response = if accepted_response {
+                let Reply::Http(status, headers, _) = accepted(Value::Null, "0") else {
+                    unreachable!()
+                };
+                Reply::Http(status, headers, raw.as_bytes().to_vec())
+            } else {
+                Reply::Http(StatusCode::Created, Headers::new(), raw.as_bytes().to_vec())
+            };
+            let harness = Harness::new(vec![listing(json!([])), response]);
+            let delivery = harness
+                .execute(
+                    prepare(None, &["--project", "`null`"]).unwrap(),
+                    &mut Approval::default(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            assert!(matches!(
+                delivery.report().error().unwrap().kind,
+                fabric_sdk_operations::OperationErrorKind::InvalidResponse
+            ));
+            let mut stdout = Vec::new();
+            delivery.deliver(&mut stdout).unwrap();
+            let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(receipt["error"]["code"], "InvalidResponse");
+            assert_eq!(receipt["meta"]["status"], "unknown");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["meta"]["resourceId"], Value::Null);
+            assert_eq!(receipt["meta"]["observedResource"], Value::Null);
+            assert_eq!(receipt["meta"]["submission"].get("resource"), None);
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if accepted_response { 202 } else { 201 }
+            );
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            assert_eq!(receipt["meta"]["remoteCancelled"], false);
+            assert_eq!(
+                receipt["meta"]["anticipatedEffects"][0]["kind"],
+                "meteredConsumption"
+            );
+            assert_eq!(receipt["data"], Value::Null);
+            use base64::Engine;
+            assert_eq!(
+                receipt["meta"]["unparsedResponseBodyBase64"],
+                base64::engine::general_purpose::STANDARD.encode(raw.as_bytes())
+            );
+            if accepted_response {
+                assert_eq!(
+                    receipt["meta"]["operationHandle"],
+                    format!("/operations/{OP}")
+                );
+                assert_eq!(
+                    receipt["meta"]["unparsedAcceptanceBodyBase64"],
+                    base64::engine::general_purpose::STANDARD.encode(raw.as_bytes())
+                );
+            } else {
+                assert_eq!(receipt["meta"]["operationHandle"], Value::Null);
+            }
+            harness.assert_requests(&paths(true));
+        }
+    }
+}

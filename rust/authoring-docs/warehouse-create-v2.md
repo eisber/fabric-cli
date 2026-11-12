@@ -133,3 +133,9 @@ local admission, approval refusal, original input timeout and closed pipes.
 The impact catalog registers both targets and the default/native feature
 profiles on Windows, Linux and macOS. Registration and source checks are not a
 claim that pending builds, native checks or independent review have passed.
+Owned response regressions also require duplicate JSON keys, including escaped
+aliases and nested duplicates, to fail closed in initial and final resources.
+They retain bounded raw-response evidence and any separately valid initial
+acceptance identity rather than trusting a last-key-wins interpretation. The
+shared strict-response correction and native execution remain separate gates;
+adding these fixtures alone does not establish that the current host passes.
