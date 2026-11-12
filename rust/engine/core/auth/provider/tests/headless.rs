@@ -29,6 +29,7 @@ const FABRIC: &str = "https://api.fabric.microsoft.com/.default";
 const STORAGE: &str = "https://storage.azure.com/.default";
 const ARM: &str = "https://management.azure.com/.default";
 const SQL: &str = "https://database.windows.net/.default";
+const PBI: &str = "https://analysis.windows.net/powerbi/api/.default";
 
 #[path = "headless/pipelines.rs"]
 mod pipelines;
@@ -158,6 +159,39 @@ async fn explicit_sql_scope_uses_a_separate_provider_request_without_fabric_fall
     let requests = http.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert!(body(&requests[0]).contains("scope=https%3A%2F%2Fdatabase.windows.net%2F.default"));
+}
+
+#[tokio::test]
+async fn fixed_pbi_bootstrap_requires_explicit_opt_in_and_keeps_other_scopes_unchanged() {
+    let never = FakeHttp::new([]);
+    assert!(secret(never.clone()).get_token(&[PBI], None).await.is_err());
+    assert!(never.requests.lock().unwrap().is_empty());
+    let http = FakeHttp::new([token("synthetic-pbi-token", 3600)]);
+    let credential = HeadlessCredential::new_with_pbi_bootstrap(
+        HeadlessInput::ClientSecret {
+            identity: identity(),
+            secret: Secret::new("synthetic-secret"),
+        },
+        http.clone(),
+    )
+    .unwrap();
+    assert!(credential.get_token(&[PBI, FABRIC], None).await.is_err());
+    assert!(http.requests.lock().unwrap().is_empty());
+    assert_eq!(
+        credential
+            .get_token(&[PBI], None)
+            .await
+            .unwrap()
+            .token
+            .secret(),
+        "synthetic-pbi-token"
+    );
+    let requests = http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(
+        body(&requests[0])
+            .contains("scope=https%3A%2F%2Fanalysis.windows.net%2Fpowerbi%2Fapi%2F.default")
+    );
 }
 
 #[tokio::test]

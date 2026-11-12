@@ -96,6 +96,9 @@ mod folders;
 mod items;
 pub mod native_runtime;
 pub mod native_stream;
+/// Explicit opt-in verified-principal Notebook workload read foundation.
+#[cfg(feature = "notebook-workload")]
+pub mod notebook_workload;
 mod operations;
 pub use evidence::{ExecutionEvidence, ExecutionTrace};
 #[cfg(test)]
@@ -392,61 +395,7 @@ impl HttpExecutor {
         progress: Option<&dyn ResponseProgress>,
     ) -> Result<WorkspaceResponse, ExecutionError> {
         for retry in 0..=3 {
-            if let Some(trace) = &self.trace {
-                trace.start(request.method());
-            }
-            let raw = self
-                .client
-                .execute_request(request)
-                .await
-                .map_err(|error| {
-                    if let Some(trace) = &self.trace {
-                        trace.transport(error.kind());
-                    }
-                    ExecutionError::Transport
-                })?;
-            let (status, headers, mut stream) = raw.deconstruct();
-            if let Some(trace) = &self.trace {
-                trace.headers(status.into(), &headers);
-            }
-            let mut response = WorkspaceResponse {
-                status: status.into(),
-                body: Vec::new(),
-                headers: headers
-                    .iter()
-                    .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
-                    .collect(),
-            };
-            if let Some(progress) = progress {
-                progress.record(&response, false)?;
-            }
-            let mut chunks = 0_usize;
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|error| {
-                    if let Some(trace) = &self.trace {
-                        trace.transport(error.kind());
-                    }
-                    ExecutionError::Transport
-                })?;
-                if chunk.len() > limit.get() - response.body.len() {
-                    if let Some(progress) = progress {
-                        progress.body_omitted(&response)?;
-                    }
-                    return Err(ExecutionError::ResponseLimit);
-                }
-                response.body.extend_from_slice(&chunk);
-                if let Some(progress) = progress {
-                    progress.record(&response, false)?;
-                }
-                chunks += 1;
-                if chunks == 64 {
-                    chunks = 0;
-                    yield_once().await;
-                }
-            }
-            if let Some(progress) = progress {
-                progress.record(&response, true)?;
-            }
+            let response = self.send_once(request, limit, progress).await?;
             let has_retry_after = response.headers.contains_key("retry-after");
             let retryable = request.method() == Method::Get
                 && (matches!(response.status, 502..=504)
@@ -469,6 +418,70 @@ impl HttpExecutor {
             self.wait_bounded(delay).await?;
         }
         unreachable!("the finite retry loop returns on its last iteration")
+    }
+
+    async fn send_once(
+        &self,
+        request: &Request,
+        limit: NonZeroUsize,
+        progress: Option<&dyn ResponseProgress>,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
+        if let Some(trace) = &self.trace {
+            trace.start(request.method());
+        }
+        let raw = self
+            .client
+            .execute_request(request)
+            .await
+            .map_err(|error| {
+                if let Some(trace) = &self.trace {
+                    trace.transport(error.kind());
+                }
+                ExecutionError::Transport
+            })?;
+        let (status, headers, mut stream) = raw.deconstruct();
+        if let Some(trace) = &self.trace {
+            trace.headers(status.into(), &headers);
+        }
+        let mut response = WorkspaceResponse {
+            status: status.into(),
+            body: Vec::new(),
+            headers: headers
+                .iter()
+                .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
+                .collect(),
+        };
+        if let Some(progress) = progress {
+            progress.record(&response, false)?;
+        }
+        let mut chunks = 0_usize;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| {
+                if let Some(trace) = &self.trace {
+                    trace.transport(error.kind());
+                }
+                ExecutionError::Transport
+            })?;
+            if chunk.len() > limit.get() - response.body.len() {
+                if let Some(progress) = progress {
+                    progress.body_omitted(&response)?;
+                }
+                return Err(ExecutionError::ResponseLimit);
+            }
+            response.body.extend_from_slice(&chunk);
+            if let Some(progress) = progress {
+                progress.record(&response, false)?;
+            }
+            chunks += 1;
+            if chunks == 64 {
+                chunks = 0;
+                yield_once().await;
+            }
+        }
+        if let Some(progress) = progress {
+            progress.record(&response, true)?;
+        }
+        Ok(response)
     }
 
     async fn wait_bounded(&self, delay: Duration) -> Result<(), ExecutionError> {

@@ -24,6 +24,8 @@ pub enum TokenAudience {
     Arm,
     /// Native SQL, acquired only for an explicit SQL token request.
     Sql,
+    /// Public PBI bootstrap, requested only through an explicit opt-in wrapper.
+    PowerBiBootstrap,
 }
 
 impl TokenAudience {
@@ -34,6 +36,7 @@ impl TokenAudience {
             Self::OneLake => "https://storage.azure.com/.default",
             Self::Arm => "https://management.azure.com/.default",
             Self::Sql => "https://database.windows.net/.default",
+            Self::PowerBiBootstrap => "https://analysis.windows.net/powerbi/api/.default",
         }
     }
 }
