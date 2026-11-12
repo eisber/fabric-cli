@@ -357,7 +357,21 @@ impl Selection {
         http: Arc<dyn azure_core::http::HttpClient>,
     ) -> Result<Arc<dyn azure_core::credentials::TokenCredential>, super::native_read::Failure>
     {
-        HeadlessCredential::new(self.input, http)
+        self.credential_with_pbi_policy(http, false)
+    }
+
+    pub(crate) fn credential_with_pbi_policy(
+        self,
+        http: Arc<dyn azure_core::http::HttpClient>,
+        pbi_bootstrap: bool,
+    ) -> Result<Arc<dyn azure_core::credentials::TokenCredential>, super::native_read::Failure>
+    {
+        let result = if pbi_bootstrap {
+            HeadlessCredential::new_with_pbi_bootstrap(self.input, http)
+        } else {
+            HeadlessCredential::new(self.input, http)
+        };
+        result
             .map(|credential| credential as Arc<dyn azure_core::credentials::TokenCredential>)
             .map_err(|_| {
                 super::native_read::failure(

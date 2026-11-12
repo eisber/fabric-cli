@@ -47,7 +47,12 @@ pub struct ParsedInvocation {
 }
 
 impl ParsedInvocation {
-    pub(super) fn validate(&self, options: ReadOptions) -> Result<(), ReadError> {
+    /// Validate typed input and finite host ceilings before local setup or identity.
+    ///
+    /// # Errors
+    /// Rejects inconsistent paths, unsupported facets/options and excessive budgets.
+    pub fn validate(&self, options: ReadOptions) -> Result<(), ReadError> {
+        options.validate()?;
         self.path.validate()?;
         if self.max_bytes == 0
             || self.output.is_empty()
