@@ -272,3 +272,19 @@ visibility and independent review remain integration gates.
 No live service/auth/settings/credential discovery, pushes, PRs or merges were
 performed. Missing host integration, streamed upload transport and deployed
 qualification remain explicit gaps; this is not whole-feature completion.
+
+## CLI v2 session-list consumer
+
+The opt-in [runtime Livy collection leaf](runtime-v2-reads.md#opt-in-livy-collection-executable)
+uses this SDK without a second HTTP or authentication engine. Its executable
+subset binds GUID-typed Lakehouses to an explicitly selected Fabric host using
+`fabric_versioned(..., "v1", "2023-12-01")`. It requests one `$top` page and
+preserves arrays, provider totals and unknown session state/fields. It does not
+change the SDK's `fabric` default version or native `size` behavior.
+
+The native `.LivyService/sessions` spelling is the same collection operation.
+It can use an independently authorized injected native executor, but the
+executable rejects native authorization as unsupported rather than reusing a
+Fabric token, discovering a workload host or substituting public history.
+Notebook Jupyter lists and individual session/statement reads remain separate
+leaves. Offline consumer tests do not establish live service qualification.
