@@ -50,6 +50,9 @@ pub mod stage_deploy;
 pub mod tables;
 pub mod tabular_export;
 pub mod update;
+/// Native Report definition binding for the separately opted-in shared create host.
+#[cfg(feature = "v2-create")]
+pub mod v2_create_report;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;

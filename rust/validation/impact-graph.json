@@ -631,11 +631,26 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-report-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_create_report.rs",
+        "rust/clients/cli/app/tests/v2_create_report.rs",
+        "rust/clients/cli/app/tests/v2_create_report/**"
+      ],
+      "depends_on": ["cli-create-host", "report-native-reads"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:v2_create_report"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "report-native-reads",
       "package": "fabric-sdk",
       "inputs": [
         "rust/engine/sdk/src/reports/**",
         "rust/engine/sdk/tests/reports.rs",
+        "rust/engine/sdk/tests/report_create.rs",
         "rust/authoring-docs/report-native-reads.md"
       ],
       "depends_on": [
@@ -645,6 +660,10 @@
         {
           "package": "fabric-sdk",
           "target": "test:reports"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:report_create"
         },
         {
           "package": "fabric-sdk",

@@ -114,10 +114,18 @@ validation to the existing SDK create planner. It does not mount a command,
 authorize a write or add an executor. Its `submit` method delegates an actual
 create plan to the existing `ItemMutations` request path, retaining the caller's
 completion policy and shared operation failure evidence without replay.
-Executable integration depends on the separately owned shared v2 create host.
-The new SDK `report_create` and CLI `v2_create_report` test sources are not
-execution evidence. The latter currently composes the existing parser, planner,
-Report adapter and scripted operation executor, not the unreleased native host.
+The opt-in `v2-create` module `fabric_cli::v2_create_report` implements the released
+shared host's `CreateBinding`. It verifies original strict JSON bytes against the
+planner's immutable input, then builds only the native Report POST. Whitespace,
+multipart payloads and native extension fields are sent unchanged. The shared
+host owns input, approval, discovery, LRO observation and receipt delivery; this
+binding adds none of those engines.
+
+The SDK `report_create` and CLI `v2_create_report` test sources include
+parser-to-shared-host-to-SDK scripted HTTP cases. Source availability is not
+execution evidence. Standalone binary dispatch still depends on the separately
+owned generic runner release; no binary or native qualification is claimed here.
+The impact graph includes the Report tests and the helper's opt-in profiles.
 
 The public Create Report API documents `ItemDisplayNameAlreadyInUse`, not an
 upsert or repeated-name create contract. The Report capability permits

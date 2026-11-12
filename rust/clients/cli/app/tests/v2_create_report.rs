@@ -5,6 +5,10 @@
 
 #![deny(unnameable_test_items)]
 
+#[cfg(feature = "v2-create")]
+#[path = "v2_create_report/host.rs"]
+mod host;
+
 use async_trait::async_trait;
 use azure_core::{
     credentials::{AccessToken, TokenRequestOptions},
