@@ -4,9 +4,7 @@
 //! Offline native HTTP/approval composition, including the unmodified SDK.
 #![deny(unnameable_test_items)]
 
-#[allow(dead_code)]
-#[path = "../../../../tests/compatibility/jobs/support.rs"]
-mod support;
+use super::super::v2_test_support as support;
 
 use super::*;
 use azure_core::http::{AsyncRawResponse, Body, Method};

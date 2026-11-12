@@ -35,6 +35,11 @@ mod v2_exists_main;
 mod v2_refresh_main;
 mod v2_search_main;
 
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../../../tests/compatibility/jobs/support.rs"]
+mod v2_test_support;
+
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {
     pub(crate) type Failure = (&'static str, String, u8);
