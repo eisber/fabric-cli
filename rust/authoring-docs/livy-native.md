@@ -272,3 +272,17 @@ visibility and independent review remain integration gates.
 No live service/auth/settings/credential discovery, pushes, PRs or merges were
 performed. Missing host integration, streamed upload transport and deployed
 qualification remain explicit gaps; this is not whole-feature completion.
+
+## Existing statement CLI consumer
+
+The opt-in `fab-cli-v2` statement reader consumes this SDK through the shared
+`RuntimeHead` and native host, with an explicit GUID Lakehouse owner and the
+existing Fabric-bound executor. It uses
+`session(id).statements().statement(id).get(BytePage::default()).execute(...)`
+for both the statement path and `/result` alias. It preserves the full JSON
+envelope and validates the returned individual statement ID; neither spelling
+submits a statement, traverses byte pages, extracts tabular output or claims
+execution success from read completion. Native `.LivyService` authentication
+does not fall back to Fabric. See the [runtime read executable
+contract](runtime-v2-reads.md#opt-in-existing-statement-executable) for selection,
+deadline, output and remaining qualification limits.

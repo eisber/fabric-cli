@@ -221,3 +221,95 @@ resolver, atomic no-clobber file sink, terminal stream policy, native platform
 acceptance and credential backend remain explicit host gaps. No WS/network
 streaming, credential/settings discovery, live/auth operation, PR, push or
 merge is part of this slice.
+
+## Shared native host composition
+
+With `runtime-v2,native-host`, `runtime_v2::host` adds an explicit composition
+seam, not a second SDK engine:
+
+- `ExplicitResolver::new(OwnerPath, ResolvedTarget)` binds one exact typed human
+  owner to the caller's existing SDK object. Foreign owners fail before execution.
+- `prepare_destination(label, cwd, deadline, cancelled)` checks output on an
+  owned worker, without creating files. `Destination::check` is the synchronous
+  equivalent for callers already on a blocking worker.
+- `acquire(invocation, executor, resolver, options, destination, deadline,
+  cancelled)` calls the existing `RuntimeHead` and SDK, retaining one complete
+  bounded receipt. `PendingRead::deliver(destination, deadline, cancelled)`
+  consumes the observation once. It atomically uses `create_new` for files.
+- The caller supplies **one original `Instant` deadline**, including preflight,
+  credential acquisition, HTTP streaming, serialization and delivery. Pin one
+  cancellation future and borrow it across phases; do not reinstall a signal
+  listener or restart the timeout between phases. Cancellation is local only.
+
+Delivery reuses the native host's owned-handle worker policy. Workers do not
+hold Rust's global stdout/stderr locks. Raw UTF-8 output to a Windows console is
+rejected by that existing policy; redirect stdout or select a file. Partial
+delivery and abandoned workers are not rolled back or replayed; byte counts are
+snapshots, not a promise that an abandoned OS write has stopped. Front ends must
+bound runtime shutdown. Small ASCII diagnostics use owned stderr and the original
+deadline, with no synchronous fallback when it is blocked or time has expired.
+
+The host **does not authorize Notebook MWC execution**. The production
+`NativeFabricExecutor` still accepts only its exact Fabric `/v1` binding.
+The current endpoint/audience primitives do not establish an approved Notebook
+workload origin/audience/identity binding. In particular, never substitute a
+Fabric token for a `pbidedicated.windows.net` endpoint or relax the adapter's
+guard. Enabling production Notebook reads requires an authoritative workload
+authorization contract and a separately reviewed, explicitly selected adapter.
+No configuration, token acquisition or endpoint discovery is installed here.
+
+`runtime_native_host` tests the real parser, shared host and SDK. Notebook
+fidelity uses a scripted `NativeExecutor` and is **not** production MWC proof.
+A separate supported Fabric-profile test injects an Azure credential and HTTP
+client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor`
+stack; negative Notebook tests verify that stack refuses before requesting a
+token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
+
+## Opt-in existing statement executable
+
+The `fab-cli-v2` binary built with `headless,runtime-v2` additionally mounts only
+classic existing statement GET and its `/result` alias:
+
+```text
+fab-cli-v2 get /11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Lakehouse/sessions/<session-id>/statements/<statement-id>[/result]
+```
+
+The executable requires exact GUID workspace and Lakehouse selectors; it does
+not resolve human display names or infer an active session. The broader library
+grammar remains unchanged. Select `FAB_RUST_FABRIC_HOST` explicitly and use the
+existing explicit `FAB_RUST_AUTH_MODE` headless configuration, including its
+account/client and tenant selection. No new credential/configuration discovery
+or command-line identity flags are installed. The typed Lakehouse path selects
+the Fabric profile, Fabric `v1`, and Livy API `2023-12-01`; the same captured
+endpoint binds both the SDK service and the authenticated HTTP executor.
+
+`.LivyService` statement paths remain recognized but production native-origin
+authorization is unsupported. They never inherit Fabric credentials or become a
+Fabric-profile alias. A native-profile SDK consumer still needs its own
+explicitly authorized injected executor. No MWC authorization policy is changed.
+
+Both spellings return the complete statement envelope, including unknown fields,
+secondary output data, raw failure details in `data`, state and byte cursors.
+A failed statement is a successful read with a separate failed workload
+observation, not a successful execution. HTTP 202 remains accepted only.
+`/result` neither extracts a dataframe nor traverses retained byte pages, and
+does not claim every original query row was recovered. There are no byte-range
+query parameters, automatic queries, statement submissions or remote cancels.
+
+This adapter reuses the parent executable's `NativeSession`, the existing
+`NativeFabricExecutor`, and the shared native output host. Output preflight
+precedes identity construction and dispatch; file delivery uses atomic no-clobber.
+One original 30-second deadline and one pinned local cancellation future cover
+preflight, acquisition and delivery, with bounded runtime shutdown. The shared
+`setup` wrapper also bounds local credential/transport construction on
+an owned worker; a stalled platform trust read cannot block the async timer.
+The same captured endpoint is checked again against the shared selection.
+The existing library rejection of explicit `--timeout` remains unchanged. Source/provider
+content is inert data, not a command, configuration instruction or retry signal.
+Local output failure never triggers replay. Statement-specific help is offline;
+default `fab-rs` and builds without `runtime-v2` keep their existing dispatch.
+
+`livy_statement_native_host` supplies offline real parser/host/SDK/Fabric HTTP
+fixtures. `livy_statement_process` exercises the actual opt-in binary's help,
+sanitized validation, missing identity and no-clobber preflight. These are not
+live Fabric qualification; execution results must be recorded separately.
