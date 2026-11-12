@@ -240,12 +240,12 @@ impl Delivery {
     /// The original receipt/failure is still owned by `self` for reconciliation.
     pub fn write_to(&self, stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
         let value = self.metadata();
-        let output = if self.result.is_ok() {
-            stdout
+        let written = if self.result.is_ok() {
+            write_json(stdout, &value)
         } else {
-            &mut *stderr
+            write_json(stderr, &value)
         };
-        if write_json(output, &value).is_err() {
+        if written.is_err() {
             let _ = write_json(
                 stderr,
                 &json!({
