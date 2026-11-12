@@ -12,6 +12,8 @@
 mod contract;
 #[cfg(feature = "native-host")]
 pub mod host;
+#[cfg(feature = "notebook-workload")]
+pub mod notebook;
 mod parser;
 mod path;
 

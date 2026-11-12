@@ -30,6 +30,8 @@ use std::{
 #[path = "headless.rs"]
 mod headless;
 mod v2_exists_main;
+#[cfg(feature = "notebook-workload")]
+mod v2_notebook_connect;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -298,6 +300,15 @@ impl NativeSession {
         endpoint: EndpointBinding,
         timeout: Duration,
     ) -> Result<Self, Failure> {
+        Self::with_provider_policy(selection, endpoint, timeout, false)
+    }
+
+    fn with_provider_policy(
+        selection: headless::Selection,
+        endpoint: EndpointBinding,
+        timeout: Duration,
+        pbi_bootstrap: bool,
+    ) -> Result<Self, Failure> {
         let transport = transport_options(timeout);
         let identity_http: Arc<dyn azure_core::http::HttpClient> = match selection
             .metadata_endpoint()
@@ -338,9 +349,12 @@ impl NativeSession {
                     )
                 })?;
         let _explicit_provider_binding = (&selection.client, &selection.binding);
-        let credential = selection
-            .credential(identity_http)
-            .map_err(|(code, message, exit)| failed(code, message, exit))?;
+        let credential = if pbi_bootstrap {
+            selection.credential_with_pbi_policy(identity_http, true)
+        } else {
+            selection.credential(identity_http)
+        }
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
         let service_http: Arc<dyn azure_core::http::HttpClient> =
             Arc::new(NativeHttpClient::new(transport).map_err(|_| {
                 failed(

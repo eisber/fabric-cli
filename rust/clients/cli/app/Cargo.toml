@@ -75,6 +75,10 @@ required-features = ["interactive"]
 name = "notebook_workload_identity"
 required-features = ["notebook-workload"]
 
+[[test]]
+name = "runtime_notebook_native"
+required-features = ["notebook-workload"]
+
 [features]
 default = []
 semantic-model = ["dep:fabric-cli-semantic-model"]
@@ -94,7 +98,7 @@ windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-b
 native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:chrono"]
 native-read = ["native-host", "windows-broker"]
 headless = ["native-host", "fabric-identity/headless"]
-notebook-workload = ["headless", "fabric-sdk-http/notebook-workload"]
+notebook-workload = ["headless", "runtime-v2", "fabric-sdk-http/notebook-workload"]
 certificate-store-windows = ["headless", "fabric-identity/certificate-store-windows"]
 certificate-store-pkcs11 = ["headless", "fabric-identity/certificate-store-pkcs11"]
 certificate-store-macos = ["headless", "fabric-identity/certificate-store-macos"]
