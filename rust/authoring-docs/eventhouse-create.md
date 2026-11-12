@@ -38,6 +38,13 @@ I/O. Explicit bodies still validate before skip. Complete bounded workspace item
 discovery rejects case-only collisions, duplicate Eventhouse identities,
 wrong-kind-only matches and wrong scope. An exact Eventhouse alongside its
 same-name default KQL database is not ambiguous in the selected type.
+The shared host sends `recursive=false` only on the generic
+`/v1/workspaces/{workspaceId}/items` discovery route, preserving bounded paging.
+An omitted or null `folderId` is root in this scope. A valid folder GUID is
+nested and excluded from root selection; nested-only matches and malformed
+folder identities reject before approval. A same-name root plus nested item
+selects only the root; it does not claim atomic absence or authorize a folder
+destination. Completed create results are checked again for root scope.
 Discovery never consults ambient navigation or resolves a UUID-shaped leaf as an
 existing item ID. Missing-target skip follows creation. Discovery is not an
 atomic reservation: the POST can still report `ItemDisplayNameAlreadyInUse`.
@@ -93,6 +100,10 @@ from an empty response. `meta.submission.httpStatus`, `operationHandle` and
 the latest `meta.observation.httpStatus`. Initial resource evidence survives
 failed/cancelled polling, malformed final JSON and a mismatched final resource;
 none of those outcomes becomes completed success.
+Observed folder fields stay in protected `meta.folderId` and
+`meta.submission.folderId` with explicit `folderIdObserved` flags, so a response
+that omits the field remains distinguishable from an observed null field even
+after data projection.
 
 Acceptance is not completion. An operation ID is not a resource ID. Lost,
 malformed, incomplete, timed-out or cancelled results and projection/file/stream
@@ -110,9 +121,12 @@ diffs `e84426a`, `ce89c07`, `225903a`, `99dc963`, and `9812bec` are consumed, in
 order. The sole-owner helper repair `0454fb43f08c05f9f066ed5bcb686a8c426a0de1`
 is then consumed as a logical diff over seven shared paths; its contract-document
 additions are placed in the existing generic contract without importing producer
-Notebook documentation. No Notebook leaf, producer test commit `1828d79`,
-peer ancestry or whole PR is imported. Root-folder exact-target follow-up remains
-with the shared owner and still gates final qualification.
+Notebook documentation. The root-folder and strict-lint follow-up
+`caf2f7f2789438cf3abe67242a13aeb048b1ce56` is consumed next as a logical diff over
+the three shared paths, with the generic contract paragraph placed in the
+existing destination section. No Notebook leaf, producer test commits
+`1828d79`/`916dcb7`, peer ancestry or whole PR is imported. Source adoption is not
+native validation or final qualification.
 
 `tests/eventhouse_create.rs` exercises the parser, shared host, SDK planner,
 injected credential and scripted HTTP executor. `tests/eventhouse_create_binary.rs`

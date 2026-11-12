@@ -62,6 +62,18 @@ be an explicit existing parent ID. The leaf is a literal creation name, includin
 when it looks like a UUID. Name-based workspace resolution, explicit collections,
 folders and artifact facade spellings are not installed by this helper.
 Bindings must not invent options or repurpose retrieval facet syntax.
+Discovery uses the generic Core List Items route with `recursive=false` and no
+`rootFolderId`, not a guessed parameter on a typed provider endpoint. The current
+[Core List Items contract](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/list-items)
+(revision `edc068545c34ad50e4d543d40139cd360a3a2f7d`) defines this as direct
+workspace items and shows root items with no `folderId` field. Within this
+explicit root scope, omitted or null folder identity is root; a non-null valid
+folder GUID is nested and cannot be selected as the root target. Unknown or
+malformed folder identity rejects. A root candidate plus a same-name nested
+candidate can select only the root; nested-only matches reject before approval
+or mutation rather than becoming an unchanged result or an atomic-absence claim.
+The existing paging/request limits and native create-only conflict guarantee
+still apply.
 
 `execute(binding, client, items, execution, approval, interrupted)` consumes the
 prepared command. It uses the client's same immutable Fabric context for complete
@@ -74,6 +86,10 @@ matching identities and foreign workspace evidence still reject.
 Display names must match ordinally before an existing leaf can be skipped;
 case-insensitive collision detection does not prove that exact selection.
 GUID scope comparisons are case-insensitive without changing names or raw input.
+Completed create responses are checked again for root scope; a nested or
+malformed returned folder identity cannot become confirmed completion.
+Available folder fields remain in protected `meta.folderId` and
+`meta.submission.folderId` with explicit field-observed flags.
 `CreateApproval::authorize` receives a borrowed `CreateApprovalRequest` with the
 exact plan, original input, context, remote-write effect and output/wait/timeout
 intent. Its `operation()` and `url()` borrow the already-built method, bound

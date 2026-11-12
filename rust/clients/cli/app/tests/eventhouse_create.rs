@@ -169,6 +169,28 @@ impl Harness {
             );
             assert!(request.url().query().is_none());
         }
+        for request in requests
+            .iter()
+            .filter(|request| request.url().path() == format!("/v1/workspaces/{WS}/items"))
+        {
+            assert_eq!(request.method(), Method::Get);
+            let query: Vec<_> = request.url().query_pairs().collect();
+            assert_eq!(
+                query.iter().filter(|(key, _)| key == "recursive").count(),
+                1
+            );
+            assert!(
+                query
+                    .iter()
+                    .any(|(key, value)| key == "recursive" && value == "false")
+            );
+            assert!(
+                query
+                    .iter()
+                    .all(|(key, _)| key == "recursive" || key == "continuationToken")
+            );
+            assert!(Bytes::from(request.body()).is_empty());
+        }
         assert!(
             requests
                 .iter()
@@ -601,6 +623,10 @@ async fn standalone_create_sends_exact_metadata_once_and_projects_only_data() {
         requests[0].url().path(),
         format!("/v1/workspaces/{WS}/items")
     );
+    assert_eq!(requests[0].url().query(), Some("recursive=false"));
+    assert!(receipt["meta"]["folderId"].is_null());
+    assert_eq!(receipt["meta"]["folderIdObserved"], false);
+    assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], false);
     assert_eq!(Bytes::from(requests[1].body()).as_ref(), raw);
     assert_eq!(approval.calls, 1);
     assert_eq!(harness.credential.0.load(Ordering::SeqCst), 2);
@@ -765,6 +791,182 @@ async fn workspace_root_skip_never_substitutes_a_matching_nested_eventhouse() {
     );
     assert_eq!(approval.calls, 0);
     harness.assert_posts(0);
+}
+
+#[tokio::test]
+async fn root_and_nested_name_matches_select_only_the_exact_root_and_preserve_folder_observation() {
+    let dir = tempfile::tempdir().unwrap();
+    for explicit_null in [false, true] {
+        let mut root = resource();
+        if explicit_null {
+            root["folderId"] = Value::Null;
+        }
+        let nested = json!({"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Eventhouse","folderId":WS});
+        let database = json!({"id":WS,"workspaceId":WS,"displayName":"Exact","type":"KQLDatabase"});
+        let harness = Harness::new(vec![listing(vec![nested, database, root])]);
+        let mut approval = Approval::yes();
+        let result = harness
+            .execute(
+                prepared(
+                    dir.path(),
+                    &["--if-exists", "skip", "--project", "displayName"],
+                    None,
+                )
+                .unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        let receipt = delivered(result);
+        assert_eq!(receipt["meta"]["status"], "unchanged");
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(receipt["meta"]["folderIdObserved"], explicit_null);
+        assert!(receipt["meta"]["folderId"].is_null());
+        assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(receipt["meta"]["remoteWrite"], false);
+        assert_eq!(approval.calls, 1);
+        assert!(approval.approved.is_empty());
+        harness.assert_posts(0);
+    }
+}
+
+#[tokio::test]
+async fn malformed_folder_evidence_cannot_authorize_skip_even_alongside_a_valid_root() {
+    let dir = tempfile::tempdir().unwrap();
+    for folder in [
+        json!("not-a-guid"),
+        json!(""),
+        json!(7),
+        json!({}),
+        json!([]),
+        json!(false),
+    ] {
+        let malformed = json!({"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Eventhouse","folderId":folder});
+        for items in [vec![malformed.clone()], vec![resource(), malformed]] {
+            let harness = Harness::new(vec![listing(items)]);
+            let mut approval = Approval::yes();
+            assert!(
+                harness
+                    .execute(
+                        prepared(dir.path(), &["--if-exists", "skip"], None).unwrap(),
+                        &mut approval,
+                        pending(),
+                    )
+                    .await
+                    .is_err()
+            );
+            assert_eq!(approval.calls, 0);
+            harness.assert_posts(0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn completed_creation_rejects_nonroot_or_malformed_folder_and_retains_observed_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    for wait in [false, true] {
+        for folder in [json!(OP), json!("invalid-folder"), json!(17), json!({})] {
+            let mut item = resource();
+            item["folderId"] = folder.clone();
+            let replies = if wait {
+                vec![
+                    listing(vec![]),
+                    accepted(Some(resource())),
+                    response(200, json!({"status":"Succeeded"})),
+                    response(200, item),
+                ]
+            } else {
+                vec![listing(vec![]), response(201, item)]
+            };
+            let harness = Harness::new(replies);
+            let options = if wait {
+                vec!["--wait", "--project", "displayName"]
+            } else {
+                vec!["--project", "displayName"]
+            };
+            let result = harness
+                .execute(
+                    prepared(dir.path(), &options, None).unwrap(),
+                    &mut Approval::yes(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.report().exit_code(), 1);
+            let receipt = delivered(result);
+            assert_eq!(receipt["meta"]["status"], "unknown");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["meta"]["folderId"], folder);
+            assert_eq!(receipt["meta"]["folderIdObserved"], true);
+            assert_eq!(receipt["meta"]["resourceId"], ITEM);
+            assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], !wait);
+            if wait {
+                assert!(receipt["meta"]["submission"]["folderId"].is_null());
+                assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+                assert_eq!(
+                    receipt["meta"]["operationHandle"],
+                    format!("/operations/{OP}")
+                );
+            } else {
+                assert_eq!(receipt["meta"]["submission"]["folderId"], folder);
+            }
+            assert_anticipated_effects(&receipt);
+            harness.assert_posts(1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn root_null_completion_and_initial_accepted_folder_remain_separate_from_final_projection() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut root = resource();
+    root["folderId"] = Value::Null;
+    let harness = Harness::new(vec![listing(vec![]), response(201, root.clone())]);
+    let result = harness
+        .execute(
+            prepared(dir.path(), &["--project", "displayName"], None).unwrap(),
+            &mut Approval::yes(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.report().exit_code(), 0);
+    let receipt = delivered(result);
+    assert_eq!(receipt["meta"]["folderIdObserved"], true);
+    assert!(receipt["meta"]["folderId"].is_null());
+    assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+    assert!(receipt["meta"]["submission"]["folderId"].is_null());
+    assert_anticipated_effects(&receipt);
+    harness.assert_posts(1);
+    let mut initial = resource();
+    initial["folderId"] = json!(OP);
+    let harness = Harness::new(vec![
+        listing(vec![]),
+        accepted(Some(initial)),
+        response(200, json!({"status":"Succeeded"})),
+        response(200, root),
+    ]);
+    let result = harness
+        .execute(
+            prepared(dir.path(), &["--wait", "--project", "displayName"], None).unwrap(),
+            &mut Approval::yes(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.report().exit_code(), 0);
+    let receipt = delivered(result);
+    assert_eq!(receipt["data"], "Exact");
+    assert_eq!(receipt["meta"]["status"], "completed");
+    assert_eq!(receipt["meta"]["folderIdObserved"], true);
+    assert!(receipt["meta"]["folderId"].is_null());
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(receipt["meta"]["submission"]["folderId"], OP);
+    assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+    assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_anticipated_effects(&receipt);
+    harness.assert_posts(1);
 }
 
 #[tokio::test]
@@ -1126,7 +1328,10 @@ async fn complete_discovery_pages_are_required_and_untrusted_continuations_never
     let dir = tempfile::tempdir().unwrap();
     let harness = Harness::new(vec![
         response(200, json!({"value":[],"continuationToken":"next"})),
-        listing(vec![resource()]),
+        listing(vec![
+            json!({"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Eventhouse","folderId":WS}),
+            resource(),
+        ]),
     ]);
     let result = harness
         .execute(
@@ -1140,6 +1345,15 @@ async fn complete_discovery_pages_are_required_and_untrusted_continuations_never
     {
         let requests = harness.wire.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].url().query(), Some("recursive=false"));
+        let query: Vec<_> = requests[1].url().query_pairs().into_owned().collect();
+        assert_eq!(
+            query,
+            vec![
+                ("recursive".to_owned(), "false".to_owned()),
+                ("continuationToken".to_owned(), "next".to_owned())
+            ]
+        );
         assert!(
             requests[1]
                 .url()
