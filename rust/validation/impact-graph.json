@@ -601,6 +601,24 @@
       "checks": ["sdk-graph"]
     },
     {
+      "id": "cli-environment-publish",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/src/v2_environment_publish_host.rs",
+        "rust/clients/cli/app/src/v2_environment_publish_host_tests.rs",
+        "rust/clients/cli/app/tests/v2_environment_publish.rs",
+        "rust/authoring-docs/environment-native-publish.md"
+      ],
+      "depends_on": ["sdk", "cli-get", "cli-headless", "operations", "http"],
+      "tests": [
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli", "target": "test:v2_environment_publish"},
+        {"package": "fabric-sdk", "target": "test:environment_publish"}
+      ],
+      "checks": ["headless", "dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [

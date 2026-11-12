@@ -755,19 +755,21 @@ pub async fn observe_version<E: OperationExecutor>(
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<NativeObservation, ObservationError> {
     let mut session = OperationSession::with_context(client.context(), executor, limits, cancelled);
-    let local_error = |kind| ObservationError {
-        cause: Box::new(session.evidence(kind)),
-        response: None,
+    let operation = {
+        let local_error = |kind| ObservationError {
+            cause: Box::new(session.evidence(kind)),
+            response: None,
+        };
+        validate_target(target).map_err(|_| local_error(OperationErrorKind::InvalidInput))?;
+        let path = base_path(target).map_err(|_| local_error(OperationErrorKind::InvalidInput))?;
+        FabricOperation::new(
+            ResourceMethod::Get,
+            &path,
+            Vec::new(),
+            CompletionPolicy::ReturnAccepted,
+        )
+        .map_err(local_error)?
     };
-    validate_target(target).map_err(|_| local_error(OperationErrorKind::InvalidInput))?;
-    let path = base_path(target).map_err(|_| local_error(OperationErrorKind::InvalidInput))?;
-    let operation = FabricOperation::new(
-        ResourceMethod::Get,
-        &path,
-        Vec::new(),
-        CompletionPolicy::ReturnAccepted,
-    )
-    .map_err(local_error)?;
     let response = session
         .execute(operation)
         .await

@@ -48,6 +48,11 @@ name = "fab-cli-v2"
 path = "src/v2_main.rs"
 required-features = ["headless"]
 
+[[test]]
+name = "v2_environment_publish"
+path = "tests/v2_environment_publish.rs"
+required-features = ["headless"]
+
 [[bin]]
 name = "fab-cli-workspace"
 path = "src/workspace_v2_main.rs"
