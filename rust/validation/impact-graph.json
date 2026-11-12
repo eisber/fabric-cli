@@ -3767,6 +3767,21 @@
   ],
   "checks": [
     {
+      "id": "process-supervision",
+      "packages": [],
+      "components": [],
+      "inputs": [
+        "rust/scripts/validation-process.cjs",
+        "rust/scripts/validation-process.py",
+        "rust/scripts/validation-process.test.cjs",
+        "rust/scripts/validation_posix.py",
+        "rust/scripts/validate-impact.cjs",
+        "rust/scripts/validate-impact.test.cjs"
+      ],
+      "platforms": ["windows", "linux", "macos"],
+      "depends_on": ["selector-tests"]
+    },
+    {
       "id": "selector-tests",
       "packages": [],
       "components": [],

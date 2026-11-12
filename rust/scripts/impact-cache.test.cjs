@@ -28,18 +28,20 @@ test('bounded cache measurements retain exact byte counts and reject oversize sa
   assert.equal(measure([path.join(root, 'missing')], {limit: 8}).reason, 'empty');
 });
 
-test('cache caps limit six target cohorts plus three dependency caches to 7.5 GiB raw', () => {
-  assert.equal(LIMITS.target, 1024 ** 3);
-  assert.equal(LIMITS.dependencies, 512 * 1024 ** 2);
-  assert.equal((6 * LIMITS.target + 3 * LIMITS.dependencies) / 1024 ** 3, 7.5);
+test('cache caps limit six measured target cohorts plus three source archives to 9.75 GiB raw', () => {
+  assert.equal(LIMITS.target, 1536 * 1024 ** 2);
+  assert.equal(LIMITS.dependencies, 256 * 1024 ** 2);
+  assert.equal((6 * LIMITS.target + 3 * LIMITS.dependencies) / 1024 ** 3, 9.75);
 });
 
 test('cache CLI records raw size and bounded save eligibility without using ambient caches', t => {
   const root = path.join(__dirname, `cache-cli-test-${process.pid}`);
   assert.ok(!fs.existsSync(root));
-  fs.mkdirSync(path.join(root, 'registry'), {recursive: true});
+  fs.mkdirSync(path.join(root, 'registry', 'cache'), {recursive: true});
+  fs.mkdirSync(path.join(root, 'registry', 'src'), {recursive: true});
   t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-  fs.writeFileSync(path.join(root, 'registry', 'fixture'), '12345');
+  fs.writeFileSync(path.join(root, 'registry', 'cache', 'fixture'), '12345');
+  fs.writeFileSync(path.join(root, 'registry', 'src', 'not-cached'), 'expanded source is regenerated');
   const output = path.join(root, 'cache-dependencies.json');
   execFileSync(process.execPath, [path.join(__dirname, 'impact-cache.cjs'), 'dependencies', output],
     {timeout: 30000, env: {...process.env, CARGO_HOME: root,
