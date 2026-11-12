@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add native v2 Lakehouse metadata PATCH with exact default-deny approval, bounded execution, and protected outcome receipts
+time: 2026-11-11T23:34:00Z
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber
