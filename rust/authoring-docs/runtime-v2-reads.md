@@ -8,6 +8,14 @@ injected `NativeExecutor`; preparing/printing a request is never remote success.
 It does not replace the Python CLI, Rust v1 parser, or existing executable.
 It is one incremental H1 slice, not implementation of all 28 grouped commands.
 
+The historical H1 qualification statements below describe that library slice.
+The later opt-in `notebook-workload` feature adds the
+[explicit native Notebook connector](runtime-notebook-host.md) and
+[exact Jupyter session GET](runtime-notebook-session-get.md). The common
+library head still creates no identity, transport or runtime itself. Default
+and v1 dispatch are unchanged; later source availability is not native or
+live-service qualification.
+
 ## Selected contracts and source
 
 The selected grouped proposal is Commands

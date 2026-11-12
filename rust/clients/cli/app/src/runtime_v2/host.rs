@@ -657,4 +657,42 @@ mod tests {
         });
         runtime.shutdown_timeout(Duration::from_secs(1));
     }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn actual_full_pipe_does_not_extend_owned_stream_deadline() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        let (mut reader, writer) = io::pipe().unwrap();
+        #[cfg(unix)]
+        let file = {
+            use std::os::fd::AsFd;
+            std::fs::File::from(writer.as_fd().try_clone_to_owned().unwrap())
+        };
+        #[cfg(windows)]
+        let file = {
+            use std::os::windows::io::AsHandle;
+            std::fs::File::from(writer.as_handle().try_clone_to_owned().unwrap())
+        };
+        drop(writer);
+        runtime.block_on(async {
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+        });
+        let result = runtime.block_on(write_stream_file(
+            file,
+            vec![b'x'; 2 * 1024 * 1024],
+            Instant::now() + Duration::from_secs(1),
+            pending(),
+        ));
+        let mut byte = [0];
+        let observed = std::io::Read::read(&mut reader, &mut byte).unwrap();
+        drop(reader);
+        runtime.shutdown_timeout(Duration::from_secs(1));
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(observed, 1, "the actual OS pipe writer must have started");
+        assert_eq!(byte, [b'x']);
+    }
 }

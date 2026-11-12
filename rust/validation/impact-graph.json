@@ -3042,20 +3042,6 @@
   ],
   "profiles": [
     {
-      "id": "notebook-session-get",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/notebook-workload"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
-    },
-    {
-      "id": "notebook-session-get-opt-out",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/headless"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
-    },
-    {
       "id": "notebook-workload-foundation",
       "packages": ["fabric-core", "fabric-sdk-http", "fabric-cli", "fabric-identity"],
       "features": [
