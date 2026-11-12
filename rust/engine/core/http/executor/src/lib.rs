@@ -4,11 +4,12 @@
 //! Authenticated bounded execution. Only safe GETs may retry; mutations send once.
 #![forbid(unsafe_code)]
 use async_trait::async_trait;
+use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use chrono::Datelike;
 use fabric_core::{
-    AccessToken, ApiRequest, ApiResponse, Audience, Clock, CoreError, ErrorKind, HttpExecutor,
-    HttpTransport, MAX_REQUEST_BYTES, OperationContext, TokenCredential, validate_headers,
-    validate_response, validate_url,
+    ApiRequest, ApiResponse, Audience, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
+    MAX_REQUEST_BYTES, OperationContext, ResponseHeadCapture, validate_headers, validate_response,
+    validate_url,
 };
 use std::{
     future::Future,
@@ -157,12 +158,15 @@ impl HttpClient {
         context: &OperationContext,
     ) -> Result<AccessToken, CoreError> {
         context.remaining_at(self.clock.now())?;
+        let scopes = [audience.scope()];
         bounded_with_clock(
             self.clock.as_ref(),
             context,
-            self.credential.token(audience.scope(), context),
+            self.credential.get_token(&scopes, Some(TokenRequestOptions::default())),
         )
         .await?
+        .map_err(|_| CoreError::new(ErrorKind::Unauthorized,
+            "Credential acquisition failed; run fab-rs auth login to validate the selected session"))
     }
 }
 impl HttpClient {
@@ -188,10 +192,15 @@ impl HttpClient {
         loop {
             context.remaining_at(self.clock.now())?;
             let token = self.acquire(audience, context).await?;
-            if token.token.bytes().any(|b| b <= 32 || b >= 127)
-                || token.token.is_empty()
-                || token.token.len() > 16 * 1024
-                || token.expires_on <= self.clock.wall_now()
+            let bearer = token.token.secret();
+            let now = match self.clock.wall_now().duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => duration.as_nanos() as i128,
+                Err(error) => -(error.duration().as_nanos() as i128),
+            };
+            if bearer.bytes().any(|b| b <= 32 || b >= 127)
+                || bearer.is_empty()
+                || bearer.len() > 16 * 1024
+                || token.expires_on.unix_timestamp_nanos() <= now
             {
                 return Err(CoreError::new(
                     ErrorKind::Unauthorized,
@@ -201,18 +210,24 @@ impl HttpClient {
             let mut authenticated = request.clone();
             authenticated
                 .headers
-                .insert("authorization".into(), format!("Bearer {}", token.token));
+                .insert("authorization".into(), format!("Bearer {bearer}"));
             context.remaining_at(self.clock.now())?;
+            let head = ResponseHeadCapture::new(audience);
             let result = bounded_with_clock(
                 self.clock.as_ref(),
                 context,
-                self.transport.send(authenticated, context),
+                self.transport
+                    .send_with_observer(authenticated, context, &head),
             )
-            .await?;
-            context.remaining_at(self.clock.now())?;
+            .await
+            .map_err(|error| head.attach(error))?
+            .map_err(|error| head.attach(error));
+            context
+                .remaining_at(self.clock.now())
+                .map_err(|error| head.attach(error))?;
             let retry = match &result {
                 Ok(response) => {
-                    validate_response(response)?;
+                    validate_response(response).map_err(|error| head.attach(error))?;
                     if (300..400).contains(&response.status) {
                         return Err(CoreError::new(
                             ErrorKind::Protocol,

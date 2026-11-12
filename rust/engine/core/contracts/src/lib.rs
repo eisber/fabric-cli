@@ -14,6 +14,11 @@ use std::{
 pub use tokio_util::sync::CancellationToken;
 use url::Url;
 
+mod operation;
+pub use operation::{
+    OperationHandle, OperationKind, ResponseHeadCapture, operation_handle, validate_operation_url,
+};
+
 /// Maximum encoded request allocation.
 pub const MAX_REQUEST_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum wire and decoded response allocation.
@@ -145,28 +150,6 @@ impl OperationContext {
             })
     }
 }
-/// Secret bearer token with expiry; Debug intentionally redacts the token.
-pub struct AccessToken {
-    /// Sensitive bearer value; never log.
-    pub token: String,
-    /// Provider expiry.
-    pub expires_on: SystemTime,
-}
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken([REDACTED])")
-    }
-}
-/// Explicitly injected identity; libraries never discover credentials.
-#[async_trait]
-pub trait TokenCredential: Send + Sync {
-    /// Acquire a scope-bound token within the caller's remaining deadline.
-    async fn token(
-        &self,
-        scope: &str,
-        context: &OperationContext,
-    ) -> Result<AccessToken, CoreError>;
-}
 /// Fully materialized bounded HTTP request. Debug is deliberately redacted.
 #[derive(Clone)]
 pub struct ApiRequest {
@@ -229,6 +212,19 @@ pub trait HttpTransport: Send + Sync {
         request: ApiRequest,
         context: &OperationContext,
     ) -> Result<ApiResponse, CoreError>;
+    /// Send once while publishing validated response-head recovery before reading
+    /// the body. Streaming transports must override this method; the default is
+    /// sufficient only for transports returning an already-materialized response.
+    async fn send_with_observer(
+        &self,
+        request: ApiRequest,
+        context: &OperationContext,
+        head: &ResponseHeadCapture,
+    ) -> Result<ApiResponse, CoreError> {
+        let response = self.send(request, context).await?;
+        head.record(response.status, &response.headers)?;
+        Ok(response)
+    }
 }
 /// Authenticated execution shared by raw API and LRO.
 #[async_trait]
@@ -321,12 +317,11 @@ pub fn validate_headers(headers: &BTreeMap<String, String>) -> Result<(), CoreEr
     Ok(())
 }
 
-/// Validate bounded response data and unambiguous operation-control headers,
-/// including responses returned by an injected transport.
-pub fn validate_response(response: &ApiResponse) -> Result<(), CoreError> {
+/// Validate bounded, unambiguous response-head fields without cloning them.
+pub fn validate_response_headers(headers: &BTreeMap<String, String>) -> Result<(), CoreError> {
     let mut total = 0usize;
     let mut controls = std::collections::BTreeSet::new();
-    for (name, value) in &response.headers {
+    for (name, value) in headers {
         total = total.saturating_add(name.len()).saturating_add(value.len());
         let lower = name.to_ascii_lowercase();
         if total > 64 * 1024
@@ -349,6 +344,13 @@ pub fn validate_response(response: &ApiResponse) -> Result<(), CoreError> {
             ));
         }
     }
+    Ok(())
+}
+
+/// Validate bounded response data and unambiguous operation-control headers,
+/// including responses returned by an injected transport.
+pub fn validate_response(response: &ApiResponse) -> Result<(), CoreError> {
+    validate_response_headers(&response.headers)?;
     if response.body.len() > MAX_RESPONSE_BYTES {
         return Err(CoreError::new(
             ErrorKind::Protocol,

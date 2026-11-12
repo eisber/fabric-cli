@@ -43,7 +43,7 @@ async-trait = "0.1"
 base64 = "0.22.1"
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip", "arbitrary_precision", "raw_value"] }
 thiserror = "2.0.21"
 jpx-core = { version = "=0.3.1", default-features = false }
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt", "time", "net", "io-util", "sync", "signal", "process", "test-util"] }

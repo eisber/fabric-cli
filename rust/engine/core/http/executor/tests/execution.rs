@@ -4,6 +4,10 @@
 #![deny(unnameable_test_items)]
 #![forbid(unsafe_code)]
 use async_trait::async_trait;
+use azure_core::{
+    credentials::{AccessToken, TokenCredential, TokenRequestOptions},
+    time::OffsetDateTime,
+};
 use fabric_core::*;
 use fabric_sdk_http::HttpClient;
 use std::{
@@ -31,25 +35,36 @@ impl Clock for TestClock {
         Ok(())
     }
 }
+#[derive(Debug)]
 struct Credential {
     calls: Mutex<usize>,
 }
+#[derive(Debug)]
 struct PendingCredential;
 #[async_trait]
 impl TokenCredential for PendingCredential {
-    async fn token(&self, _: &str, _: &OperationContext) -> Result<AccessToken, CoreError> {
+    async fn get_token(
+        &self,
+        _: &[&str],
+        _: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
         std::future::pending().await
     }
 }
 #[async_trait]
 impl TokenCredential for Credential {
-    async fn token(&self, scope: &str, _: &OperationContext) -> Result<AccessToken, CoreError> {
-        assert_eq!(scope, Audience::Fabric.scope());
+    async fn get_token(
+        &self,
+        scopes: &[&str],
+        options: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
+        assert_eq!(scopes, &[Audience::Fabric.scope()]);
+        assert!(options.is_some());
         *self.calls.lock().unwrap() += 1;
-        Ok(AccessToken {
-            token: "synthetic-offline-token".into(),
-            expires_on: SystemTime::UNIX_EPOCH + Duration::from_secs(9999999999),
-        })
+        Ok(AccessToken::new(
+            "synthetic-offline-token",
+            OffsetDateTime::from_unix_timestamp(9999999999).unwrap(),
+        ))
     }
 }
 struct Transport {

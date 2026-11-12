@@ -21,6 +21,7 @@
 
 #![forbid(unsafe_code)]
 
+mod budget;
 mod functions;
 mod python_value_format;
 mod validation;
@@ -49,7 +50,7 @@ pub enum QueryErrorKind {
     UnknownFunction,
     /// A known source operation cannot be reproduced within this JSON boundary.
     Unsupported,
-    /// The underlying parser or interpreter rejected excessive nesting.
+    /// Parsing/evaluation exceeded the deliberate query, depth, copy, or work budget.
     ResourceLimit,
     /// Another invalid runtime operation, such as a slice with zero step.
     Evaluation,
@@ -129,13 +130,15 @@ pub fn project(data: &Value, expression: Option<&str>) -> Result<Value, QueryErr
 /// Validate query syntax and supported AST forms without evaluating caller data.
 ///
 /// Empty expressions and `.` are valid wrapper operations. Data-dependent
-/// function type/arity errors are reported by [`search`], not this preflight.
+/// function type errors are reported by [`search`], not this preflight.
+/// Function names and static arity are checked against the evaluation runtime.
+/// Structural AST depth is limited before any data-dependent admission.
 pub fn validate(expression: &str) -> Result<(), QueryError> {
+    budget::expression(expression)?;
     if expression.is_empty() || expression == "." {
         return Ok(());
     }
-    validation::literals(expression)?;
-    let ast = jpx_core::parse(expression).map_err(QueryError::from)?;
+    let ast = validation::parse(expression)?;
     validation::validate(&ast)?;
     Ok(())
 }
@@ -152,9 +155,12 @@ pub fn search_with_options(
     if expression == "." {
         return Ok(data.clone());
     }
-    validation::literals(expression)?;
-    let mut ast = jpx_core::parse(expression).map_err(QueryError::from)?;
+    budget::expression(expression)?;
+    let mut ast = validation::parse(expression)?;
     let numeric_sensitive = validation::validate(&ast)?;
+    // Admission also limits AST depth before the recursive comparison adapter
+    // clones any ASTs. It must precede all native result materialization.
+    budget::admit(data, &ast, expression)?;
     validation::adapt_comparisons(&mut ast);
     let runtime = functions::runtime(numeric_sensitive);
     let compiled = jpx_core::Expression::new(expression, ast, &runtime);

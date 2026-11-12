@@ -346,11 +346,14 @@ name = "fabric-cli"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "azure_core",
+ "azure_identity",
  "chrono",
  "clap",
  "fabric-cli-api",
  "fabric-cli-command-contracts",
  "fabric-cli-output",
+ "fabric-cli-query",
  "fabric-core",
  "fabric-identity",
  "fabric-sdk-api",
@@ -394,6 +397,7 @@ dependencies = [
 name = "fabric-cli-query"
 version = "0.1.0"
 dependencies = [
+ "fabric-core-json",
  "jpx-core",
  "serde_json",
  "thiserror",
@@ -413,6 +417,7 @@ dependencies = [
 name = "fabric-core-json"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "serde_json",
 ]
 
@@ -445,6 +450,7 @@ name = "fabric-sdk-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "azure_core",
  "chrono",
  "fabric-core",
  "tokio",

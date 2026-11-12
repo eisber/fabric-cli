@@ -5,15 +5,16 @@
 #![forbid(unsafe_code)]
 
 use async_trait::async_trait;
-use azure_core::credentials::TokenCredential as AzureTokenCredential;
+use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use azure_identity::{AzureCliCredential, AzureCliCredentialOptions, process::Executor};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use fabric_core::{AccessToken, Clock, CoreError, ErrorKind, OperationContext, TokenCredential};
+use fabric_core::{Clock, CoreError, ErrorKind, OperationContext};
 use process_wrap::tokio::{KillOnDrop, TokioChildWrapper, TokioCommandWrap};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     ffi::OsStr,
+    fmt,
     future::Future,
     io,
     process::{Output, Stdio},
@@ -33,6 +34,18 @@ const LOGIN_REQUIRED: &str = "Azure CLI identity unavailable or changed. Install
 
 fn unauthorized() -> CoreError {
     CoreError::new(ErrorKind::Unauthorized, LOGIN_REQUIRED)
+}
+
+fn sdk_unauthorized() -> azure_core::Error {
+    azure_core::Error::with_message(azure_core::error::ErrorKind::Credential, LOGIN_REQUIRED)
+}
+
+fn token_expiry(token: &AccessToken) -> azure_core::Result<std::time::SystemTime> {
+    let seconds =
+        u64::try_from(token.expires_on.unix_timestamp()).map_err(|_| sdk_unauthorized())?;
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(seconds))
+        .ok_or_else(sdk_unauthorized)
 }
 
 fn validate_scope(scope: &str) -> Result<(), CoreError> {
@@ -220,36 +233,34 @@ impl AzureCliSession {
     async fn acquire(
         &self,
         scope: &str,
-        context: &OperationContext,
-    ) -> Result<(Binding, AccessToken), CoreError> {
+        options: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<(Binding, AccessToken)> {
         // Restrict the SDK's shell-bound scope to the fixed product audiences.
-        validate_scope(scope)?;
-        let value = bounded(context, self.credential.get_token(&[scope], None))
-            .await?
-            .map_err(|_| unauthorized())?;
-        let binding = Binding::from_token(value.token.secret())?;
-        let seconds =
-            u64::try_from(value.expires_on.unix_timestamp()).map_err(|_| unauthorized())?;
-        let expires_on = UNIX_EPOCH
-            .checked_add(Duration::from_secs(seconds))
-            .ok_or_else(unauthorized)?;
-        if expires_on <= self.clock.wall_now() {
-            return Err(unauthorized());
+        validate_scope(scope).map_err(|_| sdk_unauthorized())?;
+        let value = self
+            .credential
+            .get_token(&[scope], options)
+            .await
+            .map_err(|_| sdk_unauthorized())?;
+        let binding = Binding::from_token(value.token.secret()).map_err(|_| sdk_unauthorized())?;
+        if token_expiry(&value)? <= self.clock.wall_now() {
+            return Err(sdk_unauthorized());
         }
-        Ok((
-            binding,
-            AccessToken {
-                token: value.token.secret().to_owned(),
-                expires_on,
-            },
-        ))
+        Ok((binding, value))
     }
 
     /// Validate the current Azure CLI identity for explicit Rust login, without selecting a subscription.
     pub async fn login(&self, context: &OperationContext) -> Result<Binding, CoreError> {
-        self.acquire(fabric_core::Audience::Fabric.scope(), context)
-            .await
-            .map(|(binding, _)| binding)
+        bounded(
+            context,
+            self.acquire(
+                fabric_core::Audience::Fabric.scope(),
+                Some(TokenRequestOptions::default()),
+            ),
+        )
+        .await?
+        .map(|(binding, _)| binding)
+        .map_err(|_| unauthorized())
     }
 }
 
@@ -258,11 +269,21 @@ type ScopeSlot = Arc<Mutex<Option<AccessToken>>>;
 /// Caller-owned per-scope single-flight token reuse. Tokens exist only in this object.
 ///
 /// Detected identity drift or invalid identity metadata disables all cached scopes.
+/// The caller must bound SDK acquisition using its operation cancellation/deadline;
+/// dropping that future releases cache locks and terminates the owned process tree.
 pub struct BoundCredential {
     session: Arc<AzureCliSession>,
     binding: Binding,
     slots: Mutex<BTreeMap<String, ScopeSlot>>,
     invalidated: AtomicBool,
+}
+
+impl fmt::Debug for BoundCredential {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BoundCredential")
+            .finish_non_exhaustive()
+    }
 }
 
 impl BoundCredential {
@@ -280,59 +301,61 @@ impl BoundCredential {
 
 #[async_trait]
 impl TokenCredential for BoundCredential {
-    async fn token(
+    async fn get_token(
         &self,
-        scope: &str,
-        context: &OperationContext,
-    ) -> Result<AccessToken, CoreError> {
-        context.remaining()?;
+        scopes: &[&str],
+        options: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
         if self.invalidated.load(Ordering::Acquire) {
-            return Err(unauthorized());
+            return Err(sdk_unauthorized());
         }
-        validate_scope(scope)?;
+        let [scope] = scopes else {
+            return Err(azure_core::Error::with_message(
+                azure_core::error::ErrorKind::DataConversion,
+                "Exactly one supported credential scope is required",
+            ));
+        };
+        validate_scope(scope).map_err(|_| {
+            azure_core::Error::with_message(
+                azure_core::error::ErrorKind::DataConversion,
+                "Unsupported credential scope",
+            )
+        })?;
         let slot = {
-            let mut slots = bounded(context, self.slots.lock()).await?;
+            let mut slots = self.slots.lock().await;
             slots
-                .entry(scope.to_owned())
+                .entry((*scope).to_owned())
                 .or_insert_with(|| Arc::new(Mutex::new(None)))
                 .clone()
         };
-        let mut cached = bounded(context, slot.lock()).await?;
+        let mut cached = slot.lock().await;
         if self.invalidated.load(Ordering::Acquire) {
-            return Err(unauthorized());
+            return Err(sdk_unauthorized());
         }
         if let Some(value) = cached.as_ref()
-            && value
-                .expires_on
+            && token_expiry(value)?
                 .duration_since(self.session.clock.wall_now())
                 .is_ok_and(|remaining| remaining > Duration::from_secs(30))
         {
-            return Ok(AccessToken {
-                token: value.token.clone(),
-                expires_on: value.expires_on,
-            });
+            return Ok(value.clone());
         }
-        let (binding, token) = match self.session.acquire(scope, context).await {
+        let (binding, token) = match self.session.acquire(scope, options).await {
             Ok(value) => value,
             Err(error) => {
-                if error.kind == ErrorKind::Unauthorized {
-                    self.invalidated.store(true, Ordering::Release);
-                }
+                self.invalidated.store(true, Ordering::Release);
+                *cached = None;
                 return Err(error);
             }
         };
         if binding != self.binding {
             self.invalidated.store(true, Ordering::Release);
             *cached = None;
-            return Err(unauthorized());
+            return Err(sdk_unauthorized());
         }
         if self.invalidated.load(Ordering::Acquire) {
-            return Err(unauthorized());
+            return Err(sdk_unauthorized());
         }
-        let result = AccessToken {
-            token: token.token.clone(),
-            expires_on: token.expires_on,
-        };
+        let result = token.clone();
         *cached = Some(token);
         Ok(result)
     }

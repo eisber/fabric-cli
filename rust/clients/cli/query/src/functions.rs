@@ -8,6 +8,33 @@ use jpx_core::functions::{
 use jpx_core::{Context, JmespathError, Runtime, ValueExt};
 use serde_json::{Number, Value};
 
+/// jpx does not expose signatures through `dyn Function`. Probe only with null
+/// placeholders: every registered function checks its shared runtime signature
+/// before its body, and bodies accepting null have no data-dependent work.
+/// Ignore type errors; only names and arity are statically knowable here.
+pub(crate) fn validate_call(
+    runtime: &Runtime,
+    name: &str,
+    count: usize,
+) -> Result<(), crate::QueryError> {
+    let function = runtime.get_function(name).ok_or(crate::QueryError {
+        kind: crate::QueryErrorKind::UnknownFunction,
+    })?;
+    let mut context = Context::new("", runtime);
+    if let Err(error) = function.evaluate(&vec![Value::Null; count], &mut context) {
+        let error = crate::QueryError::from(error);
+        if error.kind() == crate::QueryErrorKind::InvalidArity {
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
+fn arbitrary_integer(value: &Value) -> bool {
+    matches!(value, Value::Number(number)
+        if !number.is_f64() && number.as_i64().is_none() && number.as_u64().is_none())
+}
+
 fn unsupported(ctx: &Context<'_>) -> JmespathError {
     custom_error(
         ctx,
@@ -43,6 +70,9 @@ fn sum(values: &[Value], ctx: &Context<'_>) -> Result<Value, JmespathError> {
     let mut floats = None;
     let mut correction = 0.0;
     for value in values {
+        if arbitrary_integer(value) {
+            return Err(unsupported(ctx));
+        }
         if floats.is_none()
             && let Some(value) = as_integer(value)
         {
@@ -206,6 +236,9 @@ pub(crate) fn runtime(numeric_sensitive: bool) -> Runtime {
             Box::new(CustomFunction::new(
                 Signature::new(vec![Type::Number], None),
                 Box::new(move |args, ctx| {
+                    if arbitrary_integer(&args[0]) {
+                        return Err(unsupported(ctx));
+                    }
                     if let Some(value) = as_integer(&args[0]) {
                         return integer(if name == "abs" { value.abs() } else { value }, ctx);
                     }

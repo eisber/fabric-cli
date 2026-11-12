@@ -12,8 +12,9 @@ SDK facades, filesystem access, global runtime, or token persistence.
 principal object IDs; token claims are consistency metadata, not local
 cryptographic proof. The host persists selection.
 
-`BoundCredential::new(session, binding)` implements the minimal
-`fabric_core::TokenCredential`. It owns per-scope mutex slots for single-flight
+`BoundCredential::new(session, binding)` implements the Azure SDK
+`azure_core::credentials::TokenCredential`, accepting exactly one supported scope
+and forwarding SDK request options without overrides. It owns per-scope mutex slots for single-flight
 in-memory acquisition, reuses tokens with more than 30 seconds remaining, and
 checks the binding on every fresh acquisition, including polling refresh.
 Detected drift or invalid identity metadata disables every cached scope for
@@ -21,7 +22,10 @@ that bound credential, including still-unexpired tokens.
 Subscription changes alone are not drift. The Azure SDK provider itself has
 no token cache.
 
-Acquisition, including mutex waits, is cancellation/deadline bounded. The
+The HTTP executor and auth-status host bound SDK acquisition, including mutex
+waits, with their operation cancellation/deadline; explicit login is bounded
+internally. Other library callers must likewise bound and drop SDK acquisition
+on cancellation/deadline. The
 production executor bounds stdout/stderr and uses `process-wrap` Unix process
 groups / Windows Job Objects so dropping acquisition kills its owned process
 tree rather than only the SDK shell. Provider output and errors are never copied

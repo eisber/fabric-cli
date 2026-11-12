@@ -34,8 +34,9 @@ host hooks; the executable handles metadata before even creating its runtime.
 API input files, body bounds, endpoint origins, custom headers, and query syntax
 are validated before loading selection or constructing a provider/transport.
 
-The CLI passes `fabric_core::ApiRequest`/`ApiResponse` to the injected
-`HttpExecutor`. The initial context has a 240-second deadline. Default completion
+The CLI composes an `HttpExecutor` from injected Azure SDK `TokenCredential`,
+transport, and clock boundaries, using shared `fabric_core::ApiRequest`/
+`ApiResponse` values. The initial context has a 240-second deadline. Default completion
 consumes the actual initial response; `--async` skips completion, returns that
 response once, and starts no background work. Poll/result GETs do not carry the
 original mutation body or custom request headers.
@@ -63,8 +64,20 @@ and a trailing newline. Headers appear only with `--show-headers`. Empty and
 whitespace bodies become `"(Empty)"`; invalid nonempty JSON is a failure.
 JMESPath falsey collection/string projections preserve the original payload;
 Python scalar string conversion is retained. Projected lists remain lists,
-not an extra nested array. An explicitly empty `--query ''` requests Python's
-bounded path inventory, rather than silently disabling the query.
+not an extra nested array. An explicitly empty `--query ''` bypasses projection,
+matching Python's CLI truthiness check. The query library's separate empty-
+expression API still returns a bounded path inventory.
+
+JSON input files containing `null` send no body. All nonmultipart requests,
+including bodyless requests, default to `Content-Type: application/json`;
+case-insensitive custom overrides are retained. Decimal integers, including
+values outside the `i64`/`u64` ranges, retain their exact digits through input,
+plain projection, and output. JSON objects retain all legal keys, including
+`$serde_json::private::Number` and escaped spellings of that name; those keys
+never act as internal numeric metadata. Unsafe numeric query computations fail explicitly
+rather than rounding arbitrary integers. Floating-point tokens use finite
+binary64 semantics; overflow is rejected before authentication for request input,
+or as malformed response JSON for service output.
 
 Initial HTTP 4xx/5xx are inspectable response data, including with default
 completion, not universal command failures. Credential, malformed response,
@@ -80,6 +93,9 @@ synthetic operation responses, and process-isolated host fixtures. It also
 executes the real `fab-rs` for metadata and absent selection with an empty PATH.
 Provider tests exercise the real Azure SDK credential with an injected fake
 process executor; no ordinary test invokes ambient `az` or a live Fabric API.
+`app/tests/identity_http.rs` composes that adapter with the real HTTP executor
+and an injected pending SDK process to cover cancellation and deadline drops.
+These cross-domain composition tests stay at the CLI layer, not inside identity.
 
 The independent Python envelope fixtures and compatibility notes are in
 `app/tests/fixtures/`. References are pinned upstream

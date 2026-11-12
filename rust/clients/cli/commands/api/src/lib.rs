@@ -94,6 +94,11 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     }
     let mut headers = parse_headers(value("headers"))?;
     let body = load_input(value("input"), &mut headers)?;
+    // Python applies this default even when input is absent/null. Multipart
+    // preparation already inserted its boundary unless the caller overrode it.
+    headers
+        .entry("content-type".into())
+        .or_insert_with(|| "application/json".into());
     let request = fabric_sdk_api::build_request(
         audience,
         value("method").unwrap_or("get"),
@@ -198,8 +203,12 @@ fn json_body(
     bytes: &[u8],
     headers: &mut BTreeMap<String, String>,
 ) -> Result<Vec<u8>, CommandError> {
-    let value: Value = serde_json::from_slice(bytes)
+    let value = fabric_core_json::decode(bytes)
         .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
+    // Pinned Python passes parsed null as input=None, so it sends no JSON body.
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
     let bytes = fabric_core_json::json_dumps(&value).into_bytes();
     if bytes.len() > MAX_REQUEST_BYTES {
         return Err(invalid("Encoded API input exceeds allocation bound"));
@@ -278,12 +287,12 @@ pub fn response_data(
     {
         Value::String("(Empty)".into())
     } else {
-        serde_json::from_slice(&response.body)
+        fabric_core_json::decode(&response.body)
             .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?
     };
     payload.insert("text".into(), body);
     let payload = Value::Object(payload);
-    if let Some(query) = query {
+    if let Some(query) = query.filter(|query| !query.is_empty()) {
         let projected = fabric_cli_query::search(&payload, query)
             .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"))?;
         if python_truthy(&projected) {

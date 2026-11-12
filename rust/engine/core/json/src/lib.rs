@@ -2,10 +2,117 @@
 // Licensed under the MIT License.
 
 //! Python-compatible JSON-domain encoding, narrowed from the pinned Rust donor.
-//! Inputs are serde JSON values only; no native Python, surrogate, or wide-int layer.
+//! Inputs are serde JSON values; arbitrary-size decimal integers retain exact digits.
+//! There is no native Python or surrogate-value layer.
 #![forbid(unsafe_code)]
-use serde_json::{Number, Value};
-use std::fmt::Write;
+use serde::{
+    Deserialize, Deserializer,
+    de::{MapAccess, Visitor},
+};
+use serde_json::{Map, Number, Value, value::RawValue};
+use std::fmt::{self, Write};
+
+/// Invalid JSON or a floating-point value outside the supported finite domain.
+///
+/// Error text never includes input bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecodeError;
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Invalid JSON or non-finite floating-point value")
+    }
+}
+
+impl std::error::Error for DecodeError {}
+
+/// Decode JSON without rounding integers through a machine-sized or floating-point type.
+///
+/// Decimal integer digits are retained by serde's `arbitrary_precision` feature.
+/// Float tokens are normalized to Python's finite binary64 domain; overflow is
+/// rejected rather than being mistaken for an arbitrary-size integer.
+/// Object keys, including serde's private marker names, are always ordinary keys.
+/// Tree construction is bounded to 128 JSON levels.
+pub fn decode(bytes: &[u8]) -> Result<Value, DecodeError> {
+    let raw: &RawValue = serde_json::from_slice(bytes).map_err(|_| DecodeError)?;
+    decode_raw(raw, 0)
+}
+
+// RawValue's syntax scan is not a recursive Value parse, so explicitly retain a
+// bounded nesting depth while constructing the caller-owned JSON tree.
+const MAX_DECODE_DEPTH: usize = 128;
+
+fn decode_raw(raw: &RawValue, depth: usize) -> Result<Value, DecodeError> {
+    if depth >= MAX_DECODE_DEPTH {
+        return Err(DecodeError);
+    }
+    let text = raw.get().trim();
+    match text.as_bytes().first() {
+        Some(b'{') => {
+            // Never send actual object syntax through ValueVisitor: with
+            // arbitrary_precision its private Number key is otherwise special.
+            let RawObject(entries) = serde_json::from_str(text).map_err(|_| DecodeError)?;
+            let mut object = Map::new();
+            for (key, value) in entries {
+                object.insert(key, decode_raw(value, depth + 1)?);
+            }
+            Ok(Value::Object(object))
+        }
+        Some(b'[') => {
+            let values: Vec<&RawValue> = serde_json::from_str(text).map_err(|_| DecodeError)?;
+            values
+                .into_iter()
+                .map(|value| decode_raw(value, depth + 1))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::Array)
+        }
+        Some(b'"') => serde_json::from_str::<String>(text)
+            .map(Value::String)
+            .map_err(|_| DecodeError),
+        Some(b't' | b'f') => serde_json::from_str::<bool>(text)
+            .map(Value::Bool)
+            .map_err(|_| DecodeError),
+        Some(b'n') => Ok(Value::Null), // RawValue already validated the entire token.
+        Some(b'-' | b'0'..=b'9') => {
+            // Only genuine numeric syntax reaches Number's synthetic-map
+            // protocol. Decimal integers never pass through floating point.
+            let mut number: Number = serde_json::from_str(text).map_err(|_| DecodeError)?;
+            if text.contains(['.', 'e', 'E']) {
+                let float = number.as_f64().ok_or(DecodeError)?;
+                number = Number::from_f64(float).ok_or(DecodeError)?;
+            }
+            Ok(Value::Number(number))
+        }
+        _ => Err(DecodeError),
+    }
+}
+
+// Keep input order and duplicate-key behavior without a new map dependency.
+// Borrowed raw values defer all kind interpretation to decode_raw.
+struct RawObject<'a>(Vec<(String, &'a RawValue)>);
+struct RawObjectVisitor;
+
+impl<'de> Visitor<'de> for RawObjectVisitor {
+    type Value = RawObject<'de>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut entries = Vec::new();
+        while let Some(entry) = map.next_entry::<String, &'de RawValue>()? {
+            entries.push(entry);
+        }
+        Ok(RawObject(entries))
+    }
+}
+
+impl<'de> Deserialize<'de> for RawObject<'de> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(RawObjectVisitor)
+    }
+}
 
 /// Python `json.dumps` layout.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -110,13 +217,23 @@ fn string(value: &str, ensure_ascii: bool, output: &mut String) {
     output.push('"');
 }
 fn number(value: &Number, output: &mut String) {
-    if !value.is_f64() {
-        output.push_str(&value.to_string());
+    let text = value.to_string();
+    if !text.contains(['.', 'e', 'E']) {
+        output.push_str(&text);
         return;
     }
+    // arbitrary_precision retains float lexemes too. Normalize finite floats
+    // before applying Python's layout, without ever converting integer tokens.
+    // Callers decoding bytes should use `decode` to reject float overflow.
+    let Some(canonical) = value.as_f64().and_then(Number::from_f64) else {
+        // `decode` rejects these unsupported float tokens. If a library caller
+        // supplies one directly, retain its digits without unbounded expansion.
+        output.push_str(&text);
+        return;
+    };
+    let text = canonical.to_string();
     // Donor shortest-roundtrip number normalization retains Python's exponent
     // thresholds, explicit exponent sign/two digits, .0 and signed zero.
-    let text = value.to_string();
     let (sign, magnitude) = text
         .strip_prefix('-')
         .map_or(("", text.as_str()), |m| ("-", m));

@@ -13,6 +13,11 @@ description = "Minimal fab-rs raw API and Azure CLI session selection"
 name = "fab-rs"
 path = "src/main.rs"
 
+[[test]]
+name = "lifecycle"
+path = "tests/lifecycle.rs"
+harness = false
+
 [dependencies]
 fabric-core.workspace = true
 fabric-identity.workspace = true
@@ -23,10 +28,15 @@ fabric-cli-api.workspace = true
 fabric-cli-command-contracts.workspace = true
 fabric-cli-output.workspace = true
 async-trait.workspace = true
+azure_core.workspace = true
 clap.workspace = true
 chrono.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+azure_identity.workspace = true
+fabric-cli-query.workspace = true
 
 [lints]
 workspace = true

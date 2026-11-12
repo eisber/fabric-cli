@@ -68,7 +68,14 @@ pub fn python_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64() != Some(0.0),
+        Value::Number(value) => {
+            let text = value.to_string();
+            if text.contains(['.', 'e', 'E']) {
+                value.as_f64() != Some(0.0)
+            } else {
+                text != "0" && text != "-0"
+            }
+        }
         Value::String(value) => !value.is_empty(),
         Value::Array(value) => !value.is_empty(),
         Value::Object(value) => !value.is_empty(),

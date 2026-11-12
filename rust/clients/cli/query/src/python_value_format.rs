@@ -39,13 +39,17 @@ pub(crate) fn encode_json(value: &Value) -> String {
     }
 }
 
-// The output crate's Python float encoder is private and that surface is owned
-// separately. Keep its shortest-roundtrip/exponent policy for Python str(float).
+// JMESPath's compact JSON layout differs from the shared CLI envelope encoder.
+// Keep Python's shortest-roundtrip/exponent policy for scalar str(float) here.
 pub(crate) fn format_number(value: &serde_json::Number) -> String {
-    let text = value.to_string();
     if !value.is_f64() {
-        return text;
+        return value.to_string();
     }
+    // arbitrary_precision retains source float lexemes too. Python parses them
+    // as binary64; only integer lexemes should bypass finite-float normalization.
+    let text = serde_json::Number::from_f64(value.as_f64().expect("finite float"))
+        .expect("finite float")
+        .to_string();
     let (sign, magnitude) = text
         .strip_prefix('-')
         .map_or(("", text.as_str()), |magnitude| ("-", magnitude));

@@ -6,12 +6,11 @@
 #![deny(unnameable_test_items)]
 
 use async_trait::async_trait;
+use azure_core::credentials::{TokenCredential, TokenRequestOptions};
 use azure_identity::process::Executor;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use fabric_core::{
-    Audience, CancellationToken, Clock, CoreError, ErrorKind, OperationContext, TokenCredential,
-};
-use fabric_identity::{AzureCliSession, BoundCredential};
+use fabric_core::{Audience, CancellationToken, Clock, CoreError, ErrorKind, OperationContext};
+use fabric_identity::{AzureCliSession, Binding, BoundCredential};
 use serde_json::json;
 use std::{
     collections::VecDeque,
@@ -76,6 +75,9 @@ impl Executor for FakeProcess {
                 .join(" "),
         );
         let _drop = DropFlag(self.dropped.clone());
+        // Force concurrent cache callers to contend while SDK acquisition owns
+        // the scope slot, rather than accidentally testing sequential reuse.
+        tokio::task::yield_now().await;
         if self.hang {
             std::future::pending::<()>().await;
         }
@@ -139,21 +141,26 @@ async fn sdk_uses_current_context_and_single_flight_per_scope_with_expiry_refres
     );
     let binding = session.login(&context()).await.unwrap();
     let credential = BoundCredential::new(session, binding).unwrap();
-    let ctx = context();
     let (first, second) = tokio::join!(
-        credential.token(Audience::Fabric.scope(), &ctx),
-        credential.token(Audience::Fabric.scope(), &ctx),
+        credential.get_token(
+            &[Audience::Fabric.scope()],
+            Some(TokenRequestOptions::default())
+        ),
+        credential.get_token(
+            &[Audience::Fabric.scope()],
+            Some(TokenRequestOptions::default())
+        ),
     );
     assert_eq!(first.unwrap().token, second.unwrap().token);
     assert_eq!(process.commands.lock().unwrap().len(), 2);
     credential
-        .token(Audience::Storage.scope(), &context())
+        .get_token(&[Audience::Storage.scope()], None)
         .await
         .unwrap();
     assert_eq!(process.commands.lock().unwrap().len(), 3);
     clock.0.store(4990, Ordering::SeqCst);
     credential
-        .token(Audience::Fabric.scope(), &context())
+        .get_token(&[Audience::Fabric.scope()], None)
         .await
         .unwrap();
     assert_eq!(process.commands.lock().unwrap().len(), 4);
@@ -232,11 +239,11 @@ async fn missing_claims_expired_tokens_and_tenant_or_principal_drift_fail_closed
         let credential = BoundCredential::new(session, binding).unwrap();
         assert_eq!(
             credential
-                .token(Audience::Fabric.scope(), &context())
+                .get_token(&[Audience::Fabric.scope()], None)
                 .await
                 .unwrap_err()
-                .kind,
-            ErrorKind::Unauthorized
+                .kind(),
+            &azure_core::error::ErrorKind::Credential
         );
     }
     let (session, _, _) = setup(vec![response(TENANT, PRINCIPAL, "same", 999)], false);
@@ -260,18 +267,22 @@ async fn detected_identity_drift_also_blocks_previously_cached_other_scopes() {
     let binding = session.login(&context()).await.unwrap();
     let credential = BoundCredential::new(session, binding).unwrap();
     credential
-        .token(Audience::Fabric.scope(), &context())
+        .get_token(&[Audience::Fabric.scope()], None)
         .await
         .unwrap();
     credential
-        .token(Audience::Storage.scope(), &context())
+        .get_token(&[Audience::Storage.scope()], None)
         .await
         .unwrap();
     clock.0.store(4990, Ordering::SeqCst);
     for scope in [Audience::Fabric.scope(), Audience::Storage.scope()] {
         assert_eq!(
-            credential.token(scope, &context()).await.unwrap_err().kind,
-            ErrorKind::Unauthorized
+            credential
+                .get_token(&[scope], None)
+                .await
+                .unwrap_err()
+                .kind(),
+            &azure_core::error::ErrorKind::Credential
         );
     }
     assert_eq!(process.commands.lock().unwrap().len(), 4);
@@ -291,10 +302,10 @@ async fn inflight_credential_cancellation_drops_the_injected_process_future() {
     assert!(process.dropped.load(Ordering::SeqCst));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn deadline_bounds_acquisition_and_expired_context_never_starts_process() {
     let (session, process, _) = setup(vec![], true);
-    let ctx = OperationContext::new(Duration::from_millis(5), CancellationToken::new());
+    let ctx = OperationContext::new(Duration::from_secs(5), CancellationToken::new());
     assert_eq!(
         session.login(&ctx).await.unwrap_err().kind,
         ErrorKind::Timeout
@@ -318,11 +329,25 @@ async fn unsupported_scope_is_rejected_without_process_execution() {
     let credential = BoundCredential::new(session, binding).unwrap();
     assert_eq!(
         credential
-            .token("https://evil.invalid/.default", &context())
+            .get_token(&["https://evil.invalid/.default"], None)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::InvalidInput
+            .kind(),
+        &azure_core::error::ErrorKind::DataConversion
     );
+    assert_eq!(process.commands.lock().unwrap().len(), 1);
+    for scopes in [
+        vec![],
+        vec![Audience::Fabric.scope(), Audience::Storage.scope()],
+    ] {
+        assert_eq!(
+            credential
+                .get_token(&scopes, Some(TokenRequestOptions::default()))
+                .await
+                .unwrap_err()
+                .kind(),
+            &azure_core::error::ErrorKind::DataConversion,
+        );
+    }
     assert_eq!(process.commands.lock().unwrap().len(), 1);
 }

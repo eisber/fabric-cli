@@ -5,8 +5,9 @@
 #![forbid(unsafe_code)]
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
-    HttpExecutor, MAX_RESPONSE_BYTES, OperationContext, RecoveryInfo, validate_path,
-    validate_response, validate_url,
+    HttpExecutor, MAX_RESPONSE_BYTES, OperationContext, OperationHandle as Handle,
+    OperationKind as Strategy, operation_handle, validate_operation_url as checked_url,
+    validate_response,
 };
 use fabric_sdk_http::{bounded_with_clock, retry_after, sleep_with_budget};
 use serde_json::Value;
@@ -18,125 +19,10 @@ pub const POLLING_BUDGET: Duration = Duration::from_secs(600);
 /// Initial client backoff. Each pending response doubles it without an interval cap.
 pub const INITIAL_DELAY: Duration = Duration::from_secs(1);
 
-#[derive(Clone, Copy)]
-enum Strategy {
-    Fabric,
-    ArmStatus,
-    ArmLocation,
-}
-struct Handle {
-    url: Url,
-    id: Option<String>,
-    strategy: Strategy,
-}
 fn protocol(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Protocol, message)
 }
 
-fn checked_url(audience: Audience, value: &str) -> Result<Url, CoreError> {
-    if value.chars().any(|c| c.is_control() || c == ' ') {
-        return Err(protocol("Unsafe operation URL"));
-    }
-    validate_path(value.split(['?', '#']).next().unwrap_or_default())?;
-    let url = if value.starts_with("https://") {
-        Url::parse(value)
-    } else if value.starts_with('/') && !value.starts_with("//") {
-        Url::parse(audience.base_url()).and_then(|base| base.join(value))
-    } else {
-        return Err(protocol(
-            "Operation URL must be absolute HTTPS or origin-relative",
-        ));
-    }
-    .map_err(|_| protocol("Malformed operation URL"))?;
-    validate_url(audience, &url).map_err(|_| protocol("Unsafe operation URL"))?;
-    Ok(url)
-}
-fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 256
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
-}
-fn fabric_id(url: &Url) -> Option<String> {
-    let tail = url
-        .path()
-        .strip_prefix("/v1/operations/")?
-        .trim_end_matches('/');
-    valid_id(tail).then(|| tail.to_owned())
-}
-fn recover(error: &mut CoreError, handle: &Handle) {
-    let mut url = handle.url.clone();
-    url.set_query(None);
-    error.recovery = Some(RecoveryInfo {
-        operation_id: handle.id.clone(),
-        status_url: url.to_string(),
-        outcome_uncertain: true,
-    });
-}
-fn discover(audience: Audience, initial: &ApiResponse) -> Result<Option<Handle>, CoreError> {
-    match audience {
-        Audience::Fabric if initial.status == 202 => {
-            let id = initial.header("x-ms-operation-id");
-            if id.is_some_and(|id| !valid_id(id)) {
-                return Err(protocol("Malformed Fabric operation identifier"));
-            }
-            if let Some(location) = initial.header("location") {
-                let url = checked_url(audience, location)?;
-                if url.path().contains("/jobs/instances/") {
-                    return Ok(None);
-                }
-                let Some(location_id) = fabric_id(&url) else {
-                    if id.is_none() {
-                        return Ok(None);
-                    }
-                    return Err(protocol(
-                        "Fabric operation ID conflicts with unrecognized Location",
-                    ));
-                };
-                let handle = Handle {
-                    url,
-                    id: Some(location_id.clone()),
-                    strategy: Strategy::Fabric,
-                };
-                if id.is_some_and(|id| id != location_id) {
-                    let mut error = protocol("Conflicting Fabric operation handles");
-                    recover(&mut error, &handle);
-                    return Err(error);
-                }
-                return Ok(Some(handle));
-            }
-            Ok(id.map(|id| Handle {
-                url: Url::parse(&format!("{}/operations/{id}", audience.base_url()))
-                    .expect("fixed URL and safe ID"),
-                id: Some(id.to_owned()),
-                strategy: Strategy::Fabric,
-            }))
-        }
-        Audience::Azure if matches!(initial.status, 201 | 202) => {
-            let selected = initial
-                .header("azure-asyncoperation")
-                .map(|v| (v, Strategy::ArmStatus))
-                .or_else(|| {
-                    initial
-                        .header("location")
-                        .map(|v| (v, Strategy::ArmLocation))
-                });
-            selected
-                .map(|(location, strategy)| {
-                    checked_url(audience, location).map(|url| {
-                        Some(Handle {
-                            url,
-                            id: None,
-                            strategy,
-                        })
-                    })
-                })
-                .unwrap_or(Ok(None))
-        }
-        _ => Ok(None),
-    }
-}
 fn body(response: &ApiResponse) -> Result<Value, CoreError> {
     if response.body.len() > MAX_RESPONSE_BYTES {
         return Err(protocol("Operation response exceeds allocation bound"));
@@ -216,14 +102,14 @@ async fn reconcile(
         };
         let wait = delay.max(server);
         sleep_with_budget(clock, wait, context).await?;
-        let response = fetch(executor, clock, audience, handle.url.clone(), context).await?;
+        let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
             return Err(CoreError::new(
                 ErrorKind::Service,
                 "Operation status request failed",
             ));
         }
-        let current = match handle.strategy {
+        let current = match handle.kind() {
             Strategy::ArmLocation => match response.status {
                 200 => State::Success,
                 201 | 202 => State::Pending,
@@ -237,7 +123,7 @@ async fn reconcile(
                 delay = delay.saturating_mul(2);
             }
             State::Success => {
-                if !matches!(handle.strategy, Strategy::Fabric) {
+                if !matches!(handle.kind(), Strategy::Fabric) {
                     let mut completed = initial;
                     completed.status = 200;
                     return Ok(completed);
@@ -250,8 +136,21 @@ async fn reconcile(
                     return Ok(response);
                 };
                 let result_url = checked_url(audience, result)?;
-                if result_url == handle.url {
+                if &result_url == handle.url() {
                     return Err(protocol("Fabric result points to its status endpoint"));
+                }
+                // A terminal status can advertise a result before it is ready.
+                // Its Retry-After is still a not-before constraint, sharing the
+                // original reconciliation deadline (not a fresh result budget).
+                let result_delay = match retry_after(&response, clock.wall_now()) {
+                    Ok(delay) => delay.unwrap_or_default(),
+                    Err(_) => {
+                        clock.diagnostic("Invalid Retry-After header; using client backoff");
+                        INITIAL_DELAY
+                    }
+                };
+                if !result_delay.is_zero() {
+                    sleep_with_budget(clock, result_delay, context).await?;
                 }
                 let result_response = fetch(executor, clock, audience, result_url, context).await?;
                 if (200..300).contains(&result_response.status) {
@@ -288,26 +187,14 @@ pub async fn complete(
     cancellation: CancellationToken,
 ) -> Result<ApiResponse, CoreError> {
     let start = clock.now();
-    let discovered = validate_response(&initial)
-        .and_then(|()| discover(audience, &initial))
-        .map_err(|mut error| {
-            // A bad advertised URL must not erase a separately known safe operation ID.
-            if error.recovery.is_none()
-                && audience == Audience::Fabric
-                && let Some(id) = initial
-                    .header("x-ms-operation-id")
-                    .filter(|id| valid_id(id))
-            {
-                let fallback = Handle {
-                    url: Url::parse(&format!("{}/operations/{id}", audience.base_url()))
-                        .expect("fixed URL and safe ID"),
-                    id: Some(id.to_owned()),
-                    strategy: Strategy::Fabric,
-                };
-                recover(&mut error, &fallback);
-            }
+    let discovered = operation_handle(audience, initial.status, &initial.headers)?;
+    validate_response(&initial).map_err(|error| {
+        if let Some(handle) = &discovered {
+            handle.attach(error)
+        } else {
             error
-        })?;
+        }
+    })?;
     let Some(handle) = discovered else {
         return Ok(initial);
     };
@@ -317,8 +204,5 @@ pub async fn complete(
     };
     reconcile(executor, clock, audience, initial, &handle, &context)
         .await
-        .map_err(|mut error| {
-            recover(&mut error, &handle);
-            error
-        })
+        .map_err(|error| handle.attach(error))
 }

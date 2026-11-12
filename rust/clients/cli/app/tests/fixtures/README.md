@@ -16,6 +16,21 @@ that object; scalar false, null, and zero become Python strings; projected
 lists are not wrapped again by `OutputResult`. Whitespace bodies become
 `"(Empty)"`; invalid nonempty JSON is an error.
 
+Additional integer expectations in the host/shared-JSON tests come from Python
+`json.loads`/`json.dumps`, not from Rust serialization. They cover `u64`/`i64`
+boundaries, both signs outside those ranges, larger-than-`i128` values, scalar and
+container projection, and finite-float normalization. The CLI's empty-query
+bypass follows `if query` in pinned `fab_api_request.py`; empty-query inventory
+remains a separate query-library behavior. Pinned `fab_api.py` maps JSON-file
+`null` to absent input, while `fab_api_client.py` supplies JSON Content-Type even
+without a body. Exact prepared-request tests cover these cases and overrides.
+
+Reserved-key fixtures also use independent Python JSON expectations. They retain
+root, nested, and escaped `$serde_json::private::Number` keys with numeric and
+nonnumeric strings, alongside exact wide integers. API output assertions use
+typed raw JSON maps rather than deserializing `Value` or reusing the decoder
+under test, so serde's marker interpretation cannot hide a regression.
+
 Coverage limit: these byte fixtures cover the envelope and ordered JSON body,
 not HTTP wire-header ordering. The agreed shared `ApiResponse` uses a
 `BTreeMap`, so displayed header keys are sorted rather than retaining wire

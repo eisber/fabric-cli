@@ -4,19 +4,20 @@
 //! Thin injectable parser/host/output composition. Only the executable owns runtime and signals.
 #![forbid(unsafe_code)]
 
+pub mod lifecycle;
 mod selection;
 
 pub use selection::SelectionFile;
 
 use async_trait::async_trait;
+use azure_core::credentials::{TokenCredential, TokenRequestOptions};
 use clap::{Arg, ArgAction, Command, error::ErrorKind as ParseErrorKind};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
     Audience, CancellationToken, Clock, HttpExecutor, HttpTransport, OperationContext,
-    TokenCredential,
 };
 use fabric_identity::{AzureCliSession, Binding, BoundCredential, ProcessExecutor};
-use fabric_sdk_http::{HttpClient, SystemClock};
+use fabric_sdk_http::{HttpClient, SystemClock, bounded_with_clock};
 use serde_json::{Value, json};
 use std::{
     ffi::OsString,
@@ -295,8 +296,26 @@ async fn execute(
             Some("status") => {
                 let binding = selected(host)?;
                 let credential = host.credential(binding)?;
-                let context = OperationContext::new(Duration::from_secs(240), cancellation);
-                credential.token(Audience::Fabric.scope(), &context).await?;
+                let clock = host.clock();
+                let context = OperationContext {
+                    deadline: clock.now() + Duration::from_secs(240),
+                    cancellation,
+                };
+                bounded_with_clock(
+                    clock.as_ref(),
+                    &context,
+                    credential.get_token(
+                        &[Audience::Fabric.scope()],
+                        Some(TokenRequestOptions::default()),
+                    ),
+                )
+                .await?
+                .map_err(|_| {
+                    CommandError::new(
+                        "Unauthorized",
+                        "Credential acquisition failed; run fab-rs auth login to validate the selected session",
+                    )
+                })?;
                 Ok(json!({"selected": true}))
             }
             _ => Err(CommandError::new(

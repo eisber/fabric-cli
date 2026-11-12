@@ -6,11 +6,11 @@
 #![deny(unnameable_test_items)]
 
 use async_trait::async_trait;
+use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use fabric_cli::{Host, SelectionFile};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
-    AccessToken, ApiRequest, ApiResponse, CancellationToken, Clock, CoreError, ErrorKind,
-    HttpTransport, OperationContext, TokenCredential,
+    ApiRequest, ApiResponse, CancellationToken, Clock, CoreError, HttpTransport, OperationContext,
 };
 use fabric_identity::Binding;
 use serde_json::{Value, json};
@@ -21,7 +21,7 @@ use std::{
     process::Command,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -62,22 +62,44 @@ impl Clock for TestClock {
     }
 }
 
+#[derive(Debug)]
 struct Credential {
     calls: AtomicUsize,
-    error: Option<ErrorKind>,
+    error: bool,
+    hang: bool,
+    dropped: AtomicBool,
+}
+
+struct CredentialFutureGuard<'a>(&'a AtomicBool);
+impl Drop for CredentialFutureGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
 }
 #[async_trait]
 impl TokenCredential for Credential {
-    async fn token(&self, _: &str, context: &OperationContext) -> Result<AccessToken, CoreError> {
-        context.remaining()?;
+    async fn get_token(
+        &self,
+        scopes: &[&str],
+        options: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
+        assert_eq!(scopes.len(), 1);
+        assert!(options.is_some());
         self.calls.fetch_add(1, Ordering::SeqCst);
-        if let Some(error) = self.error {
-            return Err(CoreError::new(error, "Safe synthetic credential failure"));
+        let _guard = CredentialFutureGuard(&self.dropped);
+        if self.hang {
+            std::future::pending::<()>().await;
         }
-        Ok(AccessToken {
-            token: "synthetic-token".into(),
-            expires_on: UNIX_EPOCH + Duration::from_secs(4102444800),
-        })
+        if self.error {
+            return Err(azure_core::Error::with_message(
+                azure_core::error::ErrorKind::Credential,
+                "SDK-ERROR-CANARY",
+            ));
+        }
+        Ok(AccessToken::new(
+            "synthetic-token",
+            azure_core::time::OffsetDateTime::from_unix_timestamp(4102444800).unwrap(),
+        ))
     }
 }
 
@@ -116,7 +138,9 @@ impl FakeHost {
             hooks: AtomicUsize::new(0),
             credential: Arc::new(Credential {
                 calls: AtomicUsize::new(0),
-                error: None,
+                error: false,
+                hang: false,
+                dropped: AtomicBool::new(false),
             }),
             transport: Arc::new(Transport {
                 requests: Mutex::new(Vec::new()),
@@ -305,6 +329,47 @@ async fn input_and_query_validation_precede_selection_and_credentials() {
 }
 
 #[tokio::test]
+async fn invalid_static_query_functions_cannot_reach_auth_or_mutating_http() {
+    for query in [
+        "not_a_function(@)",
+        "length()",
+        "length(@, @)",
+        "length(not_a_function(@))",
+        "`true` || not_a_function(@)",
+        "map(&length(), text.items)",
+        "map(&not_a_function(@), text.items)",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .chain(std::iter::once(vec!["a"; 129].join(".")))
+    {
+        let host = FakeHost::new(vec![]);
+        *host.binding.lock().unwrap() = None;
+        let (code, stdout, _) = run(
+            &[
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--input",
+                "{}",
+                "--query",
+                query.as_str(),
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 1, "{stdout}");
+        assert!(stdout.contains("InvalidInput"));
+        assert!(!stdout.contains("Unauthorized"));
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+        // Timestamp rendering only: no selection read, provider or transport setup.
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
 async fn unsupported_aliases_params_and_polling_knobs_fail_without_acquisition() {
     for option in [
         "-A",
@@ -396,10 +461,30 @@ async fn python_query_runs_on_full_payload_preserves_falsey_and_keeps_lists_flat
     )]);
     let (code, stdout, _) = run(&["api", "items", "--query", ""], &host).await;
     assert_eq!(code, 0);
+    assert_eq!(data(&stdout)[0]["status_code"], 200);
     assert_eq!(
-        data(&stdout),
-        json!(["status_code", "text.items", "text.empty"])
+        data(&stdout)[0]["text"],
+        json!({"items":[],"empty":"","object":{}})
     );
+}
+
+#[tokio::test]
+async fn cli_empty_query_bypasses_projection_even_though_library_empty_query_inventories() {
+    let payload = json!({"status_code":200,"text":{"items":[],"empty":"","object":{}}});
+    assert_eq!(
+        fabric_cli_query::search(&payload, "").unwrap(),
+        json!(["status_code", "text.items", "text.empty"]),
+    );
+    for query in ["", "''", "\"\""] {
+        let host = FakeHost::new(vec![response(
+            200,
+            r#"{"items":[],"empty":"","object":{}}"#,
+            &[],
+        )]);
+        let (code, stdout, _) = run(&["api", "items", "--query", query], &host).await;
+        assert_eq!(code, 0);
+        assert_eq!(data(&stdout), json!([payload.clone()]));
+    }
 }
 
 #[tokio::test]
@@ -464,31 +549,80 @@ async fn login_status_logout_selection_required_and_no_network() {
 }
 
 #[tokio::test]
-async fn auth_failure_and_cancellation_remain_structured_and_do_not_send() {
-    for kind in [
-        ErrorKind::Unauthorized,
-        ErrorKind::Cancelled,
-        ErrorKind::Timeout,
-    ] {
+async fn sdk_auth_failure_is_sanitized_unauthorized_and_never_sends() {
+    for args in [vec!["api", "items"], vec!["auth", "status"]] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
             calls: AtomicUsize::new(0),
-            error: Some(kind),
+            error: true,
+            hang: false,
+            dropped: AtomicBool::new(false),
         });
-        let (code, stdout, stderr) = run(&["api", "items"], &host).await;
-        assert_eq!(
-            code,
-            if kind == ErrorKind::Unauthorized {
-                4
-            } else {
-                1
-            }
-        );
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 4);
+        assert!(stdout.contains("Unauthorized"));
+        assert!(!stdout.contains("SDK-ERROR-CANARY"));
         assert_eq!(
             serde_json::from_str::<Value>(&stdout).unwrap()["status"],
             "Failure"
         );
         assert!(stderr.is_empty());
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn api_and_auth_status_cancel_sdk_futures_without_sending() {
+    for args in [
+        vec!["fab-rs", "api", "items"],
+        vec!["fab-rs", "auth", "status"],
+    ] {
+        let mut host = FakeHost::new(vec![]);
+        host.credential = Arc::new(Credential {
+            calls: AtomicUsize::new(0),
+            error: false,
+            hang: true,
+            dropped: AtomicBool::new(false),
+        });
+        let cancellation = CancellationToken::new();
+        let signal = cancellation.clone();
+        let cancel = async {
+            tokio::task::yield_now().await;
+            signal.cancel();
+        };
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let (code, ()) = tokio::join!(
+            fabric_cli::run(
+                args.into_iter().map(OsString::from),
+                &host,
+                cancellation,
+                &mut stdout,
+                &mut stderr
+            ),
+            cancel,
+        );
+        assert_eq!(code, 1);
+        assert!(String::from_utf8(stdout).unwrap().contains("Cancelled"));
+        assert!(host.credential.dropped.load(Ordering::SeqCst));
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 1);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn api_and_auth_status_bound_hanging_sdk_credentials_by_deadline() {
+    for args in [vec!["api", "items"], vec!["auth", "status"]] {
+        let mut host = FakeHost::new(vec![]);
+        host.credential = Arc::new(Credential {
+            calls: AtomicUsize::new(0),
+            error: false,
+            hang: true,
+            dropped: AtomicBool::new(false),
+        });
+        let (code, stdout, _) = run(&args, &host).await;
+        assert_eq!(code, 1);
+        assert!(stdout.contains("Timeout"));
+        assert!(host.credential.dropped.load(Ordering::SeqCst));
         assert!(host.transport.requests.lock().unwrap().is_empty());
     }
 }
@@ -555,6 +689,313 @@ impl Drop for TempDirectory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+fn prepared(args: &[&str]) -> fabric_cli_api::PreparedApi {
+    let matches = fabric_cli::parser()
+        .try_get_matches_from(std::iter::once("fab-rs").chain(args.iter().copied()))
+        .unwrap();
+    fabric_cli_api::prepare(matches.subcommand_matches("api").unwrap()).unwrap()
+}
+
+#[test]
+fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_content_type() {
+    let directory = TempDirectory::new();
+    let null_file = directory.0.join("null.json");
+    std::fs::write(&null_file, b"null").unwrap();
+    for method in ["get", "post", "put", "patch", "delete"] {
+        for input in [None, Some(null_file.to_str().unwrap())] {
+            for custom in [false, true] {
+                let mut args = vec!["api", "items", "--method", method];
+                if let Some(input) = input {
+                    args.extend(["--input", input]);
+                }
+                if custom {
+                    args.extend([
+                        "--headers",
+                        "Content-Type=text/plain,cOnTeNt-TyPe=application/custom",
+                    ]);
+                }
+                let request = prepared(&args).request;
+                assert_eq!(request.method, method.to_uppercase());
+                assert_eq!(
+                    request.url.as_str(),
+                    "https://api.fabric.microsoft.com/v1/items"
+                );
+                assert_eq!(request.body.as_slice(), b"");
+                assert_eq!(
+                    request.headers,
+                    [(
+                        "content-type".to_owned(),
+                        if custom {
+                            "application/custom"
+                        } else {
+                            "application/json"
+                        }
+                        .to_owned()
+                    )]
+                    .into_iter()
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn arbitrary_integer_request_and_response_bytes_match_independent_python_numbers() {
+    let source = r#"{"positive":18446744073709551617,"negative":-9223372036854775809,"huge":123456789012345678901234567890123456789012345678901234567890,"small_negative":-1,"zero":0}"#;
+    let expected_request = r#"{"positive": 18446744073709551617, "negative": -9223372036854775809, "huge": 123456789012345678901234567890123456789012345678901234567890, "small_negative": -1, "zero": 0}"#;
+    let directory = TempDirectory::new();
+    let input_file = directory.0.join("integers.json");
+    std::fs::write(&input_file, source).unwrap();
+    for input in [source, input_file.to_str().unwrap()] {
+        let host = FakeHost::new(vec![response(200, source, &[])]);
+        let (code, stdout, _) = run(
+            &["api", "items", "--method", "post", "--input", input],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0);
+        assert_eq!(
+            host.transport.requests.lock().unwrap()[0].body,
+            expected_request.as_bytes()
+        );
+        for exact in [
+            "\"positive\": 18446744073709551617",
+            "\"negative\": -9223372036854775809",
+            "\"huge\": 123456789012345678901234567890123456789012345678901234567890",
+            "\"small_negative\": -1",
+            "\"zero\": 0",
+        ] {
+            assert!(stdout.contains(exact), "{stdout}");
+        }
+    }
+    for (query, expected) in [
+        ("text.positive", "18446744073709551617"),
+        ("text.negative", "-9223372036854775809"),
+        (
+            "text.huge",
+            "123456789012345678901234567890123456789012345678901234567890",
+        ),
+        ("to_string(text)", source),
+    ] {
+        let host = FakeHost::new(vec![response(200, source, &[])]);
+        let (code, stdout, _) = run(&["api", "items", "--query", query], &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(data(&stdout), json!([expected]));
+    }
+    let host = FakeHost::new(vec![response(
+        200,
+        "[18446744073709551617,-9223372036854775809]",
+        &[],
+    )]);
+    let (code, stdout, _) = run(&["api", "items", "--query", "text"], &host).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("18446744073709551617"));
+    assert!(stdout.contains("-9223372036854775809"));
+    assert_eq!(data(&stdout).as_array().unwrap().len(), 2);
+}
+
+type RawJsonObject<'a> = std::collections::BTreeMap<String, &'a serde_json::value::RawValue>;
+
+// Inspect output independently of ValueVisitor and of the shared decoder under
+// test; either one could otherwise hide the reserved-key corruption in assertions.
+fn first_raw_data(stdout: &str) -> &serde_json::value::RawValue {
+    let envelope: RawJsonObject<'_> = serde_json::from_str(stdout).unwrap();
+    let result: RawJsonObject<'_> = serde_json::from_str(envelope["result"].get()).unwrap();
+    let data: Vec<&serde_json::value::RawValue> =
+        serde_json::from_str(result["data"].get()).unwrap();
+    data[0]
+}
+
+fn assert_reserved_object(raw: &serde_json::value::RawValue, nested: bool, expected_marker: &str) {
+    let object: RawJsonObject<'_> = serde_json::from_str(raw.get()).unwrap();
+    let marker = if nested {
+        let metadata: RawJsonObject<'_> = serde_json::from_str(object["metadata"].get()).unwrap();
+        metadata["$serde_json::private::Number"]
+    } else {
+        object["$serde_json::private::Number"]
+    };
+    assert_eq!(
+        serde_json::from_str::<String>(marker.get()).unwrap(),
+        expected_marker,
+    );
+    if let Some(wide) = object.get("wide") {
+        assert_eq!(wide.get(), "18446744073709551617");
+        assert_eq!(object["negative"].get(), "-9223372036854775809");
+    }
+}
+
+#[tokio::test]
+async fn reserved_keys_survive_actual_api_input_response_and_projection() {
+    for (source, expected_body, expected_compact, nested, marker) in [
+        (
+            r#"{"$serde_json::private::Number":"123"}"#,
+            r#"{"$serde_json::private::Number": "123"}"#,
+            r#"{"$serde_json::private::Number":"123"}"#,
+            false,
+            "123",
+        ),
+        (
+            r#"{"$serde_json::private::Number":"not a number"}"#,
+            r#"{"$serde_json::private::Number": "not a number"}"#,
+            r#"{"$serde_json::private::Number":"not a number"}"#,
+            false,
+            "not a number",
+        ),
+        (
+            r#"{"\u0024serde_json::private::Number":"123"}"#,
+            r#"{"$serde_json::private::Number": "123"}"#,
+            r#"{"$serde_json::private::Number":"123"}"#,
+            false,
+            "123",
+        ),
+        (
+            r#"{"$serde_json::private::\u004eumber":"not a number"}"#,
+            r#"{"$serde_json::private::Number": "not a number"}"#,
+            r#"{"$serde_json::private::Number":"not a number"}"#,
+            false,
+            "not a number",
+        ),
+        (
+            r#"{"metadata":{"\u0024serde_json::private::Number":"123"},"wide":18446744073709551617,"negative":-9223372036854775809}"#,
+            r#"{"metadata": {"$serde_json::private::Number": "123"}, "wide": 18446744073709551617, "negative": -9223372036854775809}"#,
+            r#"{"metadata":{"$serde_json::private::Number":"123"},"wide":18446744073709551617,"negative":-9223372036854775809}"#,
+            true,
+            "123",
+        ),
+        (
+            r#"{"metadata":{"$serde_json::private::\u004eumber":"not a number"}}"#,
+            r#"{"metadata": {"$serde_json::private::Number": "not a number"}}"#,
+            r#"{"metadata":{"$serde_json::private::Number":"not a number"}}"#,
+            true,
+            "not a number",
+        ),
+    ] {
+        let directory = TempDirectory::new();
+        let file = directory.0.join("reserved.json");
+        std::fs::write(&file, source).unwrap();
+        for input in [source, file.to_str().unwrap()] {
+            let host = FakeHost::new(vec![response(200, source, &[])]);
+            let (code, stdout, _) = run(
+                &["api", "items", "--method", "post", "--input", input],
+                &host,
+            )
+            .await;
+            assert_eq!(code, 0, "{stdout}");
+            assert_eq!(
+                host.transport.requests.lock().unwrap()[0].body,
+                expected_body.as_bytes()
+            );
+            let payload: RawJsonObject<'_> =
+                serde_json::from_str(first_raw_data(&stdout).get()).unwrap();
+            assert_reserved_object(payload["text"], nested, marker);
+        }
+        for query in ["text", "to_string(text)"] {
+            let host = FakeHost::new(vec![response(200, source, &[])]);
+            let (code, stdout, _) = run(&["api", "items", "--query", query], &host).await;
+            assert_eq!(code, 0, "{stdout}");
+            let projected = first_raw_data(&stdout);
+            if query == "text" {
+                assert_reserved_object(projected, nested, marker);
+            } else {
+                assert_eq!(
+                    serde_json::from_str::<String>(projected.get()).unwrap(),
+                    expected_compact,
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn reserved_key_number_values_do_not_replace_actual_api_objects() {
+    for (source, expected_body, nested, digits) in [
+        (
+            r#"{"$serde_json::private::Number":18446744073709551617}"#,
+            r#"{"$serde_json::private::Number": 18446744073709551617}"#,
+            false,
+            "18446744073709551617",
+        ),
+        (
+            r#"{"\u0024serde_json::private::Number":-9223372036854775809}"#,
+            r#"{"$serde_json::private::Number": -9223372036854775809}"#,
+            false,
+            "-9223372036854775809",
+        ),
+        (
+            r#"{"metadata":{"$serde_json::private::\u004eumber":18446744073709551617}}"#,
+            r#"{"metadata": {"$serde_json::private::Number": 18446744073709551617}}"#,
+            true,
+            "18446744073709551617",
+        ),
+    ] {
+        let host = FakeHost::new(vec![response(200, source, &[])]);
+        let (code, stdout, _) = run(
+            &["api", "items", "--method", "post", "--input", source],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(
+            host.transport.requests.lock().unwrap()[0].body,
+            expected_body.as_bytes()
+        );
+        let payload: RawJsonObject<'_> =
+            serde_json::from_str(first_raw_data(&stdout).get()).unwrap();
+        let object: RawJsonObject<'_> = serde_json::from_str(payload["text"].get()).unwrap();
+        let marker = if nested {
+            let metadata: RawJsonObject<'_> =
+                serde_json::from_str(object["metadata"].get()).unwrap();
+            metadata["$serde_json::private::Number"]
+        } else {
+            object["$serde_json::private::Number"]
+        };
+        assert_eq!(marker.get(), digits);
+    }
+}
+
+#[tokio::test]
+async fn actual_api_query_literals_preserve_numeric_and_nonnumeric_reserved_key_objects() {
+    for (query, expected) in [
+        (
+            r#"to_string(`{"$serde_json::private::Number":"123"}`)"#,
+            r#"{"$serde_json::private::Number":"123"}"#,
+        ),
+        (
+            r#"to_string(`{"metadata":{"\u0024serde_json::private::Number":"not a number"}}`)"#,
+            r#"{"metadata":{"$serde_json::private::Number":"not a number"}}"#,
+        ),
+    ] {
+        let host = FakeHost::new(vec![response(200, "{}", &[])]);
+        let (code, stdout, _) = run(
+            &[
+                "api", "items", "--method", "post", "--input", "{}", "--query", query,
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(
+            serde_json::from_str::<String>(first_raw_data(&stdout).get()).unwrap(),
+            expected,
+        );
+    }
+}
+
+#[tokio::test]
+async fn unsupported_float_overflow_is_rejected_without_rounding_or_preauth_effects() {
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, _) = run(&["api", "items", "--input", r#"{"value":1e9999}"#], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("InvalidJson"));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+    let host = FakeHost::new(vec![response(200, r#"{"value":-1e9999}"#, &[])]);
+    let (code, stdout, _) = run(&["api", "items"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("InvalidJson"));
 }
 
 #[tokio::test]

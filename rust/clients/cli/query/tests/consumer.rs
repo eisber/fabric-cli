@@ -186,6 +186,21 @@ fn syntax_preflight_is_offline_and_accepts_wrapper_operations() {
     for (expression, kind) in [
         ("[?", QueryErrorKind::Syntax),
         ("&id", QueryErrorKind::Unsupported),
+        ("not_a_function(@)", QueryErrorKind::UnknownFunction),
+        ("length()", QueryErrorKind::InvalidArity),
+        ("length(@, @)", QueryErrorKind::InvalidArity),
+        ("merge()", QueryErrorKind::InvalidArity),
+        ("not_null()", QueryErrorKind::InvalidArity),
+        (
+            "map(&not_a_function(@), rows)",
+            QueryErrorKind::UnknownFunction,
+        ),
+        ("sort_by(rows, &length())", QueryErrorKind::InvalidArity),
+        ("`true` || length()", QueryErrorKind::InvalidArity),
+        ("[?not_a_function(@)]", QueryErrorKind::UnknownFunction),
+        ("`1e400`", QueryErrorKind::Unsupported),
+        ("`[1e400]`", QueryErrorKind::Unsupported),
+        ("`18446744073709551617`", QueryErrorKind::Unsupported),
         ("__fab_eq(`1`, `1`)", QueryErrorKind::UnknownFunction),
         ("`deprecated unquoted string`", QueryErrorKind::Unsupported),
     ] {
@@ -200,10 +215,206 @@ fn syntax_preflight_is_offline_and_accepts_wrapper_operations() {
 }
 
 #[test]
+fn preflight_accepts_runtime_signatures_including_variadic_functions() {
+    for expression in [
+        "abs(@)",
+        "avg(@)",
+        "ceil(@)",
+        "contains(@, @)",
+        "ends_with(@, @)",
+        "floor(@)",
+        "join(@, @)",
+        "keys(@)",
+        "length(@)",
+        "map(&id, @)",
+        "min(@)",
+        "max(@)",
+        "max_by(@, &id)",
+        "min_by(@, &id)",
+        "merge(@)",
+        "merge(@, @, @)",
+        "not_null(@)",
+        "not_null(@, @, @)",
+        "reverse(@)",
+        "sort(@)",
+        "sort_by(@, &id)",
+        "starts_with(@, @)",
+        "sum(@)",
+        "to_array(@)",
+        "to_number(@)",
+        "to_string(@)",
+        "type(@)",
+        "values(@)",
+    ] {
+        validate(expression).unwrap();
+    }
+}
+
+#[test]
+fn arbitrary_width_integer_projections_never_coerce_to_float() {
+    for number in [
+        "18446744073709551617",
+        "-9223372036854775809",
+        "170141183460469231731687303715884105728",
+    ] {
+        let value: Value = serde_json::from_str(number).unwrap();
+        let object = json!({"value": value.clone(), "rows": [value.clone()]});
+        assert_eq!(search(&object, "value").unwrap(), json!(number));
+        assert_eq!(search(&object, "rows[0]").unwrap(), json!(number));
+        assert_eq!(
+            search(&object, "[value, rows[0]]").unwrap(),
+            json!([value.clone(), value.clone()])
+        );
+        assert_eq!(search(&object, "rows[*]").unwrap(), json!([value.clone()]));
+        assert_eq!(
+            search(&object, "{n: value}").unwrap(),
+            json!({"n": value.clone()})
+        );
+        assert_eq!(search(&object, "to_string(value)").unwrap(), json!(number));
+        assert_eq!(
+            search(&object, "to_string(rows)").unwrap(),
+            json!(format!("[{number}]"))
+        );
+        assert_eq!(search(&object, "to_number(value)").unwrap(), json!(number));
+        for expression in [
+            "abs(value)",
+            "ceil(value)",
+            "floor(value)",
+            "sum(rows)",
+            "avg(rows)",
+            "sort(rows)",
+            "value == value",
+            "value > `0`",
+        ] {
+            assert_eq!(
+                search(&object, expression).unwrap_err().kind(),
+                QueryErrorKind::Unsupported
+            );
+        }
+    }
+}
+
+#[test]
+fn arbitrary_precision_float_lexemes_still_follow_python_binary64_strings() {
+    let data: Value = serde_json::from_str(r#"{"n":1.00000000000000000001}"#).unwrap();
+    assert_eq!(search(&data, "n").unwrap(), json!("1.0"));
+    assert_eq!(search(&data, "to_string(n)").unwrap(), json!("1.0"));
+}
+
+#[test]
+fn genuine_private_number_keys_in_json_literals_are_never_numeric_markers() {
+    for raw in [
+        r#"{"$serde_json::private::Number":"123"}"#,
+        r#"{"$serde_json::private::Number":"not a number"}"#,
+        r#"{"$serde_json::private::Number":"18446744073709551617"}"#,
+        r#"{"$serde_json::private::Number":123}"#,
+        r#"{"$serde_json::private::Number":null}"#,
+        r#"{"\u0024serde_json::private::Number":"123"}"#,
+        r#"{"before":1,"nested":{"$serde_json::private::Number":"123"},"after":2}"#,
+        r#"[{"$serde_json::private::Number":"123"},{"$serde_json::private::Number":false}]"#,
+    ] {
+        let expected = fabric_core_json::decode(raw.as_bytes()).unwrap();
+        let expression = format!("`{raw}`");
+        validate(&expression).unwrap();
+        assert_eq!(search(&json!({}), &expression).unwrap(), expected);
+        assert_eq!(
+            search(&json!({}), &format!("`{raw}` == `{raw}`")).unwrap(),
+            json!("True")
+        );
+        assert_eq!(
+            search(&json!({}), &format!("to_string(`{raw}`)")).unwrap(),
+            json!(expected.to_string())
+        );
+    }
+}
+
+#[test]
+fn literal_masking_preserves_utf8_escaped_backticks_and_expression_references() {
+    let expected = json!({"$serde_json::private::Number": "123", "unicode": "é`"});
+    let literal = r#"`{"$serde_json::private::Number":"123","unicode":"é\`"}`"#;
+    let expression = format!("[{literal}, `1`, 'é', {literal}]");
+    validate(&expression).unwrap();
+    assert_eq!(
+        search(&json!({}), &expression).unwrap(),
+        json!([expected.clone(), 1, "é", expected.clone()])
+    );
+    assert_eq!(
+        search(&json!([{}, {}]), &format!("map(&{literal}, @)")).unwrap(),
+        json!([expected.clone(), expected.clone()])
+    );
+    let data = json!({"literal": expected.clone()});
+    assert_eq!(
+        search(&data, &format!("literal == {literal}")).unwrap(),
+        json!("True")
+    );
+    assert_eq!(search(&data, "literal").unwrap(), expected);
+}
+
+#[test]
+fn intermediate_limits_apply_even_when_the_final_result_would_be_tiny() {
+    // This is a safe admission-only rejection, not the 24-stage OOM example.
+    // Native evaluation is never entered for a denied query.
+    let stages = std::iter::repeat_n("[@,@]", 14)
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let data = json!("x".repeat(1024));
+    for expression in [
+        stages.clone(),
+        format!("{stages} | length(@)"),
+        format!("{stages} | `[0]`"),
+    ] {
+        assert_eq!(
+            search(&data, &expression).unwrap_err().kind(),
+            QueryErrorKind::ResourceLimit
+        );
+    }
+    assert_eq!(search(&data, "[@,@] | length(@)").unwrap(), json!("2"));
+    assert_eq!(
+        validate(&" ".repeat(64 * 1024 + 1)).unwrap_err().kind(),
+        QueryErrorKind::ResourceLimit
+    );
+}
+
+#[test]
 fn expression_nesting_is_a_typed_error_not_a_panic() {
     let expression = std::iter::repeat_n("a", 150).collect::<Vec<_>>().join(".");
     assert_eq!(
         search(&json!({}), &expression).unwrap_err().kind(),
         QueryErrorKind::ResourceLimit
     );
+}
+
+#[test]
+fn structural_depth_limit_is_rejected_by_offline_preflight() {
+    // The pinned parser accepts 128 links, but those links form 129 AST levels.
+    let expression = vec!["a"; 129].join(".");
+    assert_eq!(
+        validate(&expression).unwrap_err().kind(),
+        QueryErrorKind::ResourceLimit
+    );
+    assert_eq!(
+        search(&json!({}), &expression).unwrap_err().kind(),
+        QueryErrorKind::ResourceLimit
+    );
+    validate(&vec!["a"; 128].join(".")).unwrap();
+}
+
+#[test]
+fn selecting_small_fields_does_not_multiply_unrelated_row_payloads() {
+    let mut rows = vec![json!({"id": "a"}); 100];
+    rows[0] = json!({"id": "a", "unused": "x".repeat(32_768)});
+    let data = json!({"rows": rows});
+    for expression in ["rows[*].id", "rows[].id", "map(&id, rows)"] {
+        assert_eq!(
+            search(&data, expression).unwrap(),
+            json!(vec!["a"; 100]),
+            "{expression}"
+        );
+    }
+}
+
+#[test]
+fn scalar_length_does_not_reserve_an_additional_full_array_copy() {
+    let data = json!({"rows": vec![0; 100_000]});
+    assert_eq!(search(&data, "length(rows)").unwrap(), json!("100000"));
 }

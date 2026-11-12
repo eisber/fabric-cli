@@ -11,6 +11,7 @@ publish.workspace = true
 description = "Pure Python-compatible Fabric CLI JMESPath search and path inventory"
 
 [dependencies]
+fabric-core-json.workspace = true
 jpx-core.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

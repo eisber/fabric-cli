@@ -7,7 +7,7 @@ use async_compression::tokio::bufread::{GzipDecoder, ZlibDecoder};
 use async_trait::async_trait;
 use fabric_core::{
     ApiRequest, ApiResponse, CoreError, ErrorKind, HttpTransport, MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES, OperationContext,
+    MAX_RESPONSE_BYTES, OperationContext, ResponseHeadCapture,
 };
 use fabric_sdk_http::bounded;
 use http_body_util::{BodyExt, Full};
@@ -53,7 +53,12 @@ impl NativeHttpClient {
             client: builder.build(connector),
         })
     }
-    async fn send_once(&self, request: ApiRequest) -> Result<ApiResponse, CoreError> {
+    async fn send_once(
+        &self,
+        request: ApiRequest,
+        context: &OperationContext,
+        head: &ResponseHeadCapture,
+    ) -> Result<ApiResponse, CoreError> {
         if request.url.scheme() != "https" || request.body.len() > MAX_REQUEST_BYTES {
             return Err(error("Native transport requires bounded HTTPS requests"));
         }
@@ -78,42 +83,78 @@ impl NativeHttpClient {
                 "HTTP redirects are not followed",
             ));
         }
-        let mut headers = BTreeMap::new();
-        let mut header_bytes = 0usize;
-        for (name, value) in response.headers() {
-            header_bytes = header_bytes
-                .saturating_add(name.as_str().len())
-                .saturating_add(value.len());
-            if header_bytes > 64 * 1024 {
-                return Err(protocol("Response headers exceed allocation bound"));
-            }
-            if headers.contains_key(name.as_str())
-                && [
-                    "location",
-                    "azure-asyncoperation",
-                    "x-ms-operation-id",
-                    "retry-after",
-                    "content-encoding",
-                ]
-                .contains(&name.as_str())
-            {
-                return Err(CoreError::new(
-                    ErrorKind::Protocol,
-                    "Duplicate operation control header",
-                ));
-            }
-            // Python Requests exposes HTTP header octets as Latin-1, joining
-            // repeated fields. Control headers above remain unambiguous.
-            let value: String = value.as_bytes().iter().copied().map(char::from).collect();
-            headers
-                .entry(name.as_str().to_owned())
-                .and_modify(|previous: &mut String| {
-                    previous.push_str(", ");
-                    previous.push_str(&value);
-                })
-                .or_insert(value);
+        let headers = ingest_headers(status, response.headers(), head)?;
+        receive(status, headers, response.into_body(), context, head).await
+    }
+}
+
+// On rejection inspect the complete raw head, not just the prefix preceding the
+// duplicate. A later second operation-ID field must invalidate ID-only evidence.
+fn ingest_headers(
+    status: u16,
+    raw: &http::HeaderMap,
+    head: &ResponseHeadCapture,
+) -> Result<BTreeMap<String, String>, CoreError> {
+    let rejected = |error| {
+        head.reject_headers(
+            status,
+            raw.iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+            error,
+        )
+    };
+    let mut headers = BTreeMap::new();
+    let mut header_bytes = 0usize;
+    for (name, value) in raw {
+        header_bytes = header_bytes
+            .saturating_add(name.as_str().len())
+            .saturating_add(value.len());
+        if header_bytes > 64 * 1024 {
+            return Err(rejected(protocol(
+                "Response headers exceed allocation bound",
+            )));
         }
-        let mut incoming = response.into_body();
+        if headers.contains_key(name.as_str())
+            && [
+                "location",
+                "azure-asyncoperation",
+                "x-ms-operation-id",
+                "retry-after",
+                "content-encoding",
+            ]
+            .contains(&name.as_str())
+        {
+            return Err(rejected(protocol("Duplicate operation control header")));
+        }
+        // Python Requests exposes HTTP header octets as Latin-1, joining
+        // repeated fields. Control headers above remain unambiguous.
+        let value: String = value.as_bytes().iter().copied().map(char::from).collect();
+        headers
+            .entry(name.as_str().to_owned())
+            .and_modify(|previous: &mut String| {
+                previous.push_str(", ");
+                previous.push_str(&value);
+            })
+            .or_insert(value);
+    }
+    Ok(headers)
+}
+
+// Separate from sockets so exactly the production body/decode/recovery path can
+// be exercised with offline failing or pending HTTP bodies.
+async fn receive<B>(
+    status: u16,
+    headers: BTreeMap<String, String>,
+    mut incoming: B,
+    context: &OperationContext,
+    head: &ResponseHeadCapture,
+) -> Result<ApiResponse, CoreError>
+where
+    B: hyper::body::Body<Data = Bytes> + Send + Unpin,
+    B::Error: Send,
+{
+    head.record(status, &headers)?;
+    bounded(context, async move {
         let mut wire = Vec::new();
         while let Some(frame) = incoming.frame().await {
             let frame = frame.map_err(|_| error("HTTP response stream failed"))?;
@@ -123,6 +164,8 @@ impl NativeHttpClient {
                 }
                 wire.extend_from_slice(&bytes);
             }
+            // An always-ready body must still yield to cancellation/deadlines.
+            tokio::task::yield_now().await;
         }
         let body = if status == 204 {
             Vec::new()
@@ -134,7 +177,10 @@ impl NativeHttpClient {
             headers,
             body,
         })
-    }
+    })
+    .await
+    .map_err(|error| head.attach(error))?
+    .map_err(|error| head.attach(error))
 }
 fn error(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Transport, message)
@@ -176,6 +222,7 @@ async fn decode(wire: Vec<u8>, encoding: Option<&str>) -> Result<Vec<u8>, CoreEr
             return Err(protocol("Decoded response exceeds allocation bound"));
         }
         decoded.extend_from_slice(&chunk[..count]);
+        tokio::task::yield_now().await;
     }
     Ok(decoded)
 }
@@ -186,9 +233,24 @@ impl HttpTransport for NativeHttpClient {
         request: ApiRequest,
         context: &OperationContext,
     ) -> Result<ApiResponse, CoreError> {
-        bounded(context, self.send_once(request)).await?
+        let head = ResponseHeadCapture::for_url(&request.url);
+        self.send_with_observer(request, context, &head).await
+    }
+    async fn send_with_observer(
+        &self,
+        request: ApiRequest,
+        context: &OperationContext,
+        head: &ResponseHeadCapture,
+    ) -> Result<ApiResponse, CoreError> {
+        bounded(context, self.send_once(request, context, head))
+            .await
+            .map_err(|error| head.attach(error))?
+            .map_err(|error| head.attach(error))
     }
 }
+
+#[cfg(test)]
+mod recovery_tests;
 
 #[cfg(test)]
 mod tests {
