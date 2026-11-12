@@ -64,7 +64,7 @@ pub(crate) fn run_delete(
 }
 #[cfg(any(windows, feature = "headless"))]
 #[path = "native_execute.rs"]
-pub(crate) mod execute;
+mod execute;
 
 #[cfg(all(test, feature = "headless"))]
 #[path = "headless_host_tests.rs"]

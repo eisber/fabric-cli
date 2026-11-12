@@ -6,6 +6,8 @@
 #[cfg(any(windows, feature = "headless"))]
 use crate::native_read as native;
 use fabric_cli::v2_discovery::DataSchemaRequest;
+#[cfg(any(windows, feature = "headless"))]
+use fabric_cli_output::OutputStream;
 use std::io::{self, Write};
 
 pub(crate) fn run(request: &DataSchemaRequest, stderr: &mut dyn Write) -> io::Result<i32> {
@@ -69,7 +71,7 @@ fn run_selected(
                     1,
                 ));
             }
-            let stdout = native::execute::owned_stdout().map_err(|error| {
+            let stdout = owned_stream(OutputStream::Stdout).map_err(|error| {
                 if error.kind() == io::ErrorKind::Unsupported {
                     native::failure(
                         "UnsupportedCapability",
@@ -245,7 +247,7 @@ fn deliver_native(result: Result<Buffered, native::Failure>, deadline: std::time
     if diagnostic.is_empty() {
         return exit;
     }
-    let stderr = match owned_stderr() {
+    let stderr = match owned_stream(OutputStream::Stderr) {
         Ok(stderr) => stderr,
         Err(_) => return 1,
     };
@@ -257,25 +259,33 @@ fn deliver_native(result: Result<Buffered, native::Failure>, deadline: std::time
 }
 
 #[cfg(any(windows, feature = "headless"))]
-fn owned_stderr() -> io::Result<std::fs::File> {
+fn owned_stream(stream: OutputStream) -> io::Result<std::fs::File> {
     #[cfg(windows)]
     {
+        use std::io::IsTerminal;
         use std::os::windows::io::AsHandle;
-        io::stderr()
-            .as_handle()
-            .try_clone_to_owned()
-            .map(std::fs::File::from)
+        let handle = match stream {
+            OutputStream::Stdout => io::stdout().as_handle().try_clone_to_owned(),
+            OutputStream::Stderr => io::stderr().as_handle().try_clone_to_owned(),
+        }?;
+        let file = std::fs::File::from(handle);
+        if stream == OutputStream::Stdout && file.is_terminal() {
+            return Err(io::Error::from(io::ErrorKind::Unsupported));
+        }
+        Ok(file)
     }
     #[cfg(unix)]
     {
         use std::os::fd::AsFd;
-        io::stderr()
-            .as_fd()
-            .try_clone_to_owned()
-            .map(std::fs::File::from)
+        let handle = match stream {
+            OutputStream::Stdout => io::stdout().as_fd().try_clone_to_owned(),
+            OutputStream::Stderr => io::stderr().as_fd().try_clone_to_owned(),
+        }?;
+        Ok(std::fs::File::from(handle))
     }
     #[cfg(not(any(windows, unix)))]
     {
+        let _ = stream;
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }

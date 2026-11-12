@@ -223,7 +223,7 @@ pub(super) fn run(command: &ExecuteCommand, state: &mut BatchState) -> io::Resul
     }
 }
 
-pub(crate) fn owned_stdout() -> io::Result<std::fs::File> {
+fn owned_stdout() -> io::Result<std::fs::File> {
     // An abandoned write must not hold Rust's global stdout lock: process
     // cleanup flushes that stream even after a terminal command outcome.
     #[cfg(windows)]

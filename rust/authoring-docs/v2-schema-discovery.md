@@ -149,8 +149,10 @@ covering identity selection, connection, resolution and metadata reads.
 Ctrl+C drops local work; neither cancellation nor timeout implies remote rollback.
 TABLE request/log/response limits and the serialized-output bound remain intact.
 Schema bytes are buffered until success and interruption is checked again before
-publication. The native runtime supervises output through an owned stdout handle,
-not the process-wide Rust stdout lock. Deadline or cancellation stops local waiting
+publication. A schema-owned standard stream adapter retains stdout and stderr
+handles without changing the execution host's output helpers. The native runtime
+supervises output through the owned stdout handle, not the process-wide Rust
+stdout lock. Deadline or cancellation stops local waiting
 even when a pipe reader stays open without draining; an in-flight write may still
 complete, so output is explicitly unconfirmed and may be partial. Reads and output
 are never replayed. Bounded runtime shutdown does not wait indefinitely for that

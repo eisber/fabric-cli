@@ -354,7 +354,7 @@ fn shared_pipe_driver() {
             stdout: vec![b'x'; 4 * 1024 * 1024],
             stderr: Vec::new(),
         },
-        native::execute::owned_stdout().unwrap(),
+        owned_stream(OutputStream::Stdout).unwrap(),
         deadline,
         async {
             if cancel {
