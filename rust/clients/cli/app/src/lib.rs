@@ -51,6 +51,7 @@ pub mod update;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
+pub mod v2_link_dataagent_host;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
 mod workspace_get;

@@ -24,6 +24,11 @@ path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
 
 [[test]]
+name = "v2_link_dataagent_process"
+path = "tests/v2_link_dataagent_process.rs"
+required-features = ["headless"]
+
+[[test]]
 name = "run_notebook_wire"
 path = "tests/run_notebook_wire.rs"
 required-features = ["native-host", "v2-run"]

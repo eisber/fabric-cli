@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add the bounded native v2 DataAgent staging datasource link command with strict input, explicit approval, and retained operation evidence.
+time: 2026-11-12T00:00:00.0000000+01:00
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber

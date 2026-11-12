@@ -5,8 +5,9 @@
 The additive `fabric_cli_mutations::v2_link` module composes native relationship
 requests with caller-owned resolution, input, approval, and execution. It does
 not replace the Python CLI, Rust `ln`/`mklink`, or their compatibility fixtures.
-Its standalone command schema is not mounted in the production executable.
-Central registry, SDK facade, native file/resolver adapters, and executable
+Its full standalone command schema is not mounted in the production executable.
+The experimental `fab-cli-v2` head mounts only the bounded DataAgent staging
+host described below. Other native link hosts, central registry and SDK facade
 composition remain separate integration requirements.
 
 ## Operation and command surface
@@ -80,6 +81,56 @@ They need their own native representation, permission, and partial-effect
 contracts, not a generic fallback.
 
 ## Caller composition
+
+### Bounded DataAgent executable host
+
+`cargo build --locked -p fabric-cli --features headless --bin fab-cli-v2`
+selects the existing explicit native identity/HTTP host. The DataAgent-only
+leaf and its same-owner root alias are:
+
+```text
+fab-cli-v2 artifact data-agent link /<workspace-id>.Workspace/<agent-id>.DataAgent/settings/staging/datasources --input FILE|- [--wait]
+fab-cli-v2 link /<workspace-id>.Workspace/<agent-id>.DataAgent/settings/staging/datasources --input FILE|- [--wait]
+```
+
+Both destination selectors must be GUIDs. This bounded host does not resolve
+names or use a current workspace. The explicitly selected staging collection
+maps to the native create endpoint; the service allocates the datasource ID.
+It does not accept a guessed datasource ID, published settings, an owner-only
+path, other artifact owners or a generic item expansion.
+
+The host reads at most 1 MiB from a regular file or explicit stdin, validates
+UTF-8 and the shared strict JSON schema, then captures the explicit headless
+credential selection and Fabric endpoint. No token acquisition or service
+request is needed for malformed input. Approval uses the real console, never
+the JSON stdin stream, and presents the exact POST body, destination, selected
+tenant/account/endpoint and reference-only effect. There is no `--yes`, `--force`
+or unattended environment bypass. Missing, declined or failed approval sends
+zero service requests.
+
+After approval, the same native request context reads the destination's generic
+item metadata and the referenced source's metadata. Exact ID/type mismatches,
+unusable metadata, unsupported source types and permission failures prevent the
+POST. `LakehouseTables` requires a Lakehouse; `FabricItem` accepts the official
+create API's supported Fabric item types. These reads do not prove write
+permission: the service still enforces DataAgent read/write permission and
+access to the source under the same identity. No alternate identity is tried.
+
+Execution uses the existing `OperationSession`, native HTTP transport and
+bounded cancellation/LRO policy. Input, approval and execution share a
+five-minute deadline. At most one staging-create POST is submitted. The output retains
+`accepted`, `completed`, `partial` (malformed completed resource) or `unknown`
+(uncertain mutation) distinctly. A failed stdout write or flush reports actual
+bytes delivered and retains the original native receipt/failure for
+reconciliation; it never submits the link again or promises rollback.
+
+This is an additive v2 native leaf, not Python parity, a default `fab-rs`/legacy
+`ln` change, live permission proof or implementation of the other link facades.
+Selected source: grouped Link revision 12 and DataAgent facade revision 4,
+captured November 4, 2026; the native create API supplies the strict payload and
+service-allocated identity contract.
+
+### Injected library consumers
 
 1. Parse arguments with `v2_link::parse_args`, or mount the shared
    `link_command` leaf in a reviewed v2 host.
