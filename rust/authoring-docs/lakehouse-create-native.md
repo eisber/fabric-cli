@@ -98,13 +98,29 @@ acceptance or completion does not establish that the SQL endpoint is ready.
 Preserve actual `sqlEndpointProperties`, IDs, OneLake paths, native unknown
 fields and provisioning states without inventing success. No Spark execution,
 table load, data upload, publish or semantic model creation is implied.
+The typed binding discloses this documented child-resource creation through
+`anticipated_effects`, with its pinned provider contract. Immediate approval and
+protected receipt `meta.anticipatedEffects` retain the disclosure separately
+from observed resource IDs or provisioning status. Unchanged skip has no
+prepared operation or anticipated creation effect.
 
-The shared host must approve the exact immutable target, body, raw source and
-selected account/tenant/audience/endpoint context immediately before dispatch.
+The shared host must approve the exact immutable target, already-prepared
+method, bound URL, outgoing body bytes, raw source and selected
+account/tenant/audience/endpoint context immediately before dispatch.
+This includes the generated `{"displayName":"<literal-name>"}` body when input
+is omitted. The same operation inspected by approval is consumed once by the
+engine; approval does not reserialize or substitute another body.
 `--force` is unsupported overwrite intent, never an approval bypass.
 Projection applies only to receipt data, preserving identity, effects and
 operation handles. Output failure, timeout and cancellation retain uncertainty;
 they never authorize rollback or replay.
+
+Protected `meta.submission` retains the initial POST status, operation handle
+and available accepted resource identity independently of later
+`meta.observation` status. A 202 followed by a failed, cancelled or malformed
+poll/result therefore retains acceptance evidence without presenting a later
+HTTP 200 as the submission status or upgrading the outcome to completion.
+The submission identity and anticipated effects survive projection to null.
 
 ## Source evidence and validation boundary
 

@@ -15,8 +15,8 @@ use azure_core::{
 use fabric_cli::{
     create_command::{
         CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding,
-        CreateCommandError, CreateDelivery, CreateExecution, CreateTransportEvidence,
-        PreparedCreateCommand, v2_create,
+        CreateCommandError, CreateDelivery, CreateEffectKind, CreateExecution,
+        CreateTransportEvidence, PreparedCreateCommand, v2_create,
     },
     v2_create_lakehouse::LakehouseCreateBinding,
 };
@@ -185,6 +185,8 @@ struct Approval {
     denied: bool,
     calls: usize,
     expect_write: bool,
+    raw: Option<&'static [u8]>,
+    approved_request: Option<(String, Vec<u8>)>,
 }
 
 impl CreateApproval for Approval {
@@ -203,13 +205,73 @@ impl CreateApproval for Approval {
             request.context().endpoint(),
             &EndpointBinding::public(ServiceOrigin::Fabric)
         );
-        assert_eq!(request.raw_input(), Some(RAW));
+        assert_eq!(request.raw_input(), self.raw);
         assert_eq!(request.remote_write(), self.expect_write);
         if let CreateAction::Create { input } = request.plan().action() {
             assert_eq!(
                 input.supplied(),
-                Some(&json!({"displayName":"Lakehouse_1","description":"raw source retained"}))
+                self.raw
+                    .map(|raw| serde_json::from_slice::<Value>(raw).unwrap())
+                    .as_ref()
             );
+        }
+        let question = request.approval_question();
+        assert!(question.contains("Anticipated effects are not observed outcomes."));
+        if self.expect_write {
+            let operation = request.operation().unwrap();
+            let url = request.url().unwrap();
+            assert_eq!(
+                operation.method(),
+                fabric_sdk_workspaces::mutations::ResourceMethod::Post
+            );
+            assert_eq!(
+                operation.path(),
+                format!("/v1/workspaces/{WORKSPACE}/lakehouses")
+            );
+            assert_eq!(
+                url.as_str(),
+                format!("{ORIGIN}/v1/workspaces/{WORKSPACE}/lakehouses")
+            );
+            let expected = self.raw.map_or_else(
+                || json!({"displayName":"Lakehouse_1"}),
+                |raw| serde_json::from_slice::<Value>(raw).unwrap(),
+            );
+            assert_eq!(operation.body(), serde_json::to_vec(&expected).unwrap());
+            assert_eq!(
+                operation.completion(),
+                if request.command().wait {
+                    fabric_sdk_workspaces::mutations::CompletionPolicy::WaitForResult
+                } else {
+                    fabric_sdk_workspaces::mutations::CompletionPolicy::ReturnAccepted
+                }
+            );
+            let effects = request.anticipated_effects();
+            assert_eq!(effects.len(), 1);
+            assert_eq!(effects[0].kind(), CreateEffectKind::ChildResourceCreation);
+            assert_eq!(effects[0].resource_type(), Some("SQLEndpoint"));
+            assert!(
+                effects[0]
+                    .contract()
+                    .contains("3893b03d0246df2a1978058f5542399274d1b243")
+            );
+            assert!(question.contains("method=POST"));
+            assert!(question.contains("SQLEndpoint"));
+            assert!(
+                question.contains(
+                    std::str::from_utf8(operation.body())
+                        .unwrap()
+                        .escape_debug()
+                        .to_string()
+                        .as_str()
+                )
+            );
+            self.approved_request = Some((url.as_str().to_owned(), operation.body().to_vec()));
+        } else {
+            assert!(request.operation().is_none());
+            assert!(request.url().is_none());
+            assert!(request.anticipated_effects().is_empty());
+            assert!(question.contains("no native request (unchanged skip)"));
+            assert!(!question.contains("SQLEndpoint"));
         }
         Box::pin(ready(if self.denied {
             Err(CreateApprovalError::Denied)
@@ -302,11 +364,22 @@ fn accepted() -> azure_core::Result<AsyncRawResponse> {
 }
 
 fn preflight(cwd: &std::path::Path, extra: &[&str]) -> PreparedCreateCommand {
+    preflight_input(cwd, extra, Some(RAW))
+}
+
+fn preflight_input(
+    cwd: &std::path::Path,
+    extra: &[&str],
+    input: Option<&'static [u8]>,
+) -> PreparedCreateCommand {
     let path = format!("/{WORKSPACE}.Workspace/Lakehouse_1.Lakehouse");
-    let mut args = vec!["create", path.as_str(), "--input", "-"];
+    let mut args = vec!["create", path.as_str()];
+    if input.is_some() {
+        args.extend(["--input", "-"]);
+    }
     args.extend_from_slice(extra);
     let command = v2_create::parse_args(args).unwrap();
-    let mut input = RAW;
+    let mut input = input.unwrap_or_default();
     PreparedCreateCommand::preflight(
         command,
         &LakehouseCreateBinding::new().unwrap(),
@@ -357,6 +430,8 @@ fn approval(write: bool) -> Approval {
         denied: false,
         calls: 0,
         expect_write: write,
+        raw: Some(RAW),
+        approved_request: None,
     }
 }
 
@@ -385,6 +460,11 @@ async fn native_201_full_host_preserves_raw_approval_body_and_actual_metadata() 
     assert_eq!(report.value()["meta"]["resourceId"], ITEM);
     assert_eq!(report.value()["meta"]["operationHandle"], Value::Null);
     assert_eq!(report.value()["meta"]["completed"], true);
+    assert_eq!(report.value()["meta"]["submission"]["httpStatus"], 201);
+    assert_eq!(
+        report.value()["meta"]["anticipatedEffects"][0]["resourceType"],
+        "SQLEndpoint"
+    );
     let mut stdout = Vec::new();
     delivery.deliver(&mut stdout).unwrap();
     assert_eq!(
@@ -406,6 +486,10 @@ async fn native_201_full_host_preserves_raw_approval_body_and_actual_metadata() 
     assert_eq!(
         serde_json::from_slice::<Value>(&requests[1].body).unwrap(),
         serde_json::from_slice::<Value>(RAW).unwrap()
+    );
+    assert_eq!(
+        approval.approved_request,
+        Some((requests[1].url.clone(), requests[1].body.clone()))
     );
     assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
 }
@@ -433,6 +517,110 @@ async fn denied_approval_dispatches_no_mutation() {
 }
 
 #[tokio::test]
+async fn omitted_input_approves_the_exact_generated_wire_body_before_one_native_post() {
+    let temp = tempfile::tempdir().unwrap();
+    for denied in [false, true] {
+        let mut replies = vec![listing(json!([]))];
+        if !denied {
+            replies.push(reply(201, &created().to_string(), &[]));
+        }
+        let fixture = Fixture::new(replies);
+        let mut approval = approval(true);
+        approval.raw = None;
+        approval.denied = denied;
+        let result = execute(
+            preflight_input(temp.path(), &[], None),
+            &fixture,
+            &mut approval,
+            false,
+            pending(),
+        )
+        .await;
+        assert_eq!(approval.calls, 1);
+        assert_eq!(
+            approval.approved_request,
+            Some((
+                format!("{ORIGIN}/v1/workspaces/{WORKSPACE}/lakehouses"),
+                br#"{"displayName":"Lakehouse_1"}"#.to_vec(),
+            ))
+        );
+        if denied {
+            assert!(matches!(
+                result,
+                Err(CreateCommandError::Approval(CreateApprovalError::Denied))
+            ));
+            assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+        } else {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            let requests = fixture.network.requests.lock().unwrap();
+            assert_eq!(
+                approval.approved_request,
+                Some((requests[1].url.clone(), requests[1].body.clone()))
+            );
+            assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+        }
+    }
+}
+
+struct PendingApproval(Arc<AtomicUsize>);
+
+impl CreateApproval for PendingApproval {
+    fn authorize<'a>(
+        &'a mut self,
+        request: CreateApprovalRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), CreateApprovalError>> + Send + 'a>> {
+        assert_eq!(
+            request.operation().unwrap().body(),
+            serde_json::to_vec(&serde_json::from_slice::<Value>(RAW).unwrap()).unwrap()
+        );
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::pin(pending())
+    }
+}
+
+#[tokio::test]
+async fn cancellation_during_exact_operation_approval_never_sends_post() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = Fixture::new(vec![listing(json!([]))]);
+    let http = fixture.http();
+    let observe = || CreateTransportEvidence {
+        http_status: None,
+        operation_id: None,
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let interrupted_calls = calls.clone();
+    let interrupted = poll_fn(move |cx| {
+        if interrupted_calls.load(Ordering::SeqCst) != 0 {
+            Poll::Ready(())
+        } else {
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    });
+    let result = preflight(temp.path(), &[])
+        .execute(
+            &LakehouseCreateBinding::new().unwrap(),
+            &fixture.client(Audience::Fabric),
+            &http,
+            CreateExecution {
+                executor: OperationHttp {
+                    http: &http,
+                    timeout_poll: false,
+                },
+                observe: &observe,
+            },
+            &mut PendingApproval(calls.clone()),
+            interrupted,
+        )
+        .await;
+    assert!(matches!(result, Err(CreateCommandError::Interrupted)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.network.requests.lock().unwrap().len(), 1);
+    assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn existing_skip_retains_identity_without_comparing_or_writing_content() {
     let temp = tempfile::tempdir().unwrap();
     let fixture = Fixture::new(vec![listing(json!([{
@@ -456,6 +644,11 @@ async fn existing_skip_retains_identity_without_comparing_or_writing_content() {
     );
     assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
     assert_eq!(approval.calls, 1);
+    assert_eq!(
+        delivery.report().value()["meta"]["anticipatedEffects"],
+        json!([])
+    );
+    assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
 }
 
 #[tokio::test]
@@ -487,6 +680,33 @@ async fn preflight_conflict_ambiguity_wrong_kind_and_wrong_workspace_never_appro
         assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
         assert_eq!(fixture.network.requests.lock().unwrap().len(), 1);
     }
+}
+
+#[tokio::test]
+async fn one_exact_lakehouse_and_unrelated_same_name_type_are_not_ambiguous() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = Fixture::new(vec![listing(json!([
+        {"id":ITEM,"displayName":"Lakehouse_1","type":"Lakehouse","workspaceId":WORKSPACE},
+        {"id":OPERATION,"displayName":"Lakehouse_1","type":"Notebook","workspaceId":WORKSPACE}
+    ]))]);
+    let mut approval = approval(false);
+    let delivery = execute(
+        preflight(temp.path(), &["--if-exists", "skip"]),
+        &fixture,
+        &mut approval,
+        false,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+    assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+    assert_eq!(
+        delivery.report().value()["meta"]["anticipatedEffects"],
+        json!([])
+    );
+    assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -580,6 +800,17 @@ async fn wait_and_projection_preserve_native_resource_id_and_completed_operation
         format!("/operations/{OPERATION}")
     );
     assert_ne!(value["meta"]["resourceId"], OPERATION);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        value["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OPERATION}")
+    );
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 200);
+    assert_eq!(
+        value["meta"]["anticipatedEffects"][0]["resourceType"],
+        "SQLEndpoint"
+    );
+    assert!(value["meta"]["anticipatedEffects"][0].get("id").is_none());
     assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
     assert_eq!(fixture.network.requests.lock().unwrap().len(), 5);
 }
@@ -621,6 +852,11 @@ async fn acceptance_timeout_and_cancellation_retain_handles_without_rollback_or_
         assert_eq!(report.value()["meta"]["remoteReplayed"], false);
         assert_eq!(report.value()["meta"]["remoteCancelled"], false);
         assert_eq!(report.value()["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(report.value()["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            report.value()["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OPERATION}")
+        );
         assert_eq!(report.exit_code(), u8::from(mode != "accepted"));
         if mode != "accepted" {
             assert_eq!(report.value()["meta"]["status"], "unknown");
@@ -677,7 +913,98 @@ async fn accepted_native_resource_identity_survives_later_poll_timeout_and_proje
     );
     assert_eq!(value["meta"]["completed"], false);
     assert_eq!(value["data"], Value::Null);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(
+        value["meta"]["anticipatedEffects"][0]["resourceType"],
+        "SQLEndpoint"
+    );
     assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn accepted_submission_survives_failed_cancelled_or_malformed_poll_results() {
+    let temp = tempfile::tempdir().unwrap();
+    for mode in ["failed", "cancelled", "malformed"] {
+        let actual = created();
+        let mut replies = vec![
+            listing(json!([])),
+            reply(
+                202,
+                &actual.to_string(),
+                &[
+                    ("Location", &operation_url()),
+                    ("x-ms-operation-id", OPERATION),
+                    ("Retry-After", "1"),
+                ],
+            ),
+        ];
+        match mode {
+            "failed" => replies.push(reply(
+                200,
+                r#"{"status":"Failed","error":{"errorCode":"NativeProvisioningFailed","message":"synthetic"}}"#,
+                &[],
+            )),
+            "cancelled" => {
+                replies.push(reply(200, r#"{"status":"Running"}"#, &[("Retry-After", "1")]));
+            }
+            "malformed" => {
+                replies.push(reply(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("Location", &format!("{}/result", operation_url()))],
+                ));
+                replies.push(reply(200, "{", &[]));
+            }
+            _ => unreachable!(),
+        }
+        let fixture = Fixture::new(replies);
+        let network = fixture.network.clone();
+        let interrupted = poll_fn(move |cx| {
+            if mode == "cancelled" && network.requests.lock().unwrap().len() >= 3 {
+                Poll::Ready(())
+            } else {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        });
+        let mut approval = approval(true);
+        let delivery = execute(
+            preflight(temp.path(), &["--wait", "--project", "missingField"]),
+            &fixture,
+            &mut approval,
+            false,
+            interrupted,
+        )
+        .await
+        .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let meta = &delivery.report().value()["meta"];
+        assert_eq!(meta["completed"], false);
+        assert_eq!(meta["submission"]["httpStatus"], 202);
+        assert_eq!(meta["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            meta["submission"]["operationHandle"],
+            format!("/operations/{OPERATION}")
+        );
+        assert_eq!(meta["observation"]["httpStatus"], 200);
+        assert_eq!(meta["mutationMayHaveOccurred"], true);
+        assert_eq!(meta["remoteReplayed"], false);
+        assert_eq!(meta["remoteCancelled"], false);
+        if mode == "malformed" {
+            assert_eq!(meta["unparsedResponseBodyBase64"], "ew==");
+        }
+        let mut stdout = Vec::new();
+        delivery.deliver(&mut stdout).unwrap();
+        let value: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            value["meta"]["anticipatedEffects"][0]["resourceType"],
+            "SQLEndpoint"
+        );
+        assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+    }
 }
 
 struct FailedWriter;

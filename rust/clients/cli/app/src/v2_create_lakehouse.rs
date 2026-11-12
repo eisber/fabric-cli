@@ -3,7 +3,7 @@
 
 //! Lakehouse-only binding for the released shared v2 create host.
 
-use crate::create_command::CreateBinding;
+use crate::create_command::{AnticipatedCreateEffect, CreateBinding, CreateEffectKind};
 use fabric_sdk::items::{
     create::{
         CreateAction, CreateCapabilities, CreateError, CreateInputValidator, CreatePlan,
@@ -78,5 +78,21 @@ impl CreateBinding for LakehouseCreateBinding {
             })
             .map_err(|_| CreateError::InputRejected)?;
         FabricOperation::from_resource(&operation).map_err(|_| CreateError::InputRejected)
+    }
+
+    fn anticipated_effects(
+        &self,
+        plan: &CreatePlan,
+    ) -> Result<Vec<AnticipatedCreateEffect>, CreateError> {
+        LakehouseCreateRequest::from_plan(plan).map_err(|_| CreateError::InputRejected)?;
+        Ok(vec![AnticipatedCreateEffect::new(
+            CreateEffectKind::ChildResourceCreation,
+            Some("SQLEndpoint"),
+            "Fabric automatically provisions a SQL analytics endpoint alongside the Lakehouse. \
+             This is an anticipated service-owned effect, not another CLI request or evidence \
+             that the endpoint exists or is ready.",
+            "https://learn.microsoft.com/en-us/fabric/data-engineering/lakehouse-api \
+             @3893b03d0246df2a1978058f5542399274d1b243",
+        )?])
     }
 }
