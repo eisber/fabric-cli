@@ -3325,47 +3325,53 @@ async fn omitted_and_null_root_folders_succeed_with_independent_protected_folder
 
 #[tokio::test]
 async fn unexpected_final_http_status_preserves_initial_submission_without_claiming_completion() {
-    let fixture = Fixture::new(vec![
-        listing(vec![]),
-        accepted_resource(),
-        state("Succeeded"),
-        Reply::json(
-            Method::Get,
-            format!("{}/result", operation_path()),
-            201,
-            resource(),
-        ),
-    ]);
-    let delivery = fixture
-        .execute(
-            fixture.prepare(&["--wait"], Some(RAW)),
-            &mut Approval::default(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(delivery.report().exit_code(), 1);
-    let error = delivery.report().error().unwrap();
-    assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
-    assert_eq!(error.operation_id.as_deref(), Some(OP));
-    assert!(error.mutation_may_have_occurred);
-    let value = deliver(delivery);
-    assert_eq!(value["data"], resource());
-    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
-    assert_eq!(
-        value["meta"]["submission"]["resource"],
-        json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"})
-    );
-    assert_eq!(value["meta"]["httpStatus"], 201);
-    assert_eq!(value["meta"]["observation"]["httpStatus"], 201);
-    assert_eq!(value["meta"]["status"], "unknown");
-    assert_eq!(value["meta"]["completed"], false);
-    assert_eq!(
-        value["meta"]["operationHandle"],
-        format!("/operations/{OP}")
-    );
-    assert_no_replay(&value);
-    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get, Method::Get]);
-    fixture.assert_post_body(RAW);
+    for status in [201, 202, 204] {
+        let fixture = Fixture::new(vec![
+            listing(vec![]),
+            accepted_resource(),
+            state("Succeeded"),
+            Reply::json(
+                Method::Get,
+                format!("{}/result", operation_path()),
+                status,
+                resource(),
+            ),
+        ]);
+        let delivery = fixture
+            .execute(
+                fixture.prepare(&["--wait"], Some(RAW)),
+                &mut Approval::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let error = delivery.report().error().unwrap();
+        assert!(matches!(
+            &error.kind,
+            OperationErrorKind::Http { status: actual, code: None, error: None } if *actual == status
+        ));
+        assert_eq!(error.operation_id.as_deref(), Some(OP));
+        assert!(error.mutation_may_have_occurred);
+        let value = deliver(delivery);
+        assert_eq!(value["data"], resource());
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            value["meta"]["submission"]["resource"],
+            json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"})
+        );
+        assert_eq!(value["meta"]["httpStatus"], status);
+        assert_eq!(value["meta"]["observation"]["httpStatus"], status);
+        assert_eq!(value["error"]["code"], "InvalidResponse");
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_no_replay(&value);
+        fixture.assert_requests(&[Method::Get, Method::Post, Method::Get, Method::Get]);
+        fixture.assert_post_body(RAW);
+    }
 }
 
 #[tokio::test]
