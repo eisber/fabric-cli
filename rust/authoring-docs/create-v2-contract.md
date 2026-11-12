@@ -16,6 +16,11 @@ There is no generic artifact create mount. The separately opt-in
 [blank SemanticModel binding](semantic-model-create.md) uses the shared host
 without changing the v1 alias.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 The shared [create host](create-host.md) requires immediate explicit approval.
 Approval inspects the exact already-prepared method, bound URL and outgoing
 bytes, including the generated body for omitted input. Terminal controls are
