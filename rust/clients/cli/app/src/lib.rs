@@ -48,6 +48,7 @@ pub mod stage_deploy;
 pub mod tables;
 pub mod tabular_export;
 pub mod update;
+pub mod v2_dataagent_list_host;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
