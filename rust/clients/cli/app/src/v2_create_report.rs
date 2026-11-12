@@ -56,8 +56,8 @@ impl CreateBinding for ReportCreateBinding {
         let raw = raw
             .filter(|raw| raw.len() <= MAX_BYTES)
             .ok_or(CreateError::InputRejected)?;
-        let parsed =
-            fabric_cli_output::input::strict_json(raw).map_err(|_| CreateError::InputRejected)?;
+        let parsed = fabric_cli_output::input::strict_json_bounded(raw, MAX_BYTES)
+            .map_err(|_| CreateError::InputRejected)?;
         if input.supplied() != Some(&parsed) {
             return Err(CreateError::InputRejected);
         }

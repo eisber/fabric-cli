@@ -159,6 +159,34 @@ async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_id
 }
 
 #[tokio::test]
+async fn shared_four_mib_input_boundary_does_not_inherit_the_generic_one_mib_default() {
+    let temp = tempfile::tempdir().unwrap();
+    for size in [1024 * 1024 + 1, MAX_BYTES] {
+        let mut raw = serde_json::to_vec(&body()).unwrap();
+        raw.resize(size, b' ');
+        let prepared = prepare(temp.path(), &[], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(vec![response(201, metadata())]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                &wire,
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(approval.calls, 1);
+        assert_eq!(wire.requests.lock().unwrap()[0].2, raw);
+    }
+}
+
+#[tokio::test]
 async fn denial_or_unavailable_approval_and_wrong_context_send_no_post() {
     let temp = tempfile::tempdir().unwrap();
     let raw = serde_json::to_vec(&body()).unwrap();
