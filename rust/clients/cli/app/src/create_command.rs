@@ -76,6 +76,34 @@ pub trait CreateBinding: CreateInputValidator + Send + Sync {
     ) -> Result<FabricOperation, CreateError>;
 }
 
+/// Render the existing grammar with the selected binding's actual host subset.
+///
+/// This performs no input, credential, discovery or provider work. Help does not
+/// enable capabilities that the shared execution host cannot implement.
+pub fn command_for_binding(binding: &dyn CreateBinding) -> clap::Command {
+    let capabilities = host_capabilities(binding);
+    let mut policies = Vec::new();
+    if capabilities.create == sdk::CreateSupport::RejectExisting {
+        policies.push("error");
+    }
+    if capabilities.skip == sdk::SkipSupport::ExactExistingUnchanged {
+        policies.push("skip");
+    }
+    let policies = if policies.is_empty() {
+        "none".into()
+    } else {
+        policies.join(" and ")
+    };
+    v2_create::command().after_help(format!(
+        "Selected native owner: {owner}. This mount requires \
+         /<workspaceGUID>.Workspace/<literal-name>.{owner} and strict native \
+         create JSON, not a local source file. Enabled policies: {policies}. \
+         No overwrite, duplicate, collection, profile or artifact facade binding. \
+         Explicit terminal approval is required; --force never bypasses it.",
+        owner = binding.item_type(),
+    ))
+}
+
 /// Immediate approval view borrowed from the exact executing plan and context.
 pub struct CreateApprovalRequest<'a> {
     plan: &'a CreatePlan,
