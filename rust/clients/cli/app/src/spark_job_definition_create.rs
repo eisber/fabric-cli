@@ -62,7 +62,9 @@ impl CreateInputValidator for EmptySparkJobDefinition {
                     "displayName" => value.as_str() == Some(target.name()),
                     "type" => value.as_str() == Some(OWNER),
                     "folderId" => value.is_null(),
-                    "description" => value.as_str().is_some_and(|text| text.chars().count() <= 256),
+                    "description" => value
+                        .as_str()
+                        .is_some_and(|text| text.chars().count() <= 256),
                     _ => false,
                 };
                 if !valid {

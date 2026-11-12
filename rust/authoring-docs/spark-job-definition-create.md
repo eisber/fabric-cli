@@ -70,10 +70,23 @@ overwrite or replay. The lookup is not atomic with the mutation.
 
 The shared host retains immediate explicit approval and immutable request
 context; no approval-bypass switch or credential implementation is added.
+Approval borrows the exact already-prepared POST method, bound URL, generated
+metadata bytes and completion policy that execution consumes once. It includes
+the selected account, tenant, Fabric audience and output intent. Omitted input
+does not hide generated `type` or `folderId` fields; control characters are
+escaped for the terminal without changing the outgoing bytes.
+No Spark execution, child-resource or metered-compute effect is fabricated for
+this empty-item contract. Its additional anticipated-effect list is empty,
+distinct from the primary item-creation action and actual observed outcomes.
 Accepted is not completed; an operation ID is not a resource ID. Polling, body,
 timeout, cancellation, projection and output failures retain observed evidence
 without replay or rollback. The original total deadline, response bounds,
 data-only receipt projection and exact no-clobber output sink remain shared.
+Protected `meta.submission` retains initial status, operation handle and any
+accepted resource identity separately from later HTTP observations. A failed
+poll or malformed final result cannot erase initial evidence or turn into
+completed success. Malformed no-wait acceptance retains bounded raw response
+bytes for reconciliation and still returns a nonzero result.
 
 Offline tests exercise the real parser, `PreparedCreateCommand`, SDK policy and
 `HttpExecutor` with scripted HTTP/synthetic credentials, and actual binary help,
