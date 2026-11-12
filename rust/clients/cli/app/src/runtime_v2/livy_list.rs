@@ -207,7 +207,9 @@ fn routing_matches(args: &[OsString]) -> Option<ArgMatches> {
                 .short('h')
                 .action(ArgAction::SetTrue),
         )
-        .mut_arg("path", |arg| arg.required_unless_present("leaf-help"))
+        .mut_arg("path", |arg| {
+            arg.required(false).required_unless_present("leaf-help")
+        })
         .try_get_matches_from(args)
         .ok()
 }

@@ -268,6 +268,8 @@ fn root_admission_claims_only_the_livy_collection_and_its_help() {
     }
     assert!(livy_list::claims(&args(&["list", "--help"])));
     for values in [
+        vec!["list"],
+        vec!["list", "--output", "result.json"],
         vec!["get", LAKEHOUSE],
         vec!["list", "/Team.Workspace/N.Notebook/sessions"],
         vec!["artifact", "notebook", "list", LAKEHOUSE],
@@ -395,7 +397,7 @@ async fn fabric_zero_single_and_multiple_rows_preserve_order_raw_state_and_provi
         assert_eq!(receipt.meta.continuation, None);
         assert_eq!(receipt.meta.workload_observation, None);
         assert_eq!(receipt.meta.workload_state, None);
-        assert_eq!(receipt.target.native_url, format!("{BASE}?$top=2"));
+        assert_eq!(receipt.target.native_url, format!("{BASE}?%24top=2"));
         let bytes = std::fs::read(temp.path().join("result.json")).unwrap();
         assert_eq!(bytes.last(), Some(&b'\n'));
         let encoded: Value = serde_json::from_slice(&bytes).unwrap();
@@ -404,7 +406,11 @@ async fn fabric_zero_single_and_multiple_rows_preserve_order_raw_state_and_provi
         let requests = stack.wire.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].method(), Method::Get);
-        assert_eq!(requests[0].url().as_str(), format!("{BASE}?$top=2"));
+        assert_eq!(requests[0].url().as_str(), format!("{BASE}?%24top=2"));
+        assert_eq!(
+            requests[0].url().query_pairs().collect::<Vec<_>>(),
+            [("$top".into(), "2".into())]
+        );
         assert_eq!(
             requests[0]
                 .headers()
