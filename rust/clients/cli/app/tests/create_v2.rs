@@ -2034,9 +2034,13 @@ async fn duplicate_keys_in_created_or_final_result_fail_without_replacing_accept
                 assert_eq!(original["meta"]["submission"]["httpStatus"], 201);
             }
             let meta = original["meta"].clone();
-            let projected = deliver(delivery);
+            let mut output = Vec::new();
+            assert!(delivery.deliver(&mut output).unwrap().is_none());
+            assert_eq!(output.last(), Some(&b'\n'));
+            let projected: Value = serde_json::from_slice(&output).unwrap();
             assert_eq!(projected["data"], Value::Null);
             assert_eq!(projected["meta"], meta);
+            assert_eq!(projected["error"]["code"], "InvalidResponse");
             assert_no_replay(&projected);
             fixture.assert_post_body(RAW);
             fixture.assert_requests(if wait {
