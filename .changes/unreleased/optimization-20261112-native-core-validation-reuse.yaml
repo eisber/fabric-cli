@@ -1,8 +1,0 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-kind: optimization
-body: Reuse exact repeated offline Rust CORE test invocations within one source-bound validation run, retaining explicit profile coverage aliases and separate execution counts without changing validation budgets.
-time: 2026-11-12T02:55:00Z
-custom:
-    Author: Copilot
-    AuthorLink: https://github.com/Copilot
