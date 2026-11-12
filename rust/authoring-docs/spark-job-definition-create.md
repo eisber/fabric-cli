@@ -106,6 +106,12 @@ and nonzero, while preserving the original shared-engine typed HTTP error and
 status separately from the receipt classification. Genuine non-success HTTP
 rejections and provider-reported failed/cancelled operations remain failures;
 neither case discards initial acceptance evidence or permits mutation replay.
+Actual nonempty create responses also use the existing bounded strict JSON
+decoder: duplicate root, nested or escaped-equivalent keys are invalid, not a
+last-key-wins identity selection. Rejected response bytes remain explicitly
+labeled base64 evidence outside data projection. A rejected final result keeps
+any valid initial acceptance identity and operation handle, without becoming
+completed success or causing another POST.
 
 Offline tests exercise the real parser, `PreparedCreateCommand`, SDK policy and
 `HttpExecutor` with scripted HTTP/synthetic credentials, and actual binary help,

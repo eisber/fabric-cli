@@ -1425,6 +1425,165 @@ mod native {
         }
     }
 
+    fn duplicate_response_bodies() -> Vec<String> {
+        vec![
+            format!(
+                r#"{{"id":"{OP}","id":"{ITEM}","workspaceId":"{WS}","type":"SparkJobDefinition","displayName":"Exact"}}"#
+            ),
+            format!(
+                r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"SparkJobDefinition","displayName":"Other","displayName":"Exact"}}"#
+            ),
+            format!(
+                r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"SparkJobDefinition","displayName":"Other","\u0064isplayName":"Exact"}}"#
+            ),
+            format!(
+                r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"SparkJobDefinition","displayName":"Exact","metadata":{{"x":1,"x":2}}}}"#
+            ),
+            format!(
+                r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"SparkJobDefinition","displayName":"Exact","metadata":{{"x":1,"\u0078":2}}}}"#
+            ),
+            format!(
+                r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"SparkJobDefinition","displayName":"Exact","folderId":"{OP}","folderId":null}}"#
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn duplicate_initial_response_keys_reject_201_and_nowait_202_without_trusting_identity() {
+        use base64::Engine;
+        use fabric_sdk_operations::OperationErrorKind;
+
+        for status in [201, 202] {
+            for body in duplicate_response_bodies() {
+                let reply = if status == 202 {
+                    accepted(&body)
+                } else {
+                    response(201, &body, &[])
+                };
+                let h = Harness::new(vec![missing(), reply]);
+                let delivery = h
+                    .execute(prepare(&[], None), &mut approve(), pending())
+                    .await
+                    .unwrap();
+                let report = delivery.report();
+                let receipt = report.value();
+                assert_eq!(report.exit_code(), 1, "{receipt}");
+                assert!(matches!(
+                    &report.error().unwrap().kind,
+                    OperationErrorKind::InvalidResponse
+                ));
+                assert_eq!(receipt["error"]["code"], "InvalidResponse");
+                assert_eq!(receipt["meta"]["status"], "unknown");
+                assert_eq!(receipt["meta"]["completed"], false);
+                assert_eq!(receipt["meta"]["submission"]["httpStatus"], status);
+                assert_eq!(receipt["meta"]["observation"]["httpStatus"], status);
+                assert!(receipt["data"].is_null());
+                assert!(receipt["meta"]["resourceId"].is_null());
+                assert!(receipt["meta"]["submission"].get("resource").is_none());
+                assert_eq!(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(
+                            receipt["meta"]["unparsedResponseBodyBase64"]
+                                .as_str()
+                                .unwrap()
+                        )
+                        .unwrap(),
+                    body.as_bytes(),
+                );
+                if status == 202 {
+                    assert_eq!(
+                        receipt["meta"]["operationHandle"],
+                        format!("/operations/{OP}"),
+                    );
+                    assert_eq!(
+                        base64::engine::general_purpose::STANDARD
+                            .decode(
+                                receipt["meta"]["unparsedAcceptanceBodyBase64"]
+                                    .as_str()
+                                    .unwrap()
+                            )
+                            .unwrap(),
+                        body.as_bytes(),
+                    );
+                } else {
+                    assert!(receipt["meta"]["operationHandle"].is_null());
+                }
+                assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+                assert_eq!(receipt["meta"]["remoteReplayed"], false);
+                assert_eq!(receipt["meta"]["remoteCancelled"], false);
+                h.assert_calls(2, 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_final_response_keys_preserve_initial_acceptance_and_exact_invalid_bytes() {
+        use base64::Engine;
+        use fabric_sdk_operations::OperationErrorKind;
+
+        for body in duplicate_response_bodies() {
+            let initial = with_folder(item("Exact", "SparkJobDefinition"), Some(Value::Null));
+            let h = Harness::new(vec![
+                missing(),
+                accepted(&initial.to_string()),
+                response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[(
+                        "location",
+                        &format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+                    )],
+                ),
+                response(200, &body, &[]),
+            ]);
+            let delivery = h
+                .execute(
+                    prepare(&["--wait", "--project", "missing"], None),
+                    &mut approve(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            let report = delivery.report();
+            assert_eq!(report.exit_code(), 1);
+            assert!(matches!(
+                &report.error().unwrap().kind,
+                OperationErrorKind::InvalidResponse
+            ));
+            assert_eq!(report.error().unwrap().operation_id.as_deref(), Some(OP));
+            let mut bytes = Vec::new();
+            delivery.deliver(&mut bytes).unwrap();
+            let receipt: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(receipt["error"]["code"], "InvalidResponse");
+            assert_eq!(receipt["meta"]["status"], "unknown");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["meta"]["resourceId"], ITEM);
+            assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+            assert_eq!(receipt["meta"]["submission"]["folderId"], Value::Null);
+            assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+            assert_eq!(
+                receipt["meta"]["operationHandle"],
+                format!("/operations/{OP}")
+            );
+            assert_eq!(
+                base64::engine::general_purpose::STANDARD
+                    .decode(
+                        receipt["meta"]["unparsedResponseBodyBase64"]
+                            .as_str()
+                            .unwrap()
+                    )
+                    .unwrap(),
+                body.as_bytes(),
+            );
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            assert_eq!(receipt["meta"]["remoteCancelled"], false);
+            h.assert_calls(4, 1);
+        }
+    }
+
     struct BrokenWriter;
     impl Write for BrokenWriter {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
