@@ -1,0 +1,6 @@
+kind: added
+body: Add an opt-in typed Rust Lakehouse create binding with strict metadata-only definition validation and native operation evidence.
+time: 2026-11-12T10:08:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
