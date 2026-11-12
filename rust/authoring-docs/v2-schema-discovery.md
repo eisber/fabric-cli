@@ -149,8 +149,14 @@ covering identity selection, connection, resolution and metadata reads.
 Ctrl+C drops local work; neither cancellation nor timeout implies remote rollback.
 TABLE request/log/response limits and the serialized-output bound remain intact.
 Schema bytes are buffered until success and interruption is checked again before
-publication. Output failures are not retried; a deadline during blocking output
-is a failure even if some bytes have already reached the caller.
+publication. The native runtime supervises output through an owned stdout handle,
+not the process-wide Rust stdout lock. Deadline or cancellation stops local waiting
+even when a pipe reader stays open without draining; an in-flight write may still
+complete, so output is explicitly unconfirmed and may be partial. Reads and output
+are never replayed. Bounded runtime shutdown does not wait indefinitely for that
+worker. On Windows this host requires stdout redirected to a file or pipe; a
+console is rejected before identity setup rather than writing UTF-8 bytes through
+a duplicated console handle without the required Unicode console adapter.
 
 Offline process and injected-host tests cover the binding without signing in or
 contacting Fabric. They are not live authentication, service or release evidence.

@@ -111,7 +111,7 @@ fn run(
         fabric_cli::v2_discovery::DiscoveryRequest::DataSchema(request),
     )) = fabric_cli::v2_discovery::parse_from(args.clone())
     {
-        return schema::run(&request, stdout, stderr);
+        return schema::run(&request, stderr);
     }
     let host = DiscoveryHost::default();
     // With no data provider every branch is pure and immediately ready. Do not

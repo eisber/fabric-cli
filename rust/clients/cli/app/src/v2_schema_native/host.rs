@@ -8,21 +8,17 @@ use crate::native_read as native;
 use fabric_cli::v2_discovery::DataSchemaRequest;
 use std::io::{self, Write};
 
-pub(crate) fn run(
-    request: &DataSchemaRequest,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> io::Result<i32> {
+pub(crate) fn run(request: &DataSchemaRequest, stderr: &mut dyn Write) -> io::Result<i32> {
     #[cfg(any(windows, feature = "headless"))]
     {
         let started = std::time::Instant::now();
         let deadline = started + fabric_sdk_http::ExecutionOptions::default().timeout;
         let result = run_selected(request, deadline);
-        deliver(result, deadline, stdout, stderr)
+        deliver(result, stderr)
     }
     #[cfg(not(any(windows, feature = "headless")))]
     {
-        let _ = (request, stdout);
+        let _ = request;
         fabric_cli::v2_discovery::write_failure(
             &fabric_cli::v2_discovery::DiscoveryFailure::NotConfigured,
             stderr,
@@ -43,8 +39,20 @@ fn run_selected(
     deadline: std::time::Instant,
 ) -> Result<Buffered, native::Failure> {
     let runtime = native::native_runtime()?;
-    let result = runtime.block_on(controlled(
-        async {
+    let result = runtime.block_on(async {
+        let mut stopped = std::pin::pin!(async {
+            tokio::select! {
+                biased;
+                signal = tokio::signal::ctrl_c() => match signal {
+                    Ok(()) => native::failure("cancelled", "Data-schema read cancelled.", 1),
+                    Err(_) => native::failure(
+                        "signal_failed", "The cancellation handler could not start.", 1,
+                    ),
+                },
+                _ = tokio::time::sleep_until(deadline.into()) => timed_out(),
+            }
+        });
+        let (output, stdout) = controlled(async {
             let endpoint = native::selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
             if endpoint != fabric_sdk::EndpointBinding::public(fabric_sdk::ServiceOrigin::Fabric) {
                 return Err(native::failure(
@@ -60,6 +68,17 @@ fn run_selected(
                     1,
                 ));
             }
+            let stdout = native::execute::owned_stdout().map_err(|error| {
+                if error.kind() == io::ErrorKind::Unsupported {
+                    native::failure(
+                        "UnsupportedCapability",
+                        "Native schema output requires stdout redirected to a file or pipe on Windows.",
+                        1,
+                    )
+                } else {
+                    native::failure("output_failed", "The stdout handle could not be retained.", 1)
+                }
+            })?;
             let (credential, client, identity_client, timestamp) =
                 tokio::task::spawn_blocking(|| {
                     let credential = native::selected_credential()?;
@@ -80,21 +99,11 @@ fn run_selected(
                 None,
             )
             .await?;
-            execute_authenticated(request, &sdk, &http, timestamp).await
-        },
-        async {
-            tokio::select! {
-                biased;
-                signal = tokio::signal::ctrl_c() => match signal {
-                    Ok(()) => native::failure("cancelled", "Data-schema read cancelled.", 1),
-                    Err(_) => native::failure(
-                        "signal_failed", "The cancellation handler could not start.", 1,
-                    ),
-                },
-                _ = tokio::time::sleep_until(deadline.into()) => timed_out(),
-            }
-        },
-    ));
+            let output = execute_authenticated(request, &sdk, &http, timestamp).await?;
+            Ok((output, stdout))
+        }, stopped.as_mut()).await?;
+        publish_stdout(output, stdout, deadline, stopped.as_mut()).await
+    });
     native::finish_runtime(runtime, result)
 }
 
@@ -174,31 +183,52 @@ fn timed_out() -> native::Failure {
 }
 
 #[cfg(any(windows, feature = "headless"))]
-fn deliver(
-    result: Result<Buffered, native::Failure>,
+async fn publish_stdout(
+    mut output: Buffered,
+    mut stdout: impl Write + Send + 'static,
     deadline: std::time::Instant,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> io::Result<i32> {
-    let result = if std::time::Instant::now() >= deadline {
-        Err(timed_out())
-    } else {
-        result
-    };
+    cancelled: impl std::future::Future<Output = native::Failure>,
+) -> Result<Buffered, native::Failure> {
+    if output.stdout.is_empty() {
+        return Ok(output);
+    }
+    if std::time::Instant::now() >= deadline {
+        return Err(timed_out());
+    }
+    let bytes = std::mem::take(&mut output.stdout);
+    controlled(
+        async {
+            let worker = tokio::task::spawn_blocking(move || {
+                stdout.write_all(&bytes)?;
+                stdout.flush()
+            });
+            worker
+                .await
+                .map_err(|_| native::failure("output_failed", "The output worker failed.", 1))?
+                .map_err(|_| native::failure("output_failed", "Schema output failed.", 1))?;
+            Ok(output)
+        },
+        async {
+            tokio::select! {
+                biased;
+                _ = tokio::time::sleep_until(deadline.into()) => timed_out(),
+                error = cancelled => error,
+            }
+        },
+    )
+    .await
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn deliver(result: Result<Buffered, native::Failure>, stderr: &mut dyn Write) -> io::Result<i32> {
     match result {
         Ok(output) => {
-            stdout.write_all(&output.stdout)?;
-            stdout.flush()?;
-            if output.stderr.is_empty() && std::time::Instant::now() >= deadline {
-                return write_host_failure(timed_out(), stderr);
+            if !output.stdout.is_empty() {
+                return Err(io::Error::other("Schema output was not supervised."));
             }
             stderr.write_all(&output.stderr)?;
             stderr.flush()?;
-            Ok(if std::time::Instant::now() >= deadline {
-                1
-            } else {
-                output.exit
-            })
+            Ok(output.exit)
         }
         Err(error) => write_host_failure(error, stderr),
     }
@@ -212,6 +242,10 @@ fn write_host_failure((code, _, exit): native::Failure, stderr: &mut dyn Write) 
             "code": code,
             "message": if code == "NotConfigured" {
                 "Data schema requires native features and explicit native identity configuration (FAB_RUST_AUTH_MODE); no automatic login is performed."
+            } else if code == "UnsupportedCapability" {
+                "Native schema output requires stdout redirected to a file or pipe on Windows."
+            } else if matches!(code, "cancelled" | "timed_out" | "signal_failed" | "output_failed") {
+                "Native data-schema output is unconfirmed and may be partial; an in-flight write may still complete. Local waiting has stopped and no read is replayed."
             } else {
                 "Native data-schema read could not complete; no successful result is available."
             }
