@@ -777,6 +777,25 @@ fn malformed_metadata_and_unsupported_policy_are_local_before_any_identity_or_ht
             ),
             Err(CreateCommandError::Policy(CreateError::UnsupportedPolicy))
         ));
+        let command = v2_create::parse_args([
+            "create",
+            path.as_str(),
+            "--if-exists",
+            policy,
+            "--input",
+            "-",
+        ])
+        .unwrap();
+        assert!(matches!(
+            PreparedCreateCommand::preflight(
+                command,
+                &binding,
+                temp.path(),
+                &mut ForbiddenRead,
+                false
+            ),
+            Err(CreateCommandError::Policy(CreateError::UnsupportedPolicy))
+        ));
     }
     let command = v2_create::parse_args(["create", path.as_str(), "--force"]).unwrap();
     assert!(matches!(
@@ -897,6 +916,18 @@ mod executable {
             .stderr(Stdio::piped())
             .args(args);
         let mut child = command.spawn().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let stdout = thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stdout.take(32 * 1024 + 1).read_to_end(&mut bytes).unwrap();
+            bytes
+        });
+        let stderr = thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stderr.take(4 * 1024 + 1).read_to_end(&mut bytes).unwrap();
+            bytes
+        });
         let deadline = Instant::now() + Duration::from_secs(10);
         while child.try_wait().unwrap().is_none() {
             if Instant::now() >= deadline {
@@ -906,7 +937,11 @@ mod executable {
             }
             thread::sleep(Duration::from_millis(10));
         }
-        let result = child.wait_with_output().unwrap();
+        let result = Output {
+            status: child.wait().unwrap(),
+            stdout: stdout.join().unwrap(),
+            stderr: stderr.join().unwrap(),
+        };
         assert!(result.stdout.len() <= 32 * 1024);
         assert!(result.stderr.len() <= 4 * 1024);
         assert!(!String::from_utf8_lossy(&result.stdout).contains("synthetic-secret"));
@@ -928,6 +963,9 @@ mod executable {
             let help = String::from_utf8_lossy(&result.stdout);
             assert!(help.contains("Lakehouse"));
             assert!(help.contains("create"));
+            if args.first() == Some(&"create") {
+                assert!(!help.contains("Notebook enables"));
+            }
         }
         let result = invoke(env!("CARGO_BIN_EXE_fab-rs"), &["create", "--help"], false);
         assert!(result.status.success());
