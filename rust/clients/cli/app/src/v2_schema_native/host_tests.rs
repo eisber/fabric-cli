@@ -322,6 +322,80 @@ async fn ready_cancellation_never_starts_output_worker() {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
             panic!("cancelled publication must not write");
         }
+
+        #[test]
+        fn shared_pipe_driver() {
+            let Ok(mode) = std::env::var("FAB_SCHEMA_OUTPUT_TEST_DRIVER") else {
+                return;
+            };
+            let cancel = mode == "cancel";
+            let deadline = Instant::now() + Duration::from_millis(if cancel { 5_000 } else { 200 });
+            let runtime = native::native_runtime().unwrap();
+            let output = runtime.block_on(publish_stdout(
+                Buffered {
+                    exit: 0,
+                    stdout: vec![b'x'; 4 * 1024 * 1024],
+                    stderr: Vec::new(),
+                },
+                native::execute::owned_stdout().unwrap(),
+                deadline,
+                async {
+                    if cancel {
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        native::failure("cancelled", "Synthetic shared-pipe cancellation.", 1)
+                    } else {
+                        pending().await
+                    }
+                },
+            ));
+            let output = native::finish_runtime(runtime, output);
+            let exit = deliver_native(output, deadline);
+            std::process::exit(exit);
+        }
+
+        #[test]
+        fn shared_undrained_pipe_cannot_block_expiry_or_cancellation_diagnostics() {
+            use std::process::{Command, Stdio};
+
+            for mode in ["deadline", "cancel"] {
+                let (reader, writer) = io::pipe().unwrap();
+                let mut command = Command::new(std::env::current_exe().unwrap());
+                command
+                    .env_clear()
+                    .env("FAB_SCHEMA_OUTPUT_TEST_DRIVER", mode)
+                    .args([
+                        "--exact",
+                        "schema::tests::shared_pipe_driver",
+                        "--nocapture",
+                    ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::from(writer.try_clone().unwrap()))
+                    .stderr(Stdio::from(writer));
+                for key in ["SystemRoot", "WINDIR"] {
+                    if let Some(value) = std::env::var_os(key) {
+                        command.env(key, value);
+                    }
+                }
+                let start = Instant::now();
+                let mut child = command.spawn().unwrap();
+                drop(command);
+                // Keep the shared pipe open without draining either output stream.
+                let status = loop {
+                    if let Some(status) = child.try_wait().unwrap() {
+                        break Some(status);
+                    }
+                    if start.elapsed() >= Duration::from_secs(4) {
+                        child.kill().unwrap();
+                        child.wait().unwrap();
+                        break None;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                assert_eq!(status.and_then(|status| status.code()), Some(1), "{mode}");
+                assert!(start.elapsed() < Duration::from_secs(4), "{mode}");
+                drop(reader);
+            }
+        }
         fn flush(&mut self) -> io::Result<()> {
             panic!("cancelled publication must not flush");
         }

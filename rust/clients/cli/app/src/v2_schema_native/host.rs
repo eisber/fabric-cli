@@ -14,7 +14,8 @@ pub(crate) fn run(request: &DataSchemaRequest, stderr: &mut dyn Write) -> io::Re
         let started = std::time::Instant::now();
         let deadline = started + fabric_sdk_http::ExecutionOptions::default().timeout;
         let result = run_selected(request, deadline);
-        deliver(result, stderr)
+        let _ = stderr;
+        Ok(deliver_native(result, deadline))
     }
     #[cfg(not(any(windows, feature = "headless")))]
     {
@@ -232,6 +233,76 @@ fn deliver(result: Result<Buffered, native::Failure>, stderr: &mut dyn Write) ->
         }
         Err(error) => write_host_failure(error, stderr),
     }
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn deliver_native(result: Result<Buffered, native::Failure>, deadline: std::time::Instant) -> i32 {
+    let mut diagnostic = Vec::new();
+    let exit = match deliver(result, &mut diagnostic) {
+        Ok(exit) => exit,
+        Err(_) => return 1,
+    };
+    if diagnostic.is_empty() {
+        return exit;
+    }
+    let stderr = match owned_stderr() {
+        Ok(stderr) => stderr,
+        Err(_) => return 1,
+    };
+    if write_diagnostic(stderr, diagnostic, deadline) {
+        exit
+    } else {
+        1
+    }
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn owned_stderr() -> io::Result<std::fs::File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsHandle;
+        io::stderr()
+            .as_handle()
+            .try_clone_to_owned()
+            .map(std::fs::File::from)
+    }
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsFd;
+        io::stderr()
+            .as_fd()
+            .try_clone_to_owned()
+            .map(std::fs::File::from)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn write_diagnostic(
+    mut stderr: impl Write + Send + 'static,
+    bytes: Vec<u8>,
+    deadline: std::time::Instant,
+) -> bool {
+    let (sent, received) = std::sync::mpsc::sync_channel(1);
+    // Never hold Rust's stderr lock in an abandoned worker, including when
+    // stderr and stdout share one undrained pipe. No synchronous fallback.
+    let worker = std::thread::Builder::new()
+        .name("schema-diagnostic".into())
+        .spawn(move || {
+            let result = stderr.write_all(&bytes).and_then(|()| stderr.flush());
+            let _ = sent.send(result);
+        });
+    if worker.is_err() {
+        return false;
+    }
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    matches!(
+        received.recv_timeout(remaining.min(std::time::Duration::from_millis(100))),
+        Ok(Ok(()))
+    )
 }
 
 #[cfg(any(windows, feature = "headless"))]

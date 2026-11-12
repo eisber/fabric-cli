@@ -157,6 +157,10 @@ are never replayed. Bounded runtime shutdown does not wait indefinitely for that
 worker. On Windows this host requires stdout redirected to a file or pipe; a
 console is rejected before identity setup rather than writing UTF-8 bytes through
 a duplicated console handle without the required Unicode console adapter.
+Diagnostics also use an owned handle and a bounded worker, with at most 100 ms
+of waiting within the original deadline. A full merged stdout/stderr pipe can
+prevent delivery of the diagnostic, but still produces a nonzero process exit;
+there is no synchronous stderr fallback that can hang after output is abandoned.
 
 Offline process and injected-host tests cover the binding without signing in or
 contacting Fabric. They are not live authentication, service or release evidence.
