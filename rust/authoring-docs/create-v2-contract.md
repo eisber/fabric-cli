@@ -160,6 +160,11 @@ anticipated-effect descriptors with contract references; they are not observed
 outcomes or permission for another mutation. Skip has no outgoing request or
 creation-effect declaration.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 ## Outcomes and operation safety
 
 Keep requested policy, selected action, completion evidence, and effects
