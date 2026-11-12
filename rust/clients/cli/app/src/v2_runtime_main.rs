@@ -189,6 +189,7 @@ async fn execute(input: fabric_cli::runtime_v2::ParsedInvocation, deadline: Inst
             };
             let bytes = serde_json::to_vec(&serde_json::json!({
                 "error":{"code":code,"message":message},"evidence":evidence,
+                "remoteCancelled":false,"remoteReplayed":false,
             }))
             .expect("bounded static diagnostic is serializable");
             let _ = write_stream(OutputStream::Stderr, bytes, deadline).await;
