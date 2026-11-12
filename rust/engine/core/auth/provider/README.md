@@ -6,6 +6,15 @@
 SDK consumers continue to inject `Arc<dyn TokenCredential>` directly. The
 default feature set is empty and performs no credential discovery.
 
+Power BI bootstrap scope acquisition is opt-in through
+`HeadlessCredential::new_with_pbi_bootstrap` or the same-instance
+`WindowsCredential::with_pbi_bootstrap` and
+`InteractiveCredential::with_pbi_bootstrap` wrappers. See the
+[Notebook workload read foundation](../../../../authoring-docs/notebook-workload-foundation.md)
+for the separate cryptographic principal checks, explicit target binding, and
+qualification gaps. These APIs add no sign-in or consent prompt, credential
+fallback, or Fabric CLI route; scope acquisition alone is not identity proof.
+
 The optional device-code session's macOS protected-store isolation, explicit
 helper trust, legacy Keychain identity, finite protocol and offline validation
 selectors are described in [isolated macOS protected storage](protected-store-macos.md).

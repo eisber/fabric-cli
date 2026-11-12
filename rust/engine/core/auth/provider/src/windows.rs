@@ -831,6 +831,14 @@ pub struct WindowsCredential {
 }
 
 impl WindowsCredential {
+    /// Enable only the fixed public PBI bootstrap scope on this same WAM session.
+    ///
+    /// Acquisition stays silent and retains account/generation/logout fencing.
+    /// This wrapper is not cryptographic access-token principal validation.
+    pub fn with_pbi_bootstrap(self: &Arc<Self>) -> Arc<dyn TokenCredential> {
+        Arc::new(PbiCredential(Arc::clone(self)))
+    }
+
     /// Connects silently for Fabric only, using the explicit selected identity.
     ///
     /// # Errors
@@ -891,6 +899,28 @@ impl WindowsCredential {
     /// Historical metadata from acquisition, not current status or a new token.
     pub fn metadata(&self) -> &[TokenMetadata] {
         &self.metadata
+    }
+}
+
+#[derive(Debug)]
+struct PbiCredential(Arc<WindowsCredential>);
+
+#[async_trait]
+impl TokenCredential for PbiCredential {
+    async fn get_token(
+        &self,
+        scopes: &[&str],
+        options: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
+        if scopes == [TokenAudience::PowerBiBootstrap.scope()] {
+            return self
+                .0
+                .coordinator
+                .refresh(&self.0, TokenAudience::PowerBiBootstrap)
+                .await
+                .map_err(|error| Error::new(ErrorKind::Credential, error));
+        }
+        self.0.get_token(scopes, options).await
     }
 }
 
