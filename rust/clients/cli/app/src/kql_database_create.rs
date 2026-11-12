@@ -68,9 +68,7 @@ impl CreateInputValidator for KqlReadWriteCreate {
             !value
                 .as_str()
                 .is_some_and(|text| text.chars().count() <= 256)
-        }) || body
-            .get("folderId")
-            .is_some_and(|value| !value.is_null() && !value.as_str().is_some_and(is_id))
+        }) || body.get("folderId").is_some_and(|value| !value.is_null())
         {
             return Err(reject());
         }

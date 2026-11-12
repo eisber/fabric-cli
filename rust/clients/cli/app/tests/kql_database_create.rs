@@ -205,6 +205,7 @@ impl Harness {
             requests[0].url().path(),
             format!("/v1/workspaces/{WS}/items")
         );
+        assert_eq!(requests[0].url().query(), Some("recursive=false"));
         assert_eq!(requests[1].method(), Method::Post);
         assert_eq!(
             requests[1].url().path(),
@@ -218,10 +219,12 @@ impl Harness {
             assert_eq!(request.method(), Method::Get);
             assert_eq!(request.url().path(), *path);
         }
-        for request in requests.iter() {
+        for (index, request) in requests.iter().enumerate() {
             assert_eq!(request.url().scheme(), "https");
             assert_eq!(request.url().host_str(), Some(HOST));
-            assert!(request.url().query().is_none());
+            if index != 0 {
+                assert!(request.url().query().is_none());
+            }
             assert!(request.url().fragment().is_none());
         }
         assert_eq!(
@@ -450,17 +453,16 @@ fn policy_owner_scope_name_and_profile_reject_before_input() {
 fn documented_optional_fields_remain_strict_and_native() {
     let mut input = body();
     input["description"] = json!("x".repeat(256));
-    input["folderId"] = json!(ITEM);
+    input["folderId"] = Value::Null;
     input["sensitivityLabelSettings"] = json!({
         "labelId":ITEM,"sensitivityLabelApplyStrategy":"ApplyOrFail"
     });
-    assert!(prepare(&serde_json::to_vec(&input).unwrap(), &[]).is_ok());
-    input["folderId"] = Value::Null;
     assert!(prepare(&serde_json::to_vec(&input).unwrap(), &[]).is_ok());
     for (field, invalid) in [
         ("description", Value::Null),
         ("description", json!("x".repeat(257))),
         ("folderId", json!("folder")),
+        ("folderId", json!(ITEM)),
         ("sensitivityLabelSettings", Value::Null),
         ("sensitivityLabelSettings", json!({})),
         ("sensitivityLabelSettings", json!({"labelId":"invalid"})),
@@ -479,7 +481,9 @@ fn documented_optional_fields_remain_strict_and_native() {
     ] {
         let mut input = body();
         input[field] = invalid;
-        assert!(prepare(&serde_json::to_vec(&input).unwrap(), &[]).is_err());
+        for options in [vec![], vec!["--if-exists", "skip"]] {
+            assert!(prepare(&serde_json::to_vec(&input).unwrap(), &options).is_err());
+        }
     }
 }
 
@@ -870,6 +874,222 @@ async fn same_name_foreign_owner_is_not_a_second_kql_match() {
     assert_eq!(approval.calls.len(), 1);
     assert_eq!(approval.calls[0]["remoteWrite"], false);
     assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn root_identity_and_protected_folder_observation_do_not_guess_nested_targets() {
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for folder in [None, Some(Value::Null)] {
+        let mut root = resource();
+        if let Some(folder) = &folder {
+            root["folderId"] = folder.clone();
+        }
+        let mut nested = resource();
+        nested["id"] = json!(OP);
+        nested["folderId"] = json!(PARENT);
+        let harness = Harness::new([json_response(200, json!({"value":[nested,root]}))]);
+        let delivery = harness
+            .execute(
+                prepare(&raw, &["--if-exists", "skip", "--project", "missing"]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let value: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["meta"]["status"], "unchanged");
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(value["meta"]["folderId"], Value::Null);
+        assert_eq!(value["meta"]["folderIdObserved"], folder.is_some());
+        assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+    }
+    for folder in [
+        json!(PARENT),
+        json!("invalid-folder"),
+        json!(false),
+        json!({}),
+        json!(0),
+    ] {
+        let mut nested = resource();
+        nested["folderId"] = folder;
+        let harness = Harness::new([json_response(200, json!({"value":[nested]}))]);
+        let mut approval = Approval::default();
+        assert!(
+            harness
+                .execute(
+                    prepare(&raw, &["--if-exists", "skip"]).unwrap(),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .is_err()
+        );
+        assert!(approval.calls.is_empty());
+        assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn root_pagination_preserves_recursive_filter_and_complete_typed_cardinality() {
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for ambiguous in [false, true] {
+        let first = if ambiguous {
+            resource()
+        } else {
+            json!({"id":PARENT,"workspaceId":WS,"displayName":"Database_1","type":"Eventhouse"})
+        };
+        let harness = Harness::new([
+            json_response(200, json!({"value":[first],"continuationToken":"next/+"})),
+            json_response(200, json!({"value":[resource()]})),
+        ]);
+        let mut approval = Approval::default();
+        let result = harness
+            .execute(
+                prepare(&raw, &["--if-exists", "skip"]).unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await;
+        if ambiguous {
+            assert!(matches!(
+                result,
+                Err(CreateCommandError::Policy(CreateError::AmbiguousLeaf))
+            ));
+            assert!(approval.calls.is_empty());
+        } else {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+            assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+            assert_eq!(approval.calls.len(), 1);
+        }
+        let requests = harness.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].url().query(), Some("recursive=false"));
+        let pairs = requests[1]
+            .url()
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            pairs,
+            vec![
+                ("recursive".to_owned(), "false".to_owned()),
+                ("continuationToken".to_owned(), "next/+".to_owned())
+            ]
+        );
+        for request in requests.iter() {
+            assert_eq!(request.method(), Method::Get);
+            assert_eq!(request.url().path(), format!("/v1/workspaces/{WS}/items"));
+            assert_eq!(request.url().host_str(), Some(HOST));
+        }
+    }
+}
+
+#[tokio::test]
+async fn completed_nested_or_malformed_folder_never_claims_root_creation() {
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for folder in [
+        json!(PARENT),
+        json!("invalid-folder"),
+        json!(false),
+        json!({}),
+    ] {
+        for wait in [false, true] {
+            let mut observed = resource();
+            observed["folderId"] = folder.clone();
+            let mut replies = vec![missing()];
+            if wait {
+                replies.push(accepted(&resource().to_string(), "0"));
+                replies.push(json_response(200, json!({"status":"Succeeded"})));
+            }
+            replies.push(json_response(if wait { 200 } else { 201 }, observed));
+            let harness = Harness::new(replies);
+            let options = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let delivery = harness
+                .execute(
+                    prepare(&raw, &options).unwrap(),
+                    &mut Approval::default(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let value: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(value["data"], Value::Null);
+            assert_eq!(value["meta"]["status"], "unknown");
+            assert_eq!(value["meta"]["completed"], false);
+            assert_eq!(value["meta"]["folderId"], folder);
+            assert_eq!(value["meta"]["folderIdObserved"], true);
+            assert_eq!(value["meta"]["resourceId"], ITEM);
+            assert_eq!(value["meta"]["remoteReplayed"], false);
+            assert_eq!(value["meta"]["remoteCancelled"], false);
+            if wait {
+                assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+                assert_eq!(value["meta"]["submission"]["resource"], resource());
+                assert_eq!(value["meta"]["submission"]["folderIdObserved"], false);
+                harness.assert_wire(
+                    &raw,
+                    &[
+                        &format!("/v1/operations/{OP}"),
+                        &format!("/v1/operations/{OP}/result"),
+                    ],
+                );
+            } else {
+                assert_eq!(value["meta"]["submission"]["httpStatus"], 201);
+                assert_eq!(value["meta"]["submission"]["folderId"], folder);
+                assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+                harness.assert_wire(&raw, &[]);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn explicit_root_folder_observation_survives_accepted_failure_and_projection() {
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let mut accepted_resource = resource();
+    accepted_resource["folderId"] = Value::Null;
+    let harness = Harness::new([
+        missing(),
+        accepted(&accepted_resource.to_string(), "0"),
+        json_response(
+            200,
+            json!({"status":"Failed","error":{"errorCode":"NativeFailure"}}),
+        ),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(&raw, &["--wait", "--project", "missing"]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let value: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["data"], Value::Null);
+    assert_eq!(value["meta"]["folderId"], Value::Null);
+    assert_eq!(value["meta"]["folderIdObserved"], true);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["folderId"], Value::Null);
+    assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+    assert_eq!(value["meta"]["submission"]["resource"], resource());
+    assert_eq!(
+        value["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    harness.assert_wire(&raw, &[&format!("/v1/operations/{OP}")]);
 }
 
 #[tokio::test]

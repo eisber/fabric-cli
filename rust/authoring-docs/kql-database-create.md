@@ -59,6 +59,11 @@ logical diff of `0454fb43f08c05f9f066ed5bcb686a8c426a0de1`, not its producer
 ancestry. Its Notebook-specific selected-contract documentation context is
 absent from this base and is not imported; the code, tests and shared-host
 documentation are adopted unchanged.
+The next shared logical diff is
+`caf2f7f2789438cf3abe67242a13aeb048b1ce56`, enforcing workspace-root identity
+and correcting the strict lint failure without suppression. Its shared code and
+host documentation are exact; absent Notebook-specific contract prose is again
+not imported.
 The [selected create contract](create-v2-contract.md) is unchanged; its old
 unmounted-implementation inventory is historical, not a feature-support claim.
 
@@ -73,11 +78,14 @@ digits, underscores, periods and hyphens in names, without renaming or case
 normalization.
 
 Optional API fields are retained verbatim: `description` (string, at most
-256 characters), `folderId` (GUID or documented null/workspace root), and
+256 characters), `folderId` (documented null/workspace root only), and
 `sensitivityLabelSettings` (`labelId` GUID, optional
 `sensitivityLabelApplyStrategy` equal to `ApplyOrFail` or `Ignore`).
 Unknown fields and undocumented nulls reject locally. The typed path supplies
 the owner; the native request does not accept a generic `type` field.
+This initial path addresses the workspace root, not a folder. A non-null
+`folderId`, even a valid GUID, rejects before provider access rather than
+creating somewhere different from the selected destination.
 
 Missing/malformed parent, Shortcut/cluster/source fields, definitions, queries,
 ingestion, connections and provisioning requests reject before provider access.
@@ -94,6 +102,12 @@ Even skip requires strict valid input. Complete bounded workspace-item
 discovery checks name collision, ambiguity and owner before planning. It does
 not discover a parent or establish an atomic check-and-create guarantee.
 A raced POST conflict is an error, never a successful skip.
+Discovery uses the generic Core `items?recursive=false` route with complete
+bounded pagination; the typed POST has no discovery query. Nested rows cannot
+satisfy a root skip, and same-name resources of other types are not a second
+KQL match. Missing versus explicit null root folder observations remain
+distinguishable in protected receipt metadata. A completed result with a
+nested or malformed folder is an unknown nonzero outcome, not root success.
 
 Immediate terminal approval shows the exact target, full body, selected
 account/tenant, endpoint, policy, output and effects. Piped stderr is not an
