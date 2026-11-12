@@ -357,7 +357,7 @@ fn prepare_at(
 }
 
 fn paths(post: bool) -> Vec<(&'static str, String)> {
-    let mut paths = vec![("GET", format!("/v1/workspaces/{WS}/items"))];
+    let mut paths = vec![("GET", format!("/v1/workspaces/{WS}/items?recursive=false"))];
     if post {
         paths.push(("POST", format!("/v1/workspaces/{WS}/warehouses")));
     }
@@ -1018,314 +1018,6 @@ fn literal_names_preserve_guid_shaped_and_unicode_spelling_and_bound_raw_bytes()
             .is_ok()
         );
     }
-
-    #[tokio::test]
-    async fn literal_guid_and_unicode_names_reach_only_the_warehouses_post_verbatim() {
-        for name in [ITEM, "With spaces.and-dashes", "Caf\u{e9}"] {
-            let target = format!("/{WS}.Workspace/{name}.Warehouse");
-            let mut response = resource();
-            response["displayName"] = json!(name);
-            let harness = Harness::new(vec![
-                listing(json!([])),
-                reply(StatusCode::Created, response),
-            ]);
-            let mut approval = Approval {
-                expected_name: Some(name),
-                ..Approval::default()
-            };
-            let delivery = harness
-                .execute(
-                    prepare_at(&target, None, &["--if-exists", "skip"]).unwrap(),
-                    &mut approval,
-                    pending(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(
-                delivery.report().exit_code(),
-                0,
-                "{}",
-                delivery.report().value()
-            );
-            assert_eq!(delivery.report().value()["meta"]["action"], "create");
-            assert_eq!(approval.calls, 1);
-            harness.assert_requests(&paths(true));
-            let requests = harness.wire.requests.lock().unwrap();
-            let Body::Bytes(bytes) = requests[1].body() else {
-                panic!("native JSON bytes")
-            };
-            assert_eq!(
-                serde_json::from_slice::<Value>(bytes).unwrap()["displayName"],
-                name
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn empty_accepted_body_never_invents_a_resource_identity_or_completion() {
-        let Reply::Http(status, headers, _) = accepted(Value::Null, "0") else {
-            unreachable!()
-        };
-        let harness = Harness::new(vec![
-            listing(json!([])),
-            Reply::Http(status, headers, Vec::new()),
-        ]);
-        let delivery = harness
-            .execute(
-                prepare(None, &[]).unwrap(),
-                &mut Approval::default(),
-                pending(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(delivery.report().exit_code(), 0);
-        assert_eq!(delivery.report().value()["meta"]["status"], "accepted");
-        assert_eq!(delivery.report().value()["meta"]["completed"], false);
-        assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
-        assert_eq!(
-            delivery.report().value()["meta"]["operationHandle"],
-            format!("/operations/{OP}")
-        );
-        harness.assert_requests(&paths(true));
-    }
-
-    #[tokio::test]
-    async fn accepted_headers_survive_suspended_or_failed_body_without_replay() {
-        for cancelled in [false, true] {
-            let Reply::Http(_, headers, _) = accepted(Value::Null, "0") else {
-                unreachable!()
-            };
-            let suspended = Arc::new(tokio::sync::Notify::new());
-            let response = if cancelled {
-                Reply::PendingBody(headers, suspended.clone())
-            } else {
-                Reply::BrokenBody(headers)
-            };
-            let harness = Harness::new(vec![listing(json!([])), response]);
-            let interrupted = async {
-                if cancelled {
-                    suspended.notified().await;
-                } else {
-                    pending().await
-                }
-
-                #[tokio::test]
-                async fn defaulted_and_explicit_ci_bodies_are_visible_before_denial_or_cancelled_approval()
-                 {
-                    for ci in [false, true] {
-                        let input = ci.then(|| {
-                            serde_json::to_vec(&json!({
-                                "creationPayload":{"collationType":CASE_INSENSITIVE_COLLATION}
-                            }))
-                            .unwrap()
-                        });
-                        for cancel in [false, true] {
-                            let harness = Harness::new(vec![listing(json!([]))]);
-                            let suspended = Arc::new(tokio::sync::Notify::new());
-                            let mut approval = Approval {
-                                deny: !cancel,
-                                suspend: cancel.then(|| suspended.clone()),
-                                ..Approval::default()
-                            };
-                            let interrupted = async {
-                                if cancel {
-                                    suspended.notified().await;
-                                } else {
-                                    pending().await
-                                }
-                            };
-                            let result = harness
-                                .execute(
-                                    prepare(input.as_deref(), &[]).unwrap(),
-                                    &mut approval,
-                                    interrupted,
-                                )
-                                .await;
-                            if cancel {
-                                assert!(matches!(result, Err(CreateCommandError::Interrupted)));
-                            } else {
-                                assert!(matches!(
-                                    result,
-                                    Err(CreateCommandError::Approval(CreateApprovalError::Denied))
-                                ));
-                            }
-                            assert_eq!(approval.calls, 1);
-                            assert_eq!(approval.approved_bodies.len(), 1);
-                            assert_eq!(
-                                serde_json::from_slice::<Value>(&approval.approved_bodies[0])
-                                    .unwrap(),
-                                json!({"displayName":"Exact","creationPayload":{
-                                    "collationType":if ci { CASE_INSENSITIVE_COLLATION } else { DEFAULT_COLLATION }
-                                }})
-                            );
-                            harness.assert_requests(&paths(false));
-                        }
-                    }
-                }
-
-                #[tokio::test]
-                async fn typed_same_name_unrelated_items_do_not_make_exact_warehouse_skip_ambiguous()
-                 {
-                    let harness = Harness::new(vec![listing(json!([
-                        resource(),
-                        {"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Notebook"}
-                    ]))]);
-                    let mut approval = Approval {
-                        expected_write: Some(false),
-                        ..Approval::default()
-                    };
-                    let delivery = harness
-                        .execute(
-                            prepare(None, &["--if-exists", "skip"]).unwrap(),
-                            &mut approval,
-                            pending(),
-                        )
-                        .await
-                        .unwrap();
-                    assert_eq!(delivery.report().exit_code(), 0);
-                    assert_eq!(delivery.report().value()["meta"]["action"], "skip");
-                    assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
-                    assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
-                    assert_eq!(
-                        delivery.report().value()["meta"]["anticipatedEffects"],
-                        json!([])
-                    );
-                    assert!(approval.approved_bodies.is_empty());
-                    assert!(approval.questions[0].contains("no native request (unchanged skip)"));
-                    harness.assert_requests(&paths(false));
-                }
-
-                #[tokio::test]
-                async fn malformed_final_and_cancelled_provider_state_keep_initial_submission_separate()
-                 {
-                    for malformed in [false, true] {
-                        let mut replies = vec![listing(json!([])), accepted(resource(), "0")];
-                        if malformed {
-                            replies.extend([
-                                reply(StatusCode::Ok, json!({"status":"Succeeded"})),
-                                Reply::Http(StatusCode::Ok, Headers::new(), b"{malformed".to_vec()),
-                            ]);
-                        } else {
-                            replies.push(reply(
-                                StatusCode::Ok,
-                                json!({"status":"Cancelled","error":{"errorCode":"NativeCancelled"}}),
-                            ));
-                        }
-                        let harness = Harness::new(replies);
-                        let delivery = harness
-                            .execute(
-                                prepare(None, &["--wait", "--project", "`null`"]).unwrap(),
-                                &mut Approval::default(),
-                                pending(),
-                            )
-                            .await
-                            .unwrap();
-                        assert_eq!(delivery.report().exit_code(), 1);
-                        let mut stdout = Vec::new();
-                        delivery.deliver(&mut stdout).unwrap();
-                        let receipt: Value = serde_json::from_slice(&stdout).unwrap();
-                        assert_eq!(receipt["data"], Value::Null);
-                        assert_eq!(receipt["meta"]["completed"], false);
-                        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
-                        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
-                        assert_eq!(receipt["meta"]["resourceId"], ITEM);
-                        assert_eq!(
-                            receipt["meta"]["submission"]["operationHandle"],
-                            format!("/operations/{OP}")
-                        );
-                        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
-                        assert_eq!(receipt["meta"]["httpStatus"], 200);
-                        assert_eq!(receipt["meta"]["remoteReplayed"], false);
-                        assert_eq!(receipt["meta"]["remoteCancelled"], false);
-                        assert_eq!(
-                            receipt["meta"]["anticipatedEffects"][0]["kind"],
-                            "meteredConsumption"
-                        );
-                        if malformed {
-                            use base64::Engine;
-                            assert_eq!(
-                                receipt["meta"]["unparsedResponseBodyBase64"],
-                                base64::engine::general_purpose::STANDARD.encode(b"{malformed")
-                            );
-                        }
-                        let mut expected = paths(true);
-                        expected.push(("GET", format!("/v1/operations/{OP}")));
-                        if malformed {
-                            expected.push(("GET", format!("/v1/operations/{OP}/result")));
-                        }
-                        harness.assert_requests(&expected);
-                    }
-                }
-
-                #[tokio::test]
-                async fn malformed_nonwaiting_acceptance_retains_bytes_headers_and_effects_without_completion()
-                 {
-                    let Reply::Http(status, headers, _) = accepted(Value::Null, "0") else {
-                        unreachable!()
-                    };
-                    let raw = b"{malformed";
-                    let harness = Harness::new(vec![
-                        listing(json!([])),
-                        Reply::Http(status, headers, raw.to_vec()),
-                    ]);
-                    let delivery = harness
-                        .execute(
-                            prepare(None, &[]).unwrap(),
-                            &mut Approval::default(),
-                            pending(),
-                        )
-                        .await
-                        .unwrap();
-                    let report = delivery.report();
-                    assert_eq!(report.exit_code(), 1);
-                    assert_eq!(report.value()["meta"]["submission"]["httpStatus"], 202);
-                    assert_eq!(report.value()["meta"]["resourceId"], Value::Null);
-                    assert_eq!(
-                        report.value()["meta"]["operationHandle"],
-                        format!("/operations/{OP}")
-                    );
-                    assert_eq!(report.value()["meta"]["completed"], false);
-                    assert_eq!(
-                        report.value()["meta"]["anticipatedEffects"][0]["kind"],
-                        "meteredConsumption"
-                    );
-                    assert_eq!(
-                        report.value()["meta"]["anticipatedEffects"][0].get("id"),
-                        None
-                    );
-                    use base64::Engine;
-                    assert_eq!(
-                        report.value()["meta"]["unparsedResponseBodyBase64"],
-                        base64::engine::general_purpose::STANDARD.encode(raw)
-                    );
-                    harness.assert_requests(&paths(true));
-                }
-            };
-            let delivery = harness
-                .execute(
-                    prepare(None, &[]).unwrap(),
-                    &mut Approval::default(),
-                    interrupted,
-                )
-                .await
-                .unwrap();
-            assert_eq!(delivery.report().exit_code(), 1);
-            assert_eq!(delivery.report().value()["meta"]["completed"], false);
-            assert_eq!(delivery.report().value()["meta"]["httpStatus"], 202);
-            assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
-            assert_eq!(
-                delivery.report().value()["meta"]["operationHandle"],
-                format!("/operations/{OP}")
-            );
-            assert_eq!(
-                delivery.report().value()["meta"]["mutationMayHaveOccurred"],
-                true
-            );
-            assert_eq!(delivery.report().value()["meta"]["remoteReplayed"], false);
-            assert_eq!(delivery.report().value()["meta"]["remoteCancelled"], false);
-            harness.assert_requests(&paths(true));
-        }
-    }
     let target = format!("/{WS}.Workspace/{}.Warehouse", "a".repeat(257));
     assert!(
         PreparedCreateCommand::preflight(
@@ -1337,4 +1029,615 @@ fn literal_names_preserve_guid_shaped_and_unicode_spelling_and_bound_raw_bytes()
         )
         .is_err()
     );
+}
+
+#[tokio::test]
+async fn literal_guid_and_unicode_names_reach_only_the_warehouses_post_verbatim() {
+    for name in [ITEM, "With spaces.and-dashes", "Caf\u{e9}"] {
+        let target = format!("/{WS}.Workspace/{name}.Warehouse");
+        let mut response = resource();
+        response["displayName"] = json!(name);
+        let harness = Harness::new(vec![
+            listing(json!([])),
+            reply(StatusCode::Created, response),
+        ]);
+        let mut approval = Approval {
+            expected_name: Some(name),
+            ..Approval::default()
+        };
+        let delivery = harness
+            .execute(
+                prepare_at(&target, None, &["--if-exists", "skip"]).unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            delivery.report().exit_code(),
+            0,
+            "{}",
+            delivery.report().value()
+        );
+        assert_eq!(delivery.report().value()["meta"]["action"], "create");
+        assert_eq!(approval.calls, 1);
+        harness.assert_requests(&paths(true));
+        let requests = harness.wire.requests.lock().unwrap();
+        let Body::Bytes(bytes) = requests[1].body() else {
+            panic!("native JSON bytes")
+        };
+        assert_eq!(
+            serde_json::from_slice::<Value>(bytes).unwrap()["displayName"],
+            name
+        );
+    }
+}
+
+#[tokio::test]
+async fn empty_accepted_body_never_invents_a_resource_identity_or_completion() {
+    let Reply::Http(status, headers, _) = accepted(Value::Null, "0") else {
+        unreachable!()
+    };
+    let harness = Harness::new(vec![
+        listing(json!([])),
+        Reply::Http(status, headers, Vec::new()),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(None, &[]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["status"], "accepted");
+    assert_eq!(delivery.report().value()["meta"]["completed"], false);
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
+    assert_eq!(
+        delivery.report().value()["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    harness.assert_requests(&paths(true));
+}
+
+#[tokio::test]
+async fn accepted_headers_survive_suspended_or_failed_body_without_replay() {
+    for cancelled in [false, true] {
+        let Reply::Http(_, headers, _) = accepted(Value::Null, "0") else {
+            unreachable!()
+        };
+        let suspended = Arc::new(tokio::sync::Notify::new());
+        let response = if cancelled {
+            Reply::PendingBody(headers, suspended.clone())
+        } else {
+            Reply::BrokenBody(headers)
+        };
+        let harness = Harness::new(vec![listing(json!([])), response]);
+        let interrupted = async {
+            if cancelled {
+                suspended.notified().await;
+            } else {
+                pending().await
+            }
+        };
+        let delivery = harness
+            .execute(
+                prepare(None, &[]).unwrap(),
+                &mut Approval::default(),
+                interrupted,
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        assert_eq!(delivery.report().value()["meta"]["completed"], false);
+        assert_eq!(delivery.report().value()["meta"]["httpStatus"], 202);
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
+        assert_eq!(
+            delivery.report().value()["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+            true
+        );
+        assert_eq!(delivery.report().value()["meta"]["remoteReplayed"], false);
+        assert_eq!(delivery.report().value()["meta"]["remoteCancelled"], false);
+        harness.assert_requests(&paths(true));
+    }
+}
+
+#[tokio::test]
+async fn defaulted_and_explicit_ci_bodies_are_visible_before_denial_or_cancelled_approval() {
+    for ci in [false, true] {
+        let input = ci.then(|| {
+            serde_json::to_vec(&json!({
+                "creationPayload":{"collationType":CASE_INSENSITIVE_COLLATION}
+            }))
+            .unwrap()
+        });
+        for cancel in [false, true] {
+            let harness = Harness::new(vec![listing(json!([]))]);
+            let suspended = Arc::new(tokio::sync::Notify::new());
+            let mut approval = Approval {
+                deny: !cancel,
+                suspend: cancel.then(|| suspended.clone()),
+                ..Approval::default()
+            };
+            let interrupted = async {
+                if cancel {
+                    suspended.notified().await;
+                } else {
+                    pending().await
+                }
+            };
+            let result = harness
+                .execute(
+                    prepare(input.as_deref(), &[]).unwrap(),
+                    &mut approval,
+                    interrupted,
+                )
+                .await;
+            if cancel {
+                assert!(matches!(result, Err(CreateCommandError::Interrupted)));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(CreateCommandError::Approval(CreateApprovalError::Denied))
+                ));
+            }
+            assert_eq!(approval.calls, 1);
+            assert_eq!(approval.approved_bodies.len(), 1);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&approval.approved_bodies[0]).unwrap(),
+                json!({"displayName":"Exact","creationPayload":{
+                    "collationType":if ci { CASE_INSENSITIVE_COLLATION } else { DEFAULT_COLLATION }
+                }})
+            );
+            harness.assert_requests(&paths(false));
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_same_name_unrelated_items_do_not_make_exact_warehouse_skip_ambiguous() {
+    let harness = Harness::new(vec![listing(json!([
+        resource(),
+        {"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Notebook"}
+    ]))]);
+    let mut approval = Approval {
+        expected_write: Some(false),
+        ..Approval::default()
+    };
+    let delivery = harness
+        .execute(
+            prepare(None, &["--if-exists", "skip"]).unwrap(),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["action"], "skip");
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+    assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
+    assert_eq!(
+        delivery.report().value()["meta"]["anticipatedEffects"],
+        json!([])
+    );
+    assert!(approval.approved_bodies.is_empty());
+    assert!(approval.questions[0].contains("no native request (unchanged skip)"));
+    harness.assert_requests(&paths(false));
+}
+
+#[tokio::test]
+async fn malformed_final_and_cancelled_provider_state_keep_initial_submission_separate() {
+    for malformed in [false, true] {
+        let mut replies = vec![listing(json!([])), accepted(resource(), "0")];
+        if malformed {
+            replies.extend([
+                reply(StatusCode::Ok, json!({"status":"Succeeded"})),
+                Reply::Http(StatusCode::Ok, Headers::new(), b"{malformed".to_vec()),
+            ]);
+        } else {
+            replies.push(reply(
+                StatusCode::Ok,
+                json!({"status":"Cancelled","error":{"errorCode":"NativeCancelled"}}),
+            ));
+        }
+        let harness = Harness::new(replies);
+        let delivery = harness
+            .execute(
+                prepare(None, &["--wait", "--project", "`null`"]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let mut stdout = Vec::new();
+        delivery.deliver(&mut stdout).unwrap();
+        let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(receipt["data"], Value::Null);
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_eq!(receipt["meta"]["remoteCancelled"], false);
+        assert_eq!(
+            receipt["meta"]["anticipatedEffects"][0]["kind"],
+            "meteredConsumption"
+        );
+        if malformed {
+            use base64::Engine;
+            assert_eq!(
+                receipt["meta"]["unparsedResponseBodyBase64"],
+                base64::engine::general_purpose::STANDARD.encode(b"{malformed")
+            );
+        }
+        let mut expected = paths(true);
+        expected.push(("GET", format!("/v1/operations/{OP}")));
+        if malformed {
+            expected.push(("GET", format!("/v1/operations/{OP}/result")));
+        }
+        harness.assert_requests(&expected);
+    }
+}
+
+#[tokio::test]
+async fn malformed_nonwaiting_acceptance_retains_bytes_headers_and_effects_without_completion() {
+    let Reply::Http(status, headers, _) = accepted(Value::Null, "0") else {
+        unreachable!()
+    };
+    let raw = b"{malformed";
+    let harness = Harness::new(vec![
+        listing(json!([])),
+        Reply::Http(status, headers, raw.to_vec()),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(None, &[]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    let report = delivery.report();
+    assert_eq!(report.exit_code(), 1);
+    assert_eq!(report.value()["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(report.value()["meta"]["resourceId"], Value::Null);
+    assert_eq!(
+        report.value()["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(report.value()["meta"]["completed"], false);
+    assert_eq!(
+        report.value()["meta"]["anticipatedEffects"][0]["kind"],
+        "meteredConsumption"
+    );
+    assert_eq!(
+        report.value()["meta"]["anticipatedEffects"][0].get("id"),
+        None
+    );
+    use base64::Engine;
+    assert_eq!(
+        report.value()["meta"]["unparsedResponseBodyBase64"],
+        base64::engine::general_purpose::STANDARD.encode(raw)
+    );
+    harness.assert_requests(&paths(true));
+}
+
+#[tokio::test]
+async fn explicit_root_or_omitted_folder_can_skip_but_nested_only_or_malformed_cannot() {
+    for folder in [
+        None,
+        Some(Value::Null),
+        Some(json!(OP)),
+        Some(json!("invalid")),
+        Some(json!("")),
+        Some(json!(false)),
+        Some(json!(1)),
+        Some(json!({})),
+        Some(json!([])),
+    ] {
+        let mut item = resource();
+        if let Some(folder) = &folder {
+            item["folderId"] = folder.clone();
+        }
+        let harness = Harness::new(vec![listing(json!([item]))]);
+        let mut approval = Approval {
+            expected_write: Some(false),
+            ..Approval::default()
+        };
+        let result = harness
+            .execute(
+                prepare(None, &["--if-exists", "skip"]).unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await;
+        if folder.is_none() || folder == Some(Value::Null) {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            assert_eq!(delivery.report().value()["meta"]["action"], "skip");
+            assert_eq!(delivery.report().value()["meta"]["folderId"], Value::Null);
+            assert_eq!(
+                delivery.report().value()["meta"]["folderIdObserved"],
+                folder.is_some()
+            );
+            assert_eq!(approval.calls, 1);
+        } else {
+            assert!(matches!(result, Err(CreateCommandError::Invalid)));
+            assert_eq!(approval.calls, 0);
+        }
+        harness.assert_requests(&paths(false));
+    }
+}
+
+#[tokio::test]
+async fn root_and_nested_same_name_items_select_only_exact_typed_root() {
+    for root_first in [false, true] {
+        let mut root = resource();
+        root["folderId"] = Value::Null;
+        let nested = json!({
+            "id":OP,"workspaceId":WS,"displayName":"Exact","type":"Warehouse","folderId":OP
+        });
+        let rows = if root_first {
+            json!([root, nested])
+        } else {
+            json!([nested, root])
+        };
+        let harness = Harness::new(vec![listing(rows)]);
+        let delivery = harness
+            .execute(
+                prepare(Some(b"{}"), &["--if-exists", "skip"]).unwrap(),
+                &mut Approval {
+                    expected_write: Some(false),
+                    ..Approval::default()
+                },
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+        assert_eq!(delivery.report().value()["meta"]["folderIdObserved"], true);
+        assert_eq!(delivery.report().value()["meta"]["folderId"], Value::Null);
+        assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
+        harness.assert_requests(&paths(false));
+    }
+}
+
+#[tokio::test]
+async fn malformed_same_name_folder_rejects_even_alongside_a_valid_root_match() {
+    let malformed = json!({
+        "id":OP,"workspaceId":WS,"displayName":"Exact","type":"Warehouse","folderId":false
+    });
+    let harness = Harness::new(vec![listing(json!([resource(), malformed]))]);
+    let mut approval = Approval {
+        expected_write: Some(false),
+        ..Approval::default()
+    };
+    assert!(matches!(
+        harness
+            .execute(
+                prepare(None, &["--if-exists", "skip"]).unwrap(),
+                &mut approval,
+                pending()
+            )
+            .await,
+        Err(CreateCommandError::Invalid)
+    ));
+    assert_eq!(approval.calls, 0);
+    harness.assert_requests(&paths(false));
+}
+
+#[tokio::test]
+async fn direct_workspace_query_is_preserved_on_every_discovery_page_before_create() {
+    let harness = Harness::new(vec![
+        reply(
+            StatusCode::Ok,
+            json!({
+                "value":[{"id":OP,"workspaceId":WS,"displayName":"Other","type":"Warehouse"}],
+                "continuationToken":"next +/"
+            }),
+        ),
+        listing(json!([])),
+        reply(StatusCode::Created, resource()),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(None, &[]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    harness.assert_requests(&[
+        ("GET", format!("/v1/workspaces/{WS}/items?recursive=false")),
+        (
+            "GET",
+            format!("/v1/workspaces/{WS}/items?recursive=false&continuationToken=next+%2B%2F"),
+        ),
+        ("POST", format!("/v1/workspaces/{WS}/warehouses")),
+    ]);
+}
+
+#[tokio::test]
+async fn incomplete_discovery_or_a_duplicate_root_on_later_pages_never_submits() {
+    for page_limit in [false, true] {
+        let first = if page_limit {
+            json!([])
+        } else {
+            json!([resource()])
+        };
+        let mut replies = vec![reply(
+            StatusCode::Ok,
+            json!({"value":first,"continuationToken":"p1"}),
+        )];
+        if page_limit {
+            replies.extend((1..10).map(|page| {
+                reply(
+                    StatusCode::Ok,
+                    json!({"value":[],"continuationToken":format!("p{}",page+1)}),
+                )
+            }));
+        } else {
+            replies.push(listing(json!([resource()])));
+        }
+        let harness = Harness::new(replies);
+        let mut approval = Approval {
+            expected_write: Some(false),
+            ..Approval::default()
+        };
+        let result = harness
+            .execute(
+                prepare(None, &["--if-exists", "skip"]).unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await;
+        if page_limit {
+            assert!(matches!(result, Err(CreateCommandError::Discovery)));
+        } else {
+            assert!(matches!(
+                result,
+                Err(CreateCommandError::Policy(CreateError::AmbiguousLeaf))
+            ));
+        }
+        assert_eq!(approval.calls, 0);
+        let mut expected = paths(false);
+        for page in 1..if page_limit { 10 } else { 2 } {
+            expected.push((
+                "GET",
+                format!("/v1/workspaces/{WS}/items?recursive=false&continuationToken=p{page}"),
+            ));
+        }
+        harness.assert_requests(&expected);
+    }
+}
+
+#[tokio::test]
+async fn completed_native_responses_require_root_folder_and_preserve_observed_folder_metadata() {
+    for wait in [false, true] {
+        for folder in [
+            None,
+            Some(Value::Null),
+            Some(json!(OP)),
+            Some(json!("bad")),
+            Some(json!(false)),
+        ] {
+            let mut item = resource();
+            if let Some(folder) = &folder {
+                item["folderId"] = folder.clone();
+            }
+            let mut replies = vec![listing(json!([]))];
+            if wait {
+                replies.extend([
+                    accepted(Value::Null, "0"),
+                    reply(StatusCode::Ok, json!({"status":"Succeeded"})),
+                    reply(StatusCode::Ok, item),
+                ]);
+            } else {
+                replies.push(reply(StatusCode::Created, item));
+            }
+            let harness = Harness::new(replies);
+            let options = if wait {
+                vec!["--wait", "--project", "`null`"]
+            } else {
+                vec!["--project", "`null`"]
+            };
+            let delivery = harness
+                .execute(
+                    prepare(None, &options).unwrap(),
+                    &mut Approval::default(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            let root = folder.is_none() || folder == Some(Value::Null);
+            assert_eq!(delivery.report().exit_code(), u8::from(!root));
+            let mut stdout = Vec::new();
+            delivery.deliver(&mut stdout).unwrap();
+            let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(receipt["data"], Value::Null);
+            assert_eq!(receipt["meta"]["completed"], root);
+            assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+            assert_eq!(
+                receipt["meta"]["folderId"],
+                folder.clone().unwrap_or(Value::Null)
+            );
+            assert_eq!(receipt["meta"]["resourceId"], ITEM);
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            if !wait {
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderIdObserved"],
+                    folder.is_some()
+                );
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderId"],
+                    folder.unwrap_or(Value::Null)
+                );
+            }
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            let mut expected = paths(true);
+            if wait {
+                expected.extend([
+                    ("GET", format!("/v1/operations/{OP}")),
+                    ("GET", format!("/v1/operations/{OP}/result")),
+                ]);
+            }
+            harness.assert_requests(&expected);
+        }
+    }
+}
+
+#[tokio::test]
+async fn accepted_nested_folder_evidence_remains_submission_evidence_after_failed_poll() {
+    let mut accepted_resource = resource();
+    accepted_resource["folderId"] = json!(OP);
+    let harness = Harness::new(vec![
+        listing(json!([])),
+        accepted(accepted_resource, "0"),
+        reply(
+            StatusCode::Ok,
+            json!({"status":"Failed","error":{"errorCode":"NativeFailure"}}),
+        ),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(None, &["--wait", "--project", "`null`"]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let mut stdout = Vec::new();
+    delivery.deliver(&mut stdout).unwrap();
+    let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(receipt["data"], Value::Null);
+    assert_eq!(receipt["meta"]["completed"], false);
+    assert_eq!(receipt["meta"]["folderId"], OP);
+    assert_eq!(receipt["meta"]["folderIdObserved"], true);
+    assert_eq!(receipt["meta"]["submission"]["folderId"], OP);
+    assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+    assert_eq!(receipt["meta"]["remoteReplayed"], false);
+    let mut expected = paths(true);
+    expected.push(("GET", format!("/v1/operations/{OP}")));
+    harness.assert_requests(&expected);
 }

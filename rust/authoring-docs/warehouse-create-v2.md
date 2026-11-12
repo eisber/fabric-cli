@@ -17,6 +17,14 @@ SQL endpoint, query, definition, sample-data or child-resource provisioning.
 The host performs bounded complete item discovery for collision handling, then
 at most one native `POST /v1/workspaces/{workspaceId}/warehouses`. Waiting uses
 only the existing Fabric operation poll/result endpoints.
+Discovery uses the generic Core `/items?recursive=false` route and preserves
+that query across continuation pages. Within this explicit direct-workspace
+scope, omitted or null `folderId` is root. Valid nested folder identities do
+not match the root target; nested-only matches and malformed folder identities
+reject before approval. A same-name root plus nested item selects only the root,
+while multiple same-type root matches remain ambiguous. Completed create
+results are rechecked for root scope; observed folder fields and field-presence
+flags stay protected in receipt metadata, including submission evidence.
 
 ## Input
 
@@ -108,7 +116,7 @@ live proof that the legacy spelling is accepted. Broader optional API fields and
 definition-based creation are outside this bounded binding.
 
 The consumed shared-create changes are the logical diffs
-`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and `0454fb4`. There is no Notebook
+`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, `0454fb4`, and `caf2f7f`. There is no Notebook
 leaf or producer ancestry adoption, custom authentication, parser, policy,
 transport, LRO or output engine. See [the shared host](create-host.md).
 
