@@ -13,7 +13,7 @@ use base64::{
 };
 use ring::{
     rand::SystemRandom,
-    signature::{KeyPair, RSA_PKCS1_SHA256, RsaKeyPair},
+    signature::{RSA_PKCS1_SHA256, RsaKeyPair},
 };
 use serde_json::{Value, json};
 
