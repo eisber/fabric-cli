@@ -191,90 +191,13 @@ function buildEnvironment(environment = process.env) {
     .map(name => [name, environment[name]]));
 }
 
-function commandEnvironment(command, context) {
-  return {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
-    FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
-    FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env};
-}
-
-// These offline suites own their fixtures; profile names do not change their inputs.
-// Keep arbitrary tests, executable contracts and all setup outside reuse.
-const REUSABLE_CORE_PACKAGES = new Set([
-  'fabric-sdk-transport', 'fabric-identity', 'fabric-identity-windows',
-  'fabric-cli-repl', 'fabric-cli-update',
-]);
-
-function coreReuseKey(command, context) {
-  const args = command.args;
-  if (command.program !== 'cargo' || command.test !== true ||
-      command.kind || command.stdout || command.deadline ||
-      !Array.isArray(args) ||
-      !['test', '--offline', '--locked', '--package'].every((arg, index) => args[index] === arg) ||
-      !REUSABLE_CORE_PACKAGES.has(args[4]) ||
-      !(args.length === 6 && args[5] === '--all-targets' ||
-        args.length === 8 && args[5] === '--features' &&
-        typeof args[6] === 'string' && args[7] === '--all-targets')) return null;
-  // The full effective environment participates, but secrets never enter receipts.
-  return crypto.createHash('sha256').update(JSON.stringify([
-    command.program, args, command.cwd || path.join(context.root, 'rust'),
-    Object.entries(commandEnvironment(command, context)).sort(([a], [b]) => a.localeCompare(b)),
-    context.platform, context.toolchain, context.sourceBefore,
-  ])).digest('hex');
-}
-
-function saveCommands(context) {
-  fs.writeFileSync(path.join(context.artifacts, 'commands.json'),
-    `${JSON.stringify(context.results, null, 2)}\n`);
-}
-
-function runCoreCommands(commands, context, run) {
-  const completed = new Map();
-  requireThat(context.sourceBefore && context.toolchain && context.platform,
-    'Core reuse requires source, toolchain and platform identity');
-  for (const command of commands) {
-    requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
-    const key = coreReuseKey(command, context);
-    const sourceIndex = key === null ? undefined : completed.get(key);
-    if (sourceIndex === undefined) {
-      run(command);
-      const index = context.results.length - 1;
-      const result = context.results[index];
-      requireThat(result?.execution === 'executed' &&
-        result.exit === 0 && !result.error && !result.signal,
-      `No successful execution receipt: ${command.id}`);
-      if (key !== null) completed.set(key, index);
-    } else {
-      const source = context.results[sourceIndex];
-      context.results.push({
-        ...source, id: command.id, execution: 'reused',
-        source_result_index: sourceIndex, source_command_id: source.id,
-        elapsed_ms: 0, timeout_ms: null, tests_passed: 0, tests_ignored: 0,
-        covered_tests_passed: source.tests_passed, covered_tests_ignored: source.tests_ignored,
-      });
-      saveCommands(context);
-      console.log(`${command.id}: reused successful CORE execution ${sourceIndex} (${source.id})`);
-    }
-  }
-  // One bounded phase check, not a full checkout hash for every alias. The final
-  // inventory and plan verification still gate every execution and alias receipt.
-  requireThat(sourceDigest(context.root) === context.sourceBefore, 'Source changed during core validation');
-}
-
-function executionSummary(results) {
-  const executed = results.filter(result => result.execution !== 'reused');
-  return {
-    commands: results.length, commands_executed: executed.length,
-    commands_reused: results.length - executed.length,
-    tests_passed: executed.reduce((total, item) => total + item.tests_passed, 0),
-    tests_ignored: executed.reduce((total, item) => total + item.tests_ignored, 0),
-  };
-}
-
 function commandResult(command, context, execute = spawnSync) {
   const started = Date.now();
   const timeout = Math.min(context.commandTimeout,
     Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now()));
-  const environment = commandEnvironment(command, context);
+  const environment = {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
+    FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
+    FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env};
   const result = execute(command.program, command.args, {
     cwd: command.cwd || path.join(context.root, 'rust'),
     env: environment,
@@ -305,7 +228,7 @@ function commandResult(command, context, execute = spawnSync) {
   const skipped = unittest ? Number(/(?:^|\W)skipped=(\d+)/m.exec(stderr)?.[1] || 0) : 0;
   const pythonCount = summaries.length === 1 ? Number(summaries[0][1]) : 0;
   const record = {
-    id: command.id, program: command.program, args: command.args, execution: 'executed',
+    id: command.id, program: command.program, args: command.args,
     cwd: command.cwd || path.join(context.root, 'rust'), elapsed_ms: Date.now() - started,
     timeout_ms: timeout,
     build_environment: buildEnvironment(environment),
@@ -317,7 +240,7 @@ function commandResult(command, context, execute = spawnSync) {
     tests_ignored: counts.reduce((total, match) => total + Number(match[3]), 0) + skipped,
   };
   context.results.push(record);
-  saveCommands(context);
+  fs.writeFileSync(path.join(context.artifacts, 'commands.json'), `${JSON.stringify(context.results, null, 2)}\n`);
   requireThat(!result.error && result.status === 0 && !result.signal,
     `Validation failed: ${command.id || command.program} (exit ${result.status}; ` +
     `${result.error?.message || result.signal || 'see command logs'})`);
@@ -523,8 +446,6 @@ function main(argv) {
       plan.mode === 'full' ? 'Full configured offline checks on this host' :
       'Affected configured offline checks on this host; not full workspace or GA acceptance',
   };
-  context.sourceBefore = before;
-  context.toolchain = toolchain;
   const receiptFile = path.join(opts.artifacts, 'receipt.json');
   const run = command => {
     requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
@@ -534,7 +455,7 @@ function main(argv) {
   fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
   let failure;
   try {
-    if (opts.stage !== 'contracts') runCoreCommands(commands, context, run);
+    if (opts.stage !== 'contracts') for (const command of commands) run(command);
     if (opts.stage !== 'core') runContracts(context, registry, run);
   } catch (error) {
     receipt.status = 'failed';
@@ -558,7 +479,9 @@ function main(argv) {
       }
     }
     receipt.finished_at = new Date().toISOString();
-    Object.assign(receipt, executionSummary(context.results));
+    receipt.commands = context.results.length;
+    receipt.tests_passed = context.results.reduce((total, item) => total + item.tests_passed, 0);
+    receipt.tests_ignored = context.results.reduce((total, item) => total + item.tests_ignored, 0);
     fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
   }
   if (failure) throw failure;
@@ -566,8 +489,7 @@ function main(argv) {
 
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
   sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter, oracleVersions,
-  restoreOracleDependencies, runContracts, options, buildEnvironment, coreReuseKey,
-  runCoreCommands, executionSummary};
+  restoreOracleDependencies, runContracts, options, buildEnvironment};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
