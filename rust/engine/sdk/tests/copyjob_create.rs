@@ -8,7 +8,7 @@ use fabric_sdk::{
     copyjobs::create::{CopyJobCreate, MAX_INPUT_BYTES, SCHEMA},
     items::create::{
         ConflictPolicy, CreateError, CreateInputValidator, CreateTarget, LeafState, NativeId,
-        Preflight, SchemaRef, TargetScope, plan_create,
+        Preflight, ReplacementUnit, SchemaRef, TargetScope, plan_create,
     },
 };
 use serde_json::{Value, json};
@@ -204,4 +204,23 @@ fn provider_collision_is_not_overwrite_or_duplicate_capability() {
             Err(CreateError::UnsupportedPolicy)
         );
     }
+}
+
+#[test]
+fn operation_rechecks_native_policy_even_if_another_planner_advertised_overwrite() {
+    let mut broader_capabilities = CopyJobCreate.capabilities();
+    broader_capabilities.replacement = Some(ReplacementUnit::new("other/full-unit/v1").unwrap());
+    let foreign_plan = plan_create(
+        ConflictPolicy::Overwrite,
+        target(WS, "Exact", "CopyJob"),
+        Preflight::Leaf(LeafState::Missing),
+        &broader_capabilities,
+        None,
+        &CopyJobCreate,
+    )
+    .unwrap();
+    assert!(matches!(
+        CopyJobCreate.operation(&foreign_plan, None, false),
+        Err(CreateError::UnsupportedPolicy)
+    ));
 }

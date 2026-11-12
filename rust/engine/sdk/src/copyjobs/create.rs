@@ -7,7 +7,7 @@ use crate::{
     items::create::{
         CreateAction, CreateCapabilities, CreateError, CreateInputValidator, CreatePlan,
         CreateSupport, CreateTarget, DuplicateSupport, InputDisposition, SchemaRef, SkipSupport,
-        TargetScope,
+        TargetScope, validate_policy_support,
     },
     v2::WorkspaceIdentity,
 };
@@ -69,6 +69,7 @@ impl CopyJobCreate {
         raw: Option<&[u8]>,
         wait: bool,
     ) -> Result<FabricOperation, CreateError> {
+        validate_policy_support(plan.policy(), &self.capabilities())?;
         let CreateAction::Create { input } = plan.action() else {
             return Err(CreateError::UnsupportedPolicy);
         };
