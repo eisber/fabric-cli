@@ -1234,6 +1234,116 @@ async fn unexpected_success_result_status_stays_unknown_with_original_typed_http
 }
 
 #[tokio::test]
+async fn duplicate_native_response_keys_reject_at_root_nested_and_escaped_names_without_replay() {
+    let responses = [
+        format!(
+            r#"{{"id":"{RESOURCE}","id":"{OPERATION}","workspaceId":"{WORKSPACE}","displayName":"Exact","type":"SemanticModel"}}"#
+        ),
+        format!(
+            r#"{{"id":"{RESOURCE}","\u0069d":"{OPERATION}","workspaceId":"{WORKSPACE}","displayName":"Exact","type":"SemanticModel"}}"#
+        ),
+        format!(
+            r#"{{"id":"{RESOURCE}","workspaceId":"{WORKSPACE}","displayName":"Other","displayName":"Exact","type":"SemanticModel"}}"#
+        ),
+        format!(
+            r#"{{"id":"{RESOURCE}","workspaceId":"{WORKSPACE}","displayName":"Exact","type":"SemanticModel","details":{{"value":1,"value":2}}}}"#
+        ),
+        format!(
+            r#"{{"id":"{RESOURCE}","workspaceId":"{WORKSPACE}","displayName":"Exact","type":"SemanticModel","details":{{"value":1,"\u0076alue":2}}}}"#
+        ),
+    ];
+    for mode in [201, 202, 200] {
+        for raw in &responses {
+            let mut host = Host::new();
+            host.reply(200, json!({"value":[]}));
+            if mode == 200 {
+                let mut initial = resource();
+                initial["folderId"] = Value::Null;
+                host.accepted(initial);
+                host.reply(200, json!({"status":"Succeeded"}));
+            }
+            host.wire.replies.lock().unwrap().push_back(Reply::Complete(
+                mode,
+                if mode == 202 {
+                    accepted_headers()
+                } else {
+                    Headers::new()
+                },
+                raw.as_bytes().to_vec(),
+            ));
+            let failed = host
+                .run(if mode == 200 { &["--wait"] } else { &[] }, b"")
+                .await
+                .unwrap();
+            assert_eq!(failed.report().exit_code(), 1);
+            assert!(matches!(
+                &failed.report().error().unwrap().kind,
+                fabric_sdk_operations::OperationErrorKind::InvalidResponse
+            ));
+            let mut bytes = Vec::new();
+            failed.deliver(&mut bytes).unwrap();
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            let meta = &value["meta"];
+            assert_eq!(value["error"]["code"], "InvalidResponse");
+            assert_eq!(meta["status"], "unknown");
+            assert_eq!(meta["completed"], false);
+            assert_eq!(meta["httpStatus"], mode);
+            assert_eq!(
+                meta["unparsedResponseBodyBase64"],
+                STANDARD.encode(raw.as_bytes())
+            );
+            assert_eq!(meta["mutationMayHaveOccurred"], true);
+            assert_eq!(meta["remoteReplayed"], false);
+            assert_eq!(meta["remoteCancelled"], false);
+            if mode == 200 {
+                assert_eq!(value["data"], resource_with_null_folder());
+                assert_eq!(meta["resourceId"], RESOURCE);
+                assert_eq!(meta["submission"]["httpStatus"], 202);
+                assert_eq!(meta["submission"]["resource"]["id"], RESOURCE);
+                assert_eq!(meta["submission"]["folderId"], Value::Null);
+                assert_eq!(meta["submission"]["folderIdObserved"], true);
+                assert_eq!(
+                    meta["submission"]["operationHandle"],
+                    format!("/operations/{OPERATION}")
+                );
+            } else {
+                assert!(value["data"].is_null());
+                assert!(meta["resourceId"].is_null());
+                assert_eq!(meta["submission"]["httpStatus"], mode);
+                if mode == 202 {
+                    assert_eq!(
+                        meta["unparsedAcceptanceBodyBase64"],
+                        STANDARD.encode(raw.as_bytes())
+                    );
+                }
+            }
+            if mode != 201 {
+                assert_eq!(meta["operationHandle"], format!("/operations/{OPERATION}"));
+            }
+            let requests = host.requests();
+            assert_eq!(requests.len(), if mode == 200 { 4 } else { 2 });
+            assert_eq!(
+                requests[1].1,
+                format!("/v1/workspaces/{WORKSPACE}/semanticModels")
+            );
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|request| request.0 == "POST")
+                    .count(),
+                1
+            );
+        }
+    }
+}
+
+fn resource_with_null_folder() -> Value {
+    let mut value = resource();
+    value["folderId"] = Value::Null;
+    value
+}
+
+#[tokio::test]
 async fn malformed_final_and_no_wait_acceptance_retain_submission_outside_projection() {
     let mut host = Host::new();
     host.reply(200, json!({"value":[]}));
