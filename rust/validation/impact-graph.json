@@ -601,6 +601,48 @@
       "checks": ["sdk-graph"]
     },
     {
+      "id": "cli-create-host",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/create_command.rs",
+        "rust/clients/cli/app/tests/create_host.rs",
+        "rust/authoring-docs/create-host.md"
+      ],
+      "depends_on": ["sdk", "mutations", "output", "query", "storage-files"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:create_host"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "copyjob-create",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/engine/sdk/src/copyjobs/create.rs",
+        "rust/engine/sdk/tests/copyjob_create.rs",
+        "rust/authoring-docs/copyjob-create.md"
+      ],
+      "depends_on": ["sdk"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:copyjob_create"}
+      ],
+      "checks": ["sdk-graph"]
+    },
+    {
+      "id": "cli-copyjob-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/copyjob_create.rs",
+        "rust/clients/cli/app/tests/copyjob_create.rs"
+      ],
+      "depends_on": ["copyjob-create", "cli-create-host"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:copyjob_create"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -3001,6 +3043,34 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-copyjob-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-copyjob-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-copyjob-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-copyjob-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],

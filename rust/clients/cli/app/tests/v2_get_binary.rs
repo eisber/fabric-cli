@@ -35,6 +35,17 @@ fn actual_head_help_and_version_never_need_identity() {
     }
 }
 
+#[cfg(not(feature = "v2-copyjob-create"))]
+#[test]
+fn default_head_does_not_mount_copyjob_create() {
+    let help = run(&["--help"]);
+    assert!(help.status.success());
+    assert!(!String::from_utf8_lossy(&help.stdout).contains("fab-cli-v2 create"));
+    let output = run(&["create", &format!("/{WS}.Workspace/Exact.CopyJob")]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+}
+
 #[test]
 fn actual_head_valid_metadata_requires_an_explicit_provider() {
     let path = format!("/workspaces/{WS}");

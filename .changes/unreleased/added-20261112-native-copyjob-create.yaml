@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in native v2 metadata-only CopyJob creation with typed input, immediate approval, exact-target error/skip policies and retained operation evidence, without configuring connections, definitions, runs or schedules.
+time: 2026-11-12T14:30:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
