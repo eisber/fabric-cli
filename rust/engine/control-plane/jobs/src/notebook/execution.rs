@@ -70,8 +70,7 @@ pub async fn execute(session: &mut RunSession<'_>) -> Result<(), Box<RunFailure>
     }
     let target = session.plan().target();
     let endpoint = &session.evidence().endpoint;
-    let handle = RunHandle::job(target, endpoint, location)
-        .or_else(|_| RunHandle::operation(target, endpoint, location))
+    let handle = RunHandle::notebook_acceptance(target, endpoint, location)
         .map_err(|error| failure(session, error))?;
     session.bind_handle(&handle)?;
     session.record(RunOutcome::Accepted, None);
