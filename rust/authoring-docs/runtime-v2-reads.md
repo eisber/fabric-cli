@@ -264,3 +264,49 @@ A separate supported Fabric-profile test injects an Azure credential and HTTP
 client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor`
 stack; negative Notebook tests verify that stack refuses before requesting a
 token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
+
+## Opt-in existing statement executable
+
+The `fab-cli-v2` binary built with `headless,runtime-v2` additionally mounts only
+classic existing statement GET and its `/result` alias:
+
+```text
+fab-cli-v2 get /11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Lakehouse/sessions/<session-id>/statements/<statement-id>[/result]
+```
+
+The executable requires exact GUID workspace and Lakehouse selectors; it does
+not resolve human display names or infer an active session. The broader library
+grammar remains unchanged. Select `FAB_RUST_FABRIC_HOST` explicitly and use the
+existing explicit `FAB_RUST_AUTH_MODE` headless configuration, including its
+account/client and tenant selection. No new credential/configuration discovery
+or command-line identity flags are installed. The typed Lakehouse path selects
+the Fabric profile, Fabric `v1`, and Livy API `2023-12-01`; the same captured
+endpoint binds both the SDK service and the authenticated HTTP executor.
+
+`.LivyService` statement paths remain recognized but production native-origin
+authorization is unsupported. They never inherit Fabric credentials or become a
+Fabric-profile alias. A native-profile SDK consumer still needs its own
+explicitly authorized injected executor. No MWC authorization policy is changed.
+
+Both spellings return the complete statement envelope, including unknown fields,
+secondary output data, raw failure details in `data`, state and byte cursors.
+A failed statement is a successful read with a separate failed workload
+observation, not a successful execution. HTTP 202 remains accepted only.
+`/result` neither extracts a dataframe nor traverses retained byte pages, and
+does not claim every original query row was recovered. There are no byte-range
+query parameters, automatic queries, statement submissions or remote cancels.
+
+This adapter reuses the parent executable's `NativeSession`, the existing
+`NativeFabricExecutor`, and the shared native output host. Output preflight
+precedes identity construction and dispatch; file delivery uses atomic no-clobber.
+One original 30-second deadline and one pinned local cancellation future cover
+preflight, acquisition and delivery, with bounded runtime shutdown. The existing
+library rejection of explicit `--timeout` remains unchanged. Source/provider
+content is inert data, not a command, configuration instruction or retry signal.
+Local output failure never triggers replay. Statement-specific help is offline;
+default `fab-rs` and builds without `runtime-v2` keep their existing dispatch.
+
+`livy_statement_native_host` supplies offline real parser/host/SDK/Fabric HTTP
+fixtures. `livy_statement_process` exercises the actual opt-in binary's help,
+sanitized validation, missing identity and no-clobber preflight. These are not
+live Fabric qualification; execution results must be recorded separately.
