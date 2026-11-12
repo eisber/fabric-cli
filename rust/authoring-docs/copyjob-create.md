@@ -59,9 +59,14 @@ schedule, source-copy or discovery operation is inferred from creating metadata.
 
 ## Policy, execution and evidence
 
-The existing bounded host lists generic workspace item metadata only to establish
-an exact existing target. Case differences, wrong types/scopes, incomplete
-discovery and ambiguities fail instead of choosing the first item.
+The existing bounded host lists generic workspace item metadata with
+`recursive=false` to establish an exact workspace-root target, retaining that
+selection across complete bounded paging. Case differences, wrong types/scopes,
+incomplete discovery and root ambiguities fail instead of choosing the first
+item. Nested same-name items do not add root cardinality, but nested-only matches
+and malformed folder identities reject before approval or mutation. Completed
+201/final-200 responses must also identify a root item; actual folder evidence
+remains protected as `folderId` and `folderIdObserved`, including in submission.
 The SDK planner owns policy; explicit input is validated even for existing skip.
 `error` rejects an existing item. `skip` reports an exact existing item unchanged,
 without asserting content equality; a missing target proceeds to create.
@@ -111,7 +116,8 @@ and does not send the generic-only `type` field or redundant null folder.
 
 Only the authorized shared-host logical diffs are consumed:
 `e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and the separately
-released `0454fb4` prepared-approval/submission-evidence update.
+released `0454fb4` prepared-approval/submission-evidence and `caf2f7f`
+workspace-root/strict-lint updates.
 Notebook leaf implementation and producer ancestry are not adopted.
 
 `engine/sdk/tests/copyjob_create.rs` covers schema, unsupported policies and
@@ -121,9 +127,11 @@ the actual parser, shared host, SDK and scripted production HTTP, including
 failures, received-header preservation, byte bounds, cancellation, projection
 and no-clobber/output failures. Prepared-body approval and protected initial
 submission evidence are asserted on these real paths. A root-folder regression
-also rejects treating an existing folder child as an exact workspace-root skip;
-the shared host's root-folder follow-up remains a qualification dependency until
-released and executed. Its headless profile exercises the real binary,
+also rejects treating an existing folder child as an exact workspace-root skip.
+Tests cover root-plus-nested cardinality, malformed folder values, complete and
+failed paging, completed wrong-folder identity and protected acceptance folder
+evidence. The released root helper still requires actual native execution.
+Its headless profile exercises the real binary,
 blocked stdin deadline and portable closed-reader stdout/stderr pipes.
 The impact graph includes isolated and headless feature profiles on all three
 native OSes. Configured tests are not evidence of execution: current local,

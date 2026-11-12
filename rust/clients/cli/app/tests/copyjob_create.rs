@@ -245,7 +245,23 @@ impl Host {
         assert_eq!(posts.len(), count, "no mutation replay");
         for request in &*requests {
             assert_eq!(request.url().host_str(), Some("api.fabric.microsoft.com"));
-            assert!(request.url().query().is_none());
+            if request.url().path() == format!("/v1/workspaces/{WS}/items") {
+                assert_eq!(request.method(), Method::Get);
+                let query: Vec<_> = request.url().query_pairs().collect();
+                assert_eq!(
+                    query.first().map(|(key, value)| (&**key, &**value)),
+                    Some(("recursive", "false"))
+                );
+                assert!(query.len() <= 2);
+                assert!(
+                    query
+                        .iter()
+                        .skip(1)
+                        .all(|(key, value)| key == "continuationToken" && !value.is_empty())
+                );
+            } else {
+                assert!(request.url().query().is_none());
+            }
             assert!(
                 request.url().path() == format!("/v1/workspaces/{WS}/items")
                     || request.url().path() == POST
@@ -897,7 +913,8 @@ async fn denied_incomplete_and_wrong_workspace_discovery_never_authorize_create(
         response(
             200,
             &json!({
-                "value":[], "continuationUri":"https://evil.invalid/next"
+                "value":[], "continuationToken":"next",
+                "continuationUri":"https://evil.invalid/next"
             })
             .to_string(),
             &[],
@@ -935,6 +952,202 @@ async fn a_child_folder_item_is_not_an_exact_root_target_for_skip() {
     );
     assert_eq!(approval.calls, 0);
     host.assert_posts(0, None);
+}
+
+#[tokio::test]
+async fn root_selection_excludes_nested_cardinality_and_retains_observed_null_folder() {
+    let mut root = metadata();
+    root["folderId"] = Value::Null;
+    let mut child = metadata();
+    child["id"] = json!(OP);
+    child["folderId"] = json!(ITEM);
+    let host = Host::new([listing(json!([child, root]))]);
+    let mut approval = Approval::allow(None);
+    let value = receipt(
+        host.execute(
+            prepare(&["--if-exists", "skip"], None),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(value["meta"]["status"], "unchanged");
+    assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(value["meta"]["folderId"], Value::Null);
+    assert_eq!(value["meta"]["folderIdObserved"], true);
+    assert_eq!(approval.writes, [false]);
+    host.assert_posts(0, None);
+}
+
+#[tokio::test]
+async fn malformed_folder_identity_rejects_even_when_an_exact_root_also_exists() {
+    for folder in [
+        json!("not-a-guid"),
+        json!(42),
+        json!({}),
+        json!([]),
+        json!(""),
+    ] {
+        let mut malformed = metadata();
+        malformed["id"] = json!(OP);
+        malformed["folderId"] = folder;
+        let host = Host::new([listing(json!([metadata(), malformed]))]);
+        let mut approval = Approval::allow(None);
+        assert!(
+            host.execute(
+                prepare(&["--if-exists", "skip"], None),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        host.assert_posts(0, None);
+    }
+}
+
+#[tokio::test]
+async fn complete_discovery_preserves_root_scope_across_pages_before_skip_or_create() {
+    for existing in [false, true] {
+        let second = if existing {
+            json!([metadata()])
+        } else {
+            json!([])
+        };
+        let mut replies = vec![
+            response(
+                200,
+                &json!({"value":[],"continuationToken":"next +/="}).to_string(),
+                &[],
+            ),
+            listing(second),
+        ];
+        if !existing {
+            replies.push(created());
+        }
+        let host = Host::new(replies);
+        let value = receipt(
+            host.execute(
+                prepare(&["--if-exists", "skip"], None),
+                &mut Approval::allow(None),
+                pending(),
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            value["meta"]["status"],
+            if existing { "unchanged" } else { "completed" }
+        );
+        host.assert_posts(usize::from(!existing), None);
+        let requests = host.http.requests.lock().unwrap();
+        assert_eq!(requests[0].url().query(), Some("recursive=false"));
+        assert_eq!(
+            requests[1].url().query(),
+            Some("recursive=false&continuationToken=next+%2B%2F%3D")
+        );
+    }
+}
+
+#[tokio::test]
+async fn incomplete_or_repeating_root_discovery_never_turns_a_partial_miss_into_create() {
+    for repeated in [false, true] {
+        let first = response(200, r#"{"value":[],"continuationToken":"next"}"#, &[]);
+        let second = if repeated {
+            response(200, r#"{"value":[],"continuationToken":"next"}"#, &[])
+        } else {
+            response(403, r#"{"errorCode":"DeniedLaterPage"}"#, &[])
+        };
+        let host = Host::new([first, second]);
+        let mut approval = Approval::allow(None);
+        assert!(
+            host.execute(prepare(&[], None), &mut approval, pending())
+                .await
+                .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        host.assert_posts(0, None);
+    }
+}
+
+#[tokio::test]
+async fn completed_create_rejects_bad_folder_and_preserves_returned_identity_for_reconciliation() {
+    for wait in [false, true] {
+        for folder in [json!(OP), json!("invalid"), json!(true), json!({})] {
+            let mut observed = metadata();
+            observed["folderId"] = folder.clone();
+            let mut replies = vec![listing(json!([]))];
+            if wait {
+                replies.push(accepted(&metadata().to_string()));
+                replies.push(response(200, r#"{"status":"Succeeded"}"#, &[]));
+                replies.push(response(200, &observed.to_string(), &[]));
+            } else {
+                replies.push(response(201, &observed.to_string(), &[]));
+            }
+            let host = Host::new(replies);
+            let delivery = host
+                .execute(
+                    prepare(if wait { &["--wait"] } else { &[] }, None),
+                    &mut Approval::allow(None),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            let value = receipt(delivery);
+            assert_eq!(value["meta"]["status"], "unknown");
+            assert_eq!(value["meta"]["completed"], false);
+            assert_eq!(value["meta"]["resourceId"], ITEM);
+            assert_eq!(value["meta"]["folderId"], folder);
+            assert_eq!(value["meta"]["folderIdObserved"], true);
+            assert_eq!(value["meta"]["remoteReplayed"], false);
+            if wait {
+                assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+                assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+                assert_eq!(value["meta"]["submission"]["folderIdObserved"], false);
+            } else {
+                assert_eq!(value["meta"]["submission"]["folderId"], folder);
+                assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+            }
+            host.assert_posts(1, None);
+        }
+    }
+}
+
+#[tokio::test]
+async fn acceptance_folder_evidence_survives_failed_observation_and_projection() {
+    let mut initial = metadata();
+    initial["folderId"] = Value::Null;
+    let host = Host::new([
+        listing(json!([])),
+        accepted(&initial.to_string()),
+        response(
+            200,
+            r#"{"status":"Failed","error":{"errorCode":"ProvisioningFailed"}}"#,
+            &[],
+        ),
+    ]);
+    let delivery = host
+        .execute(
+            prepare(&["--wait", "--project", "missing"], None),
+            &mut Approval::allow(None),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let value = receipt(delivery);
+    assert_eq!(value["data"], Value::Null);
+    assert_eq!(value["meta"]["submission"]["folderId"], Value::Null);
+    assert_eq!(value["meta"]["submission"]["folderIdObserved"], true);
+    assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(
+        value["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    host.assert_posts(1, None);
 }
 
 #[tokio::test]
