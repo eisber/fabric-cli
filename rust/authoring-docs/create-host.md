@@ -157,7 +157,8 @@ helper tests cannot silently count as an empty default target.
 
 The provisional integration smoke's ordinary `headless` build does not enable
 `v2-create` or `runtime-v2`. The Report66 conflict candidate additionally runs
-bounded offline Windows tests for the shared LRO and create policy, Report SDK,
+bounded offline Windows tests, after restoring locked Windows dependency sources,
+for the shared LRO and create policy, Report SDK,
 and the combined `headless,v2-create,runtime-v2` CLI. Combined root help must
 disclose both Report creation and Livy listing; dispatch retains both opt-ins.
 That candidate-only check is not full Report qualification or a replacement for

@@ -55,6 +55,8 @@ jobs:
           node rust/scripts/source-inventory.cjs "$receipts/report-create-before.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location rust
+          cargo fetch --locked --target x86_64-pc-windows-msvc 2>&1 | Tee-Object "$receipts/report-create-fetch.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --offline --locked -p fabric-sdk-operations --test standalone --test endpoint_context 2>&1 | Tee-Object "$receipts/report-create-lro.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --offline --locked -p fabric-sdk-items --test create_policy 2>&1 | Tee-Object "$receipts/report-create-policy.log"
