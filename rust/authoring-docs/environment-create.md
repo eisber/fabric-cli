@@ -74,6 +74,12 @@ The existing explicit native session supplies one immutable identity, Fabric
 audience and endpoint, and the original whole-command deadline. Immediate
 approval is caller-injected; the executable requires an explicit terminal
 confirmation and refuses redirected approval before credential/provider access.
+The approval inspects the actual prepared POST method, bound URL, generated
+metadata bytes and selected create/skip action, not merely the original input.
+The exact same operation is then consumed once. The metadata-only binding
+declares no additional child-creation or compute-operation effects; that is not
+a billing or universal service-side-effects guarantee. The supported-capacity
+requirement is not permission to provision or change capacity.
 The shared SDK planner remains the sole policy authority. There is no new HTTP,
 auth, parser, or long-running-operation engine.
 
@@ -82,6 +88,10 @@ no mutation is replayed. Actual resource and operation IDs, accepted data, nativ
 errors and uncertainty survive cancellation, failed polling, projection, or
 no-clobber/broken-output errors. Local cancellation is not remote cancellation
 or rollback. Projection affects receipt `data` only.
+Initial acceptance remains separate from the latest observation in protected
+`meta.submission.httpStatus`, `meta.submission.resource`, and
+`meta.submission.operationHandle`. A malformed final result cannot erase the
+accepted resource identity or promote the outcome to completed.
 
 `tests/environment_create.rs` covers parser-to-host-to-SDK-to-scripted-HTTP
 behavior and the native process boundary. Explicit impact profiles register
@@ -89,5 +99,10 @@ both the library and `headless` process configurations for Windows, Linux, and
 macOS. Source and registered tests do not establish executed platform acceptance;
 the exact-head validation receipt and ordinary PR CI report actual results.
 No live Entra, Fabric provisioning, publish, or compute operation is authorized.
+
+The root-folder skip regression is retained as a fail-closed requirement while
+the shared helper's original owner supplies a follow-up. At this source stage,
+that gap remains blocking: registered regression source is not a passing check
+or completed exact-target implementation.
 
 [create]: https://learn.microsoft.com/en-us/rest/api/fabric/environment/items/create-environment

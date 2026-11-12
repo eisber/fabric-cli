@@ -25,6 +25,7 @@ use fabric_sdk::{
     },
 };
 use fabric_sdk_http::{ExecutionOptions, ExecutionTrace, HttpExecutor};
+use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde_json::{Value, json};
 use std::{
     future::{Future, pending},
@@ -85,6 +86,7 @@ struct Approval {
     allow: bool,
     calls: usize,
     input: Option<Value>,
+    approved_body: Option<Vec<u8>>,
 }
 
 impl Approval {
@@ -93,6 +95,7 @@ impl Approval {
             allow: true,
             calls: 0,
             input,
+            approved_body: None,
         }
     }
 }
@@ -123,6 +126,60 @@ impl CreateApproval for Approval {
             request.remote_write(),
             matches!(request.plan().action(), CreateAction::Create { .. })
         );
+        assert!(request.anticipated_effects().is_empty());
+        let question = request.approval_question();
+        if request.remote_write() {
+            let operation = request
+                .operation()
+                .expect("create must approve a prepared request");
+            assert_eq!(operation.method(), ResourceMethod::Post);
+            assert_eq!(
+                operation.path(),
+                format!("/v1/workspaces/{WS}/environments")
+            );
+            assert_eq!(
+                request.url().unwrap().as_str(),
+                format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/environments")
+            );
+            assert_eq!(
+                operation.completion(),
+                if request.command().wait {
+                    CompletionPolicy::WaitForResult
+                } else {
+                    CompletionPolicy::ReturnAccepted
+                }
+            );
+            let mut expected = json!({"displayName":"Exact","folderId":null});
+            if let Some(description) = self
+                .input
+                .as_ref()
+                .and_then(|input| input.get("description"))
+            {
+                expected["description"] = description.clone();
+            }
+            assert_eq!(
+                serde_json::from_slice::<Value>(operation.body()).unwrap(),
+                expected
+            );
+            assert!(question.contains("Environment create policy "));
+            assert!(question.contains("method=POST"));
+            assert!(question.contains("audience=Fabric"));
+            assert!(
+                question.contains(
+                    &std::str::from_utf8(operation.body())
+                        .unwrap()
+                        .escape_debug()
+                        .to_string()
+                )
+            );
+            self.approved_body = Some(operation.body().to_vec());
+        } else {
+            assert!(request.operation().is_none());
+            assert!(request.url().is_none());
+            assert!(question.contains("Environment skip policy skip"));
+            assert!(question.contains("no native request (unchanged skip)"));
+            self.approved_body = None;
+        }
         let allow = self.allow;
         Box::pin(async move {
             if allow {
@@ -410,6 +467,7 @@ async fn real_http_post_is_definition_free_and_receipt_is_the_provider_result_no
         rig.assert_requests(1);
         let requests = rig.http.requests.lock().unwrap();
         let Body::Bytes(bytes) = requests[1].body() else { panic!("native JSON bytes") };
+        assert_eq!(approval.approved_body.as_deref(), Some(bytes.as_ref()));
         let mut expected = json!({"displayName":"Exact","folderId":null});
         if input.is_some() { expected["description"] = json!("Synthetic metadata"); }
         assert_eq!(serde_json::from_slice::<Value>(bytes).unwrap(), expected);
@@ -423,6 +481,14 @@ async fn exact_skip_collision_case_ambiguity_and_wrong_kind_never_post() {
         (vec![resource()], "skip", true),
         (vec![resource()], "error", false),
         (vec![resource(), resource()], "skip", false),
+        (
+            vec![
+                resource(),
+                json!({"id":OP,"displayName":"Exact","type":"Notebook"}),
+            ],
+            "skip",
+            true,
+        ),
         (
             vec![json!({"id":ITEM,"displayName":"exact","type":"Environment"})],
             "skip",
@@ -466,6 +532,68 @@ async fn exact_skip_collision_case_ambiguity_and_wrong_kind_never_post() {
 }
 
 #[tokio::test]
+async fn nested_or_malformed_folder_placement_never_satisfies_root_skip() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in [json!(OP), json!("not-guid"), json!(42), json!({})] {
+        let mut item = resource();
+        item["folderId"] = folder;
+        let rig = Rig::new([listed(vec![item])]);
+        let mut approval = Approval::allowing(None);
+        assert!(
+            rig.execute(
+                prepare(&["--if-exists", "skip"], None, temp.path()),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .is_err(),
+            "non-root or malformed placement is not the selected root leaf"
+        );
+        assert_eq!(approval.calls, 0);
+        rig.assert_requests(0);
+    }
+}
+
+struct PendingApproval {
+    entered: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CreateApproval for PendingApproval {
+    fn authorize<'a>(
+        &'a mut self,
+        request: CreateApprovalRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), CreateApprovalError>> + Send + 'a>> {
+        assert!(request.operation().is_some());
+        assert_eq!(request.operation().unwrap().method(), ResourceMethod::Post);
+        self.entered.store(true, Ordering::SeqCst);
+        Box::pin(pending())
+    }
+}
+
+#[tokio::test]
+async fn cancelling_immediate_approval_never_sends_the_approved_request() {
+    let temp = tempfile::tempdir().unwrap();
+    let rig = Rig::new([listed(vec![])]);
+    let entered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut approval = PendingApproval {
+        entered: entered.clone(),
+    };
+    let interrupted = async {
+        while !entered.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    };
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        rig.execute(prepare(&[], None, temp.path()), &mut approval, interrupted),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(result, Err(CreateCommandError::Interrupted)));
+    rig.assert_requests(0);
+}
+
+#[tokio::test]
 async fn denial_and_context_mismatch_have_zero_mutations_or_identity_fallback() {
     let temp = tempfile::tempdir().unwrap();
     let rig = Rig::new([listed(vec![])]);
@@ -473,6 +601,7 @@ async fn denial_and_context_mismatch_have_zero_mutations_or_identity_fallback() 
         allow: false,
         calls: 0,
         input: None,
+        approved_body: None,
     };
     assert!(matches!(
         rig.execute(prepare(&[], None, temp.path()), &mut approval, pending())
@@ -530,6 +659,19 @@ async fn accepted_is_not_completed_and_wait_uses_the_same_operation_without_repl
             delivery.report().value()["meta"]["operationHandle"],
             format!("/operations/{OP}")
         );
+        assert_eq!(
+            delivery.report().value()["meta"]["submission"]["httpStatus"],
+            202
+        );
+        assert_eq!(
+            delivery.report().value()["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            delivery.report().value()["meta"]["anticipatedEffects"],
+            json!([])
+        );
+        assert_eq!(delivery.report().value()["meta"]["remoteWrite"], true);
         assert_eq!(
             delivery.report().value()["meta"]["resourceId"],
             if wait { json!(ITEM) } else { Value::Null }
@@ -598,6 +740,18 @@ async fn failed_poll_retains_accepted_resource_and_operation_as_distinct_evidenc
     assert_eq!(delivery.report().exit_code(), 1);
     assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
     assert_eq!(
+        delivery.report().value()["meta"]["submission"]["httpStatus"],
+        202
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["resource"]["id"],
+        ITEM
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["observation"]["httpStatus"],
+        200
+    );
+    assert_eq!(
         delivery.report().value()["meta"]["operationHandle"],
         format!("/operations/{OP}")
     );
@@ -605,6 +759,85 @@ async fn failed_poll_retains_accepted_resource_and_operation_as_distinct_evidenc
     assert_eq!(
         delivery.report().value()["meta"]["mutationMayHaveOccurred"],
         true
+    );
+    rig.assert_requests(1);
+}
+
+#[tokio::test]
+async fn malformed_or_mismatched_final_result_preserves_initial_acceptance_outside_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    for final_body in [
+        "{".to_owned(),
+        resource().to_string().replace("Environment", "Notebook"),
+    ] {
+        let rig = Rig::new([
+            listed(vec![]),
+            accepted(&resource().to_string()),
+            response(200, r#"{"status":"Succeeded"}"#, &[]),
+            response(200, &final_body, &[]),
+        ]);
+        let delivery = rig
+            .execute(
+                prepare(&["--wait", "--project", "missing"], None, temp.path()),
+                &mut Approval::allowing(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let value: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            value["meta"]["submission"]["resource"]["type"],
+            "Environment"
+        );
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        rig.assert_requests(1);
+    }
+}
+
+#[tokio::test]
+async fn malformed_no_wait_acceptance_retains_status_handle_and_original_body_bytes() {
+    use base64::Engine;
+    let temp = tempfile::tempdir().unwrap();
+    let rig = Rig::new([listed(vec![]), accepted("{")]);
+    let delivery = rig
+        .execute(
+            prepare(&[], None, temp.path()),
+            &mut Approval::allowing(None),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let value = delivery.report().value();
+    assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        value["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(value["meta"]["resourceId"], Value::Null);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                value["meta"]["unparsedAcceptanceBodyBase64"]
+                    .as_str()
+                    .unwrap()
+            )
+            .unwrap(),
+        b"{"
     );
     rig.assert_requests(1);
 }
