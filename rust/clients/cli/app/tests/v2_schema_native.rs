@@ -404,20 +404,21 @@ async fn resolved_file_is_not_a_physical_table_and_metadata_failures_are_explici
     for scenario in ["file", "missing", "malformed-metadata"] {
         let host = Host::new();
         host.target();
-        let mut replies = host.transport.replies.lock().unwrap();
-        match scenario {
-            "file" => {
-                replies.back_mut().unwrap().headers = vec![("x-ms-resource-type", "file")];
-            }
-            "missing" => {
-                replies.back_mut().unwrap().status = 404;
-            }
-            _ => {
-                replies.clear();
-                replies.push_back(Reply::json(json!({"value":"not-a-list"})));
+        {
+            let mut replies = host.transport.replies.lock().unwrap();
+            match scenario {
+                "file" => {
+                    replies.back_mut().unwrap().headers = vec![("x-ms-resource-type", "file")];
+                }
+                "missing" => {
+                    replies.back_mut().unwrap().status = 404;
+                }
+                _ => {
+                    replies.clear();
+                    replies.push_back(Reply::json(json!({"value":"not-a-list"})));
+                }
             }
         }
-        drop(replies);
         assert_eq!(
             error(
                 host.run(&["schema", TABLE], Default::default(), pending())

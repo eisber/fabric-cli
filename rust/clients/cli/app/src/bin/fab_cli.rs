@@ -72,6 +72,9 @@ mod native_read;
     reason = "Only silent native credential composition is reused."
 )]
 mod runtime_config;
+#[cfg(feature = "native-host")]
+#[path = "../v2_schema_native/host.rs"]
+mod schema;
 
 use fabric_cli::v2_discovery::DiscoveryHost;
 use futures_util::FutureExt;
@@ -108,7 +111,7 @@ fn run(
         fabric_cli::v2_discovery::DiscoveryRequest::DataSchema(request),
     )) = fabric_cli::v2_discovery::parse_from(args.clone())
     {
-        return native_read::schema::run(&request, stdout, stderr);
+        return schema::run(&request, stdout, stderr);
     }
     let host = DiscoveryHost::default();
     // With no data provider every branch is pure and immediately ready. Do not

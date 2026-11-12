@@ -115,7 +115,7 @@ async fn cancellation_wins_before_host_work_and_after_synchronous_buffering() {
             polled.store(true, Ordering::SeqCst);
             Ok(())
         },
-        ready(super::super::failure("cancelled", "cancelled", 1)),
+        ready(native::failure("cancelled", "cancelled", 1)),
     )
     .await;
     assert_eq!(result.unwrap_err().0, "cancelled");
@@ -139,7 +139,7 @@ async fn cancellation_wins_before_host_work_and_after_synchronous_buffering() {
 
 #[tokio::test]
 async fn deadline_drops_pending_host_work() {
-    let result = controlled(pending::<Result<(), super::super::Failure>>(), async {
+    let result = controlled(pending::<Result<(), native::Failure>>(), async {
         tokio::time::sleep(Duration::from_millis(1)).await;
         timed_out()
     })
