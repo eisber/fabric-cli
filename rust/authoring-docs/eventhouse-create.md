@@ -35,8 +35,10 @@ Their presence rejects before credentials, discovery or mutation.
 Only provider-rejecting create (`error`) and exact existing unchanged `skip`
 are enabled. Unsupported overwrite, `--force`, and duplicate fail before input
 I/O. Explicit bodies still validate before skip. Complete bounded workspace item
-discovery rejects case-only collisions, ambiguous names, wrong kinds and wrong
-scope; it never consults ambient navigation or resolves a UUID-shaped leaf as an
+discovery rejects case-only collisions, duplicate Eventhouse identities,
+wrong-kind-only matches and wrong scope. An exact Eventhouse alongside its
+same-name default KQL database is not ambiguous in the selected type.
+Discovery never consults ambient navigation or resolves a UUID-shaped leaf as an
 existing item ID. Missing-target skip follows creation. Discovery is not an
 atomic reservation: the POST can still report `ItemDisplayNameAlreadyInUse`.
 There is no full replacement, rename, delete/recreate, or race-free guarantee.
@@ -58,9 +60,24 @@ Authoritative sources, consulted November 12, 2026:
   service-side behavior, not proof of the exact effects of every REST response.
   Do not equate one client POST with no server-created child, or infer a child
   identity that the provider has not returned.
+- [Eventhouse and KQL database consumption](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/real-time-intelligence-consumption):
+  provider-managed Eventhouse UpTime can consume capacity while active; storage
+  billing is separate. This does not prove a specific charge or active compute
+  from a create response. The binding does not submit a minimum-consumption,
+  query, run or start request.
 
 Immediate approval must disclose exact target, selected action/policy, outgoing
-body, endpoint, account/tenant and anticipated service-side effects. No live
+body, endpoint, account/tenant and anticipated service-side effects. The binding
+supplies two bounded `anticipated_effects` descriptors: possible same-name default
+KQL database creation (product source `165f66efc3c8da81a156627a63eb0b8e0cb0c7ef`)
+and possible provider-managed consumption (consumption source
+`b659751abeffc3a236c6a5be0c9a1fc1233a80aa`).
+These disclosures contain no observed child identity, completed state or billing
+claim. The shared `approval_question()` renders the exact already-prepared
+POST URL/body, action, identity, audience, endpoint and effects, escaping terminal
+controls without altering the outgoing bytes. The operation inspected by approval
+is the same owned operation submitted once. Skip has no operation, URL or effects.
+No live
 Fabric/Entra authentication, provisioning, compute or mutation is authorized by
 these offline tests.
 
@@ -68,9 +85,14 @@ The client issues exactly one Eventhouse POST. It issues **zero** KQL database
 POSTs, does not discover/provision children, and never starts compute or runs a
 query. Waiting uses the existing bounded `OperationSession` with `WaitForResult`,
 not a second operation engine. Receipt `data` retains actual returned properties
-(including child IDs if supplied); protected metadata retains only observed
-resource identity, operation handles, and mutation uncertainty. It does not claim
-that a child exists or does not exist from an empty response.
+(including child IDs if supplied). Protected metadata keeps provider-declared
+`anticipatedEffects` separate from observed resource identity, operation handles,
+and mutation uncertainty. It does not claim that a child exists or does not exist
+from an empty response. `meta.submission.httpStatus`, `operationHandle` and
+`resource` retain the initial acceptance independently of the final result and
+the latest `meta.observation.httpStatus`. Initial resource evidence survives
+failed/cancelled polling, malformed final JSON and a mismatched final resource;
+none of those outcomes becomes completed success.
 
 Acceptance is not completion. An operation ID is not a resource ID. Lost,
 malformed, incomplete, timed-out or cancelled results and projection/file/stream
@@ -85,7 +107,12 @@ Base: `ced983722015e440e989f07d1bf866821d27fe90`. Native source route:
 The existing consumer's Eventhouse assertion belongs to KQL dependency creation;
 it is not evidence of this standalone mount. Only the logical generic helper
 diffs `e84426a`, `ce89c07`, `225903a`, `99dc963`, and `9812bec` are consumed, in that
-order; no Notebook leaf or whole peer PR is imported.
+order. The sole-owner helper repair `0454fb43f08c05f9f066ed5bcb686a8c426a0de1`
+is then consumed as a logical diff over seven shared paths; its contract-document
+additions are placed in the existing generic contract without importing producer
+Notebook documentation. No Notebook leaf, producer test commit `1828d79`,
+peer ancestry or whole PR is imported. Root-folder exact-target follow-up remains
+with the shared owner and still gates final qualification.
 
 `tests/eventhouse_create.rs` exercises the parser, shared host, SDK planner,
 injected credential and scripted HTTP executor. `tests/eventhouse_create_binary.rs`

@@ -17,6 +17,11 @@ A native leaf implements `CreateBinding: CreateInputValidator`:
 - `item_type()` selects exactly one case-sensitive Fabric owner type.
 - `capabilities()` supplies one schema and proven provider guarantees.
 - `operation(plan, raw, wait)` builds that leaf's typed native operation.
+- `anticipated_effects(plan)` discloses additional provider-native child creation
+  or metered consumption using bounded `AnticipatedCreateEffect` descriptors.
+  Their resource type, conditional description and contract pin come from the
+  typed owner, not the host. Unknown/unrepresentable required effects must reject.
+  The default empty list is only for bindings with no additional effects.
 
 `command_for_binding(binding)` renders the existing parser grammar with the
 selected owner, its exact typed path and the host-admitted policy subset.
@@ -62,12 +67,26 @@ Bindings must not invent options or repurpose retrieval facet syntax.
 prepared command. It uses the client's same immutable Fabric context for complete
 item discovery, final SDK planning, approval, submission and polling. A partial,
 ambiguous, wrong-kind or wrong-scope listing never authorizes creation.
+Cardinality is checked within the selected owner type: an exact Notebook plus a
+same-name different-kind item does not make the typed Notebook ambiguous.
+Two matching Notebooks remain ambiguous; wrong-kind-only, unknown/malformed
+matching identities and foreign workspace evidence still reject.
 Display names must match ordinally before an existing leaf can be skipped;
 case-insensitive collision detection does not prove that exact selection.
 GUID scope comparisons are case-insensitive without changing names or raw input.
 `CreateApproval::authorize` receives a borrowed `CreateApprovalRequest` with the
 exact plan, original input, context, remote-write effect and output/wait/timeout
-intent. Refusal dispatches nothing. There is no persisted approval, default
+intent. Its `operation()` and `url()` borrow the already-built method, bound
+route, exact outgoing bytes and completion intent. Omitted input therefore
+shows its actual generated body, not a prose placeholder. The same owned
+operation is consumed once after approval; it is never rebuilt or changed.
+`anticipated_effects()` carries at most 16 descriptors and 64 KiB of serialized
+disclosure. They describe possible provider-owned effects, not child IDs or
+observed outcomes, and authorize no extra HTTP call. Skip has no prepared
+operation, no remote-write declaration and no anticipated creation effects.
+`approval_question()` escapes terminal controls in exact body/context/effect
+disclosure, including original line endings and JSON escape spelling.
+Refusal dispatches nothing. There is no persisted approval, default
 approval implementation, force bypass or second submission attempt.
 
 The host supplies an interruption future covering the original total deadline,
@@ -85,9 +104,14 @@ to mutation/poll execution, not discovery. A valid 202 operation UUID already
 received in headers survives a later body failure, response limit or cancellation.
 This additional evidence never upgrades an unknown/failed report to accepted or
 completed, and it never invents a resource ID.
-The host also retains a bounded complete initial POST 202 body through later
-polling failure. Known acceptance resource fields remain outside data projection;
-an unparsed acceptance body is preserved as explicitly labeled base64 evidence.
+The host retains initial submission status and a bounded complete POST 202 body
+independently of later polling. `meta.submission.httpStatus` is not overwritten
+by the latest exchange's `meta.observation.httpStatus` or terminal operation
+status. Known acceptance resource fields survive failed/cancelled polling and
+malformed or mismatched final results in `meta.submission.resource`, outside
+data projection. Those fields are accepted evidence, not completed resources;
+the failed/unknown outcome remains nonzero and never becomes success.
+An unparsed acceptance body is preserved as explicitly labeled base64 evidence.
 
 `CreateDelivery::report()` exposes unprojected evidence before delivery.
 `deliver(stdout)` projects only `data`, retaining resource identity, policy,
@@ -95,6 +119,8 @@ action, effects, and operation handles in `meta`. Failure retains the original
 `CreateReport` inside `CreateCommandError::Delivery`. Known resource identity
 and operation handles remain distinct even on unverified results. Receipt
 delivery does not establish remote completion.
+Provider-declared `meta.anticipatedEffects` and the intended `meta.remoteWrite`
+are separate from `mutationMayHaveOccurred` and observed resource evidence.
 
 ## Custody and validation
 

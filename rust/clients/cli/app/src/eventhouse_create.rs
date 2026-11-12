@@ -4,7 +4,7 @@
 //! Standalone, metadata-only Eventhouse creation over the shared create host.
 
 use crate::{
-    create_command::{CreateBinding, MAX_BYTES},
+    create_command::{AnticipatedCreateEffect, CreateBinding, CreateEffectKind, MAX_BYTES},
     get_target::is_id,
 };
 use fabric_sdk::items::create::{
@@ -72,6 +72,33 @@ impl CreateBinding for EventhouseCreate {
             skip: SkipSupport::ExactExistingUnchanged,
             duplicate: DuplicateSupport::Unsupported,
         }
+    }
+
+    fn anticipated_effects(
+        &self,
+        plan: &CreatePlan,
+    ) -> Result<Vec<AnticipatedCreateEffect>, CreateError> {
+        let CreateAction::Create { input } = plan.action() else {
+            return Err(CreateError::UnsupportedPolicy);
+        };
+        if input.target() != plan.target() {
+            return Err(CreateError::InputRejected);
+        }
+        self.validate(plan.target(), input.schema(), input.supplied())?;
+        Ok(vec![
+            AnticipatedCreateEffect::new(
+                CreateEffectKind::ChildResourceCreation,
+                Some("KQLDatabase"),
+                "Provider creation may create a same-name default KQL database, as documented for Eventhouse creation. The client does not issue a separate KQL database POST or discover children.",
+                "https://learn.microsoft.com/en-us/fabric/real-time-intelligence/create-eventhouse#create-an-eventhouse (source 165f66efc3c8da81a156627a63eb0b8e0cb0c7ef)",
+            )?,
+            AnticipatedCreateEffect::new(
+                CreateEffectKind::MeteredConsumption,
+                Some("Eventhouse"),
+                "The provider-managed Eventhouse and its databases may consume capacity and incur metered UpTime or storage charges when active. This request submits no query, run, start or minimum-consumption setting.",
+                "https://learn.microsoft.com/en-us/fabric/real-time-intelligence/real-time-intelligence-consumption (source b659751abeffc3a236c6a5be0c9a1fc1233a80aa)",
+            )?,
+        ])
     }
 
     fn operation(

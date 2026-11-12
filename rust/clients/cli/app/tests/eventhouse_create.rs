@@ -15,8 +15,8 @@ use azure_core::{
 use fabric_cli::{
     create_command::{
         CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding,
-        CreateCommandError, CreateDelivery, CreateExecution, CreateTransportEvidence, MAX_BYTES,
-        PreparedCreateCommand, v2_create,
+        CreateCommandError, CreateDelivery, CreateEffectKind, CreateExecution,
+        CreateTransportEvidence, MAX_BYTES, PreparedCreateCommand, v2_create,
     },
     eventhouse_create::EventhouseCreate,
 };
@@ -30,6 +30,7 @@ use fabric_sdk::{
 use fabric_sdk_http::{
     ExecutionFuture, ExecutionOptions, ExecutionTimer, ExecutionTrace, HttpExecutor,
 };
+use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use futures_util::stream;
 use serde_json::{Value, json};
 use std::{
@@ -180,6 +181,12 @@ struct Approval {
     allow: bool,
     calls: usize,
     name: &'static str,
+    approved: Vec<ApprovedWire>,
+}
+
+struct ApprovedWire {
+    body: Vec<u8>,
+    url: String,
 }
 impl Approval {
     fn yes() -> Self {
@@ -187,6 +194,7 @@ impl Approval {
             allow: true,
             calls: 0,
             name: "Exact",
+            approved: Vec::new(),
         }
     }
 }
@@ -208,15 +216,94 @@ impl CreateApproval for Approval {
         );
         if let CreateAction::Create { input } = request.plan().action() {
             assert!(request.remote_write());
+            let operation = request
+                .operation()
+                .expect("approval must inspect the prepared request");
+            let url = request.url().expect("approval must inspect the bound URL");
+            assert_eq!(operation.method(), ResourceMethod::Post);
+            assert_eq!(operation.path(), format!("/v1/workspaces/{WS}/eventhouses"));
+            assert_eq!(
+                url.as_str(),
+                format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/eventhouses")
+            );
+            assert_eq!(
+                operation.completion(),
+                if request.command().wait {
+                    CompletionPolicy::WaitForResult
+                } else {
+                    CompletionPolicy::ReturnAccepted
+                }
+            );
+            let question = request.approval_question();
+            assert!(!question.contains(['\r', '\n', '\u{1b}']));
+            assert!(question.contains("method=POST"));
+            assert!(question.contains("Eventhouse create policy"));
+            assert!(question.contains("synthetic-owner") && question.contains(WS));
+            assert!(question.contains("audience=Fabric"));
+            assert!(question.contains(url.as_str()));
+            let effects = request.anticipated_effects();
+            assert_eq!(effects.len(), 2);
+            assert_eq!(effects[0].kind(), CreateEffectKind::ChildResourceCreation);
+            assert_eq!(effects[0].resource_type(), Some("KQLDatabase"));
+            assert!(
+                effects[0]
+                    .description()
+                    .contains("may create a same-name default KQL database")
+            );
+            assert!(
+                effects[0]
+                    .contract()
+                    .contains("165f66efc3c8da81a156627a63eb0b8e0cb0c7ef")
+            );
+            assert_eq!(effects[1].kind(), CreateEffectKind::MeteredConsumption);
+            assert_eq!(effects[1].resource_type(), Some("Eventhouse"));
+            assert!(
+                effects[1]
+                    .description()
+                    .contains("no query, run, start or minimum-consumption")
+            );
+            assert!(
+                effects[1]
+                    .contract()
+                    .contains("b659751abeffc3a236c6a5be0c9a1fc1233a80aa")
+            );
+            assert!(question.contains("Anticipated effects are not observed outcomes."));
+            assert!(question.contains("KQLDatabase") && question.contains("metered UpTime"));
             if let Some(raw) = request.raw_input() {
                 assert_eq!(
                     input.supplied(),
                     Some(&serde_json::from_slice::<Value>(raw).unwrap())
                 );
+                assert_eq!(operation.body(), raw);
+            } else {
+                assert_eq!(
+                    operation.body(),
+                    serde_json::to_vec(&json!({"displayName":self.name})).unwrap()
+                );
             }
+            assert!(
+                question.contains(
+                    &std::str::from_utf8(operation.body())
+                        .unwrap()
+                        .escape_debug()
+                        .to_string()
+                )
+            );
+            self.approved.push(ApprovedWire {
+                body: operation.body().to_vec(),
+                url: url.to_string(),
+            });
         } else {
             assert!(matches!(request.plan().action(), CreateAction::Skip { .. }));
             assert!(!request.remote_write());
+            assert!(request.operation().is_none());
+            assert!(request.url().is_none());
+            assert!(request.anticipated_effects().is_empty());
+            assert!(
+                request
+                    .approval_question()
+                    .contains("no native request (unchanged skip)")
+            );
         }
         Box::pin(std::future::ready(if self.allow {
             Ok(())
@@ -224,6 +311,45 @@ impl CreateApproval for Approval {
             Err(CreateApprovalError::Denied)
         }))
     }
+}
+
+fn assert_approved_wire(harness: &Harness, approval: &Approval) {
+    let requests = harness.wire.requests.lock().unwrap();
+    let posts: Vec<_> = requests
+        .iter()
+        .filter(|request| request.method() == Method::Post)
+        .collect();
+    assert_eq!(posts.len(), approval.approved.len());
+    for (post, approved) in posts.into_iter().zip(&approval.approved) {
+        assert_eq!(post.url().as_str(), approved.url.as_str());
+        assert_eq!(Bytes::from(post.body()).as_ref(), approved.body.as_slice());
+    }
+}
+
+fn assert_anticipated_effects(receipt: &Value) {
+    let effects = receipt["meta"]["anticipatedEffects"].as_array().unwrap();
+    assert_eq!(effects.len(), 2);
+    assert_eq!(effects[0]["kind"], "childResourceCreation");
+    assert_eq!(effects[0]["resourceType"], "KQLDatabase");
+    assert!(
+        effects[0]["contract"]
+            .as_str()
+            .unwrap()
+            .contains("165f66ef")
+    );
+    assert_eq!(effects[1]["kind"], "meteredConsumption");
+    assert!(
+        effects[1]["contract"]
+            .as_str()
+            .unwrap()
+            .contains("b659751a")
+    );
+    for effect in effects {
+        assert!(effect.get("id").is_none());
+        assert!(effect.get("completed").is_none());
+        assert!(effect.get("observed").is_none());
+    }
+    assert_eq!(receipt["meta"]["remoteWrite"], true);
 }
 
 fn response(status: u16, body: Value) -> AsyncRawResponse {
@@ -464,6 +590,10 @@ async fn standalone_create_sends_exact_metadata_once_and_projects_only_data() {
     assert_eq!(receipt["meta"]["operationHandle"], Value::Null);
     assert_eq!(receipt["meta"]["remoteReplayed"], false);
     assert_eq!(receipt["meta"]["observedResource"]["id"], ITEM);
+    assert_anticipated_effects(&receipt);
+    assert_approved_wire(&harness, &approval);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 201);
+    assert!(receipt["meta"]["submission"]["resource"].is_null());
     harness.assert_posts(1);
     let requests = harness.wire.requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
@@ -480,15 +610,18 @@ async fn standalone_create_sends_exact_metadata_once_and_projects_only_data() {
 async fn omitted_input_uses_literal_name_and_never_resolves_it_as_an_item_id() {
     let dir = tempfile::tempdir().unwrap();
     let harness = Harness::new(vec![listing(vec![]), response(201, resource())]);
+    let mut approval = Approval::yes();
     let result = harness
         .execute(
             prepared(dir.path(), &[], None).unwrap(),
-            &mut Approval::yes(),
+            &mut approval,
             pending(),
         )
         .await
         .unwrap();
     assert_eq!(result.report().exit_code(), 0);
+    assert_anticipated_effects(result.report().value());
+    assert_approved_wire(&harness, &approval);
     {
         let requests = harness.wire.requests.lock().unwrap();
         assert_eq!(
@@ -530,6 +663,7 @@ async fn omitted_input_uses_literal_name_and_never_resolves_it_as_an_item_id() {
         allow: true,
         calls: 0,
         name: ITEM,
+        approved: Vec::new(),
     };
     let result = harness
         .execute(prepared, &mut approval, pending())
@@ -577,6 +711,9 @@ async fn exact_skip_validates_explicit_input_and_never_posts() {
     assert_eq!(receipt["meta"]["resourceId"], ITEM);
     assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], false);
     assert_eq!(receipt["meta"]["contentEqualityClaimed"], false);
+    assert_eq!(receipt["meta"]["remoteWrite"], false);
+    assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
+    assert!(receipt["meta"]["submission"].is_null());
     harness.assert_posts(0);
 }
 
@@ -602,8 +739,32 @@ async fn exact_eventhouse_skip_is_not_ambiguous_with_its_same_name_default_datab
     assert_eq!(receipt["meta"]["status"], "unchanged");
     assert_eq!(receipt["meta"]["resourceId"], ITEM);
     assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], false);
+    assert_eq!(receipt["meta"]["remoteWrite"], false);
+    assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
     harness.assert_posts(0);
     assert_eq!(harness.wire.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn workspace_root_skip_never_substitutes_a_matching_nested_eventhouse() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = json!({
+        "id":ITEM,"workspaceId":WS,"displayName":"Exact","type":"Eventhouse","folderId":OP
+    });
+    let harness = Harness::new(vec![listing(vec![nested])]);
+    let mut approval = Approval::yes();
+    assert!(
+        harness
+            .execute(
+                prepared(dir.path(), &["--if-exists", "skip"], None).unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(approval.calls, 0);
+    harness.assert_posts(0);
 }
 
 #[tokio::test]
@@ -662,6 +823,7 @@ async fn immediate_denial_and_discovery_failure_cannot_dispatch() {
         allow: false,
         calls: 0,
         name: "Exact",
+        approved: Vec::new(),
     };
     assert!(matches!(
         harness
@@ -674,6 +836,7 @@ async fn immediate_denial_and_discovery_failure_cannot_dispatch() {
         Err(CreateCommandError::Approval(CreateApprovalError::Denied))
     ));
     assert_eq!(denied.calls, 1);
+    assert_eq!(denied.approved.len(), 1);
     harness.assert_posts(0);
     let harness = Harness::new(vec![response(403, json!({"errorCode":"Forbidden"}))]);
     assert!(
@@ -706,6 +869,9 @@ async fn accepted_is_not_completed_and_wait_reuses_shared_operation_result() {
     assert_eq!(receipt["meta"]["status"], "accepted");
     assert_eq!(receipt["meta"]["completed"], false);
     assert_eq!(receipt["meta"]["resourceId"], Value::Null);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert!(receipt["meta"]["submission"]["resource"].is_null());
+    assert_anticipated_effects(&receipt);
     assert_eq!(
         receipt["meta"]["operationHandle"],
         format!("/operations/{OP}")
@@ -739,6 +905,10 @@ async fn accepted_is_not_completed_and_wait_reuses_shared_operation_result() {
         format!("/operations/{OP}")
     );
     assert_eq!(receipt["meta"]["resourceId"], ITEM);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert!(receipt["meta"]["submission"]["resource"].is_null());
+    assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+    assert_anticipated_effects(&receipt);
     let requests = harness.wire.requests.lock().unwrap();
     assert_eq!(requests.len(), 4);
     assert_eq!(requests[2].url().path(), format!("/v1/operations/{OP}"));
@@ -797,6 +967,14 @@ async fn service_conflict_and_failed_poll_preserve_evidence_without_replay() {
     assert_eq!(receipt["meta"]["resourceId"], ITEM);
     assert_eq!(receipt["meta"]["remoteCancelled"], false);
     assert_eq!(receipt["data"], "Exact");
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(
+        receipt["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+    assert_anticipated_effects(&receipt);
     harness.assert_posts(1);
 }
 
@@ -828,6 +1006,118 @@ async fn malformed_final_lro_result_retains_previously_observed_acceptance_ident
     assert_eq!(receipt["meta"]["resourceId"], ITEM);
     assert_eq!(receipt["meta"]["observedResource"]["id"], ITEM);
     assert_eq!(receipt["meta"]["remoteReplayed"], false);
+    assert_eq!(receipt["meta"]["httpStatus"], 200);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(
+        receipt["meta"]["submission"]["resource"]["type"],
+        "Eventhouse"
+    );
+    assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+    assert_anticipated_effects(&receipt);
+    harness.assert_posts(1);
+}
+
+#[tokio::test]
+async fn mismatched_final_resource_keeps_distinct_initial_acceptance_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let harness = Harness::new(vec![
+        listing(vec![]),
+        accepted(Some(resource())),
+        response(200, json!({"status":"Succeeded"})),
+        response(
+            200,
+            json!({"id":OP,"workspaceId":WS,"displayName":"other","type":"KQLDatabase"}),
+        ),
+    ]);
+    let result = harness
+        .execute(
+            prepared(dir.path(), &["--wait", "--project", "displayName"], None).unwrap(),
+            &mut Approval::yes(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.report().exit_code(), 1);
+    let receipt = delivered(result);
+    assert_eq!(receipt["meta"]["status"], "unknown");
+    assert_eq!(receipt["meta"]["completed"], false);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(
+        receipt["meta"]["submission"]["resource"]["displayName"],
+        "Exact"
+    );
+    assert_eq!(
+        receipt["meta"]["submission"]["resource"]["type"],
+        "Eventhouse"
+    );
+    assert_eq!(receipt["meta"]["observedResource"]["id"], OP);
+    assert_eq!(receipt["meta"]["observedResource"]["type"], "KQLDatabase");
+    assert_eq!(
+        receipt["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+    assert_anticipated_effects(&receipt);
+    harness.assert_posts(1);
+}
+
+#[tokio::test]
+async fn malformed_no_wait_202_retains_initial_headers_and_exact_body_without_poll_or_replay() {
+    use base64::Engine;
+    let dir = tempfile::tempdir().unwrap();
+    let raw = b"{";
+    let harness = Harness::new(vec![
+        listing(vec![]),
+        AsyncRawResponse::from_bytes(StatusCode::Accepted, operation_headers(), raw.to_vec()),
+    ]);
+    let result = harness
+        .execute(
+            prepared(dir.path(), &["--project", "displayName"], None).unwrap(),
+            &mut Approval::yes(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.report().exit_code(), 1);
+    let receipt = delivered(result);
+    assert_eq!(receipt["meta"]["status"], "unknown");
+    assert_eq!(receipt["meta"]["completed"], false);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        receipt["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(
+        receipt["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert!(receipt["meta"]["submission"]["resource"].is_null());
+    assert!(receipt["meta"]["resourceId"].is_null());
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                receipt["meta"]["unparsedAcceptanceBodyBase64"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap(),
+        raw
+    );
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                receipt["meta"]["unparsedResponseBodyBase64"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap(),
+        raw
+    );
+    assert_eq!(receipt["meta"]["remoteReplayed"], false);
+    assert_anticipated_effects(&receipt);
+    assert_eq!(harness.wire.requests.lock().unwrap().len(), 2);
     harness.assert_posts(1);
 }
 
@@ -957,6 +1247,7 @@ async fn header_acceptance_survives_stream_failure_overflow_and_local_interrupti
         let receipt = delivered(result);
         assert_eq!(receipt["meta"]["status"], "unknown");
         assert_eq!(receipt["meta"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
         assert_eq!(
             receipt["meta"]["operationHandle"],
             format!("/operations/{OP}")
@@ -964,6 +1255,7 @@ async fn header_acceptance_survives_stream_failure_overflow_and_local_interrupti
         assert_eq!(receipt["meta"]["resourceId"], Value::Null);
         assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
         assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_anticipated_effects(&receipt);
         harness.assert_posts(1);
     }
 }
@@ -1011,6 +1303,14 @@ async fn deadline_and_cancellation_during_poll_retain_known_resource_and_operati
         );
         assert_eq!(receipt["meta"]["remoteReplayed"], false);
         assert_eq!(receipt["meta"]["remoteCancelled"], false);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            receipt["meta"]["submission"]["resource"]["type"],
+            "Eventhouse"
+        );
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+        assert_anticipated_effects(&receipt);
         harness.assert_posts(1);
     }
 }
@@ -1087,6 +1387,7 @@ async fn output_race_projection_and_closed_writer_retain_success_no_replay() {
         };
         assert_eq!(report.value()["meta"]["status"], "completed");
         assert_eq!(report.value()["meta"]["resourceId"], ITEM);
+        assert_anticipated_effects(report.value());
         harness.assert_posts(1);
     }
     assert_eq!(std::fs::read(file).unwrap(), b"racer");
