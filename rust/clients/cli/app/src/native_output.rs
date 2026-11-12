@@ -31,21 +31,30 @@ where
     W: Write + Send + 'static,
     T: Send + 'static,
 {
-    write_owned_stoppable(
-        writer,
-        deadline,
-        cancelled,
-        Arc::new(AtomicBool::new(false)),
-        write,
-    )
-    .await
+    // Existing hosts permit an already-started/queued output worker to finish.
+    // Runtime reads opt into stricter admission through write_owned_stoppable.
+    write_owned_inner(writer, deadline, cancelled, None, write).await
 }
 
 pub(crate) async fn write_owned_stoppable<W, T, F>(
-    mut writer: W,
+    writer: W,
     deadline: Instant,
     cancelled: impl Future<Output = F>,
     stopped: Arc<AtomicBool>,
+    write: impl FnOnce(&mut W) -> io::Result<T> + Send + 'static,
+) -> OwnedWrite<T, F>
+where
+    W: Write + Send + 'static,
+    T: Send + 'static,
+{
+    write_owned_inner(writer, deadline, cancelled, Some(stopped), write).await
+}
+
+async fn write_owned_inner<W, T, F>(
+    mut writer: W,
+    deadline: Instant,
+    cancelled: impl Future<Output = F>,
+    stopped: Option<Arc<AtomicBool>>,
     write: impl FnOnce(&mut W) -> io::Result<T> + Send + 'static,
 ) -> OwnedWrite<T, F>
 where
@@ -56,19 +65,24 @@ where
         return OwnedWrite::Deadline;
     }
     let mut cancelled = std::pin::pin!(cancelled);
-    if let Some(failure) = std::future::poll_fn(|cx| {
-        std::task::Poll::Ready(match cancelled.as_mut().poll(cx) {
-            std::task::Poll::Ready(failure) => Some(failure),
-            std::task::Poll::Pending => None,
+    let ready = if stopped.is_some() {
+        std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(match cancelled.as_mut().poll(cx) {
+                std::task::Poll::Ready(failure) => Some(failure),
+                std::task::Poll::Pending => None,
+            })
         })
-    })
-    .await
-    {
+        .await
+    } else {
+        None
+    };
+    if let Some(failure) = ready {
         return OwnedWrite::Cancelled(failure);
     }
-    let worker_stop = Arc::clone(&stopped);
+    let worker_stop = stopped.clone();
     let mut worker = tokio::task::spawn_blocking(move || {
-        if worker_stop.load(Ordering::SeqCst) || Instant::now() >= deadline {
+        if worker_stop.is_some_and(|stop| stop.load(Ordering::SeqCst) || Instant::now() >= deadline)
+        {
             return Err(io::ErrorKind::Interrupted.into());
         }
         write(&mut writer)
@@ -83,10 +97,10 @@ where
             self.abort.abort();
         }
     }
-    let _stop = StopWorker {
+    let _stop = stopped.map(|stopped| StopWorker {
         stopped,
         abort: worker.abort_handle(),
-    };
+    });
     tokio::select! {
         biased;
         _ = tokio::time::sleep_until(deadline.into()) => OwnedWrite::Deadline,
