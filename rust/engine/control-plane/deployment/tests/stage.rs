@@ -337,6 +337,43 @@ fn exact_service_boundaries_and_target_validation() {
     );
 }
 
+#[test]
+fn duplicate_native_fields_are_rejected_before_value_map_collapse() {
+    let valid = serde_json::to_string(&payload()).unwrap();
+    for bytes in [
+        valid.replacen(
+            "\"sourceStageId\":",
+            &format!("\"sourceStageId\":\"{SOURCE}\",\"sourceStageId\":"),
+            1,
+        ),
+        valid.replacen("\"itemType\":", "\"itemType\":\"Report\",\"itemType\":", 1),
+        valid.replacen(
+            "\"sourceItemId\":",
+            &format!("\"sourceItemId\":\"{ITEM}\",\"sourceItemId\":"),
+            1,
+        ),
+        valid.replacen(
+            "\"sourceStageId\":",
+            &format!("\"sourceSt\\u0061geId\":\"{SOURCE}\",\"sourceStageId\":"),
+            1,
+        ),
+    ] {
+        assert_eq!(
+            DeploymentRequest::from_json(
+                PIPELINE,
+                TARGET,
+                bytes.as_bytes(),
+                65536,
+                SelectionIntent::Selected
+            )
+            .err()
+            .unwrap()
+            .kind,
+            Kind::InvalidInput
+        );
+    }
+}
+
 #[tokio::test]
 async fn stage_preflight_uses_exact_native_owner_routes() {
     let harness = Harness::new([]);
@@ -976,4 +1013,37 @@ async fn interrupted_foreign_or_malformed_responses_do_not_invent_effect_identit
         assert!(receipt.mutation_may_have_occurred);
         assert_eq!(harness.post_count(), 1);
     }
+}
+
+#[tokio::test]
+async fn cancelled_created_response_preserves_native_deployment_identity_and_effects() {
+    let mut native = completed("Succeeded");
+    native.status = 201;
+    let harness = Harness::new([Ok(native)]);
+    let approved = harness.approved().await;
+    let signal = poll_fn(|_| {
+        if harness.post_count() > 0 {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    });
+    let failure = approved
+        .execute(
+            &harness.context,
+            &(&harness),
+            OperationLimits::default(),
+            false,
+            signal,
+        )
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(failure.kind, Kind::Cancelled);
+    let receipt = failure.receipt.unwrap();
+    assert_eq!(receipt.http_status, Some(201));
+    assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
+    assert!(receipt.initial_response.is_some());
+    assert!(receipt.mutation_may_have_occurred);
+    assert_eq!(harness.post_count(), 1);
 }

@@ -40,7 +40,9 @@ Notebook, Report or SemanticModel item types in this initial adapter.
 empty array. It explicitly selects the service's all-supported-source-items
 scope. The 300-item service limit still applies to that scope; the client does
 not partition it into more deployments. Notes are limited to 1024 characters.
-Input bytes have an explicit caller ceiling and unknown input fields fail.
+Input bytes have an explicit caller ceiling. Unknown and duplicate input fields,
+including escaped duplicate spellings and duplicates inside items, fail before
+credential selection in the native executable.
 
 No options, Beta plans, workspace creation/capacity selection, backward/skipped
 stages, prune/delete/rollback, implicit dependency expansion or client parameter
@@ -137,21 +139,47 @@ fab-rs --v2-deploy deploy /.deployment-pipelines/<PIPELINE_UUID>/stages/<TARGET_
 Use `--all-items` instead of `--selected-items` only when `items` is absent from
 the native request. `--wait` requests shared native completion observation.
 The addressed target UUID must match the native input's `targetStageId`.
-The byte ceiling is explicit; no new implicit command timeout/profile defaults
-are standardized here.
+The byte ceiling is explicit. Input is a bounded regular local JSON file, not
+stdin or a repository configuration. No output-file or receipt-replay grammar is
+introduced.
 
-Help/version performs no host or file access. The standalone marker returns
-`NotConfigured` for execution until a real pipeline-stage resolver, original
-deadline, exact-effect approval and bounded input/output host is injected.
-Native credential features alone do not configure it. Library hosts can already
-execute the same parsed request through the real SDK consumer; offline tests
-exercise that path. There is no Python bridge or hidden live-service fallback.
+Help/version performs no credential, configuration or input-file access. Builds
+with only `v2-deploy` retain `NotConfigured` for execution. Combine `v2-deploy`
+with `native-read` (Windows broker) or `headless` (explicit unattended identity)
+to mount the existing native Fabric identity/HTTP host on the same `fab-rs`
+marker. Identity selection and endpoint configuration follow
+[native host setup](native-read-host.md); there is no ambient account search,
+interactive login fallback, Python bridge or hidden live-service fallback.
+
+The host validates bounded local input before selecting credentials, reads the
+two exact stages, verifies the real assigned workspaces and requests immediate
+terminal approval. Approval displays the selected identity/provider, tenant,
+Fabric audience and endpoint, pipeline, source/target workspaces and exact native
+body including notes and selected-items/all-items scope. The existing ASCII JSON
+encoder escapes terminal controls and Unicode direction controls without losing
+the native values. Only an explicit entered yes
+approves; empty answers decline and EOF, unavailable terminals or failed prompt
+delivery fail closed. Structured stdin is never used for approval. There is no
+`--force` or unattended auto-approval, even with a headless credential.
+
+The existing native **240-second total command deadline** starts before input
+and includes credential setup, both stage reads, approval, POST, optional
+observation and receipt delivery. Each stage preflight is limited to one
+operation request; both are debited from the existing 100-request operation
+budget. Ctrl+C only stops local work. Actual submission responses, handles and
+partial effects remain in the SDK result on interruption or delivery failure.
+Success/acceptance receipts go to stdout; failures go to stderr. Delivery uses
+owned stream handles under that same deadline, with at most one bounded stderr
+fallback, never a global stream-lock retry. If both pipes cannot accept output,
+the process exits nonzero rather than hanging or claiming receipt delivery.
+Runtime shutdown has the existing one-second bounded cleanup grace; abandoned
+blocking local reads/writes may still complete. None authorizes remote replay.
 
 The current generic registry's target identity types do not represent native
 pipeline stages. This lane does not fabricate workspace/item identities or
 change shared core contracts to make discovery claim production support.
-Pipeline identity/discovery and production host mounting require coordinator
-integration before that capability can be advertised.
+This explicit UUID-only marker does not register general pipeline discovery or
+advertise pipeline-stage support through workspace/item discovery.
 
 ## Offline contracts and provenance
 
@@ -187,10 +215,15 @@ Targeted offline commands:
 ```text
 cargo test --offline --locked -p fabric-deploy --test stage
 cargo test --offline --locked -p fabric-cli --features v2-deploy --test stage_deploy --test stage_deploy_entry
+cargo test --offline --locked -p fabric-cli --features native-read,headless,v2-deploy --bin fab-rs native_read::stage_deploy -- --test-threads=1
+cargo test --offline --locked -p fabric-cli --features native-read,headless,v2-deploy --test stage_deploy --test stage_deploy_entry -- --test-threads=1
 cargo test --offline --locked -p fabric-cli --test stage_deploy_entry
 ```
 
-The impact registry includes the SDK/CLI targets and opt-in feature profile.
+The impact registry includes the SDK/CLI targets, isolated `v2-deploy` profile
+and composed `v2-deploy-native` profile. The native host tests run real parser,
+file validation, stage SDK and existing HTTP executor against scripted HTTP;
+official credential selection is exercised only against synthetic responses.
 Current complete native Windows/Linux/macOS, stable and independent-review gates
 remain required before review-ready publication. This document is not a claim
 that those checks or live tenant acceptance have passed.

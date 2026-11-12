@@ -1973,12 +1973,15 @@
       "id": "cli-deploy-stage",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/stage_deploy.rs"
+        "rust/clients/cli/app/src/stage_deploy.rs",
+        "rust/clients/cli/app/src/native_stage_deploy.rs",
+        "rust/clients/cli/app/src/native_stage_deploy_tests.rs"
       ],
       "depends_on": ["deploy-stage"],
       "tests": [
         {"package": "fabric-cli", "target": "test:stage_deploy"},
-        {"package": "fabric-cli", "target": "test:stage_deploy_entry"}
+        {"package": "fabric-cli", "target": "test:stage_deploy_entry"},
+        {"package": "fabric-cli", "target": "bin:fab-rs"}
       ],
       "checks": ["dependency-graph"]
     },
@@ -3511,6 +3514,13 @@
       "checks": [
         "native-read"
       ]
+    },
+    {
+      "id": "v2-deploy-native",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/v2-deploy"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "native-read"]
     },
     {
       "id": "v2-deploy",

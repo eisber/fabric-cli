@@ -65,6 +65,16 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         .get(1)
         .is_some_and(|argument| argument == "--v2-deploy")
     {
+        #[cfg(all(feature = "native-host", any(windows, feature = "headless")))]
+        return native_read::run_stage_deploy(
+            arguments
+                .iter()
+                .take(1)
+                .chain(arguments.iter().skip(2))
+                .cloned(),
+        )
+        .map(ExitCode::from);
+        #[cfg(not(all(feature = "native-host", any(windows, feature = "headless"))))]
         return fabric_cli::stage_deploy::run_unconfigured(
             arguments
                 .iter()
@@ -512,6 +522,18 @@ fn main() -> ExitCode {
     match run(&mut update_lifetime) {
         Ok(code) => code,
         Err(error) => {
+            #[cfg(feature = "v2-deploy")]
+            if error
+                .get_ref()
+                .and_then(|error| {
+                    error.downcast_ref::<fabric_cli::stage_deploy::StageDeployError>()
+                })
+                .is_some()
+            {
+                // This head has already attempted bounded receipt/diagnostic
+                // delivery. A global stderr retry could hang on the same pipe.
+                return ExitCode::FAILURE;
+            }
             if error
                 .get_ref()
                 .and_then(|error| {
