@@ -49,6 +49,12 @@ A GUID-looking leaf remains a literal display name.
 
 Only `error` (default) and exact-existing `skip` are supported. Explicit input
 must validate even for skip. Complete bounded item discovery checks collisions;
+it explicitly requests `recursive=false` and validates the returned folder
+scope. Only the exact root item of the requested type can be skipped. Valid
+same-name nested or other-type items do not make a single root DataPipeline
+ambiguous; nested-only matches, malformed folder identities and duplicate root
+DataPipelines reject. Completed create results must also belong to the root.
+Discovery preserves the query through bounded pagination;
 it is not a race-free reservation. The provider's documented
 `ItemDisplayNameAlreadyInUse` rejection backs the create capability; a concurrent
 collision is returned without overwrite or retry. `--force` means unsupported
@@ -64,12 +70,22 @@ The host requires immediate terminal approval bound to the exact target, body,
 selected account/tenant, endpoint, policy, output and effect. Nonterminal
 execution refuses before credential/provider access. There is no unattended
 approval bypass or static-token test mode in the production binary.
+Approval borrows the exact prepared method, URL, completion policy and bytes
+that will be consumed once, including generated `displayName` when input is
+omitted. Escaped approval text does not change transmitted bytes.
+The metadata-only API contract documents no additional child-resource or job
+effect for this request, so no additional anticipated-effect descriptor is
+declared. That empty descriptor list is not proof of no other service effect,
+zero metered consumption or an observed outcome.
 
 A 202 receipt is acceptance, not completion. An operation ID is never a resource
 ID. `--wait` follows the existing bounded LRO/Retry-After handling; failed polling,
 local cancellation/deadline and output/projection failure preserve available
 identity, operation and uncertainty evidence without replay or remote rollback
 claims. Projection changes only `data`, never protected metadata.
+Initial `meta.submission.httpStatus`, resource/operation and observed folder
+evidence remain distinct from later `meta.observation.httpStatus`, including
+failed/cancelled polls, malformed final results and malformed no-wait acceptance.
 
 ## Source and validation scope
 
@@ -87,7 +103,20 @@ ce89c0726e188c131506d12bc7342692640b9425
 225903a35809f70b047f4e1ffc3af403cf295b57
 99dc9638cd43ae532b799027abeb8fabdbbf4b38
 9812bec9053d2c541172223c446703109c3acbe1
+0454fb43f08c05f9f066ed5bcb686a8c426a0de1
+caf2f7f2789438cf3abe67242a13aeb048b1ce56
+0ec384823fd209f2084e30b4e9677fe7799b136a
 ```
+
+The later helper diffs repair exact prepared-operation approval, typed/root
+selection, initial submission retention, strict lint and unknown-outcome
+classification for unexpected 2xx operation results. Those results remain
+nonzero with their original typed HTTP cause, not a false definitive service
+failure or completed success. Shared production
+blobs match the releases. Documentation conflicts were resolved by retaining
+this DataPipeline-only mount and the generic helper guidance, not importing
+producer Notebook-specific examples or ancestry. These source repairs require
+fresh native and exact-head review evidence; earlier results do not qualify them.
 
 `tests/datapipeline_create.rs` covers the actual parser -> shared host -> SDK ->
 scripted `HttpExecutor` boundary, not a replacement backend.

@@ -87,6 +87,8 @@ struct Approval {
     calls: usize,
     denied: bool,
     expected_input: Option<Vec<u8>>,
+    approved_body: Option<Vec<u8>>,
+    approved_url: Option<String>,
 }
 
 impl Approval {
@@ -95,6 +97,8 @@ impl Approval {
             calls: 0,
             denied: false,
             expected_input: input.map(<[u8]>::to_vec),
+            approved_body: None,
+            approved_url: None,
         }
     }
 }
@@ -126,6 +130,58 @@ impl CreateApproval for Approval {
                 fabric_sdk::items::create::CreateAction::Skip { .. }
             )
         );
+        assert!(request.anticipated_effects().is_empty());
+        if request.remote_write() {
+            let operation = request.operation().unwrap();
+            let expected = self
+                .expected_input
+                .clone()
+                .unwrap_or_else(|| br#"{"displayName":"Exact"}"#.to_vec());
+            assert_eq!(operation.body(), expected);
+            assert_eq!(
+                operation.method(),
+                fabric_sdk_workspaces::mutations::ResourceMethod::Post
+            );
+            assert_eq!(
+                operation.path(),
+                format!("/v1/workspaces/{WS}/dataPipelines")
+            );
+            assert_eq!(
+                operation.completion(),
+                if request.command().wait {
+                    fabric_sdk_workspaces::mutations::CompletionPolicy::WaitForResult
+                } else {
+                    fabric_sdk_workspaces::mutations::CompletionPolicy::ReturnAccepted
+                }
+            );
+            let url = request.url().unwrap();
+            assert_eq!(
+                url.as_str(),
+                format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/dataPipelines")
+            );
+            let question = request.approval_question();
+            assert!(question.contains("method=POST"));
+            assert!(question.contains("audience=Fabric"));
+            assert!(question.contains("remoteWrite=true"));
+            assert!(
+                question.contains(
+                    &String::from_utf8(expected.clone())
+                        .unwrap()
+                        .escape_debug()
+                        .to_string()
+                )
+            );
+            self.approved_body = Some(operation.body().to_vec());
+            self.approved_url = Some(url.as_str().to_owned());
+        } else {
+            assert!(request.operation().is_none());
+            assert!(request.url().is_none());
+            assert!(
+                request
+                    .approval_question()
+                    .contains("no native request (unchanged skip)")
+            );
+        }
         Box::pin(std::future::ready(if self.denied {
             Err(CreateApprovalError::Denied)
         } else {
@@ -372,6 +428,7 @@ async fn omitted_input_creates_only_empty_item_metadata_at_the_typed_route() {
         requests[0].url().path(),
         format!("/v1/workspaces/{WS}/items")
     );
+    assert_eq!(requests[0].url().query(), Some("recursive=false"));
     assert_eq!(
         requests[1].url().path(),
         format!("/v1/workspaces/{WS}/dataPipelines")
@@ -379,6 +436,12 @@ async fn omitted_input_creates_only_empty_item_metadata_at_the_typed_route() {
     let Body::Bytes(body) = requests[1].body() else {
         panic!("native JSON body expected")
     };
+    assert_eq!(Some(body.as_ref()), approval.approved_body.as_deref());
+    assert_eq!(
+        Some(requests[1].url().as_str()),
+        approval.approved_url.as_deref()
+    );
+    assert_eq!(requests[1].url().query(), None);
     assert_eq!(
         serde_json::from_slice::<Value>(body).unwrap(),
         json!({"displayName":"Exact"})
@@ -398,8 +461,9 @@ async fn explicit_file_bytes_are_bound_to_approval_and_sent_without_reserializat
         listing(json!([])),
         response(201, &resource().to_string(), &[]),
     ]);
+    let mut approval = Approval::new(Some(raw));
     let delivery = harness
-        .execute(prepared, &mut Approval::new(Some(raw)), pending())
+        .execute(prepared, &mut approval, pending())
         .await
         .unwrap();
     assert_eq!(delivery.report().exit_code(), 0);
@@ -408,6 +472,11 @@ async fn explicit_file_bytes_are_bound_to_approval_and_sent_without_reserializat
         panic!("native JSON body expected")
     };
     assert_eq!(body.as_ref(), raw);
+    assert_eq!(Some(body.as_ref()), approval.approved_body.as_deref());
+    assert_eq!(
+        Some(requests[1].url().as_str()),
+        approval.approved_url.as_deref()
+    );
 }
 
 #[tokio::test]
@@ -545,6 +614,187 @@ async fn incomplete_or_unsafe_discovery_never_authorizes_creation() {
         );
         assert_eq!(approval.calls, 0);
         harness.assert_methods(&[Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn typed_root_selection_ignores_valid_nested_and_unrelated_same_name_owners() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut root = resource();
+    root["folderId"] = Value::Null;
+    let mut nested = resource();
+    nested["id"] = json!(OP);
+    nested["folderId"] = json!(OP);
+    let mut other = resource();
+    other["id"] = json!(OP);
+    other["type"] = json!("Notebook");
+    for items in [
+        json!([root.clone(), other.clone()]),
+        json!([other.clone(), root.clone()]),
+        json!([nested.clone(), root.clone(), other.clone()]),
+    ] {
+        let harness = Harness::new([listing(items)]);
+        let delivery = harness
+            .execute(
+                prepare(&["--if-exists", "skip"], None, temp.path()).unwrap(),
+                &mut Approval::new(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+        assert_eq!(delivery.report().value()["meta"]["folderIdObserved"], true);
+        assert!(delivery.report().value()["meta"]["folderId"].is_null());
+        assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
+        assert_eq!(
+            delivery.report().value()["meta"]["anticipatedEffects"],
+            json!([])
+        );
+        harness.assert_methods(&[Method::Get]);
+    }
+    for items in [
+        json!([nested.clone()]),
+        json!([nested, other]),
+        json!([root.clone(), root]),
+    ] {
+        let harness = Harness::new([listing(items)]);
+        let mut approval = Approval::new(None);
+        assert!(
+            harness
+                .execute(
+                    prepare(&["--if-exists", "skip"], None, temp.path()).unwrap(),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        harness.assert_methods(&[Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn malformed_folder_identity_is_never_ignored_even_beside_a_valid_root() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in [
+        json!("not-guid"),
+        json!(""),
+        json!(42),
+        json!({}),
+        json!([]),
+    ] {
+        let mut malformed = resource();
+        malformed["folderId"] = folder;
+        let harness = Harness::new([listing(json!([resource(), malformed]))]);
+        let mut approval = Approval::new(None);
+        assert!(
+            harness
+                .execute(
+                    prepare(&["--if-exists", "skip"], None, temp.path()).unwrap(),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        harness.assert_methods(&[Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn paged_root_discovery_preserves_recursive_false_and_waits_for_complete_selection() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut other = resource();
+    other["type"] = json!("Notebook");
+    let harness = Harness::new([
+        response(200, &json!({
+            "value":[other], "continuationToken":"next token",
+            "continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items?continuationToken=next"),
+        }).to_string(), &[]),
+        listing(json!([resource()])),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(&["--if-exists", "skip"], None, temp.path()).unwrap(),
+            &mut Approval::new(None),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+    harness.assert_methods(&[Method::Get, Method::Get]);
+    let requests = harness.wire.requests.lock().unwrap();
+    assert_eq!(requests[0].url().query(), Some("recursive=false"));
+    assert_eq!(
+        requests[1].url().query(),
+        Some("recursive=false&continuationToken=next+token")
+    );
+}
+
+#[tokio::test]
+async fn completed_resource_must_be_workspace_root_and_folder_evidence_is_protected() {
+    let temp = tempfile::tempdir().unwrap();
+    for (wait, folder) in [
+        (false, Value::Null),
+        (true, Value::Null),
+        (false, json!(OP)),
+        (true, json!(OP)),
+        (false, json!("malformed")),
+        (true, json!(42)),
+    ] {
+        let mut returned = resource();
+        returned["folderId"] = folder.clone();
+        let mut replies = vec![listing(json!([]))];
+        if wait {
+            replies.extend([
+                accepted(""),
+                response(200, r#"{"status":"Succeeded"}"#, &[]),
+                response(200, &returned.to_string(), &[]),
+            ]);
+        } else {
+            replies.push(response(201, &returned.to_string(), &[]));
+        }
+        let harness = Harness::new(replies);
+        let options = if wait {
+            vec!["--wait", "--project", "missing"]
+        } else {
+            vec!["--project", "missing"]
+        };
+        let delivery = harness
+            .execute(
+                prepare(&options, None, temp.path()).unwrap(),
+                &mut Approval::new(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), u8::from(!folder.is_null()));
+        assert_eq!(
+            delivery.report().value()["meta"]["completed"],
+            folder.is_null()
+        );
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert!(receipt["data"].is_null());
+        assert_eq!(receipt["meta"]["folderIdObserved"], true);
+        assert_eq!(receipt["meta"]["folderId"], folder);
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(receipt["meta"]["remoteWrite"], true);
+        if wait {
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+            harness.assert_methods(&[Method::Get, Method::Post, Method::Get, Method::Get]);
+        } else {
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], 201);
+            assert_eq!(receipt["meta"]["submission"]["folderId"], folder);
+            assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+            harness.assert_methods(&[Method::Get, Method::Post]);
+        }
     }
 }
 
@@ -816,8 +1066,175 @@ async fn poll_failure_retains_acceptance_resource_and_handle_outside_projection(
         );
         assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
         assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["workspaceId"], WS);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
         harness.assert_methods(&[Method::Get, Method::Post, Method::Get]);
     }
+}
+
+#[tokio::test]
+async fn malformed_final_result_keeps_initial_accepted_identity_separate_from_observation() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut acceptance = resource();
+    acceptance["folderId"] = Value::Null;
+    for malformed in ["{", r#"{"id":"a","id":"b"}"#, "\u{fffd}"] {
+        let harness = Harness::new([
+            listing(json!([])),
+            accepted(&acceptance.to_string()),
+            response(200, r#"{"status":"Succeeded"}"#, &[]),
+            response(200, malformed, &[]),
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(&["--wait", "--project", "missing"], None, temp.path()).unwrap(),
+                &mut Approval::new(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert!(receipt["data"].is_null());
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+        assert!(receipt["meta"]["unparsedResponseBodyBase64"].is_string());
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        harness.assert_methods(&[Method::Get, Method::Post, Method::Get, Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn malformed_no_wait_acceptance_retains_bytes_and_handle_without_success_or_replay() {
+    use base64::Engine;
+    let temp = tempfile::tempdir().unwrap();
+    for malformed in ["{", r#"{"displayName":"Exact","displayName":"Exact"}"#] {
+        let harness = Harness::new([listing(json!([])), accepted(malformed)]);
+        let delivery = harness
+            .execute(
+                prepare(&["--project", "missing"], None, temp.path()).unwrap(),
+                &mut Approval::new(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            receipt["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            receipt["meta"]["unparsedAcceptanceBodyBase64"],
+            base64::engine::general_purpose::STANDARD.encode(malformed)
+        );
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        harness.assert_methods(&[Method::Get, Method::Post]);
+    }
+}
+
+#[tokio::test]
+async fn unexpected_success_result_status_is_unknown_and_keeps_original_typed_http_cause() {
+    let temp = tempfile::tempdir().unwrap();
+    for status in [201, 202, 204] {
+        let harness = Harness::new([
+            listing(json!([])),
+            accepted(&resource().to_string()),
+            response(200, r#"{"status":"Succeeded"}"#, &[]),
+            response(status, &resource().to_string(), &[]),
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(&["--wait", "--project", "missing"], None, temp.path()).unwrap(),
+                &mut Approval::new(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        assert!(matches!(
+            &delivery.report().error().unwrap().kind,
+            fabric_sdk_operations::OperationErrorKind::Http { status: actual, .. } if *actual == status
+        ));
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert!(receipt["data"].is_null());
+        assert_eq!(receipt["meta"]["status"], "unknown");
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["error"]["code"], "InvalidResponse");
+        assert_eq!(receipt["meta"]["httpStatus"], status);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            receipt["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], status);
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        harness.assert_methods(&[Method::Get, Method::Post, Method::Get, Method::Get]);
+    }
+}
+
+struct PendingApproval;
+impl CreateApproval for PendingApproval {
+    fn authorize<'a>(
+        &'a mut self,
+        request: CreateApprovalRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), CreateApprovalError>> + Send + 'a>> {
+        assert_eq!(
+            request.operation().unwrap().body(),
+            br#"{"displayName":"Exact"}"#
+        );
+        Box::pin(pending())
+    }
+}
+
+#[tokio::test]
+async fn cancelled_immediate_approval_sends_no_create_request() {
+    let temp = tempfile::tempdir().unwrap();
+    let harness = Harness::new([listing(json!([]))]);
+    let interrupted = async {
+        while harness.wire.requests.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    assert!(matches!(
+        harness
+            .execute(
+                prepare(&[], None, temp.path()).unwrap(),
+                &mut PendingApproval,
+                interrupted,
+            )
+            .await,
+        Err(CreateCommandError::Interrupted)
+    ));
+    harness.assert_methods(&[Method::Get]);
 }
 
 #[tokio::test]
