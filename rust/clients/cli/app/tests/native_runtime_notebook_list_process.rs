@@ -170,15 +170,28 @@ fn invalid_binding_and_existing_output_fail_before_identity_and_never_clobber() 
 #[test]
 fn ordinary_get_route_and_version_are_not_claimed_by_collection_mount() {
     let output = run(command(
-        &["get", "/Team.Workspace/Analysis.Notebook/src/content"],
+        &["get", "/workspaces/11111111-1111-1111-1111-111111111111"],
         None,
     ));
     assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["error"]["code"], "NotConfigured");
     let output = run(command(&["--version"], None));
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn unmounted_notebook_content_retains_ordinary_invalid_target_contract() {
+    let output = run(command(
+        &["get", "/Team.Workspace/Analysis.Notebook/src/content"],
+        None,
+    ));
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "InvalidTarget");
 }
 
 #[cfg(not(feature = "notebook-workload"))]

@@ -206,7 +206,22 @@ connector, executable mount or new tests. No current-source pass is claimed
 before its ordinary automatic CI finishes.
 Shared-connector review identified an additional qualification blocker:
 `NotebookBinding::read` checks path metadata before opening, so a substituted
-symlink can race that check. The sole shared owner is preparing opened-handle /
-no-follow validation and a deterministic regression. This consumer must adopt
-that exact released correction before qualification, not fork the common code.
+symlink can race that check. This consumer adopts the sole shared owner's exact
+two-file correction `7d1578cb33b1e19252b0879eee588cced40dc1d2`, preserving its
+provenance and binding-source blob. Unix no-follow/nonblocking and Windows
+open-reparse-point flags plus opened-handle validation reject a final symlink
+substituted after inspection; the shared module includes a deterministic
+replacement regression. The selected parent namespace still must be trusted
+and stable, as documented by the shared host; no broader containment is claimed.
+The source correction and new regression still require current-head native
+execution and review before qualification.
+
+Automatic CI at `a6d44c384a96d4b8fc3ef80df0ed162aee277bbd` exercised the real
+stack, but exposed an incorrect new process fixture: `/src/content` is not
+mounted by this list-only PR and is not the baseline metadata GET route.
+The corrected isolation test uses the unchanged
+`get /workspaces/11111111-1111-1111-1111-111111111111` contract, preserving
+exit 1 / `NotConfigured` before identity. A separate assertion retains the
+unmounted Notebook content exit 2 / `InvalidTarget` contract. No production
+GET routing, existing fixture or frozen oracle is changed.
 No live Fabric/auth read, provisioning, mutation or compute is authorized or claimed.
