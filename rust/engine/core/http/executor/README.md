@@ -52,6 +52,13 @@ roll back a dispatched mutation. Errors retain original status and uncertainty.
 No transport implementation, identity provider, CLI, deployment engine or
 global runtime is installed by this crate.
 
+The opt-in `notebook-workload` feature adds a separate, explicitly selected
+Notebook read adapter with cryptographically verified Fabric/PBI principal
+continuity. See the [Notebook workload read foundation](../../../../authoring-docs/notebook-workload-foundation.md)
+for credential opt-in, exact origins and routes, bounded token exchange, and
+qualification gaps. It does not change `NativeFabricExecutor` or legacy Power BI
+REST routing, and it adds no Fabric CLI routes or platform-readiness claim.
+
 ## Pull-based native Fabric streaming
 
 `native_stream::NativeFabricStreamExecutor::new(context, http)` implements the

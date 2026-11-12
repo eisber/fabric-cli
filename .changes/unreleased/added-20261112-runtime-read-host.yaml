@@ -1,0 +1,6 @@
+kind: added
+body: Add an opt-in bounded native runtime-read host with explicit owner resolution, no-clobber output, and Notebook content reads through an explicitly selected verified-principal and MwcToken connector without discovery or item-definition fallback.
+time: 2026-11-12T10:00:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

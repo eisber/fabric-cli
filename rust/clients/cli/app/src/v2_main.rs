@@ -30,8 +30,12 @@ use std::{
 #[path = "headless.rs"]
 mod headless;
 mod v2_exists_main;
+#[cfg(feature = "notebook-workload")]
+mod v2_notebook_connect;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
+#[cfg(feature = "runtime-v2")]
+mod v2_runtime_main;
 mod v2_search_main;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
@@ -45,6 +49,10 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "runtime-v2")]
+    if v2_runtime_main::claims(&args) {
+        return std::process::ExitCode::from(v2_runtime_main::run(args));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -146,10 +154,9 @@ fn run() -> Result<(), Failure> {
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
     }
-    if args
-        .first()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value == "update" || value == "artifact")
+    if args.first().and_then(|value| value.to_str()) == Some("update")
+        || (args.first().and_then(|value| value.to_str()) == Some("artifact")
+            && args.get(2).and_then(|value| value.to_str()) == Some("update"))
     {
         return run_update(args);
     }
@@ -182,32 +189,7 @@ fn run() -> Result<(), Failure> {
         )
     })?;
     let prepared = PreparedGet::preflight(command, &cwd).map_err(command_failure)?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
-        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
-            failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            )
-        })?,
-        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
-        Err(_) => {
-            return Err(failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            ));
-        }
-    };
+    let (selection, endpoint) = capture_fabric_selection()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(2)
@@ -278,6 +260,38 @@ fn run() -> Result<(), Failure> {
     Ok(())
 }
 
+// Child command modules reuse this capture and NativeSession rather than
+// installing a second credential/transport selection chain.
+fn capture_fabric_selection() -> Result<(headless::Selection, EndpointBinding), Failure> {
+    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
+        failed(
+            "NotConfigured",
+            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
+            1,
+        )
+    })?;
+    let selection = headless::Selection::capture(&mode)
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
+        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+            failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            )
+        })?,
+        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
+        Err(_) => {
+            return Err(failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            ));
+        }
+    };
+    Ok((selection, endpoint))
+}
+
 struct NativeSession {
     context: RequestContext,
     storage_selection: CredentialSelection,
@@ -290,6 +304,15 @@ impl NativeSession {
         selection: headless::Selection,
         endpoint: EndpointBinding,
         timeout: Duration,
+    ) -> Result<Self, Failure> {
+        Self::with_provider_policy(selection, endpoint, timeout, false)
+    }
+
+    fn with_provider_policy(
+        selection: headless::Selection,
+        endpoint: EndpointBinding,
+        timeout: Duration,
+        pbi_bootstrap: bool,
     ) -> Result<Self, Failure> {
         let transport = transport_options(timeout);
         let identity_http: Arc<dyn azure_core::http::HttpClient> = match selection
@@ -331,9 +354,12 @@ impl NativeSession {
                     )
                 })?;
         let _explicit_provider_binding = (&selection.client, &selection.binding);
-        let credential = selection
-            .credential(identity_http)
-            .map_err(|(code, message, exit)| failed(code, message, exit))?;
+        let credential = if pbi_bootstrap {
+            selection.credential_with_pbi_policy(identity_http, true)
+        } else {
+            selection.credential(identity_http)
+        }
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
         let service_http: Arc<dyn azure_core::http::HttpClient> =
             Arc::new(NativeHttpClient::new(transport).map_err(|_| {
                 failed(

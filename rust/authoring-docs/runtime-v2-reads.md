@@ -176,7 +176,7 @@ remote observation evidence, **not** proof output was delivered. There is one
 HTTP dispatch and one output attempt, no automatic retry/replay and no
 cross-process exactly-once delivery promise.
 
-## Integration gates and validation
+## Historical H1 integration gates and validation
 
 This lane exclusively adds `src/runtime_v2/**`, `tests/runtime_v2.rs` and this
 document. The coordinator must add the optional manifest feature
@@ -213,7 +213,8 @@ not passing runtime tests. After adding the feature/export, the coordinator's
 serialized validator must run the focused `fabric-cli` runtime-v2 test target,
 all-target checks/lints and affected consumers, then independent reviews.
 
-There is still **no standalone v2 HTTP/auth/output host or executable dispatch**.
+At the original H1 checkpoint there was **no standalone v2 HTTP/auth/output
+host or executable dispatch**.
 The default CLI is untouched. Caller-injected fakes prove neither deployed
 Notebook/Livy qualification nor real executable remote completion. HTTP
 authorization/redirect/deadline/streaming behavior, actual metadata-backed
@@ -221,3 +222,105 @@ resolver, atomic no-clobber file sink, terminal stream policy, native platform
 acceptance and credential backend remain explicit host gaps. No WS/network
 streaming, credential/settings discovery, live/auth operation, PR, push or
 merge is part of this slice.
+
+## Shared native host composition
+
+With `runtime-v2,native-host`, `runtime_v2::host` adds an explicit composition
+seam, not a second SDK engine:
+
+- `ExplicitResolver::new(OwnerPath, ResolvedTarget)` binds one exact typed human
+  owner to the caller's existing SDK object. Foreign owners fail before execution.
+- `setup(original_deadline, cancelled, local_constructor)` bounds synchronous
+  selection/session construction on the same owned-worker policy. Its
+  `SetupError::Work(E)` preserves the caller's typed configuration error;
+  `SetupError::Host(HostError)` reports interruption/worker failure. Debug output
+  redacts the caller error. Queued work is aborted, and late results discarded.
+  The callback constructs existing local bindings only, never HTTP or token
+  acquisition. `prepare_destination` consumes this same helper.
+- `prepare_destination(label, cwd, deadline, cancelled)` checks output on an
+  owned worker, without creating files. `Destination::check` is the synchronous
+  equivalent for callers already on a blocking worker.
+- `acquire(invocation, executor, resolver, options, destination, deadline,
+  cancelled)` calls the existing `RuntimeHead` and SDK, retaining one complete
+  bounded receipt. `PendingRead::deliver(destination, deadline, cancelled)`
+  consumes the observation once. It atomically uses `create_new` for files.
+- The caller supplies **one original `Instant` deadline**, including preflight,
+  credential acquisition, HTTP streaming, serialization and delivery. Pin one
+  cancellation future and borrow it across phases; do not reinstall a signal
+  listener or restart the timeout between phases. Cancellation is local only.
+
+Delivery reuses the native host's owned-handle worker policy. Workers do not
+hold Rust's global stdout/stderr locks. Raw UTF-8 output to a Windows console is
+rejected by that existing policy; redirect stdout or select a file. Partial
+delivery and abandoned workers are not rolled back or replayed; byte counts are
+snapshots, not a promise that an abandoned OS write has stopped. Front ends must
+bound runtime shutdown. Small ASCII diagnostics use owned stderr and the original
+deadline, with no synchronous fallback when it is blocked or time has expired.
+Strict pre-cancellation admission and queued-worker abortion are explicitly
+selected for runtime setup/delivery. Existing hosts retain their original
+admitted-worker/detachment policy; this runtime opt-in does not change their
+published cancellation behavior or frozen output tests.
+`HostError::receipt` retains the full completed observation on failed delivery,
+including an output-path race. Its `Debug`, `Display` and diagnostic output
+never print the retained source/output/URL. Only the caller may explicitly
+inspect that typed evidence; it does not authorize replay.
+An accepted-only receipt retains HTTP 202 and its `accepted` status, while the
+host diagnostic's `readCompleted` remains false even if output delivery fails.
+
+Executable Fabric-profile child modules can reuse the existing
+`v2_main::capture_fabric_selection()` and `NativeSession::new(...)` parent
+composition. Ordinary GET consumes the same capture helper, so the existing
+auth mode, selected account/tenant and Fabric-host knobs have one unchanged
+implementation. No new configuration framework or credential provider is added.
+Construct `NativeFabricExecutor` from that exact session context and HTTP
+executor; the SDK scope must use the same explicitly selected endpoint.
+This supports the existing approved Fabric-profile boundary, not MWC.
+
+`NativeFabricExecutor` still accepts only its exact Fabric `/v1` binding.
+The additional default-off `notebook-workload` feature instead composes the
+separate verified-principal/MwcToken foundation through one explicit
+[Notebook connector](runtime-notebook-host.md). It never substitutes a Fabric
+bearer for workload authorization or expands the Fabric adapter guard.
+
+The pinned FNTK authentication contract is now available: at the same
+`e250d5d32b04efcc5623a414a361727a93c271ce` source revision,
+`constants.py` and `auth/mwc_token.py` distinguish the PBI exchange audience
+`https://analysis.windows.net/powerbi/api` (with `/.default` for OAuth scope)
+from Fabric's `https://api.fabric.microsoft.com`. The exchange must bind the
+same verified tenant/object principal and selected capacity/workspace/Notebook.
+Actual workload reads use `Authorization: MwcToken ...`, not a Fabric bearer.
+Any returned binding must match an already selected context; this implementation
+does not adopt automatic endpoint/capacity discovery from that source.
+
+The adopted [foundation](notebook-workload-foundation.md) supplies the distinct
+PBI provider opt-in, actual cryptographic verifier and bounded selected-context
+MwcToken exchange. Only Notebook connection construction chooses that opt-in;
+the existing headless constructor and ordinary Fabric paths remain unchanged.
+Caller metadata alone is still not verified identity. The real verifier checks
+both access tokens and their signed principal continuity.
+
+`runtime_native_host` tests the real parser, shared host and SDK. Notebook
+fidelity uses a scripted `NativeExecutor` and is **not** production MWC proof.
+A separate supported Fabric-profile test injects an Azure credential and HTTP
+client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor`
+stack; negative Notebook tests verify that stack refuses before requesting a
+token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
+
+The opt-in `fab-cli-v2` build recognizes precisely Notebook `get .../src/content`
+and its `artifact notebook get` equivalent. With `notebook-workload`, both
+execute the actual adapter using an absolute `FAB_RUST_NOTEBOOK_BINDING`
+non-secret JSON file. Without that feature they still return nonzero
+`NotebookWorkloadBindingRequired` before identity or HTTP.
+The connector requires all origins, IDs, account and tenant explicitly selected
+and matched before authentication. Missing or invalid bindings fail locally;
+returned contexts only confirm selections. `runtime_notebook_native` adds
+parser-to-native-headless-credential-to-verifier/HTTP execution tests, not a
+replacement fake command engine. Actual current-head native qualification
+remains separate from source availability.
+Unsupported flags and excessive caller budgets remain argument errors.
+Other owners/facets and update facades retain their existing dispatch.
+The host does not mount the five session/statement sibling leaves.
+
+The available selected specification index still references Commands r30,
+consistent with the pins above; no newer private specification body was
+available through the current tools. No private specification is copied here.
