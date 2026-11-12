@@ -111,9 +111,21 @@ acceptance or three-platform completion is claimed by these tests.
 
 `reports::create::ReportCreateValidator` supplies offline Report-specific input
 validation to the existing SDK create planner. It does not mount a command,
-authorize a write, advertise conflict-policy guarantees or add an executor.
+authorize a write or add an executor. Its `submit` method delegates an actual
+create plan to the existing `ItemMutations` request path, retaining the caller's
+completion policy and shared operation failure evidence without replay.
 Executable integration depends on the separately owned shared v2 create host.
-The new `report_create` test source is not execution evidence.
+The new SDK `report_create` and CLI `v2_create_report` test sources are not
+execution evidence. The latter currently composes the existing parser, planner,
+Report adapter and scripted operation executor, not the unreleased native host.
+
+The public Create Report API documents `ItemDisplayNameAlreadyInUse`, not an
+upsert or repeated-name create contract. The Report capability permits
+default-error creation and an unchanged exact-existing skip result; the native
+POST, not a race-free preflight claim, enforces creation conflicts. Overwrite,
+force and duplicate fail as unsupported, including for a missing target. A skip
+must still validate explicit input. No full replacement, delete/recreate or
+automatic renaming is advertised.
 
 The bounded adapter selects only an exact named Report in an explicit workspace.
 Its native request body requires a matching `displayName` and a `definition`;

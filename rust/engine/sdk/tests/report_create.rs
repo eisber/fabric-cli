@@ -8,13 +8,18 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_sdk::{
     items::create::{
-        CreateError, CreateInputValidator, CreateTarget, InputDisposition, NativeId, SchemaRef,
-        TargetScope,
+        ConflictPolicy, CreateAction, CreateError, CreateInputValidator, CreateTarget,
+        InputDisposition, LeafState, NativeId, Preflight, ResourceIdentity, SchemaRef, TargetScope,
+        plan_create,
     },
-    reports::create::{ReportCreateValidator, SCHEMA},
+    reports::create::{ReportCreateValidator, SCHEMA, capabilities},
+};
+use fabric_sdk_workspaces::mutations::{
+    CompletionPolicy, ResourceError, ResourceMethod, ResourceOperation, ResourceOperations,
+    ResourceOutcome,
 };
 use serde_json::{Value, json};
-use std::num::NonZeroUsize;
+use std::{future::Future, num::NonZeroUsize, pin::Pin};
 
 const WS: &str = "11111111-1111-1111-1111-111111111111";
 const OTHER_WS: &str = "33333333-3333-3333-3333-333333333333";
@@ -246,4 +251,174 @@ fn exact_body_byte_budget_is_inclusive() {
             .inspect(&target(), &supplied)
             .is_err()
     );
+}
+
+#[derive(Default)]
+struct Capture {
+    requests: Vec<ResourceOperation>,
+    outcome: Option<ResourceOutcome>,
+    failure: Option<ResourceError>,
+}
+
+impl ResourceOperations for Capture {
+    fn execute(
+        &mut self,
+        operation: ResourceOperation,
+    ) -> Pin<Box<dyn Future<Output = Result<ResourceOutcome, ResourceError>> + Send + '_>> {
+        self.requests.push(operation);
+        let result = if let Some(error) = self.failure.take() {
+            Err(error)
+        } else {
+            Ok(self.outcome.clone().unwrap())
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+fn existing() -> Preflight {
+    Preflight::Leaf(LeafState::Existing(
+        ResourceIdentity::new(
+            NativeId::new(MODEL).unwrap(),
+            NativeId::new(WS).unwrap(),
+            "Report",
+        )
+        .unwrap(),
+    ))
+}
+
+#[test]
+fn native_policy_support_rejects_overwrite_and_duplicate_even_when_missing() {
+    for preflight in [Preflight::Leaf(LeafState::Missing), existing()] {
+        for policy in [ConflictPolicy::Overwrite, ConflictPolicy::Duplicate] {
+            assert!(matches!(
+                plan_create(
+                    policy,
+                    target(),
+                    preflight.clone(),
+                    &capabilities(),
+                    Some(body()),
+                    &validator()
+                ),
+                Err(CreateError::UnsupportedPolicy)
+            ));
+        }
+    }
+    assert!(matches!(
+        plan_create(
+            ConflictPolicy::Error,
+            target(),
+            existing(),
+            &capabilities(),
+            Some(body()),
+            &validator()
+        ),
+        Err(CreateError::AlreadyExists)
+    ));
+    let plan = plan_create(
+        ConflictPolicy::Skip,
+        target(),
+        existing(),
+        &capabilities(),
+        Some(body()),
+        &validator(),
+    )
+    .unwrap();
+    assert!(matches!(plan.action(), CreateAction::Skip { .. }));
+    let mut invalid = body();
+    invalid["definition"] = Value::Null;
+    assert!(matches!(
+        plan_create(
+            ConflictPolicy::Skip,
+            target(),
+            existing(),
+            &capabilities(),
+            Some(invalid),
+            &validator()
+        ),
+        Err(CreateError::InputRejected)
+    ));
+}
+
+#[tokio::test]
+async fn native_create_delegates_one_exact_report_post_with_original_body_and_completion() {
+    let supplied = body();
+    let operation = Some("55555555-5555-5555-5555-555555555555".to_owned());
+    for policy in [ConflictPolicy::Error, ConflictPolicy::Skip] {
+        for completion in [
+            CompletionPolicy::ReturnAccepted,
+            CompletionPolicy::WaitForResult,
+        ] {
+            let plan = plan_create(
+                policy,
+                target(),
+                Preflight::Leaf(LeafState::Missing),
+                &capabilities(),
+                Some(supplied.clone()),
+                &validator(),
+            )
+            .unwrap();
+            let mut capture = Capture {
+                outcome: Some(ResourceOutcome::Accepted {
+                    operation_id: operation.clone(),
+                }),
+                ..Capture::default()
+            };
+            let outcome = validator()
+                .submit(&mut capture, &plan, completion)
+                .await
+                .unwrap();
+            assert_eq!(
+                outcome,
+                ResourceOutcome::Accepted {
+                    operation_id: operation.clone()
+                }
+            );
+            assert_eq!(capture.requests.len(), 1);
+            assert_eq!(capture.requests[0].method(), ResourceMethod::Post);
+            assert_eq!(
+                capture.requests[0].path(),
+                format!("/v1/workspaces/{WS}/reports")
+            );
+            assert_eq!(capture.requests[0].body(), Some(&supplied));
+            assert_eq!(capture.requests[0].completion(), completion);
+        }
+    }
+}
+
+#[tokio::test]
+async fn unchanged_plan_is_not_a_write_and_mutation_failure_is_not_replayed() {
+    let plan = plan_create(
+        ConflictPolicy::Skip,
+        target(),
+        existing(),
+        &capabilities(),
+        Some(body()),
+        &validator(),
+    )
+    .unwrap();
+    let mut capture = Capture::default();
+    assert!(
+        validator()
+            .submit(&mut capture, &plan, CompletionPolicy::ReturnAccepted)
+            .await
+            .is_err()
+    );
+    assert!(capture.requests.is_empty());
+    let plan = plan_create(
+        ConflictPolicy::Error,
+        target(),
+        Preflight::Leaf(LeafState::Missing),
+        &capabilities(),
+        Some(body()),
+        &validator(),
+    )
+    .unwrap();
+    capture.failure = Some(ResourceError::input());
+    assert!(
+        validator()
+            .submit(&mut capture, &plan, CompletionPolicy::ReturnAccepted)
+            .await
+            .is_err()
+    );
+    assert_eq!(capture.requests.len(), 1);
 }

@@ -3,20 +3,45 @@
 
 //! Offline validation of the bounded native Report definition-create request.
 //!
-//! This adapter supplies schema evidence to the shared create planner. It does
-//! not advertise conflict guarantees, resolve model references, authorize a
-//! mutation, or install an execution host.
+//! This adapter supplies schema evidence and native policy support to the shared
+//! create planner, then delegates submission to existing item operations. It does
+//! not resolve model references, authorize a mutation or install an execution host.
 
 use super::ReportDefinition;
-use crate::{representations::DefinitionRead, v2::WorkspaceIdentity};
+use crate::{
+    items::{ItemCollection, mutations::ItemMutations},
+    representations::DefinitionRead,
+    v2::WorkspaceIdentity,
+};
 use fabric_sdk_items::create::{
-    CreateError, CreateInputValidator, CreateTarget, InputDisposition, SchemaRef, TargetScope,
+    ConflictPolicy, CreateAction, CreateCapabilities, CreateError, CreateInputValidator,
+    CreatePlan, CreateSupport, CreateTarget, DuplicateSupport, InputDisposition, SchemaRef,
+    SkipSupport, TargetScope,
+};
+use fabric_sdk_workspaces::mutations::{
+    CompletionPolicy, ResourceError, ResourceOperations, ResourceOutcome,
 };
 use serde_json::Value;
 use std::num::NonZeroUsize;
 
 /// Schema identity for the bounded public `CreateReportRequest` definition mode.
 pub const SCHEMA: &str = "fabric/report/create-definition/v1";
+
+/// Native Report policy support, not guarantees inferred from a name preflight.
+///
+/// The public Create Report API rejects `ItemDisplayNameAlreadyInUse`; this
+/// adapter never upserts. Exact existing Report targets may be left unchanged.
+/// Neither complete identity-preserving replacement nor repeated-name creation
+/// is advertised by this API, so overwrite/force and duplicate remain unsupported.
+pub fn capabilities() -> CreateCapabilities {
+    CreateCapabilities {
+        schema: SchemaRef::new(SCHEMA).expect("constant Report schema"),
+        create: CreateSupport::RejectExisting,
+        replacement: None,
+        skip: SkipSupport::ExactExistingUnchanged,
+        duplicate: DuplicateSupport::Unsupported,
+    }
+}
 
 /// Caller-bounded Report input validator, with no I/O or credential dependency.
 ///
@@ -96,6 +121,41 @@ impl ReportCreateValidator {
             return Err(CreateError::InputRejected);
         }
         Ok(definition)
+    }
+
+    /// Submit one validated creation action through the existing item operations.
+    ///
+    /// The caller must first bind and obtain immediate approval for this exact
+    /// plan, body, effect and immutable execution context. Credentials, whole
+    /// deadlines, cancellation, acceptance/result observation and output remain
+    /// owned by that shared host. This adapter adds no polling or replay.
+    ///
+    /// # Errors
+    /// Rejects unsupported plans, schemas or substituted inputs before execution,
+    /// and returns shared mutation failures with their existing evidence intact.
+    pub async fn submit(
+        &self,
+        executor: &mut dyn ResourceOperations,
+        plan: &CreatePlan,
+        completion: CompletionPolicy,
+    ) -> Result<ResourceOutcome, ResourceError> {
+        if !matches!(plan.policy(), ConflictPolicy::Error | ConflictPolicy::Skip) {
+            return Err(ResourceError::input());
+        }
+        let CreateAction::Create { input } = plan.action() else {
+            return Err(ResourceError::input());
+        };
+        self.validate(input.target(), input.schema(), input.supplied())
+            .map_err(|_| ResourceError::input())?;
+        let body = input.supplied().ok_or_else(ResourceError::input)?.clone();
+        ItemMutations::create_with_completion(
+            executor,
+            input.target().parent_id().as_str(),
+            ItemCollection::Report,
+            body,
+            completion,
+        )
+        .await
     }
 }
 
