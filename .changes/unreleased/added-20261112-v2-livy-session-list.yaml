@@ -1,0 +1,6 @@
+kind: added
+body: Add an opt-in CLI v2 classic Livy session-list leaf for explicit Fabric Lakehouse bindings, with one-page receipts and fail-closed native authorization.
+time: 2026-11-12T09:00:00Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
