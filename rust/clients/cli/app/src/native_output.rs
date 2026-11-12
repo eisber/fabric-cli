@@ -7,6 +7,10 @@ use fabric_cli_output::OutputStream;
 use std::{
     future::Future,
     io::{self, IsTerminal, Write},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Instant,
 };
 
@@ -18,9 +22,30 @@ pub(crate) enum OwnedWrite<T, F> {
 }
 
 pub(crate) async fn write_owned<W, T, F>(
+    writer: W,
+    deadline: Instant,
+    cancelled: impl Future<Output = F>,
+    write: impl FnOnce(&mut W) -> io::Result<T> + Send + 'static,
+) -> OwnedWrite<T, F>
+where
+    W: Write + Send + 'static,
+    T: Send + 'static,
+{
+    write_owned_stoppable(
+        writer,
+        deadline,
+        cancelled,
+        Arc::new(AtomicBool::new(false)),
+        write,
+    )
+    .await
+}
+
+pub(crate) async fn write_owned_stoppable<W, T, F>(
     mut writer: W,
     deadline: Instant,
     cancelled: impl Future<Output = F>,
+    stopped: Arc<AtomicBool>,
     write: impl FnOnce(&mut W) -> io::Result<T> + Send + 'static,
 ) -> OwnedWrite<T, F>
 where
@@ -30,12 +55,43 @@ where
     if Instant::now() >= deadline {
         return OwnedWrite::Deadline;
     }
-    let worker = tokio::task::spawn_blocking(move || write(&mut writer));
+    let mut cancelled = std::pin::pin!(cancelled);
+    if let Some(failure) = std::future::poll_fn(|cx| {
+        std::task::Poll::Ready(match cancelled.as_mut().poll(cx) {
+            std::task::Poll::Ready(failure) => Some(failure),
+            std::task::Poll::Pending => None,
+        })
+    })
+    .await
+    {
+        return OwnedWrite::Cancelled(failure);
+    }
+    let worker_stop = Arc::clone(&stopped);
+    let mut worker = tokio::task::spawn_blocking(move || {
+        if worker_stop.load(Ordering::SeqCst) || Instant::now() >= deadline {
+            return Err(io::ErrorKind::Interrupted.into());
+        }
+        write(&mut writer)
+    });
+    struct StopWorker {
+        stopped: Arc<AtomicBool>,
+        abort: tokio::task::AbortHandle,
+    }
+    impl Drop for StopWorker {
+        fn drop(&mut self) {
+            self.stopped.store(true, Ordering::SeqCst);
+            self.abort.abort();
+        }
+    }
+    let _stop = StopWorker {
+        stopped,
+        abort: worker.abort_handle(),
+    };
     tokio::select! {
         biased;
         _ = tokio::time::sleep_until(deadline.into()) => OwnedWrite::Deadline,
-        failure = cancelled => OwnedWrite::Cancelled(failure),
-        result = worker => match result {
+        failure = cancelled.as_mut() => OwnedWrite::Cancelled(failure),
+        result = &mut worker => match result {
             Ok(result) => OwnedWrite::Complete(result),
             Err(_) => OwnedWrite::WorkerFailed,
         },
