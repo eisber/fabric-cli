@@ -10,7 +10,54 @@ The Python workflows and packaging are unchanged.
 
 The [bounded candidate preflight](fast-check.md) documents the separate Linux
 fast workflow, immutable product/CI receipts, and guarded native-dispatch relay.
-Fast success is not a replacement for the three native OS gates.
+Fast success is not a replacement for the three native OS qualification gates.
+
+## Provisional v2 integration smoke
+
+The owner-approved 2026-11-12 policy reduces the premerge gate only for
+`dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli`.
+**Integration smoke (Windows, provisional)** runs in one `windows-2025` job on
+PRs targeting that exact branch and on pushes to that exact ref. It builds the
+actual `fabric-cli` headless `fab-cli-v2` binary, then the default `fab-rs` binary,
+once per debug feature profile. Headless explicitly disables default features and
+enables only `headless`; it is not the separate grouped `fab-cli` local host.
+The first locked build can restore public Cargo dependencies; the subsequent
+baseline build is offline. Executable cases are help, exact version, and
+deterministic sanitized invalid-input failures, with explicit exit/stream/JSON
+assertions and an isolated environment without credentials or external tools.
+No live identity or service operation is invoked.
+
+The PR checkout is the exact event merge commit, verified to have exactly the
+recorded base and source parents. Push receipts bind the actual commit and the
+previous ref, which must remain an ancestor (multi-commit fast forwards are
+allowed). Receipts retain source/base/checkout, toolchain, lock hash, binary
+hashes, command exits/output logs and timings, plus before/after per-file source
+inventories. Failure and missing evidence never become a pass. Cheap contracts:
+
+```text
+node --test rust/scripts/integration-smoke.test.cjs
+```
+
+There is deliberately no cross-run build cache in this narrow bootstrap.
+Windows cold compilation and dependency restoration can take minutes; the
+45-minute job and 20-minute per-build limits are bounds, not timing claims.
+The second profile reuses dependencies in the same target, not a purported
+subsecond full validation. Receipts measure actual elapsed time. No warm-run
+speedup is claimed without a measured run.
+
+On integration PRs/pushes the old selector, three-OS native jobs and stable
+**Rust validation** gate are visibly skipped, not reported as full validation
+success. Optional TOM is likewise skipped for integration PRs. All existing
+full suites remain on their previous other-branch, merge-group, scheduled and
+manual paths; manual dispatch at the integration ref can diagnose the combined
+branch. Broad failures remain visible repair debt. Smoke is not full-feature,
+cross-platform, Python parity, authentication or release qualification.
+Known material security, authentication and data-loss blockers and mandatory
+provider checks/reviews still apply. The serial integration driver must recheck
+source/base/conflicts and authority before merging and require postmerge basic
+smoke before the next separately authorized queue entry.
+
+## Full qualification and historical evidence
 
 Current local and PR selection uses the shared
 [dependency-aware validator](dependency-validation.md). Cargo metadata supplies
