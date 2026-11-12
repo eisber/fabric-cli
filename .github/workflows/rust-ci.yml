@@ -136,7 +136,7 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/registry/index
             ${{ env.CARGO_HOME }}/git/db
-          key: rust-deps-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-v1
+          key: rust-deps-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-all-targets-v1
       - name: Restore bounded compilation cohort
         id: cargo-cache
         timeout-minutes: 3
@@ -156,9 +156,8 @@ jobs:
           cargo --version
           rustc --version --verbose
           rustup show active-toolchain
-          host=$(rustc --version --verbose | sed -n 's/^host: //p')
-          test -n "$host"
-          cargo fetch --locked --target "$host"
+          # Offline architecture contracts inspect other targets without compiling them.
+          cargo fetch --locked
       - name: Recompute and verify the same dependency selection on this host
         timeout-minutes: 3
         run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"

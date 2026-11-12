@@ -181,8 +181,10 @@ checks. Real subprocess timeout, cancellation and ownership tests are a separate
 plans and when their validator inputs change, not repeatedly for an unrelated
 Dataflow change or each profile's selector dependency.
 
-Native CI uses an isolated Cargo home and fetches dependencies for the recorded
-native host. It caches registry archives/index and Git databases, not expanded
+Native CI uses an isolated Cargo home and fetches the locked dependency sources,
+including those needed by offline cross-target graph assertions. This does not
+cross-compile tests: execution still uses the recorded native host.
+It caches registry archives/index and Git databases, not expanded
 registry source trees, separately from `rust/target`.
 Keys include runner OS, architecture, pinned toolchain, lockfile,
 manifests and explicit build settings. Two immutable compilation cohorts per

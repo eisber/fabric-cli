@@ -823,7 +823,9 @@ test('native CI restores compatible build outputs before Cargo and bounds each v
   assert.ok(workflow.includes('matrix.cache_writer'));
   assert.ok(workflow.includes('steps.target-size.outputs.eligible'));
   assert.ok(workflow.includes('CARGO_HOME=%s/rust-cargo-home\\n'));
-  assert.match(workflow, /cargo fetch --locked --target "\$host"/);
+  assert.match(workflow, /cargo fetch --locked/);
+  assert.ok(!workflow.includes('cargo fetch --locked --target'),
+    'Offline cross-target dependency-graph contracts need their locked sources too');
   assert.match(workflow, /--command-timeout-seconds 600/);
 });
 
