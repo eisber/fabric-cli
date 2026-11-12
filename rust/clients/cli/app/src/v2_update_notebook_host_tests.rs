@@ -87,7 +87,7 @@ fn bound_with_credential(
 }
 
 #[derive(Debug)]
-struct PendingCredential;
+struct PendingCredential(Arc<tokio::sync::Notify>);
 
 #[async_trait]
 impl TokenCredential for PendingCredential {
@@ -96,6 +96,7 @@ impl TokenCredential for PendingCredential {
         _: &[&str],
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
+        self.0.notify_one();
         pending().await
     }
 }
@@ -103,18 +104,27 @@ impl TokenCredential for PendingCredential {
 #[tokio::test]
 async fn cancellation_during_credentials_retains_failed_no_send_receipt_across_publication() {
     let dir = tempfile::tempdir().unwrap();
-    let prepared = bound_with_credential(dir.path(), &[], Arc::new(PendingCredential));
+    let started = Arc::new(tokio::sync::Notify::new());
+    let prepared = bound_with_credential(
+        dir.path(),
+        &[],
+        Arc::new(PendingCredential(started.clone())),
+    );
     let mut policy = ExactApproval(Some(prepared.update().prepared().clone()));
     let backend = wire(200, metadata(), false);
-    let error = execute_and_publish(
-        prepared,
-        backend.clone(),
-        &mut policy,
-        tokio::time::sleep(Duration::from_millis(10)),
-        tokio::time::Instant::now() + Duration::from_secs(5),
-        io::sink(),
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        execute_and_publish(
+            prepared,
+            backend.clone(),
+            &mut policy,
+            async move { started.notified().await },
+            tokio::time::Instant::now() + Duration::from_secs(5),
+            io::sink(),
+        ),
     )
     .await
+    .expect("credential cancellation must complete")
     .unwrap_err();
     assert_eq!(error.0, "InterruptedAfterDispatch");
     assert_eq!(error.2["status"], "failed");
@@ -304,7 +314,7 @@ async fn all_remote_classifications_retain_receipts_without_polling_or_replay() 
 }
 
 #[derive(Clone)]
-struct PendingPatch(Arc<Mutex<usize>>);
+struct PendingPatch(Arc<Mutex<usize>>, Arc<tokio::sync::Notify>);
 
 impl OperationExecutor for PendingPatch {
     fn execute<'a>(
@@ -314,6 +324,7 @@ impl OperationExecutor for PendingPatch {
     {
         assert_eq!(format!("{:?}", request.method()), "Patch");
         *self.0.lock().unwrap() += 1;
+        self.1.notify_one();
         Box::pin(pending())
     }
 
@@ -331,16 +342,21 @@ async fn cancellation_during_patch_retains_unknown_receipt_across_publication_wi
     let dir = tempfile::tempdir().unwrap();
     let prepared = bound(dir.path(), &[]);
     let mut policy = ExactApproval(Some(prepared.update().prepared().clone()));
-    let backend = PendingPatch(Arc::default());
-    let error = execute_and_publish(
-        prepared,
-        backend.clone(),
-        &mut policy,
-        tokio::time::sleep(Duration::from_millis(10)),
-        tokio::time::Instant::now() + Duration::from_secs(5),
-        io::sink(),
+    let backend = PendingPatch(Arc::default(), Arc::default());
+    let started = backend.1.clone();
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        execute_and_publish(
+            prepared,
+            backend.clone(),
+            &mut policy,
+            async move { started.notified().await },
+            tokio::time::Instant::now() + Duration::from_secs(5),
+            io::sink(),
+        ),
     )
     .await
+    .expect("PATCH cancellation must complete")
     .unwrap_err();
     assert_eq!(error.0, "InterruptedAfterDispatch");
     assert_eq!(error.2["status"], "unknown");
