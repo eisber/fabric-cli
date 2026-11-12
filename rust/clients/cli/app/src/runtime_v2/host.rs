@@ -169,11 +169,11 @@ where
     T: Send + 'static,
     E: Send + 'static,
 {
-    let result = owned_output::write_owned_stoppable(
+    let result = owned_output::write_owned_with_policy(
         io::sink(),
         deadline,
         cancelled,
-        Arc::new(AtomicBool::new(false)),
+        Some(Arc::new(AtomicBool::new(false))),
         move |_| Ok(work()),
     )
     .await;
@@ -328,11 +328,11 @@ impl PendingRead {
         let stopped = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stopped);
         let bytes = self.bytes;
-        let result = owned_output::write_owned_stoppable(
+        let result = owned_output::write_owned_with_policy(
             io::sink(),
             deadline,
             cancelled,
-            stopped,
+            Some(stopped),
             move |_| {
                 if Instant::now() >= deadline {
                     return Err(io::ErrorKind::TimedOut.into());
@@ -540,11 +540,11 @@ mod tests {
 
     #[tokio::test]
     async fn already_cancelled_output_does_not_start_a_worker() {
-        let result = owned_output::write_owned_stoppable(
+        let result = owned_output::write_owned_with_policy(
             io::sink(),
             Instant::now() + Duration::from_secs(1),
             async {},
-            Arc::new(AtomicBool::new(false)),
+            Some(Arc::new(AtomicBool::new(false))),
             |_| -> io::Result<()> { panic!("no worker after latched cancellation") },
         )
         .await;
