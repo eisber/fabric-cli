@@ -91,4 +91,70 @@ fn unsupported_options_and_excessive_budget_never_look_like_missing_authenticati
         let error: Value = serde_json::from_slice(&result.stderr).unwrap();
         assert_ne!(error["error"]["code"], "NotebookWorkloadBindingRequired");
     }
+
+    #[cfg(feature = "notebook-workload")]
+    fn selected_binding() -> Value {
+        serde_json::json!({
+            "schemaVersion":1,
+            "owner":{"workspace":"Team.Workspace","artifact":"Analysis.Notebook","kind":"notebook"},
+            "environment":"production","catalogOrigin":"https://api.fabric.microsoft.com",
+            "clusterOrigin":"https://selected-cluster.analysis.windows.net",
+            "workloadOrigin":"https://selected-notebook.fabric.microsoft.com",
+            "capacityId":"44444444-4444-4444-4444-444444444444",
+            "workspaceId":"55555555-5555-5555-5555-555555555555",
+            "notebookId":"66666666-6666-6666-6666-666666666666",
+            "account":"22222222-2222-2222-2222-222222222222",
+            "tenant":"11111111-1111-1111-1111-111111111111"
+        })
+    }
+
+    #[cfg(feature = "notebook-workload")]
+    #[test]
+    fn executable_output_preflight_precedes_even_native_identity_selection() {
+        let temp = tempfile::tempdir().unwrap();
+        let binding = temp.path().join("binding.json");
+        std::fs::write(&binding, serde_json::to_vec(&selected_binding()).unwrap()).unwrap();
+        let output = temp.path().join("existing.json");
+        std::fs::write(&output, b"preserve").unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+            .args(["get", CONTENT, "--output"])
+            .arg(&output)
+            .env("FAB_RUST_NOTEBOOK_BINDING", &binding)
+            .env("FAB_RUST_AUTH_MODE", "must-not-be-selected")
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "OutputUnavailable");
+        assert_eq!(std::fs::read(output).unwrap(), b"preserve");
+    }
+
+    #[cfg(feature = "notebook-workload")]
+    #[test]
+    fn executable_selected_identity_mismatch_fails_before_credential_construction_or_http() {
+        let temp = tempfile::tempdir().unwrap();
+        let binding = temp.path().join("binding.json");
+        std::fs::write(&binding, serde_json::to_vec(&selected_binding()).unwrap()).unwrap();
+        let output = temp.path().join("not-created.json");
+        let result = Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+            .args(["artifact", "notebook", "get", CONTENT, "--output"])
+            .arg(&output)
+            .env("FAB_RUST_NOTEBOOK_BINDING", &binding)
+            .env("FAB_RUST_AUTH_MODE", "client-secret")
+            .env("FAB_RUST_TENANT", "11111111-1111-1111-1111-111111111111")
+            .env("FAB_RUST_CLIENT_ID", "77777777-7777-7777-7777-777777777777")
+            .env("FAB_RUST_CLIENT_SECRET", "synthetic-offline-secret")
+            .env_remove("AZURE_TENANT_ID")
+            .env_remove("AZURE_CLIENT_ID")
+            .env_remove("FAB_RUST_FABRIC_HOST")
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(2));
+        assert!(result.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "NotebookIdentityMismatch");
+        assert!(!output.exists());
+        assert!(!String::from_utf8_lossy(&result.stderr).contains("synthetic-offline-secret"));
+    }
 }
