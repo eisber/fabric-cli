@@ -762,6 +762,35 @@ fn invalid_scope_ids_fail_before_token() {
     }
 }
 
+#[cfg(feature = "headless")]
+#[tokio::test]
+async fn pinned_notebook_pbi_scope_is_not_supported_by_existing_native_headless_provider() {
+    use azure_core::credentials::Secret;
+    use fabric_identity::headless::{HeadlessCredential, HeadlessInput, ServiceIdentity};
+
+    let wire = Arc::new(Wire {
+        response: Mutex::new(None),
+        requests: Mutex::new(Vec::new()),
+    });
+    let credential = HeadlessCredential::new(
+        HeadlessInput::ClientSecret {
+            identity: ServiceIdentity::new(
+                "11111111-1111-1111-1111-111111111111",
+                "22222222-2222-2222-2222-222222222222",
+            )
+            .unwrap(),
+            secret: Secret::new("synthetic-offline-secret"),
+        },
+        wire.clone(),
+    )
+    .unwrap();
+    let scope = "https://analysis.windows.net/powerbi/api/.default";
+    assert_ne!(Audience::Fabric.scope(), scope);
+    let error = credential.get_token(&[scope], None).await.unwrap_err();
+    assert_eq!(error.to_string(), "unsupported headless credential scope");
+    assert!(wire.requests.lock().unwrap().is_empty());
+}
+
 #[test]
 fn cancelled_queued_delivery_is_aborted_before_file_creation() {
     struct Release(Option<std::sync::mpsc::Sender<()>>);

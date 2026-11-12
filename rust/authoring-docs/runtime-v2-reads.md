@@ -285,6 +285,28 @@ guard. Enabling production Notebook reads requires an authoritative workload
 authorization contract and a separately reviewed, explicitly selected adapter.
 No configuration, token acquisition or endpoint discovery is installed here.
 
+The pinned FNTK authentication contract is now available: at the same
+`e250d5d32b04efcc5623a414a361727a93c271ce` source revision,
+`constants.py` and `auth/mwc_token.py` distinguish the PBI exchange audience
+`https://analysis.windows.net/powerbi/api` (with `/.default` for OAuth scope)
+from Fabric's `https://api.fabric.microsoft.com`. The exchange must bind the
+same verified tenant/object principal and selected capacity/workspace/Notebook.
+Actual workload reads use `Authorization: MwcToken ...`, not a Fabric bearer.
+Any returned binding must match an already selected context; this implementation
+does not adopt automatic endpoint/capacity discovery from that source.
+
+The remaining prerequisite is concrete native functionality, not unknown source:
+`fabric-core::Audience` has no PBI variant, and the headless provider's
+`TokenCredential::get_token` rejects the PBI scope before provider HTTP. Its
+managed-identity resource guard also excludes that resource. `RequestContext`
+and `CredentialSelection` explicitly do not verify token claims.
+The interactive provider's token-endpoint ID metadata is not a verified
+access-token-principal capability for this headless host. No supported native
+same-principal PBI acquisition/verification or MwcToken exchange/egress binding
+exists to compose here. Adding one requires an approved native identity/HTTP
+foundation with explicit selected origins, not an unconfigured injected
+"production" stub or widening the existing Fabric executor.
+
 `runtime_native_host` tests the real parser, shared host and SDK. Notebook
 fidelity uses a scripted `NativeExecutor` and is **not** production MWC proof.
 A separate supported Fabric-profile test injects an Azure credential and HTTP

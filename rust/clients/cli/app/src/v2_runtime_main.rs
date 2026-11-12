@@ -22,8 +22,10 @@ Options: --format json  --output FILE|-  -o FILE  --max-bytes N
 The full persisted IPYNB includes saved outputs, not live execution results.
 The host ceiling is 4 MiB wire, 1 MiB data, 2 MiB complete receipt.
 No metadata/definition fallback, overwrite, discovery, retry or remote cancel.
-Production reads require an approved explicitly bound Notebook workload adapter.
-The Fabric /v1 executor cannot authorize Notebook MWC routes.
+Production reads require a native PBI-audience credential with verified tenant
+and object identity, plus an explicitly bound Notebook MwcToken adapter.
+The existing headless provider rejects that PBI scope. Fabric /v1 cannot
+authorize Notebook MWC routes; its bearer is not an MwcToken.
 This build reports NotebookWorkloadBindingRequired before identity or HTTP.";
 
 /// Claim only this leaf or its own facade help, never all `artifact` invocations.
@@ -126,7 +128,7 @@ pub(crate) fn run(args: Vec<OsString>) -> u8 {
             let _ = write_stream(OutputStream::Stderr, br#"{"error":{"code":"BudgetExceeded","message":"Selected data budget exceeds the native host ceiling."}}"#.to_vec(), deadline).await;
             return 2;
         }
-        let _ = write_stream(OutputStream::Stderr, br#"{"error":{"code":"NotebookWorkloadBindingRequired","message":"An approved Notebook workload adapter with exact origin, capacity, workspace, artifact, audience, account and tenant binding is required. The Fabric /v1 executor cannot authorize this workload route."},"remoteCancelled":false,"remoteReplayed":false}"#.to_vec(), deadline).await;
+        let _ = write_stream(OutputStream::Stderr, br#"{"error":{"code":"NotebookWorkloadBindingRequired","message":"Native Notebook reads require a PBI-audience credential with verified tenant/object identity and an explicitly selected MwcToken workload adapter. The current headless provider rejects the required PBI scope; a Fabric /v1 bearer is not a substitute."},"remoteCancelled":false,"remoteReplayed":false}"#.to_vec(), deadline).await;
         1
     });
     runtime.shutdown_timeout(Duration::from_millis(100));
