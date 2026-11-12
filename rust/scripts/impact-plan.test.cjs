@@ -896,6 +896,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create-environment', 'environment_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
       'rust/engine/core/http/transport/Cargo.toml'],
   ];

@@ -12,7 +12,9 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+The opt-in `v2-create-environment` plus `headless` configuration now mounts the
+bounded [Environment metadata-only binding](environment-create.md) in
+`fab-cli-v2`. This is not a default/v1 mount or support for every resource/policy.
 
 ## Target grammar
 
@@ -139,9 +141,9 @@ contract. It does not establish a general-purpose JSON Schema validation
 capability or automatic validation of every JSON body. Valid JSON syntax alone
 is not evidence that a body satisfies the resource contract.
 
-The CLI library contract composes those inputs without establishing an
-executable mount. A root parser registration, service-host adapter, and
-resource-specific backend evidence are separate integration requirements.
+The CLI library contract alone does not establish an executable mount. The
+bounded Environment opt-in composes the existing root parser and service host;
+other resources still require separate resource-specific backend evidence.
 Passing a library test cannot establish that the current binary supports the
 target command or that a Fabric API supports every policy.
 
@@ -202,7 +204,8 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
+| Executable integration | Opt-in Environment metadata-only create mounts in `fab-cli-v2`; default/v1 behavior is unchanged. |
+| Environment backend | Definition-free native POST with `error` and exact-existing `skip`; no definitions, libraries, publish, settings, or compute operations. Source/test registration is not executed acceptance. |
 | Resource backend | No backend proof establishes that a resource implements all requested policies. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 

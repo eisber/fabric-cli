@@ -16,6 +16,8 @@ pub mod console;
 pub mod create_command;
 pub mod delete;
 pub mod deploy;
+#[cfg(feature = "v2-create-environment")]
+pub mod environment_create;
 mod errors;
 pub mod execute;
 pub mod exists_command;

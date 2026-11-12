@@ -48,6 +48,12 @@ mutations, replace `fab-rs`, or install a live data-schema host.
 See the [shared tabular file output contract](authoring-docs/tabular-output.md) for the
 export syntax, current consumers, and validation evidence limits.
 
+The opt-in [Environment create slice](authoring-docs/environment-create.md) adds
+definition-free metadata creation to `fab-cli-v2` with
+`v2-create-environment` plus `headless`. It reuses the shared create host and
+requires explicit approval; default/v1 behavior, publish, libraries, and compute
+settings are unchanged.
+
 ## Workspace components
 
 The opt-in [workspace v2 read slice](authoring-docs/workspace-v2-reads.md) uses the separate

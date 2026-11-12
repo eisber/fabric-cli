@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in native v2 definition-free Environment creation with strict metadata validation, exact-target error or skip policies, immediate approval, and retained operation evidence. Existing v1 creation and Environment publish, libraries, and compute settings are unchanged.
+time: 2026-11-12T14:00:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
