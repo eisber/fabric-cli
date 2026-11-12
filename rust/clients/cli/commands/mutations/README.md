@@ -9,7 +9,10 @@ registrations and typed command conversion.
 
 The separate [create v2 contract](../../../../authoring-docs/create-v2-contract.md) specifies
 the target existence policies and receipt boundaries. It does not describe the
-current v1 `create` alias or establish a v2 executable root or service-host mount.
+current v1 `create` alias. The opt-in `fabric-cli` `v2-create` host now composes
+the same parser and SDK policy for Notebook only; see the contract's native mount
+section and [shared host interface](../../../../authoring-docs/create-host.md).
+The v1 `MutationHost` and its force/confirmation behavior below are unchanged.
 
 ## Host composition
 
