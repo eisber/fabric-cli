@@ -121,7 +121,7 @@ impl HttpClient for Wire {
                 headers.insert("retry-after", "1");
                 Ok(AsyncRawResponse::from_bytes(status.into(), headers, body))
             }
-            Reply::Lost => Err(azure_core::Error::message(
+            Reply::Lost => Err(azure_core::Error::with_message(
                 azure_core::error::ErrorKind::Io,
                 "offline response loss",
             )),
