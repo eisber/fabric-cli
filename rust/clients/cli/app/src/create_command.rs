@@ -38,8 +38,27 @@ use std::{
 /// Bound for raw input, each discovery/operation response, and final receipt.
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
 
+/// Header evidence observed before an incomplete HTTP body was abandoned.
+pub struct CreateTransportEvidence {
+    /// Actual status of the latest mutation/poll exchange, if observed.
+    pub http_status: Option<u16>,
+    /// Provider operation UUID from that exchange, never a resource ID.
+    pub operation_id: Option<String>,
+}
+
+/// One operation executor and its command-local, read-only evidence accessor.
+///
+/// Observe only this execution, not discovery or a previous invocation. The host
+/// uses header evidence only to retain reconciliation data, never prove success.
+pub struct CreateExecution<'a, E> {
+    /// Existing operation engine adapter; no separate HTTP implementation.
+    pub executor: E,
+    /// Snapshot headers even if streaming fails or execution is cancelled.
+    pub observe: &'a (dyn Fn() -> CreateTransportEvidence + Send + Sync),
+}
+
 /// A positively selected native leaf, not a generic HTTP or plugin adapter.
-pub trait CreateBinding: CreateInputValidator {
+pub trait CreateBinding: CreateInputValidator + Send + Sync {
     /// Exact supported owner type, used before input, discovery or credentials.
     fn item_type(&self) -> &'static str;
     /// Provider-backed capabilities for this exact schema.
@@ -275,7 +294,7 @@ impl PreparedCreateCommand {
         binding: &dyn CreateBinding,
         client: &Client,
         items: &dyn ItemExecutor,
-        executor: E,
+        execution: CreateExecution<'_, E>,
         approval: &mut dyn CreateApproval,
         interrupted: impl Future<Output = ()> + Send,
     ) -> Result<CreateDelivery, CreateCommandError> {
@@ -312,13 +331,15 @@ impl PreparedCreateCommand {
             (None, _) => LeafState::Missing,
             (Some(_), Some(_)) => LeafState::Ambiguous,
             (Some(item), None) => {
-                if item.item_type() != Some(self.owner) {
+                if item.display_name != self.name {
+                    return Err(CreateCommandError::Policy(CreateError::NameChanged));
+                } else if item.item_type() != Some(self.owner) {
                     LeafState::WrongKind
                 } else if !is_id(&item.id)
-                    || item
-                        .additional_fields
-                        .get("workspaceId")
-                        .is_some_and(|id| id.as_str() != Some(workspace.as_str()))
+                    || item.additional_fields.get("workspaceId").is_some_and(|id| {
+                        !id.as_str()
+                            .is_some_and(|id| id.eq_ignore_ascii_case(&workspace))
+                    })
                 {
                     return Err(CreateCommandError::Invalid);
                 } else {
@@ -367,12 +388,14 @@ impl PreparedCreateCommand {
         let report = if let Some(operation) = operation {
             let mut session = OperationSession::with_context(
                 client.context(),
-                executor,
+                execution.executor,
                 OperationLimits::default(),
                 interrupted.as_mut(),
             );
             let result = session.execute(operation).await;
-            CreateReport::observe(&plan, result, &session)
+            let mut report = CreateReport::observe(&plan, result, &session);
+            report.retain_transport_evidence((execution.observe)());
+            report
         } else {
             CreateReport::skipped(&plan)
         };
@@ -414,6 +437,21 @@ impl CreateReport {
     /// Original typed remote failure, including service reconciliation evidence.
     pub fn error(&self) -> Option<&OperationError> {
         self.error.as_ref()
+    }
+
+    fn retain_transport_evidence(&mut self, evidence: CreateTransportEvidence) {
+        let Some(error) = &mut self.error else {
+            return;
+        };
+        if error.mutation_may_have_occurred && evidence.http_status == Some(202) {
+            self.value["meta"]["httpStatus"] = json!(202);
+            if error.operation_id.is_none()
+                && let Some(id) = evidence.operation_id.filter(|id| is_id(id))
+            {
+                self.value["meta"]["operationHandle"] = json!(format!("/operations/{id}"));
+                error.operation_id = Some(id);
+            }
+        }
     }
 
     fn skipped(plan: &CreatePlan) -> Self {
@@ -476,7 +514,7 @@ impl CreateReport {
             }
             Err(error) => return Self::failed(plan, Value::Null, error),
         };
-        let evidence = evidence(&data, session.operation_id(), true);
+        let evidence = evidence(&data, session.operation_id(), true, plan);
         let outcome: ExecutionOutcome<OperationError> = if status == 202 {
             ExecutionOutcome::Accepted(evidence)
         } else {
@@ -579,7 +617,12 @@ impl CreateReport {
     }
 }
 
-fn evidence(data: &Value, operation: Option<&str>, mutated: bool) -> ObservationEvidence {
+fn evidence(
+    data: &Value,
+    operation: Option<&str>,
+    mutated: bool,
+    plan: &CreatePlan,
+) -> ObservationEvidence {
     let id = |field| {
         data.get(field)
             .and_then(Value::as_str)
@@ -591,7 +634,16 @@ fn evidence(data: &Value, operation: Option<&str>, mutated: bool) -> Observation
             .and_then(|id| AcceptedHandle::new(format!("/operations/{id}")).ok()),
         resource: data.as_object().map(|_| ResourceResult {
             native_id: id("id"),
-            parent_id: id("workspaceId"),
+            parent_id: id("workspaceId").map(|id| {
+                if id
+                    .as_str()
+                    .eq_ignore_ascii_case(plan.target().parent_id().as_str())
+                {
+                    plan.target().parent_id().clone()
+                } else {
+                    id
+                }
+            }),
             item_type: data.get("type").and_then(Value::as_str).map(str::to_owned),
             name: data
                 .get("displayName")
