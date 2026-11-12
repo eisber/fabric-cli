@@ -915,12 +915,9 @@ impl CreateReport {
                 let data = if response.body.is_empty() {
                     Value::Null
                 } else {
-                    match std::str::from_utf8(&response.body)
-                        .ok()
-                        .and_then(|text| fabric_cli_output::parse_data(text).ok())
-                    {
-                        Some(value) => value,
-                        None => {
+                    match fabric_cli_output::input::strict_json_bounded(&response.body, MAX_BYTES) {
+                        Ok(value) => value,
+                        Err(_) => {
                             let mut report = Self::failed(
                                 plan,
                                 Value::Null,
