@@ -51,6 +51,8 @@ pub mod update;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
+#[cfg(feature = "v2-link-kql")]
+pub mod v2_link_kql_host;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
 mod workspace_get;
