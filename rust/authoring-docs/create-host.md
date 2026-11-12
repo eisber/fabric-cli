@@ -24,6 +24,10 @@ planner's validated input, without changing multipart payloads or metadata.
 Advertising a guarantee is an obligation, not evidence that the provider
 supports it. An implementation must not infer race-free creation from a missing
 preflight match or implement replacement by delete/recreate.
+The host currently admits only native create and exact skip. It intersects
+provider capabilities with that implemented subset before invoking SDK policy
+validation, so even a future replacement-capable binding cannot dispatch an
+unsupported replacement or duplicate through this host.
 
 `PreparedCreateCommand::preflight(command, binding, cwd, stdin, owned_elsewhere)`
 checks the selected type before reading input, arbitrates stdin, reads at most
@@ -33,6 +37,9 @@ from empty bytes, JSON null, and an empty object. Files must be regular,
 non-symlink entries; the host must own the parent namespace against ancestor
 replacement. No input conversion is performed. Profiles are currently rejected,
 not silently mapped to ambient identity.
+Offline admission calls the SDK's `validate_create_request` without inventing
+existence. Skip-only input remains valid until real discovery selects an existing
+skip or rejects missing-target creation.
 
 The first bounded selector is
 `/<workspaceGUID>.Workspace/<literal-display-name>.<Type>`. The workspace must
@@ -68,6 +75,9 @@ to mutation/poll execution, not discovery. A valid 202 operation UUID already
 received in headers survives a later body failure, response limit or cancellation.
 This additional evidence never upgrades an unknown/failed report to accepted or
 completed, and it never invents a resource ID.
+The host also retains a bounded complete initial POST 202 body through later
+polling failure. Known acceptance resource fields remain outside data projection;
+an unparsed acceptance body is preserved as explicitly labeled base64 evidence.
 
 `CreateDelivery::report()` exposes unprojected evidence before delivery.
 `deliver(stdout)` projects only `data`, retaining resource identity, policy,

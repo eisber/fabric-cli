@@ -490,28 +490,7 @@ pub fn plan_create(
     supplied: Option<Value>,
     validator: &dyn CreateInputValidator,
 ) -> Result<CreatePlan, CreateError> {
-    let disposition = validator.validate(&target, &capabilities.schema, supplied.as_ref())?;
-    let input = ValidatedInput {
-        target: target.clone(),
-        schema: capabilities.schema.clone(),
-        supplied,
-        disposition,
-    };
-    match policy {
-        ConflictPolicy::Error if capabilities.create == CreateSupport::Unsupported => {
-            return Err(CreateError::UnsupportedPolicy);
-        }
-        ConflictPolicy::Overwrite if capabilities.replacement.is_none() => {
-            return Err(CreateError::UnsupportedPolicy);
-        }
-        ConflictPolicy::Skip if capabilities.skip == SkipSupport::Unsupported => {
-            return Err(CreateError::UnsupportedPolicy);
-        }
-        ConflictPolicy::Duplicate if capabilities.duplicate == DuplicateSupport::Unsupported => {
-            return Err(CreateError::UnsupportedPolicy);
-        }
-        _ => {}
-    }
+    let input = validate_create_request(policy, target.clone(), capabilities, supplied, validator)?;
     let action = match (policy, target.scope, preflight) {
         (_, _, Preflight::MissingParent) => return Err(CreateError::MissingParent),
         (
@@ -579,6 +558,46 @@ pub fn plan_create(
         target,
         action,
     })
+}
+
+/// Validate schema and requested capability without inventing target existence.
+///
+/// Hosts may perform this pure admission before discovery. Creation/replacement
+/// completeness still depends on the real preflight and is checked by
+/// [`plan_create`], which reuses this same validation authority.
+///
+/// # Errors
+/// Rejects invalid explicit input and unsupported requested policies.
+pub fn validate_create_request(
+    policy: ConflictPolicy,
+    target: CreateTarget,
+    capabilities: &CreateCapabilities,
+    supplied: Option<Value>,
+    validator: &dyn CreateInputValidator,
+) -> Result<ValidatedInput, CreateError> {
+    let disposition = validator.validate(&target, &capabilities.schema, supplied.as_ref())?;
+    let input = ValidatedInput {
+        target,
+        schema: capabilities.schema.clone(),
+        supplied,
+        disposition,
+    };
+    match policy {
+        ConflictPolicy::Error if capabilities.create == CreateSupport::Unsupported => {
+            return Err(CreateError::UnsupportedPolicy);
+        }
+        ConflictPolicy::Overwrite if capabilities.replacement.is_none() => {
+            return Err(CreateError::UnsupportedPolicy);
+        }
+        ConflictPolicy::Skip if capabilities.skip == SkipSupport::Unsupported => {
+            return Err(CreateError::UnsupportedPolicy);
+        }
+        ConflictPolicy::Duplicate if capabilities.duplicate == DuplicateSupport::Unsupported => {
+            return Err(CreateError::UnsupportedPolicy);
+        }
+        _ => {}
+    }
+    Ok(input)
 }
 
 fn require_creation_input(input: &ValidatedInput) -> Result<(), CreateError> {
