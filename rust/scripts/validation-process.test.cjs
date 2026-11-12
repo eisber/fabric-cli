@@ -8,7 +8,8 @@ const path = require('node:path');
 const {test} = require('node:test');
 const {setTimeout: delay} = require('node:timers/promises');
 const {once} = require('node:events');
-const {commandResult, commandIdentity, deduplicateCoreCommands, commandClass,
+const {execFileSync} = require('node:child_process');
+const {commandResult, commandIdentity, runCoreCommands, sourceDigest, commandClass,
   runContracts, options, main} = require('./validate-impact.cjs');
 const engineeringInventory = require('./engineering-inventory.json');
 
@@ -55,43 +56,54 @@ function command(context, script, id = 'process-fixture') {
 
 test('only exact core Cargo executions deduplicate; aliases retain every obligation and count tests once', t => {
   const context = fixture(t);
-  const base = {id: 'one:test', program: 'cargo', args: ['test', '--lib']};
+  context.artifacts = fixture(t).root;
+  execFileSync('git', ['init', '--quiet'], {cwd: context.root});
+  Object.assign(context, {sourceBefore: sourceDigest(context.root),
+    platform: 'windows', toolchain: {cargo: 'pinned'}});
+  const base = {id: 'one:test', program: 'cargo', test: true,
+    args: ['test', '--offline', '--locked', '--package', 'fabric-identity', '--all-targets']};
   const same = {...base, id: 'two:test'};
-  const unique = deduplicateCoreCommands([base, same, {...base, id: 'three:test',
-    env: {FABRIC_DEDUP_TEST_VARIANT: 'distinct'}}], context);
-  assert.equal(unique.length, 2);
-  assert.deepEqual(unique[0].aliases, ['one:test', 'two:test']);
+  const run = command => commandResult(command, context, () => ({status: 0,
+    stdout: 'test result: ok. 7 passed; 0 failed; 1 ignored;\n'}));
+  runCoreCommands([base, same, {...base, id: 'three:test',
+    env: {FABRIC_DEDUP_TEST_VARIANT: 'distinct'}}], context, run);
+  assert.equal(context.results.length, 2);
+  assert.deepEqual(context.results[0].aliases, ['one:test', 'two:test']);
   assert.equal(commandIdentity(base, context), commandIdentity(same, context));
   for (const changed of [
     {...base, cwd: path.join(context.root, 'different')}, {...base, program: 'other-cargo'},
     {...base, args: ['test', '--lib', '--ignored']}, {...base, env: {OTHER: 'different'}},
     {...base, args: ['--lib', 'test']},
   ]) assert.notEqual(commandIdentity(base, context), commandIdentity(changed, context));
-  commandResult(unique[0], context, () => ({status: 0,
-    stdout: 'test result: ok. 7 passed; 0 failed; 1 ignored;\n'}));
-  assert.equal(context.results.length, 1);
   assert.equal(context.results[0].tests_passed, 7);
   assert.deepEqual(context.results[0].aliases, ['one:test', 'two:test']);
-  assert.throws(() => deduplicateCoreCommands([{program: 'python', args: []}], context), /Only core Cargo/);
+  const arbitrary = {id: 'python', program: 'python', args: []};
+  runCoreCommands([arbitrary, {...arbitrary, id: 'python-again'}], context, run);
+  assert.equal(context.results.length, 4, 'non-Cargo commands cannot reuse coverage');
   // commandResult itself must never coalesce repeated contracts.
   for (let index = 0; index < 2; index++) commandResult(base, context, () => ({status: 0}));
-  assert.equal(context.results.length, 3);
+  assert.equal(context.results.length, 6);
 });
 
 test('scheduler-owned aliases survive further exact deduplication and receipt recording', t => {
   const context = fixture(t);
-  const command = {id: 'profile-a:test', program: 'cargo', args: ['test', '--lib'],
+  context.artifacts = fixture(t).root;
+  execFileSync('git', ['init', '--quiet'], {cwd: context.root});
+  Object.assign(context, {sourceBefore: sourceDigest(context.root),
+    platform: 'windows', toolchain: {cargo: 'pinned'}});
+  const command = {id: 'profile-a:test', program: 'cargo', test: true,
+    args: ['test', '--offline', '--locked', '--package', 'fabric-identity', '--all-targets'],
     aliases: ['default:test', 'profile-a:test']};
-  const singleton = deduplicateCoreCommands([command], context);
-  assert.equal(singleton.length, 1);
-  assert.deepEqual(singleton[0].aliases, ['profile-a:test', 'default:test']);
-  const duplicate = {...command, id: 'profile-b:test', aliases: ['legacy:test', 'default:test']};
-  const commands = deduplicateCoreCommands([command, duplicate], context);
-  const expected = ['profile-a:test', 'default:test', 'profile-b:test', 'legacy:test'];
-  assert.equal(commands.length, 1);
-  assert.deepEqual(commands[0].aliases, expected);
-  commandResult(commands[0], context, () => ({status: 0,
+  const run = item => commandResult(item, context, () => ({status: 0,
     stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n'}));
+  runCoreCommands([command], context, run);
+  assert.equal(context.results.length, 1);
+  assert.deepEqual(context.results[0].aliases, ['profile-a:test', 'default:test']);
+  context.results = [];
+  const duplicate = {...command, id: 'profile-b:test', aliases: ['legacy:test', 'default:test']};
+  runCoreCommands([command, duplicate], context, run);
+  const expected = ['profile-a:test', 'default:test', 'profile-b:test', 'legacy:test'];
+  assert.equal(context.results.length, 1);
   assert.deepEqual(context.results[0].aliases, expected);
   assert.equal(context.results[0].tests_passed, 1);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(context.artifacts, 'commands.json')))[0].aliases,
@@ -776,6 +788,11 @@ test('complete and shard receipts bind canonical selection and pass only after s
     assert.equal(receipt.head, fixture.plan.head ?? null);
     assert.equal(receipt.selection_digest, require('./impact-ci.cjs').selectionDigest(fixture.plan));
     const records = JSON.parse(fs.readFileSync(path.join(fixture.artifacts, 'commands.json')));
+    assert.equal(receipt.commands, records.length);
+    assert.equal(receipt.commands_executed, records.length);
+    assert.equal(receipt.commands_reused,
+      records.reduce((total, record) => total + record.aliases.length - 1, 0));
+    assert.equal(receipt.execution_manifest.data.commands.length, records.length);
     assert.ok(records.every(record => record.cleanup_confirmed === true));
     assert.ok(records.every(record => Array.isArray(record.cleanup_errors) && record.cleanup_errors.length === 0));
     assert.match(receipt.toolchain.cargo, /^cargo \d+\.\d+\.\d+\b/);
@@ -828,7 +845,7 @@ test('command failures and source writes cannot produce a passed shard receipt',
         else return {status: 19, stderr: 'original cargo failure'};
       }
       return fakeToolchain(program, args);
-    }), changeSource ? /Source changed during validation/ : /Validation failed/);
+    }), changeSource ? /Source changed during core validation/ : /Validation failed/);
     const receipt = JSON.parse(fs.readFileSync(path.join(fixture.artifacts, 'receipt.json')));
     assert.equal(receipt.status, 'failed');
     assert.equal(receipt.complete_plan, false);

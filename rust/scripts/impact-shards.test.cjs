@@ -5,8 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const path = require('node:path');
-const {coreCommands, deduplicateCoreCommands} = require('./validate-impact.cjs');
+const {coreCommands} = require('./validate-impact.cjs');
 const {PLATFORMS, PROFILE_GROUP_SECONDS, SETUP_CLEANUP_SECONDS, WINDOWS_DEFAULT_PACKAGES,
   FULL_PROFILE_GROUP_SECONDS, FULL_PROFILE_MAX_DOMAINS, FULL_PROFILE_COLD_SECONDS,
   shardsForPlan, selectShard, matrixForPlan} =
@@ -423,13 +422,21 @@ test('equivalent cross-profile commands share one owner with every original obli
   const plan = fixture();
   plan.profiles.push({...structuredClone(plan.profiles[0]), id: 'mirror',
     packages: ['fabric-cli', 'fabric-core'], checks: []});
+  for (const id of ['transport', 'transport-mirror']) plan.profiles.push({
+    id, packages: ['fabric-sdk-transport'], features: ['fabric-sdk-transport/hyper-rustls'],
+    platforms: ['linux'], checks: [], tests: [{package: 'fabric-sdk-transport', target: 'all'}],
+  });
   const before = JSON.stringify(plan);
   const shards = shardsForPlan(plan, 'linux', coreCommands);
-  const commands = shards.flatMap(shard => shard.commands).filter(command =>
+  const cliTests = shards.flatMap(shard => shard.commands).filter(command =>
     command.args.includes('headless_contract'));
+  assert.equal(cliTests.length, 2, 'arbitrary CLI contracts must not share runtime coverage');
+  assert.ok(cliTests.every(command => !command.aliases));
+  const commands = shards.flatMap(shard => shard.commands).filter(command =>
+    command.test && command.args.includes('fabric-sdk-transport/hyper-rustls'));
   assert.equal(commands.length, 1);
   assert.deepEqual(commands[0].aliases, [
-    'headless:test:fabric-cli', 'mirror:test:fabric-cli',
+    'transport-mirror:test:fabric-sdk-transport', 'transport:test:fabric-sdk-transport',
   ]);
   const owner = shards.find(shard => shard.commands.includes(commands[0]));
   for (const id of commands[0].aliases) {
@@ -437,18 +444,15 @@ test('equivalent cross-profile commands share one owner with every original obli
     assert.equal(shards.flatMap(shard => shard.obligations)
       .filter(obligation => obligation === `linux:core:${id}`).length, 1);
   }
-  const executed = deduplicateCoreCommands(owner.commands, {
-    root: process.cwd(), artifacts: path.join(process.cwd(), 'rust', 'target', 'alias-proof'),
-  });
-  const loggedAliases = new Set(executed.flatMap(command => command.aliases));
+  const loggedAliases = new Set(owner.commands.flatMap(command => command.aliases || [command.id]));
   assert.deepEqual([...loggedAliases].sort(), owner.obligations
     .filter(id => id.startsWith('linux:core:')).map(id => id.slice('linux:core:'.length)).sort());
   assert.equal(JSON.stringify(plan), before);
   const environmentalCommands = selected => coreCommands(selected, 'linux').map(command =>
-    ({...command, env: {PROFILE_ENV: selected.profiles[0]?.id === 'mirror' ? 'other' : 'base'}}));
+    ({...command, env: {PROFILE_ENV: selected.profiles[0]?.id === 'transport-mirror' ? 'other' : 'base'}}));
   assert.equal(shardsForPlan(plan, 'linux', environmentalCommands)
     .flatMap(shard => shard.commands).filter(command =>
-      command.args.includes('headless_contract')).length, 2);
+      command.test && command.args.includes('fabric-sdk-transport/hyper-rustls')).length, 2);
 });
 
 test('pinned dependencies share a preparation/integrity domain and marker checks stay with profiles', () => {

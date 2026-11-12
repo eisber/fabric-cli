@@ -81,7 +81,7 @@ test('native preflights preserve exact engineering inventory and scheduled full 
     assert.equal(cli[0].test, true);
   }
   assert.ok(executor.indexOf('if (shard?.engineering)') <
-    executor.indexOf('const cargoCommands = commands.filter('));
+    executor.indexOf("if (opts.stage !== 'contracts') await runCoreCommands(commands, context, run)"));
   assert.match(executor, /if \(shard\?\.engineering\)/);
   assert.equal((executor.match(/args: \['-I', '-B', path\.join\(opts\.root, 'rust', 'scripts', 'engineering_preflight\.py'\)/g) || []).length, 1);
   assert.ok(!workflow.includes('python -I -B rust/scripts/engineering_preflight.py'));
@@ -378,7 +378,7 @@ test('native CI front-loads exact engineering suites without replacing the full 
   const engineering = fs.readFileSync(path.join(__dirname, 'engineering_preflight.py'), 'utf8');
   const executor = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
   assert.ok(executor.indexOf('if (shard?.engineering)') <
-    executor.indexOf('const cargoCommands = commands.filter('));
+    executor.indexOf("if (opts.stage !== 'contracts') await runCoreCommands(commands, context, run)"));
   assert.match(executor, /if \(shard\?\.engineering\)/);
   assert.ok(executor.includes("'engineering_preflight.py'"));
   assert.ok(engineering.includes('engineering-inventory.json'));

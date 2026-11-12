@@ -10,7 +10,8 @@ const {execFileSync} = require('node:child_process');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
   oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment,
-  sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter} =
+  sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter,
+  coreReuseKey, runCoreCommands, executionSummary} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
@@ -160,6 +161,214 @@ test('command receipts record the actual allowlisted build overrides', t => {
   assert.equal(context.results[0].build_environment.CARGO_INCREMENTAL, '0');
   assert.ok(!Object.hasOwn(context.results[0].build_environment, 'GITHUB_TOKEN'));
   assert.ok(!fs.readFileSync(path.join(directory, 'commands.json'), 'utf8').includes('must-not-leak'));
+});
+
+function coreFixture(t) {
+  const root = temporary(t);
+  const artifacts = temporary(t);
+  execFileSync('git', ['init', '--quiet'], {cwd: root});
+  fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
+  fs.writeFileSync(path.join(root, 'rust', 'validation', 'impact-graph.json'),
+    JSON.stringify({checks: [
+      {id: 'setup'}, {id: 'contract-a', depends_on: ['setup']}, {id: 'contract-b'},
+    ]}));
+  const context = {root, artifacts, platform: 'windows', toolchain: {cargo: 'pinned'},
+    sourceBefore: sourceDigest(root), results: [], deadline: Date.now() + 10000,
+    commandTimeout: 1000, plan: {checks: ['contract-a', 'contract-b'], profiles: []}};
+  const command = testCommands([{package: 'fabric-sdk-transport', target: 'all'}],
+    ['fabric-sdk-transport/hyper-rustls'], 'first')[0];
+  const calls = [];
+  const run = item => commandResult(item, context, (program, args, options) => {
+    calls.push({program, args, options});
+    return {status: 0, stdout: 'test result: ok. 4 passed; 0 failed; 1 ignored', stderr: ''};
+  });
+  return {context, command, calls, run};
+}
+
+test('exact CORE duplicates retain every profile label and a real source receipt without counting tests twice', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  runCoreCommands([command, {...command, id: 'second'}, {...command, id: 'third'}], context, run);
+  assert.equal(calls.length, 1);
+  assert.equal(context.results.length, 1);
+  const [source] = context.results;
+  assert.deepEqual(source.aliases, [command.id, 'second', 'third']);
+  assert.equal(source.status, 'passed');
+  assert.equal(source.exit, 0);
+  assert.equal(source.error, null);
+  assert.equal(source.signal, null);
+  assert.deepEqual(source.args, command.args);
+  assert.equal(source.cwd, path.join(context.root, 'rust'));
+  assert.deepEqual(source.build_environment, buildEnvironment(calls[0].options.env));
+  assert.equal(source.tests_passed, 4);
+  assert.equal(source.tests_ignored, 1);
+  assert.ok(source.elapsed_ms >= 0);
+  assert.ok(source.timeout_ms > 0);
+  for (const stream of ['stdout', 'stderr']) {
+    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(source[stream])).digest('hex'),
+      source[`${stream}_sha256`]);
+  }
+  assert.deepEqual(executionSummary(context.results), {
+    commands: 1, commands_executed: 1, commands_reused: 2, tests_passed: 4, tests_ignored: 1,
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(context.artifacts, 'commands.json'))),
+    context.results);
+});
+
+test('nonidentical arguments, features, cwd and full effective environment never reuse CORE results', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  const variations = [
+    {args: [...command.args.slice(0, -1), '--lib']},
+    {args: command.args.map(arg => arg === 'fabric-sdk-transport/hyper-rustls'
+      ? 'fabric-sdk-transport/notebook-websocket' : arg)},
+    {cwd: context.root},
+    {env: {RUSTFLAGS: '-Dwarnings'}},
+    {env: {UNRECORDED_INPUT: 'different'}},
+  ];
+  runCoreCommands([command, ...variations.map((change, index) =>
+    ({...command, ...change, id: `different-${index}`}))], context, run);
+  assert.equal(calls.length, 1 + variations.length);
+  assert.ok(context.results.every(row => row.aliases.length === 1));
+  assert.throws(() => runCoreCommands([{...command,
+    env: {CARGO_TARGET_DIR: path.join(context.artifacts, 'other-target')}}], context, run),
+  /CARGO_TARGET_DIR differs/, 'a different target must fail the stronger manifest context fence');
+  const key = coreReuseKey(command, context);
+  for (const change of [{platform: 'linux'}, {toolchain: {cargo: 'other'}}, {sourceBefore: 'other'},
+    {targetDir: path.join(context.artifacts, 'other-target')}]) {
+    assert.notEqual(coreReuseKey(command, {...context, ...change}), key);
+  }
+});
+
+test('reuse compares ambient inputs privately and never persists secret values', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  const secret = 'dedup-secret-must-not-leak';
+  const input = {...command, env: {GITHUB_TOKEN: secret}};
+  runCoreCommands([input, {...input, id: 'alias'}], context, run);
+  assert.equal(calls.length, 1);
+  assert.ok(!fs.readFileSync(path.join(context.artifacts, 'commands.json'), 'utf8').includes(secret));
+  const original = process.env.FAB_DEDUP_TEST_INPUT;
+  t.after(() => {
+    if (original === undefined) delete process.env.FAB_DEDUP_TEST_INPUT;
+    else process.env.FAB_DEDUP_TEST_INPUT = original;
+  });
+  let count = 0;
+  runCoreCommands([command, {...command, id: 'changed-ambient'}], context, item => {
+    run(item);
+    process.env.FAB_DEDUP_TEST_INPUT = String(++count);
+  });
+  assert.equal(count, 2);
+});
+
+test('reuse is limited to audited CORE suites and never deduplicates setup or stateful contracts', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  const excluded = [
+    {...command, args: command.args.map(arg => arg === 'fabric-sdk-transport' ? 'fabric-cli' : arg)},
+    {...command, args: command.args.map(arg => arg === 'fabric-sdk-transport' ? 'unknown-suite' : arg)},
+    {...command, program: 'fixture'},
+    {...command, test: false},
+    {...command, kind: 'command'},
+    {...command, stdout: path.join(context.artifacts, 'observation.txt')},
+    {...command, deadline: context.deadline},
+    {...command, args: ['run', '--offline', '--locked', '--package', 'fabric-cli-update']},
+    {...command, args: [...command.args, '--', '--ignored']},
+  ];
+  for (const item of excluded) assert.equal(coreReuseKey(item, context), null);
+  const commands = excluded.flatMap((item, index) =>
+    [{...item, id: `first-${index}`}, {...item, id: `second-${index}`}]);
+  runCoreCommands([command, {...command, id: 'core-alias'}, ...commands], context, run);
+  assert.equal(calls.length, 1 + commands.length);
+  runContracts(context, {validateRegistry: () => {}, commandsFor: () => [{...command}]}, run);
+  assert.equal(calls.length, 4 + commands.length, 'all three contract/setup commands must execute');
+  assert.ok(context.results.slice(-3).every(row => row.aliases.length === 1));
+});
+
+test('failed executions abort CORE immediately and cannot supply reuse in another invocation', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  for (const failure of [
+    {status: 1, stdout: '', stderr: 'failed'},
+    {status: null, error: new Error('ETIMEDOUT')},
+    {status: 0, signal: 'SIGTERM'},
+  ]) {
+    let attempts = 0;
+    assert.throws(() => runCoreCommands([command, {...command, id: 'unreached'}], context,
+      item => commandResult(item, context, () => { attempts++; return failure; })),
+    /Validation failed/);
+    assert.equal(attempts, 1);
+    assert.ok(context.results.every(row => row.aliases.length === 1));
+  }
+  runCoreCommands([command, {...command, id: 'after-failure'}], context, run);
+  assert.equal(calls.length, 1);
+  assert.equal(context.results.length, 4);
+  assert.deepEqual(context.results[3].aliases, [command.id, 'after-failure']);
+  runCoreCommands([command], context, run);
+  assert.equal(calls.length, 2, 'successful results cannot escape one CORE invocation');
+});
+
+test('source integrity failures remain fatal even when a duplicate already has coverage', t => {
+  const {context, command, run} = coreFixture(t);
+  assert.throws(() => runCoreCommands([command, {...command, id: 'alias'}], context, item => {
+    run(item);
+    fs.writeFileSync(path.join(context.root, 'changed-source.rs'), 'unexpected source write');
+  }), /Source changed during core validation/);
+  assert.deepEqual(context.results.at(-1).aliases, [command.id, 'alias']);
+  assert.notEqual(sourceDigest(context.root), context.sourceBefore);
+});
+
+test('every allowlisted package retains its full distinct feature obligations', t => {
+  const {context, calls, run} = coreFixture(t);
+  const commands = [];
+  for (const name of ['fabric-sdk-transport', 'fabric-identity', 'fabric-identity-windows',
+    'fabric-cli-repl', 'fabric-cli-update']) {
+    for (const features of [[], [`${name}/selected-feature`]]) {
+      const command = testCommands([{package: name, target: 'all'}], features, 'profile-a')[0];
+      commands.push(command, {...command, id: command.id.replace('profile-a', 'profile-b')});
+    }
+  }
+  runCoreCommands(commands, context, run);
+  assert.equal(calls.length, 10);
+  assert.equal(context.results.length, 10);
+  assert.equal(context.results.flatMap(row => row.aliases).length, 20);
+  assert.equal(executionSummary(context.results).commands_reused, 10);
+});
+
+test('streamed CORE awaits successful execution before aliasing and rejects asynchronous failures', async t => {
+  const {context, command, calls, run} = coreFixture(t);
+  let completed = false;
+  await runCoreCommands([command, {...command, id: 'alias'}], context, async item => {
+    await new Promise(resolve => setImmediate(resolve));
+    run(item);
+    completed = true;
+  });
+  assert.equal(completed, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(context.results[0].aliases, [command.id, 'alias']);
+  let attempts = 0;
+  await assert.rejects(runCoreCommands([command, {...command, id: 'unreached'}],
+    context, async () => {
+      attempts++;
+      await new Promise(resolve => setImmediate(resolve));
+      throw new Error('stream failed');
+    }), /stream failed/);
+  assert.equal(attempts, 1);
+  assert.equal(context.results.length, 1, 'failure must not reuse a prior invocation');
+  await assert.rejects(runCoreCommands([command], context, async () => {}),
+    /No successful execution receipt/);
+});
+
+test('only safe compilation and formatting descriptors share CORE coverage outside the audited suites', t => {
+  const {context, calls, run} = coreFixture(t);
+  const safe = coreCommands(plan(), 'windows').filter(command =>
+    ['fmt', 'check', 'clippy'].includes(command.args[0]));
+  runCoreCommands(safe.flatMap(command => [command, {...command, id: `alias:${command.id}`}]),
+    context, run);
+  assert.equal(calls.length, safe.length);
+  assert.ok(context.results.every(row => row.aliases.length === 2));
+  const unknown = testCommands([{package: 'arbitrary-contract', target: 'all'}])[0];
+  assert.throws(() => runCoreCommands([{...unknown, aliases: [unknown.id, 'unsafe']}],
+    context, run), /Unsafe core aliases/);
+  for (const command of safe) {
+    assert.equal(coreReuseKey({...command, kind: 'command'}, context), null);
+    assert.equal(coreReuseKey({...command, capture: true}, context), null);
+  }
 });
 
 test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
@@ -859,7 +1068,7 @@ test('native CI restores compatible build outputs before Cargo and bounds each v
   assert.match(workflow, /--command-timeout-seconds 600/);
 });
 
-test('the common v2 branch runs the existing combined-candidate gate without privileged merge automation', () => {
+test('the common v2 branch retains full diagnostic triggers without privileged merge automation', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   const branch = 'dev/marcozo/fab-cli-v2-integration-20261104';
   const push = workflow.slice(workflow.indexOf('\n  push:'), workflow.indexOf('\n  merge_group:'));

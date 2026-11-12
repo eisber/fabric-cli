@@ -1,0 +1,50 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Provisional integration smoke
+
+on:
+  pull_request:
+    branches: [dev/marcozo/fab-cli-v2-integration-20261104]
+  push:
+    branches: [dev/marcozo/fab-cli-v2-integration-20261104]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-smoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Integration smoke (Windows, provisional)
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev/marcozo/fab-cli-v2-integration-20261104')
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test smoke and routing contracts without native compilation
+        run: node --test rust/scripts/integration-smoke.test.cjs
+      - name: Build two profiles once and exercise isolated offline entry points
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+        run: node rust/scripts/integration-smoke.cjs "$env:RUNNER_TEMP/integration-smoke-receipts"
+      - name: Retain actual exits, timings, source pins and failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-smoke-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/integration-smoke-receipts
+          if-no-files-found: error
+          retention-days: 7

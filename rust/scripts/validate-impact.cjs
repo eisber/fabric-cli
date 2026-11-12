@@ -219,25 +219,8 @@ function commandIdentity(command, context) {
     cwd: path.resolve(command.cwd || path.join(context.root, 'rust')),
     program: command.program, args: command.args,
     env: Object.keys(environment).sort().map(key => [key, environment[key]]),
+    platform: context.platform, toolchain: context.toolchain, source: context.sourceBefore,
   })).digest('hex');
-}
-
-function deduplicateCoreCommands(commands, context) {
-  const unique = new Map();
-  for (const command of commands) {
-    // This function is called only on planner-generated core Cargo obligations,
-    // never on contracts whose ordering or repeated side effects may matter.
-    requireThat(command.program === 'cargo', 'Only core Cargo obligations may be deduplicated');
-    const identity = commandIdentity(command, context);
-    const aliases = [...new Set([command.id, ...(command.aliases || [])])];
-    if (unique.has(identity)) {
-      const previous = unique.get(identity);
-      previous.aliases = [...new Set([...previous.aliases, ...aliases])];
-    } else {
-      unique.set(identity, {...command, aliases, execution_identity: identity});
-    }
-  }
-  return [...unique.values()];
 }
 
 function commandClass(command) {
@@ -416,6 +399,72 @@ function series(items, action, index = 0) {
       return result.then(() => series(items, action, index + 1));
     }
   }
+}
+
+// Only these audited offline suites may share runtime test coverage.
+const REUSABLE_CORE_PACKAGES = new Set([
+  'fabric-sdk-transport', 'fabric-identity', 'fabric-identity-windows',
+  'fabric-cli-repl', 'fabric-cli-update',
+]);
+
+function reusableCoreCommand(command) {
+  const args = command.args;
+  if (command.program !== 'cargo' || !Array.isArray(args) ||
+      Object.keys(command).some(key =>
+        !['id', 'aliases', 'program', 'args', 'test', 'cwd', 'env'].includes(key))) return false;
+  if (['fmt', 'check', 'clippy'].includes(args[0])) return !command.test;
+  return command.test === true &&
+    ['test', '--offline', '--locked', '--package'].every((arg, index) => args[index] === arg) &&
+    REUSABLE_CORE_PACKAGES.has(args[4]) &&
+    (args.length === 6 && args[5] === '--all-targets' ||
+      args.length === 8 && args[5] === '--features' &&
+      typeof args[6] === 'string' && args[7] === '--all-targets');
+}
+
+function coreReuseKey(command, context) {
+  return reusableCoreCommand(command) ? commandIdentity(command, context) : null;
+}
+
+function runCoreCommands(commands, context, run) {
+  const completed = new Map();
+  requireThat(context.sourceBefore && context.toolchain && context.platform,
+    'Core reuse requires source, toolchain and platform identity');
+  return after(series(commands, command => {
+    requireThat(!context.signal?.aborted, 'Validation cancelled');
+    requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
+    const key = coreReuseKey(command, context);
+    const aliases = [...new Set([command.id, ...(command.aliases || [])])];
+    requireThat(aliases.length === 1 || key !== null, `Unsafe core aliases: ${command.id}`);
+    const source = key === null ? undefined : completed.get(key);
+    if (source) {
+      source.aliases = [...new Set([...source.aliases, ...aliases])];
+      fs.writeFileSync(path.join(context.artifacts, 'commands.json'),
+        `${JSON.stringify(context.results, null, 2)}\n`);
+      return;
+    }
+    const index = context.results.length;
+    return after(run({...command, aliases}), () => {
+      const result = context.results[index];
+      requireThat(context.results.length === index + 1 && result?.status === 'passed' &&
+        result.exit === 0 && !result.error && !result.signal && !result.timed_out &&
+        !result.cancelled && result.cleanup_confirmed !== false,
+      `No successful execution receipt: ${command.id}`);
+      if (key !== null) completed.set(key, result);
+    });
+  }), () => {
+    // The final manifest also verifies source after contracts; aliases never
+    // survive a changed checkout as successful evidence.
+    requireThat(sourceDigest(context.root) === context.sourceBefore, 'Source changed during core validation');
+  });
+}
+
+function executionSummary(results) {
+  return {
+    commands: results.length, commands_executed: results.length,
+    commands_reused: results.reduce((total, item) => total + (item.aliases?.length || 1) - 1, 0),
+    tests_passed: results.reduce((total, item) => total + item.tests_passed, 0),
+    tests_ignored: results.reduce((total, item) => total + item.tests_ignored, 0),
+  };
 }
 
 function oracleVersions(rust, requirement, seen = new Set()) {
@@ -669,6 +718,8 @@ async function main(argv, execute) {
       plan.mode === 'full' ? 'Full configured offline checks on this host' :
       'Affected configured offline checks on this host; not full workspace or GA acceptance',
   };
+  context.sourceBefore = before;
+  context.toolchain = toolchain;
   const receiptFile = path.join(opts.artifacts, 'receipt.json');
   const run = command => commandResult(command, context, execute);
   fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
@@ -698,20 +749,7 @@ async function main(argv, execute) {
         engineering: {head: plan.head, platform: opts.platform, shard: shard.id,
           receipt: path.join(artifacts, 'engineering-receipt.json')}});
     }
-    const cargoCommands = commands.filter(command => command.program === 'cargo');
-    const deduplicated = deduplicateCoreCommands(cargoCommands, context);
-    // Preflight shard descriptors can also contain ordinary non-Cargo commands.
-    const unique = new Map(deduplicated.map(command => [command.execution_identity, command]));
-    const executed = new Set();
-    if (opts.stage !== 'contracts') {
-      for (const command of commands) {
-        const selected = command.program === 'cargo' ?
-          unique.get(commandIdentity(command, context)) : command;
-        if (executed.has(selected)) continue;
-        executed.add(selected);
-        await run(selected);
-      }
-    }
+    if (opts.stage !== 'contracts') await runCoreCommands(commands, context, run);
     if (opts.stage !== 'core') await runContracts(context, registry, run);
     requireThat(!controller.signal.aborted, 'Validation cancelled');
     requireThat(Date.now() < context.deadline, 'Validation budget exhausted');
@@ -748,9 +786,7 @@ async function main(argv, execute) {
     receipt.budget_ms = opts.budget;
     receipt.timed_out = context.results.some(item => item.timed_out) || Date.now() >= context.deadline;
     receipt.cancelled = controller.signal.aborted || context.results.some(item => item.cancelled);
-    receipt.commands = context.results.length;
-    receipt.tests_passed = context.results.reduce((total, item) => total + item.tests_passed, 0);
-    receipt.tests_ignored = context.results.reduce((total, item) => total + item.tests_ignored, 0);
+    Object.assign(receipt, executionSummary(context.results));
     try {
       const evidence = require('./execution-evidence.cjs');
       const manifest = evidence.createManifest(context, receipt);
@@ -775,7 +811,8 @@ async function main(argv, execute) {
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
   sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter, oracleVersions,
   restoreOracleDependencies, runContracts, options, buildEnvironment,
-  commandIdentity, deduplicateCoreCommands, commandClass, engineeringReceipt, summarizeLogs, main};
+  commandIdentity, reusableCoreCommand, coreReuseKey, runCoreCommands, executionSummary,
+  commandClass, engineeringReceipt, summarizeLogs, main};
 if (require.main === module) {
   main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });
 }

@@ -164,9 +164,11 @@ function packDomains(domains, platform, mode) {
 }
 
 function colocateEquivalentCommands(shards, platform) {
+  const {reusableCoreCommand} = require('./validate-impact.cjs');
   const owners = new Map();
   for (const shard of shards) {
     shard.commands = shard.commands.filter(command => {
+      if (!reusableCoreCommand(command)) return true;
       const {id, aliases, ...descriptor} = command;
       const key = JSON.stringify(canonical(descriptor));
       const previous = owners.get(key);

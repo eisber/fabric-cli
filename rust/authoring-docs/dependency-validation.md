@@ -164,6 +164,10 @@ invalid or unavailable base conservatively selects full validation.
 The stable `Rust validation` job rejects
 failed selection and missing, failed or cancelled required native jobs; only an
 intentional no-impact selection can skip them.
+The owner-approved [provisional integration smoke](build-validation.md#provisional-v2-integration-smoke)
+is the exception for PRs targeting and pushes to the exact named v2 integration
+branch. Its skipped full-validation jobs are not a full-suite success or a
+performance improvement; scheduled/manual and other-branch qualification remain.
 
 Artifacts retain the selection request, plan, source identity, actual command
 arguments, exit status, output hashes and test-result counts. Execution checks
@@ -202,8 +206,9 @@ four jobs per native host.
 Frozen-source preparation, its dependent comparisons and final integrity check
 stay together. Full plans retain the all-feature Clippy and CLI preflights as
 separate obligations; affected plans no longer run those unconditional full
-preflights. Equivalent core Cargo descriptors run once with all original
-obligation aliases retained; contract side effects are not deduplicated.
+preflights. Equivalent core Cargo formatting/check/Clippy descriptors and the
+audited test suites below run once with all original obligation aliases retained;
+contract side effects and arbitrary test packages are not deduplicated.
 Fast planner/executor contracts remain in dependency selection and its native
 checks. Real subprocess timeout, cancellation and ownership tests are a separate
 `process-supervision` obligation: they run on all three native hosts for full
@@ -333,6 +338,33 @@ queue contention within the workflow, but cannot guarantee provider capacity.
 Never replace missing macOS execution with a Linux pass or treat cancelled
 obligations as successful to reach a duration target.
 
+The final same-source warm retry
+[43316167088, attempt 2](https://github.com/eisber/fabric-cli/actions/runs/43316167088/attempts/2)
+used implementation `3d859943220444f55fd4f3949aee693ceac778b8` plus the isolated
+Dataflow test probe. All four Linux jobs and all four Windows jobs passed with
+compilation and dependency cache hits:
+
+| Native pool | Longest executor sequence | Longest allocated job, including setup and artifacts | Pool span, including staggered runner admission |
+| --- | ---: | ---: | ---: |
+| Linux | 156.0 seconds | About 3 minutes 9 seconds | 5 minutes 17 seconds |
+| Windows | 268.1 seconds | About 5 minutes 36 seconds | 5 minutes 36 seconds |
+
+These are component-validation measurements, not an apples-to-apples speedup
+of the original full 42-profile run. The whole warm workflow still failed:
+three macOS ARM64 jobs were cancelled before runner assignment. One macOS
+feature cohort executed successfully in about 5 minutes 20 seconds, but that
+does not establish the missing macOS obligations. A universal three-to-five
+minute complete gate has therefore not been demonstrated.
+
+Cold full-profile qualification remains more expensive. Tight packing based on
+historical warm timings exhausted the run budget; the corrected conservative
+plan isolates those configurations rather than dropping tests or increasing
+the 15-minute job ceiling. Source selection and warm caching deliver the
+ordinary-component improvement; a few-minute full qualification would require
+additional reliable native capacity or a separately approved coverage policy.
+The published provisional integration-smoke policy is distinct and must not be
+reported as a complete native qualification result.
+
 For unsharded local execution, the total budget defaults to 7,200 seconds and
 explicit `--budget-seconds` values retain the existing 8,100-second maximum.
 The configurable per-command ceiling defaults to 600 seconds and accepts values
@@ -340,6 +372,32 @@ up to 7,200 seconds; the shorter command-class and contract budgets still apply.
 Receipts retain configured budgets and each command's actual timeout. Native
 CI uses the shorter setup-adjusted shard budget and 15-minute job ceiling above,
 not the historical two-hour serial-job allowance.
+Within one CORE phase, exact repeated single-package all-target test invocations
+for `fabric-sdk-transport`, `fabric-identity`, `fabric-identity-windows`,
+`fabric-cli-repl` and `fabric-cli-update` reuse their first successful execution.
+These offline suites use injected/memory fixtures, ephemeral loopback servers or
+owned per-test artifact directories; they do not prepare later profiles. Reuse
+requires identical ordered arguments (including features), effective working
+directory and full effective environment under the same recorded source,
+toolchain and native platform. Environment comparison is private in-memory
+hashing, not a secret-bearing receipt. The map exists only inside that CORE
+invocation; it is never shared with another run, head, platform or contract phase.
+Setup, arbitrary test packages and stateful registry contracts still execute
+normally. Source integrity is checked after CORE and again after all contracts;
+any mismatch fails the entire receipt, including its aliases.
+
+Every required profile/check label remains in `commands.json`. Each actual
+execution has an `aliases` array containing its original obligation IDs and its
+actual exit, log paths, output hashes, elapsed time and test counts. Aliases do
+not add synthetic result rows or count tests twice. Receipt `commands` and
+`commands_executed` count actual executions; `commands_reused` counts additional
+aliases. Their sum records satisfied or attempted command obligations. The
+execution manifest binds every alias to the real command, and aggregation
+requires all owned obligations. Cross-shard co-location uses the same audited
+eligibility rule and exact descriptor equality, never broader feature unions.
+CLI runtime tests and distinct feature compositions remain separate.
+Fewer processes alone do not prove that the full native plan fits its deadline;
+only the complete source-bound native receipt establishes that result.
 
 The workflow does not configure branch protection or repository rulesets.
 Repository maintainers must separately require the stable gate where appropriate.

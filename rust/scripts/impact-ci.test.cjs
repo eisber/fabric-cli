@@ -221,16 +221,16 @@ test('aggregate requires every selected native obligation exactly once', () => {
 });
 
 test('aggregate requires all original alias obligations assigned to their single execution owner', () => {
-  const profiles = ['alpha', 'beta'].map(id => ({id, packages: ['fabric-cli'],
-    features: ['fabric-cli/native'], platforms: ['windows', 'linux', 'macos'], checks: [],
-    tests: [{package: 'fabric-cli', target: 'lib'}]}));
-  const {plan, receipts, options} = fixture({packages: ['fabric-cli'],
-    tests: [{package: 'fabric-cli', target: 'lib'}], profiles});
+  const profiles = ['alpha', 'beta'].map(id => ({id, packages: ['fabric-identity'],
+    features: ['fabric-identity/windows-broker'], platforms: ['windows', 'linux', 'macos'], checks: [],
+    tests: [{package: 'fabric-identity', target: 'all'}]}));
+  const {plan, receipts, options} = fixture({packages: ['fabric-identity'],
+    tests: [{package: 'fabric-identity', target: 'all'}], profiles});
   assert.equal(aggregate(plan, receipts, options).status, 'passed');
   const owner = receipts.find(receipt =>
-    receipt.obligations.includes('linux:core:alpha:test:fabric-cli'));
-  assert.ok(owner.obligations.includes('linux:core:beta:test:fabric-cli'));
-  owner.obligations = owner.obligations.filter(id => id !== 'linux:core:beta:test:fabric-cli');
+    receipt.obligations.includes('linux:core:alpha:test:fabric-identity'));
+  assert.ok(owner.obligations.includes('linux:core:beta:test:fabric-identity'));
+  owner.obligations = owner.obligations.filter(id => id !== 'linux:core:beta:test:fabric-identity');
   assert.throws(() => aggregate(plan, receipts, options), /obligation mismatch/);
 });
 
@@ -447,17 +447,30 @@ test('recorded compiler and active-toolchain outputs must both prove the native 
 });
 
 test('alias coverage is derived from result aliases, not just receipt obligations', () => {
-  const profiles = ['alpha', 'beta'].map(id => ({id, packages: ['fabric-cli'],
-    features: ['fabric-cli/native'], platforms: ['windows', 'linux', 'macos'], checks: [],
-    tests: [{package: 'fabric-cli', target: 'lib'}]}));
-  const {plan, receipts, options} = fixture({packages: ['fabric-cli'],
-    tests: [{package: 'fabric-cli', target: 'lib'}], profiles});
+  const profiles = ['alpha', 'beta'].map(id => ({id, packages: ['fabric-identity'],
+    features: ['fabric-identity/windows-broker'], platforms: ['windows', 'linux', 'macos'], checks: [],
+    tests: [{package: 'fabric-identity', target: 'all'}]}));
+  const {plan, receipts, options} = fixture({packages: ['fabric-identity'],
+    tests: [{package: 'fabric-identity', target: 'all'}], profiles});
+  assert.equal(aggregate(plan, receipts, options).status, 'passed');
   const manifest = options.executionManifests.find(item => item.commands.some(command =>
-    command.aliases.includes('beta:test:fabric-cli')));
-  const command = manifest.commands.find(item => item.aliases.includes('beta:test:fabric-cli'));
-  command.aliases = command.aliases.filter(alias => alias !== 'beta:test:fabric-cli');
+    command.aliases.includes('beta:test:fabric-identity')));
+  const command = manifest.commands.find(item => item.aliases.includes('beta:test:fabric-identity'));
+  command.aliases = command.aliases.filter(alias => alias !== 'beta:test:fabric-identity');
   reseal(receipts, options.executionManifests);
   assert.throws(() => aggregate(plan, receipts, options), /missing executed core alias/);
+});
+
+test('manifest rejects aliases on unaudited runtime tests even with matching arguments', () => {
+  const {plan, receipts} = fixture();
+  const receipt = receipts[0];
+  const shard = selectShard(plan, receipt.platform, receipt.shard);
+  const expected = shard.commands.find(command => command.test && !command.args.includes('--doc'));
+  expected.aliases = [expected.id, 'fabric-core:unaudited-alias'];
+  const actual = receipt.execution_manifest.data.commands.find(command => command.id === expected.id);
+  actual.aliases = expected.aliases;
+  receipt.execution_manifest.sha256 = evidence.digest(receipt.execution_manifest.data);
+  assert.throws(() => evidence.verifyManifest(plan, shard, receipt), /unsafe core alias reuse/);
 });
 
 test('manifest coverage retains package-local forwarded profile test features', () => {

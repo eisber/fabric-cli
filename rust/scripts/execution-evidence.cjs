@@ -228,6 +228,9 @@ function verifyManifest(plan, shard, receipt) {
       const expected = core.get(alias);
       requireThat(expected && !covered.has(alias) && command.program === expected.program &&
         command.argv_sha256 === digest(expected.args), `core alias or argv mismatch: ${alias}`);
+      requireThat(command.aliases.length === 1 ||
+        require('./validate-impact.cjs').reusableCoreCommand(expected),
+      `unsafe core alias reuse: ${alias}`);
       covered.add(alias);
     }
     used.add(command.index);
