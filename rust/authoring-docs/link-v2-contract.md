@@ -5,9 +5,58 @@
 The additive `fabric_cli_mutations::v2_link` module composes native relationship
 requests with caller-owned resolution, input, approval, and execution. It does
 not replace the Python CLI, Rust `ln`/`mklink`, or their compatibility fixtures.
-Its standalone command schema is not mounted in the production executable.
-Central registry, SDK facade, native file/resolver adapters, and executable
-composition remain separate integration requirements.
+Its standalone all-owner command schema is not mounted in the production executable.
+The opt-in `fab-cli-v2` head now mounts only the SemanticModel connection slice
+described below. Other owner hosts, central discovery registration and an SDK
+facade for all link owners remain separate integration requirements.
+
+## Semantic-model executable slice
+
+Build the existing `fabric-cli` package with `--features headless --bin fab-cli-v2`.
+The dedicated `v2_link_semantic_model_host` composes the existing explicit
+headless selection, `NativeSession`, `HttpExecutor`, `FabricMutationBackend`
+and shared link adapter. It adds no transport, authentication provider or
+credential fallback. The default `fab-rs` executable and legacy `ln` are unchanged.
+
+```text
+fab-cli-v2 artifact semantic-model link /Team.Workspace/Sales.SemanticModel/connections --input binding.json [--wait]
+fab-cli-v2 link /Team.Workspace/Sales.SemanticModel/connections --input - [--wait]
+```
+
+Only the exact `connections` child of a typed `SemanticModel` owner is admitted.
+Canonical workspace/model GUIDs may replace the display names while retaining
+the `.Workspace` and `.SemanticModel` suffixes. Explicit identifiers require no
+enumeration; names use the existing bounded unique-name resolver. Missing,
+ambiguous or failed discovery never becomes a guessed destination. Root `link`
+has the same SemanticModel-only restriction; it is not an all-owner host.
+
+Input is a regular non-symlink file or explicit stdin, capped at 1 MiB while
+reading, with strict UTF-8/duplicate/unknown-field validation in the shared
+adapter. No inline JSON, credentials, `--force`, `--yes`, output-file flag or
+legacy gateway binding is added. Only the public Fabric service endpoint is
+admitted by this slice.
+
+The host requires an immediate, default-no terminal confirmation after
+preparation and before submission. It displays the captured workspace/model,
+connection request, effects, selected account/tenant and service endpoint.
+Approval reads a separate controlling terminal (`CONIN$` or `/dev/tty`), never
+the JSON stdin stream. An unavailable terminal or failed/declined confirmation
+sends no bind. Connection IDs and local approval do not establish service
+ownership or connection-use permission.
+
+The 240-second total bound covers local input, discovery, approval and execution.
+Cancellation while awaiting approval sends no bind; after dispatch it is not
+remote cancellation or rollback. The original shared receipt/failure is retained
+through delivery. A writer failure reports the original receipt metadata and
+must not trigger another submission. Acceptance remains `accepted` without
+`--wait`; `--wait` uses `WaitForCompletion`, not result-resource retrieval.
+An empty HTTP 200 bind response is valid completion.
+
+The offline host and executable tests cover exact POST/body, root/facade equality,
+typed owner/scope restrictions, strict bounded input, contextual approval/denial,
+empty 200, acceptance/wait, cancellation, writer failure and bounded name
+resolution. These tests do not establish live permissions, authentication,
+deployed endpoint availability or cross-platform native acceptance.
 
 ## Operation and command surface
 

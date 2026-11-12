@@ -30,6 +30,7 @@ use std::{
 #[path = "headless.rs"]
 mod headless;
 mod v2_exists_main;
+mod v2_link_semantic_model_host;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -141,10 +142,18 @@ fn run() -> Result<(), Failure> {
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        writeln!(
+            io::stdout().lock(),
+            "\n       fab-cli-v2 artifact semantic-model link <typed-connection-target> --input FILE|- [--wait]\n       fab-cli-v2 link <typed-semantic-model-connection-target> --input FILE|- [--wait]\nLink requires immediate terminal approval; other link owners are not mounted."
+        )
+        .map_err(|_| failed("OutputFailed", "Link help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
+    }
+    if v2_link_semantic_model_host::handles(&args) {
+        return v2_link_semantic_model_host::run(args);
     }
     if args
         .first()
