@@ -84,6 +84,119 @@ impl ExecutionTimer for Timer {
 }
 
 #[tokio::test]
+async fn real_http_duplicate_created_accepted_and_final_report_bodies_preserve_unknown_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for duplicate in super::status::duplicate_response_bodies() {
+        for status in [201_u16, 202, 200] {
+            let wait = status == 200;
+            let args = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let prepared = prepare(temp.path(), &args, &raw);
+            let (client, _) = client(Audience::Fabric);
+            let mut replies =
+                VecDeque::from([Reply::Json(StatusCode::Ok, br#"{"value":[]}"#.to_vec())]);
+            if wait {
+                replies.push_back(Reply::Accepted(serde_json::to_vec(&metadata()).unwrap()));
+                replies.push_back(Reply::Json(
+                    StatusCode::Ok,
+                    br#"{"status":"Succeeded"}"#.to_vec(),
+                ));
+            }
+            replies.push_back(if status == 202 {
+                Reply::Accepted(duplicate.clone())
+            } else {
+                Reply::Json(StatusCode::from(status), duplicate.clone())
+            });
+            let wire = Arc::new(HttpWire {
+                replies: Mutex::new(replies),
+                requests: Mutex::new(Vec::new()),
+            });
+            let http =
+                HttpExecutor::new(wire.clone(), Arc::new(Timer), ExecutionOptions::default())
+                    .unwrap();
+            let trace = ExecutionTrace::default();
+            let observe = || {
+                let evidence = trace.snapshot();
+                CreateTransportEvidence {
+                    http_status: evidence.status,
+                    operation_id: evidence.operation_id,
+                }
+            };
+            let mut approval = Approval::allow(raw.clone());
+            let delivery = prepared
+                .execute(
+                    &ReportCreateBinding,
+                    &client,
+                    &http,
+                    CreateExecution {
+                        executor: http.clone().with_trace(trace.clone()),
+                        observe: &observe,
+                    },
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_ne!(delivery.report().exit_code(), 0);
+            assert!(matches!(
+                &delivery.report().error().unwrap().kind,
+                fabric_sdk_operations::OperationErrorKind::InvalidResponse
+            ));
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let receipt: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(receipt["data"], Value::Null);
+            assert_eq!(receipt["error"]["code"], "InvalidResponse");
+            assert_eq!(receipt["meta"]["status"], "unknown");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { status }
+            );
+            assert_eq!(receipt["meta"]["observation"]["httpStatus"], status);
+            assert_eq!(
+                receipt["meta"]["unparsedResponseBodyBase64"],
+                STANDARD.encode(&duplicate)
+            );
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            if status != 201 {
+                assert_eq!(
+                    receipt["meta"]["submission"]["operationHandle"],
+                    format!("/operations/{OP}")
+                );
+            }
+            if wait {
+                assert_eq!(receipt["meta"]["submission"]["resource"]["id"], REPORT);
+                assert_eq!(receipt["meta"]["resourceId"], REPORT);
+            } else {
+                assert_eq!(receipt["meta"]["resourceId"], Value::Null);
+            }
+            if status == 202 {
+                assert_eq!(
+                    receipt["meta"]["unparsedAcceptanceBodyBase64"],
+                    STANDARD.encode(&duplicate)
+                );
+            }
+            let requests = wire.requests.lock().unwrap();
+            assert_eq!(requests.len(), if wait { 4 } else { 2 });
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|request| request.method() == Method::Post)
+                    .count(),
+                1
+            );
+            assert_eq!(azure_core::Bytes::from(requests[1].body()).as_ref(), raw);
+        }
+    }
+}
+
+#[tokio::test]
 async fn real_http_unexpected_result_status_retains_initial_report_without_false_service_rejection()
 {
     let temp = tempfile::tempdir().unwrap();

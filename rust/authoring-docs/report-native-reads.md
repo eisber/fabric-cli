@@ -202,6 +202,13 @@ HTTP error and status remain available; the receipt does not turn them into a
 definitive provider rejection or claim the initial Report submission was undone.
 Actual provider HTTP failures and failed operation states retain their separate
 failure classification. None of these cases replays the Report POST.
+All nonempty create responses use the existing bounded strict JSON decoder.
+Duplicate root, nested or escape-equivalent keys in an immediate 201,
+non-waited 202 or final 200 response fail with an unknown, nonzero outcome,
+not last-value-wins metadata. Original response bytes remain labeled base64,
+and any earlier accepted Report identity and operation handle remain protected
+outside projected data. This does not change the global JSON parser or the
+shared SDK operation engine.
 
 ## API references
 

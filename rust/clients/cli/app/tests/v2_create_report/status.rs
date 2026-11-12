@@ -6,6 +6,118 @@
 use super::*;
 use fabric_sdk_operations::OperationErrorKind;
 
+pub(super) fn duplicate_response_bodies() -> Vec<Vec<u8>> {
+    let prefix =
+        format!(r#"{{"id":"{REPORT}","workspaceId":"{WS}","type":"Report","displayName":"Report""#);
+    [
+        format!(r#"{prefix},"id":"{OP}"}}"#),
+        format!(r#"{prefix},"\u0069d":"{OP}"}}"#),
+        format!(r#"{prefix},"future":{{"value":1,"value":2}}}}"#),
+    ]
+    .into_iter()
+    .map(String::into_bytes)
+    .collect()
+}
+
+#[tokio::test]
+async fn duplicate_response_keys_never_complete_or_erase_prior_report_submission() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for duplicate in duplicate_response_bodies() {
+        for status in [201, 202, 200] {
+            let wait = status == 200;
+            let args = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let prepared = prepare(temp.path(), &args, &raw);
+            let (client, _) = client(Audience::Fabric);
+            let listing = Listing::new(json!([]));
+            let malformed = OperationResponse {
+                status,
+                body: duplicate.clone(),
+                headers: if status == 202 {
+                    accepted().headers
+                } else {
+                    BTreeMap::new()
+                },
+            };
+            let replies = if wait {
+                let mut acceptance = accepted();
+                acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+                vec![
+                    acceptance,
+                    response(200, json!({"status":"Succeeded"})),
+                    malformed,
+                ]
+            } else {
+                vec![malformed]
+            };
+            let wire = Wire::new(replies);
+            let mut approval = Approval::allow(raw.clone());
+            let delivery = prepared
+                .execute(
+                    &ReportCreateBinding,
+                    &client,
+                    &listing,
+                    execution(&wire),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_ne!(delivery.report().exit_code(), 0);
+            let error = delivery.report().error().unwrap();
+            assert!(matches!(&error.kind, OperationErrorKind::InvalidResponse));
+            assert_eq!(
+                error.operation_id.as_deref(),
+                if status == 201 { None } else { Some(OP) }
+            );
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let receipt: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(receipt["data"], Value::Null);
+            assert_eq!(receipt["error"]["code"], "InvalidResponse");
+            assert_eq!(receipt["meta"]["status"], "unknown");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["meta"]["httpStatus"], status);
+            assert_eq!(
+                receipt["meta"]["unparsedResponseBodyBase64"],
+                STANDARD.encode(&duplicate)
+            );
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { status }
+            );
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            if wait {
+                assert_eq!(receipt["meta"]["submission"]["resource"]["id"], REPORT);
+                assert_eq!(receipt["meta"]["resourceId"], REPORT);
+            } else {
+                assert_eq!(receipt["meta"]["resourceId"], Value::Null);
+            }
+            if status == 202 {
+                assert_eq!(
+                    receipt["meta"]["unparsedAcceptanceBodyBase64"],
+                    STANDARD.encode(&duplicate)
+                );
+            }
+            assert_eq!(approval.calls, 1);
+            let requests = wire.requests.lock().unwrap();
+            assert_eq!(requests.len(), if wait { 3 } else { 1 });
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|request| request.0 == ResourceMethod::Post)
+                    .count(),
+                1
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn unexpected_success_result_status_is_unknown_with_original_typed_error_and_submission() {
     let temp = tempfile::tempdir().unwrap();
