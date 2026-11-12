@@ -49,6 +49,19 @@ fn root_rejects_foreign_owner_before_opening_input_and_has_no_unattended_bypass(
     let target = TARGET.replace("DataAgent", "Lakehouse");
     let invalid = run(&["link", &target, "--input", "missing-input-file"], b"");
     let error: serde_json::Value = serde_json::from_slice(&invalid.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "InvalidArguments");
+    let invalid = run(
+        &[
+            "artifact",
+            "data-agent",
+            "link",
+            &target,
+            "--input",
+            "missing-input-file",
+        ],
+        b"",
+    );
+    let error: serde_json::Value = serde_json::from_slice(&invalid.stderr).unwrap();
     assert_eq!(error["evidence"]["code"], "InvalidTarget");
     for option in ["--force", "--yes", "--publish"] {
         let output = run(

@@ -43,10 +43,19 @@ pub fn command() -> Command {
 
 /// Whether the explicit v2 head should dispatch to this bounded host.
 pub fn handles(args: &[OsString]) -> bool {
-    args.first().is_some_and(|arg| arg == "link")
-        || (args.first().is_some_and(|arg| arg == "artifact")
-            && args.get(1).is_some_and(|arg| arg == "data-agent")
-            && args.get(2).is_some_and(|arg| arg == "link"))
+    if args.first().is_some_and(|arg| arg == "link") {
+        return match parse(args.to_vec()) {
+            Ok(command) => command
+                .path
+                .split('/')
+                .nth(2)
+                .is_some_and(|owner| owner.ends_with(".DataAgent")),
+            Err(_) => true,
+        };
+    }
+    args.first().is_some_and(|arg| arg == "artifact")
+        && args.get(1).is_some_and(|arg| arg == "data-agent")
+        && args.get(2).is_some_and(|arg| arg == "link")
 }
 
 /// Parse the constrained surface using the existing shared link argument model.
