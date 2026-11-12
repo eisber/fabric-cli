@@ -27,7 +27,14 @@ impl CreateInputValidator for ReportCreateBinding {
         schema: &SchemaRef,
         supplied: Option<&Value>,
     ) -> Result<InputDisposition, CreateError> {
-        validator().validate(target, schema, supplied)
+        let disposition = validator().validate(target, schema, supplied)?;
+        if supplied
+            .and_then(|body| body.get("folderId"))
+            .is_some_and(|folder| !folder.is_null())
+        {
+            return Err(CreateError::InputRejected);
+        }
+        Ok(disposition)
     }
 }
 

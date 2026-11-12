@@ -102,6 +102,15 @@ fn actual_wrong_target_invalid_body_policy_and_profile_fail_before_approval_or_i
     let output = finish(binary(&["create", PATH, "--input", input]).spawn().unwrap());
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
+    let mut folder_input = body();
+    folder_input["folderId"] = json!(OP);
+    std::fs::write(input, serde_json::to_vec(&folder_input).unwrap()).unwrap();
+    let output = finish(binary(&["create", PATH, "--input", input]).spawn().unwrap());
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "CreatePolicyRejected");
+    assert_eq!(error["evidence"]["mutationMayHaveOccurred"], false);
 }
 
 #[test]

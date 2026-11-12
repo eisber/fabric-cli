@@ -47,10 +47,40 @@ impl ItemExecutor for Listing {
     ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
         assert_eq!(request.method(), "GET");
         assert_eq!(request.url().path(), format!("/v1/workspaces/{WS}/items"));
+        assert_eq!(request.url().query(), Some("recursive=false"));
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(std::future::ready(Ok(ItemResponse {
             status: 200,
             body: serde_json::to_vec(&self.body).unwrap(),
+            headers: BTreeMap::new(),
+        })))
+    }
+}
+
+struct PagedListing {
+    pages: Mutex<VecDeque<Value>>,
+    queries: Mutex<Vec<Vec<(String, String)>>>,
+}
+
+impl ItemExecutor for PagedListing {
+    fn execute<'a>(
+        &'a self,
+        request: ItemRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
+        assert_eq!(request.method(), "GET");
+        assert_eq!(request.url().path(), format!("/v1/workspaces/{WS}/items"));
+        let query = request.url().query_pairs().into_owned().collect::<Vec<_>>();
+        assert_eq!(query.first(), Some(&("recursive".into(), "false".into())));
+        self.queries.lock().unwrap().push(query);
+        let page = self
+            .pages
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("bounded page expected");
+        Box::pin(std::future::ready(Ok(ItemResponse {
+            status: 200,
+            body: serde_json::to_vec(&page).unwrap(),
             headers: BTreeMap::new(),
         })))
     }
@@ -488,6 +518,214 @@ async fn malformed_created_and_accepted_responses_never_claim_complete_or_replay
 }
 
 #[tokio::test]
+async fn paged_root_discovery_preserves_filter_and_only_skips_the_exact_root_report() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for folder in [None, Some(Value::Null)] {
+        let mut root = metadata();
+        if let Some(folder) = &folder {
+            root["folderId"] = folder.clone();
+        }
+        let nested = json!({
+            "id":OP,"displayName":"Report","type":"Report","workspaceId":WS,"folderId":OP
+        });
+        let listing = PagedListing {
+            pages: Mutex::new(VecDeque::from([
+                json!({"value":[nested],"continuationToken":"next page"}),
+                json!({"value":[root]}),
+            ])),
+            queries: Mutex::new(Vec::new()),
+        };
+        let prepared = prepare(temp.path(), &["--if-exists", "skip"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let wire = Wire::new(vec![]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+        assert_eq!(delivery.report().value()["meta"]["folderId"], Value::Null);
+        assert_eq!(
+            delivery.report().value()["meta"]["folderIdObserved"],
+            folder.is_some()
+        );
+        assert_eq!(approval.calls, 1);
+        assert!(wire.requests.lock().unwrap().is_empty());
+        assert!(listing.pages.lock().unwrap().is_empty());
+        assert_eq!(
+            *listing.queries.lock().unwrap(),
+            vec![
+                vec![("recursive".to_owned(), "false".to_owned())],
+                vec![
+                    ("recursive".to_owned(), "false".to_owned()),
+                    ("continuationToken".to_owned(), "next page".to_owned())
+                ],
+            ]
+        );
+    }
+}
+
+#[tokio::test]
+async fn nested_only_or_malformed_folder_matches_never_approve_or_create_the_root_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for folder in [
+        json!(OP),
+        json!(""),
+        json!("not-a-uuid"),
+        json!(false),
+        json!({}),
+    ] {
+        let mut nested = metadata();
+        nested["folderId"] = folder.clone();
+        let malformed = folder != json!(OP);
+        for rows in [json!([nested.clone()]), json!([metadata(), nested])] {
+            let prepared = prepare(temp.path(), &["--if-exists", "skip"], &raw);
+            let (client, _) = client(Audience::Fabric);
+            let listing = Listing::new(rows.clone());
+            let wire = Wire::new(vec![]);
+            let mut approval = Approval::allow(raw.clone());
+            let result = prepared
+                .execute(
+                    &ReportCreateBinding,
+                    &client,
+                    &listing,
+                    execution(&wire),
+                    &mut approval,
+                    pending(),
+                )
+                .await;
+            if malformed || rows.as_array().unwrap().len() == 1 {
+                assert!(matches!(result, Err(CreateCommandError::Invalid)));
+                assert_eq!(approval.calls, 0);
+            } else {
+                assert_eq!(
+                    result.unwrap().report().value()["meta"]["resourceId"],
+                    REPORT
+                );
+                assert_eq!(approval.calls, 1);
+            }
+            assert!(wire.requests.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn completed_report_folder_identity_is_checked_and_preserved_after_data_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for wait in [false, true] {
+        for folder in [
+            None,
+            Some(Value::Null),
+            Some(json!(OP)),
+            Some(json!("invalid")),
+            Some(json!(42)),
+        ] {
+            let mut result = metadata();
+            if let Some(folder) = &folder {
+                result["folderId"] = folder.clone();
+            }
+            let replies = if wait {
+                vec![
+                    accepted(),
+                    response(200, json!({"status":"Succeeded"})),
+                    response(200, result),
+                ]
+            } else {
+                vec![response(201, result)]
+            };
+            let args = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let prepared = prepare(temp.path(), &args, &raw);
+            let (client, _) = client(Audience::Fabric);
+            let listing = Listing::new(json!([]));
+            let wire = Wire::new(replies);
+            let mut approval = Approval::allow(raw.clone());
+            let delivery = prepared
+                .execute(
+                    &ReportCreateBinding,
+                    &client,
+                    &listing,
+                    execution(&wire),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .unwrap();
+            let is_root = folder.as_ref().is_none_or(Value::is_null);
+            assert_eq!(delivery.report().exit_code(), u8::from(!is_root));
+            assert_eq!(delivery.report().value()["meta"]["completed"], is_root);
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let receipt: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(receipt["data"], Value::Null);
+            assert_eq!(
+                receipt["meta"]["folderId"],
+                folder.clone().unwrap_or(Value::Null)
+            );
+            assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            if !wait {
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderId"],
+                    folder.clone().unwrap_or(Value::Null)
+                );
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderIdObserved"],
+                    folder.is_some()
+                );
+            }
+            assert_eq!(
+                wire.requests.lock().unwrap().len(),
+                if wait { 3 } else { 1 }
+            );
+        }
+    }
+}
+
+#[test]
+fn root_report_mount_preserves_omitted_or_null_folder_but_refuses_a_selected_folder() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in [None, Some(Value::Null), Some(json!(OP))] {
+        let mut supplied = body();
+        if let Some(folder) = &folder {
+            supplied["folderId"] = folder.clone();
+        }
+        let raw = serde_json::to_vec(&supplied).unwrap();
+        let parsed = command(false);
+        let prepared = PreparedCreateCommand::preflight(
+            parsed,
+            &ReportCreateBinding,
+            temp.path(),
+            &mut &raw[..],
+            false,
+        );
+        assert_eq!(prepared.is_ok(), folder.as_ref().is_none_or(Value::is_null));
+        if folder == Some(json!(OP)) {
+            assert!(validator().inspect(&target(), &supplied).is_ok());
+        }
+    }
+}
+
+#[tokio::test]
 async fn genuine_acceptance_and_lro_result_keep_operation_and_resource_ids_distinct() {
     let temp = tempfile::tempdir().unwrap();
     let raw = serde_json::to_vec(&body()).unwrap();
@@ -609,7 +847,9 @@ async fn report_identity_received_with_acceptance_survives_later_poll_failure() 
     let (client, _) = client(Audience::Fabric);
     let listing = Listing::new(json!([]));
     let mut acceptance = accepted();
-    acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+    let mut accepted_report = metadata();
+    accepted_report["folderId"] = Value::Null;
+    acceptance.body = serde_json::to_vec(&accepted_report).unwrap();
     let wire = Wire::new(vec![
         acceptance,
         response(500, json!({"errorCode":"OfflineFailure"})),
@@ -639,6 +879,14 @@ async fn report_identity_received_with_acceptance_survives_later_poll_failure() 
     );
     assert_eq!(delivery.report().value()["meta"]["httpStatus"], 500);
     assert_eq!(
+        delivery.report().value()["meta"]["submission"]["folderId"],
+        Value::Null
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["folderIdObserved"],
+        true
+    );
+    assert_eq!(
         delivery.report().value()["meta"]["operationHandle"],
         format!("/operations/{OP}")
     );
@@ -664,7 +912,9 @@ async fn accepted_report_evidence_survives_malformed_final_result_and_data_proje
         let (client, _) = client(Audience::Fabric);
         let listing = Listing::new(json!([]));
         let mut acceptance = accepted();
-        acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+        let mut accepted_report = metadata();
+        accepted_report["folderId"] = Value::Null;
+        acceptance.body = serde_json::to_vec(&accepted_report).unwrap();
         let wire = Wire::new(vec![
             acceptance,
             response(200, json!({"status":"Succeeded"})),
@@ -699,6 +949,8 @@ async fn accepted_report_evidence_survives_malformed_final_result_and_data_proje
         );
         assert_eq!(receipt["meta"]["submission"]["resource"]["id"], REPORT);
         assert_eq!(receipt["meta"]["submission"]["resource"]["type"], "Report");
+        assert_eq!(receipt["meta"]["submission"]["folderId"], Value::Null);
+        assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
         assert_eq!(receipt["meta"]["httpStatus"], 200);
         assert_eq!(receipt["meta"]["completed"], false);
         assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);

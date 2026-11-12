@@ -135,8 +135,17 @@ binding:
 fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-
 ```
 
-The name is literal even if UUID-shaped. Native definition JSON is required;
-`--format json` selects the receipt, never PBIX or a definition conversion.
+The name is literal even if UUID-shaped and selects only a workspace-root Report.
+Discovery uses the generic `/items?recursive=false` route and preserves that
+filter across bounded paging. A valid nested match is excluded from root
+cardinality; nested-only or malformed matching folder evidence rejects before
+approval. The CLI binding rejects a non-null input `folderId` instead of silently
+creating somewhere other than the selected root. Omission and explicit null are
+preserved unchanged. Completed responses must also establish a root folder,
+while available folder evidence survives failures outside projected data.
+
+Native definition JSON is required; `--format json` selects the receipt, never
+PBIX or a definition conversion.
 Profiles, collections, name-based workspace discovery and artifact facades
 are not mounted. Immediate terminal approval is mandatory; nonterminal
 execution fails before identity or provider access. This opt-in mount changes
@@ -156,12 +165,13 @@ force and duplicate fail as unsupported, including for a missing target. A skip
 must still validate explicit input. No full replacement, delete/recreate or
 automatic renaming is advertised.
 
-The bounded adapter selects only an exact named Report in an explicit workspace.
+The SDK adapter selects only an exact named Report in an explicit workspace.
 Its native request body requires a matching `displayName` and a `definition`;
 optional `description` is limited to 256 characters, and `folderId` is a UUID
-or the API's explicit null workspace-folder selection. Unknown outer fields,
-label-setting requests and the separate `creationPayload` mode are not
-advertised. They fail rather than being silently removed.
+or the API's explicit null workspace-folder selection. This reusable native
+schema does not widen the CLI's root-only selector described above. Unknown
+outer fields, label-setting requests and the separate `creationPayload` mode
+are not advertised. They fail rather than being silently removed.
 
 Definition validation reuses the native Report codec above. PBIR and
 PBIR-Legacy layouts remain mutually exclusive. Missing required structure,
@@ -183,6 +193,8 @@ acceptance/final response bytes are explicitly labeled base64 evidence, not
 repaired content or a completed Report. Typed exact-name cardinality ignores
 same-name items of other known types; multiple Reports, wrong-kind-only matches,
 malformed matching identities and wrong workspace evidence still reject.
+`folderIdObserved` distinguishes an omitted source field from an explicit null
+root-folder observation; neither invents a child folder identity.
 
 ## API references
 

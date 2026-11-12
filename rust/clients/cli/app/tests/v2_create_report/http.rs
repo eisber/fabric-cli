@@ -173,6 +173,10 @@ async fn real_http_executor_sends_exact_native_report_body_and_retains_acceptanc
         let requests = wire.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].method(), Method::Get);
+        assert_eq!(
+            requests[0].url().as_str(),
+            format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items?recursive=false")
+        );
         assert_eq!(requests[1].method(), Method::Post);
         assert_eq!(
             requests[1].url().as_str(),
@@ -255,6 +259,10 @@ async fn real_http_receipt_keeps_report_submission_separate_from_failed_or_malfo
         assert_eq!(receipt["meta"]["remoteReplayed"], false);
         let requests = wire.requests.lock().unwrap();
         assert_eq!(requests.len(), if malformed_result { 4 } else { 3 });
+        assert_eq!(
+            requests[0].url().as_str(),
+            format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items?recursive=false")
+        );
         assert_eq!(
             requests
                 .iter()
