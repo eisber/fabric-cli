@@ -7,12 +7,15 @@ This slice follows Python
 The metadata-only entry and the explicitly injected definition/output entry have
 different capability requirements. Neither establishes live-service acceptance.
 
-Definition reads can return cluster-origin operation Locations. The definition
-adapter opts into validating the operation GUID and exact status/result path,
+Definition reads can return HTTPS `*.analysis.windows.net` cluster-origin
+operation Locations. The definition adapter validates that cluster origin (or
+the exact selected Fabric origin), operation GUID and exact status/result path,
 then constructs every poll and result request on the original selected Fabric
-endpoint. It never follows the Location hostname or broadens credential origins.
-Unrelated operations and external acceptance reconciliation retain their strict
-origin checks. Initial definition POSTs use the shared empty-body framing policy.
+endpoint. It never follows the cluster hostname or broadens credential origins.
+Another Fabric endpoint, including public Fabric when MSIT is selected, remains
+an error before any follow-up request. Unrelated operations and external
+acceptance reconciliation retain their strict origin checks. Initial definition
+POSTs use the shared empty-body framing policy.
 
 ## Source branch inventory
 

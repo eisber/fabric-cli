@@ -378,7 +378,7 @@ async fn definition_cluster_locations_are_inert_and_polling_stays_on_selected_en
     let credential = Arc::new(Credential::default());
     let context = context(credential.clone());
     let executor = Executor::default();
-    let cluster = "https://cluster.example.invalid";
+    let cluster = "https://df-msit-scus-redirect.analysis.windows.net";
     executor.responses.lock().unwrap().extend([
         response(
             202,
@@ -422,13 +422,14 @@ async fn definition_cluster_locations_are_inert_and_polling_stays_on_selected_en
 
 #[tokio::test]
 async fn definition_polling_rejects_mismatched_paths_and_unsafe_links_before_polling() {
+    let cluster = "https://df-msit-scus-redirect.analysis.windows.net";
     for location in [
-        format!("https://cluster.example.invalid/v1/operations/{ID}/result"),
-        format!("https://cluster.example.invalid/v1/other/{ID}"),
-        format!("http://cluster.example.invalid/v1/operations/{ID}"),
-        format!("https://user@cluster.example.invalid/v1/operations/{ID}"),
-        format!("https://cluster.example.invalid/v1/operations/{ID}?query"),
-        format!("https://cluster.example.invalid/v1/other/../operations/{ID}"),
+        format!("{cluster}/v1/operations/{ID}/result"),
+        format!("{cluster}/v1/other/{ID}"),
+        format!("http://df-msit-scus-redirect.analysis.windows.net/v1/operations/{ID}"),
+        format!("https://user@df-msit-scus-redirect.analysis.windows.net/v1/operations/{ID}"),
+        format!("{cluster}/v1/operations/{ID}?query"),
+        format!("{cluster}/v1/other/../operations/{ID}"),
     ] {
         let credential = Arc::new(Credential::default());
         let context = context(credential);
@@ -469,6 +470,76 @@ async fn definition_polling_rejects_mismatched_paths_and_unsafe_links_before_pol
             .with_bound_definition_polling()
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn definition_polling_rejects_foreign_initial_and_result_origins_without_followup() {
+    for foreign in [
+        "https://api.fabric.microsoft.com",
+        "https://other.dailyapi.fabric.microsoft.com",
+        "https://api.powerbi.com",
+        "https://cluster.example.invalid",
+        "https://cluster.analysis.windows.net.unrelated.example",
+        "https://cluster.analysis.windows.net:444",
+        "https://user@cluster.analysis.windows.net",
+    ] {
+        for at_result in [false, true] {
+            let credential = Arc::new(Credential::default());
+            let context = context(credential.clone());
+            let executor = Executor::default();
+            let path = format!("/v1/operations/{ID}");
+            let location = if at_result {
+                format!("{ROOT}{path}")
+            } else {
+                format!("{foreign}{path}")
+            };
+            executor.responses.lock().unwrap().push_back(response(
+                202,
+                "null",
+                &[
+                    ("Location", &location),
+                    ("x-ms-operation-id", ID),
+                    ("Retry-After", "0"),
+                ],
+            ));
+            if at_result {
+                executor.responses.lock().unwrap().push_back(response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("Location", &format!("{foreign}{path}/result"))],
+                ));
+            }
+            let mut session = OperationSession::with_context(
+                &context,
+                executor.clone(),
+                OperationLimits::default(),
+                pending(),
+            );
+            let operation = FabricOperation::new(
+                ResourceMethod::Post,
+                "/v1/workspaces/ws/items/item/getDefinition",
+                Vec::new(),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .unwrap()
+            .with_bound_definition_polling()
+            .unwrap();
+            let error = session.execute(operation).await.unwrap_err();
+            assert_eq!(error.kind, OperationErrorKind::InvalidLink);
+            assert!(error.mutation_may_have_occurred);
+            let requests = executor.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1 + usize::from(at_result));
+            assert_eq!(credential.scopes.lock().unwrap().len(), requests.len());
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|r| r.method == ResourceMethod::Post)
+                    .count(),
+                1
+            );
+            assert!(requests.iter().all(|r| r.url.starts_with(ROOT)));
+        }
+    }
 }
 
 #[tokio::test]

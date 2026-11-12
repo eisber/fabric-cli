@@ -189,8 +189,9 @@ impl FabricOperation {
 
     /// Poll a definition read through the selected endpoint, never its Location host.
     ///
-    /// Fabric can return a cluster-origin Location for a public definition read.
-    /// Its path must match the validated operation ID; the host is informational.
+    /// Fabric can return an HTTPS `*.analysis.windows.net` cluster Location for
+    /// a definition read. Its path must match the validated operation ID; that
+    /// cluster host is informational. Other origins must match the selected host.
     /// Poll and result requests still use only the caller's selected endpoint.
     /// Other operations and external reconciliation retain strict origin checks.
     ///
@@ -699,7 +700,11 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                     if !valid_id(id) {
                         return Err(OperationErrorKind::InvalidResponse);
                     }
-                    validate_definition_location(location, &format!("/v1/operations/{id}"))?;
+                    validate_definition_location(
+                        &self.endpoint,
+                        location,
+                        &format!("/v1/operations/{id}"),
+                    )?;
                 } else {
                     validate_source_origin(&self.endpoint, location)?;
                 }
@@ -819,7 +824,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                 } else {
                     path.to_owned()
                 };
-                validate_definition_location(uri, &expected)?;
+                validate_definition_location(&self.endpoint, uri, &expected)?;
             }
             match state.get("status").and_then(serde_json::Value::as_str) {
                 Some("NotStarted" | "Running") if !python => {
@@ -1161,25 +1166,33 @@ fn validate_source_origin(endpoint: &EndpointBinding, uri: &str) -> Result<(), O
         .map_err(|_| OperationErrorKind::InvalidLink)
 }
 
-fn validate_definition_location(uri: &str, path: &str) -> Result<(), OperationErrorKind> {
-    if uri.chars().any(|c| c.is_control() || c == '\\') || uri.contains(['?', '#']) {
+fn validate_definition_location(
+    endpoint: &EndpointBinding,
+    uri: &str,
+    path: &str,
+) -> Result<(), OperationErrorKind> {
+    if uri.len() > 16 * 1024
+        || uri.chars().any(|c| c.is_control() || c == '\\')
+        || uri.contains(['?', '#'])
+    {
         return Err(OperationErrorKind::InvalidLink);
     }
-    if uri == path {
+    if uri == path || endpoint.validate_link(uri, path).is_ok() {
         return Ok(());
     }
-    let url = Url::parse(uri).map_err(|_| OperationErrorKind::InvalidLink)?;
-    let raw_path = uri
+    let (authority, raw_path) = uri
         .strip_prefix("https://")
         .and_then(|rest| rest.split_once('/'))
-        .map(|(_, path)| path);
-    if url.scheme() != "https"
-        || url.host_str().is_none()
+        .ok_or(OperationErrorKind::InvalidLink)?;
+    let host = authority.strip_suffix(":443").unwrap_or(authority);
+    let url = Url::parse(uri).map_err(|_| OperationErrorKind::InvalidLink)?;
+    if !host.ends_with(".analysis.windows.net")
+        || url.host_str() != Some(host)
         || url.port_or_known_default() != Some(443)
         || !url.username().is_empty()
         || url.password().is_some()
         || url.path() != path
-        || raw_path != path.strip_prefix('/')
+        || Some(raw_path) != path.strip_prefix('/')
     {
         return Err(OperationErrorKind::InvalidLink);
     }
