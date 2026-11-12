@@ -12,7 +12,14 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+The full generic v2 create contract is not mounted in the executable root or
+service host.
+
+The separate opt-in
+[empty SparkJobDefinition leaf](spark-job-definition-create.md) now mounts the
+bounded named-leaf subset in `fab-cli-v2` when built with
+`headless,v2-create-sparkjobdefinition`. It does not enable this full generic
+contract, other item types, overwrite, duplicate, or the default v1 host.
 
 ## Target grammar
 
@@ -145,6 +152,19 @@ resource-specific backend evidence are separate integration requirements.
 Passing a library test cannot establish that the current binary supports the
 target command or that a Fabric API supports every policy.
 
+The opt-in shared create host's immediate approval inspects the exact
+already-prepared method, bound URL and outgoing bytes, including the generated
+body for omitted input. Terminal controls are escaped without reserializing the
+body that will be transmitted. Additional typed-provider effects use bounded
+anticipated-effect descriptors with contract references; they are not observed
+outcomes or permission for another mutation. Skip has no outgoing request or
+creation-effect declaration.
+
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 ## Outcomes and operation safety
 
 Keep requested policy, selected action, completion evidence, and effects
@@ -168,6 +188,11 @@ An accepted operation ID is not a created-resource ID or completion evidence.
 Partial, unknown, cancelled, and timed-out results must retain available
 operation and effect evidence. Cancellation or timeout stops local work; it does
 not prove that remote work stopped.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
 
 Do not automatically replay a mutation or claim rollback after cancellation,
 timeout, an unknown response, or a later failure. Failure to project or write a

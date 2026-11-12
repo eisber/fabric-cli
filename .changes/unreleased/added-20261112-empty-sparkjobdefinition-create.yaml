@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add opt-in native v2 empty SparkJobDefinition item creation with bounded metadata, explicit approval and shared operation receipts; no Spark runtime or script upload.
+time: 2026-11-12T13:21:34Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber
