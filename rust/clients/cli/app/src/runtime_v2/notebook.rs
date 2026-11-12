@@ -72,6 +72,14 @@ impl NotebookBinding {
     /// Rejects relative paths, directories, symlinks, unavailable or oversized files
     /// and malformed/inconsistent selections. No file or environment discovery.
     pub fn read(path: &Path, selected: &TypedPath) -> Result<Self, NativeError> {
+        Self::read_checked(path, selected, || {})
+    }
+
+    fn read_checked(
+        path: &Path,
+        selected: &TypedPath,
+        before_open: impl FnOnce(),
+    ) -> Result<Self, NativeError> {
         if !path.is_absolute() {
             return Err(NativeError::InvalidInput);
         }
@@ -81,12 +89,10 @@ impl NotebookBinding {
         if !metadata.file_type().is_file() || metadata.len() > BINDING_BYTES as u64 {
             return Err(NativeError::InvalidInput);
         }
-        let file = std::fs::File::open(path).map_err(|_| NativeError::InvalidInput)?;
-        if !file
-            .metadata()
-            .map_err(|_| NativeError::InvalidInput)?
-            .is_file()
-        {
+        before_open();
+        let file = open_no_follow(path).map_err(|_| NativeError::InvalidInput)?;
+        let opened = file.metadata().map_err(|_| NativeError::InvalidInput)?;
+        if !opened.is_file() || linked(&opened) || opened.len() > BINDING_BYTES as u64 {
             return Err(NativeError::InvalidInput);
         }
         let mut bytes = Vec::new();
@@ -212,10 +218,117 @@ impl NotebookBinding {
     }
 }
 
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    use rustix::fs::{Mode, OFlags, open};
+    Ok(std::fs::File::from(open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?))
+}
+
+#[cfg(windows)]
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    // Same OPEN_REPARSE_POINT and SHARE_READ policy as assertion_file.rs.
+    const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const SHARE_READ: u32 = 1;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(SHARE_READ)
+        .custom_flags(OPEN_REPARSE_POINT)
+        .open(path)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_no_follow(_: &Path) -> std::io::Result<std::fs::File> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+
+fn linked(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const REPARSE_POINT: u32 = 0x400;
+        metadata.file_attributes() & REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
 /// Actual native executor and typed resolver consumed by the existing shared head.
 pub struct NotebookConnection {
     /// Verified-principal/MwcToken adapter; never a scripted production placeholder.
     pub executor: NativeNotebookExecutor,
     /// Exact owner binding to the existing Notebook SDK.
     pub resolver: ExplicitResolver,
+}
+
+#[cfg(test)]
+mod tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+    use serde_json::json;
+
+    fn document(notebook: &str) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "schemaVersion":1,
+            "owner":{"workspace":"W.Workspace","artifact":"N.Notebook","kind":"notebook"},
+            "environment":"production","catalogOrigin":"https://api.fabric.microsoft.com",
+            "clusterOrigin":"https://selected-cluster.analysis.windows.net",
+            "workloadOrigin":"https://selected-notebook.fabric.microsoft.com",
+            "capacityId":"44444444-4444-4444-4444-444444444444",
+            "workspaceId":"55555555-5555-5555-5555-555555555555",
+            "notebookId":notebook,
+            "account":"22222222-2222-2222-2222-222222222222",
+            "tenant":"11111111-1111-1111-1111-111111111111"
+        }))
+        .unwrap()
+    }
+
+    #[cfg(any(unix, windows))]
+    fn symlink(target: &Path, path: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, path).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(target, path)
+            .expect("native Windows link tests require developer-mode/symlink privilege");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn replacement_after_metadata_cannot_follow_a_foreign_binding_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("selected.json");
+        let foreign = temp.path().join("foreign.json");
+        let selected = TypedPath::parse("/W.Workspace/N.Notebook/src/content").unwrap();
+        std::fs::write(&path, document("66666666-6666-6666-6666-666666666666")).unwrap();
+        std::fs::write(&foreign, document("77777777-7777-7777-7777-777777777777")).unwrap();
+        assert!(NotebookBinding::read(&path, &selected).is_ok());
+        let result = NotebookBinding::read_checked(&path, &selected, || {
+            std::fs::remove_file(&path).unwrap();
+            symlink(&foreign, &path);
+        });
+        assert!(matches!(result, Err(NativeError::InvalidInput)));
+        // No validated binding is published, so no credential/HTTP connector
+        // can be constructed from the substituted file.
+        assert!(NotebookBinding::read(&path, &selected).is_err());
+    }
+
+    #[test]
+    fn binding_reader_preserves_regular_file_directory_and_size_guards() {
+        let temp = tempfile::tempdir().unwrap();
+        let selected = TypedPath::parse("/W.Workspace/N.Notebook/src/content").unwrap();
+        assert!(NotebookBinding::read(temp.path(), &selected).is_err());
+        assert!(NotebookBinding::read(Path::new("relative.json"), &selected).is_err());
+        let path = temp.path().join("selected.json");
+        std::fs::write(&path, vec![b' '; BINDING_BYTES + 1]).unwrap();
+        assert!(NotebookBinding::read(&path, &selected).is_err());
+        std::fs::write(&path, document("66666666-6666-6666-6666-666666666666")).unwrap();
+        assert!(NotebookBinding::read(&path, &selected).is_ok());
+    }
 }
