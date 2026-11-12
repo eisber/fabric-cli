@@ -1,0 +1,1303 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Actual Report parser -> shared host -> SDK -> scripted HTTP contracts.
+
+#[cfg(feature = "native-host")]
+#[path = "http.rs"]
+mod http;
+
+#[path = "status.rs"]
+mod status;
+
+use super::*;
+use fabric_cli::{
+    create_command::{
+        CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding,
+        CreateCommandError, CreateExecution, CreateTransportEvidence, MAX_BYTES,
+        PreparedCreateCommand,
+    },
+    v2_create_report::ReportCreateBinding,
+};
+use fabric_sdk::{
+    Client,
+    items::{ItemExecutionError, ItemExecutor, ItemRequest, ItemResponse},
+};
+use std::{
+    io::{self, Read, Write},
+    path::Path,
+    sync::Arc,
+};
+
+struct Listing {
+    body: Value,
+    calls: AtomicUsize,
+}
+
+impl Listing {
+    fn new(rows: Value) -> Self {
+        Self {
+            body: json!({"value":rows}),
+            calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl ItemExecutor for Listing {
+    fn execute<'a>(
+        &'a self,
+        request: ItemRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
+        assert_eq!(request.method(), "GET");
+        assert_eq!(request.url().path(), format!("/v1/workspaces/{WS}/items"));
+        assert_eq!(request.url().query(), Some("recursive=false"));
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(std::future::ready(Ok(ItemResponse {
+            status: 200,
+            body: serde_json::to_vec(&self.body).unwrap(),
+            headers: BTreeMap::new(),
+        })))
+    }
+}
+
+struct PagedListing {
+    pages: Mutex<VecDeque<Value>>,
+    queries: Mutex<Vec<Vec<(String, String)>>>,
+}
+
+impl ItemExecutor for PagedListing {
+    fn execute<'a>(
+        &'a self,
+        request: ItemRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
+        assert_eq!(request.method(), "GET");
+        assert_eq!(request.url().path(), format!("/v1/workspaces/{WS}/items"));
+        let query = request.url().query_pairs().into_owned().collect::<Vec<_>>();
+        assert_eq!(query.first(), Some(&("recursive".into(), "false".into())));
+        self.queries.lock().unwrap().push(query);
+        let page = self
+            .pages
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("bounded page expected");
+        Box::pin(std::future::ready(Ok(ItemResponse {
+            status: 200,
+            body: serde_json::to_vec(&page).unwrap(),
+            headers: BTreeMap::new(),
+        })))
+    }
+}
+
+struct DeniedListing;
+impl ItemExecutor for DeniedListing {
+    fn execute<'a>(
+        &'a self,
+        _: ItemRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
+        Box::pin(std::future::ready(Ok(ItemResponse {
+            status: 403,
+            body: br#"{"errorCode":"InsufficientPrivileges"}"#.to_vec(),
+            headers: BTreeMap::new(),
+        })))
+    }
+}
+
+struct Approval {
+    raw: Vec<u8>,
+    result: Result<(), CreateApprovalError>,
+    calls: usize,
+    pending: bool,
+    question: Option<String>,
+    inspect_question: bool,
+}
+
+impl Approval {
+    fn allow(raw: Vec<u8>) -> Self {
+        Self {
+            raw,
+            result: Ok(()),
+            calls: 0,
+            pending: false,
+            question: None,
+            inspect_question: false,
+        }
+    }
+}
+
+impl CreateApproval for Approval {
+    fn authorize<'a>(
+        &'a mut self,
+        request: CreateApprovalRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), CreateApprovalError>> + Send + 'a>> {
+        self.calls += 1;
+        assert_eq!(request.plan().target().parent_id().as_str(), WS);
+        assert_eq!(request.plan().target().name(), "Report");
+        assert_eq!(request.plan().target().item_type(), "Report");
+        assert_eq!(request.context().selection(), &selection(Audience::Fabric));
+        assert_eq!(request.raw_input(), Some(self.raw.as_slice()));
+        assert_eq!(request.command().destination, PATH);
+        assert!(request.anticipated_effects().is_empty());
+        match request.plan().action() {
+            fabric_sdk::items::create::CreateAction::Create { .. } => {
+                let operation = request.operation().expect("prepared Report POST");
+                assert!(request.remote_write());
+                assert_eq!(operation.method(), ResourceMethod::Post);
+                assert_eq!(operation.path(), format!("/v1/workspaces/{WS}/reports"));
+                assert_eq!(operation.body(), self.raw);
+                assert_eq!(
+                    operation.completion(),
+                    if request.command().wait {
+                        CompletionPolicy::WaitForResult
+                    } else {
+                        CompletionPolicy::ReturnAccepted
+                    }
+                );
+                assert_eq!(
+                    request.url(),
+                    Some(&request.context().endpoint().url(operation.path()).unwrap())
+                );
+            }
+            fabric_sdk::items::create::CreateAction::Skip { .. } => {
+                assert!(!request.remote_write());
+                assert!(request.operation().is_none());
+                assert!(request.url().is_none());
+            }
+            _ => panic!("Report never admits replacement or duplicate"),
+        }
+        if self.inspect_question {
+            self.question = Some(request.approval_question());
+        }
+        if self.pending {
+            Box::pin(pending())
+        } else {
+            Box::pin(std::future::ready(self.result))
+        }
+    }
+}
+
+fn client(audience: Audience) -> (Client, Arc<Credential>) {
+    let credential = Arc::new(Credential::default());
+    (
+        Client::new(credential.clone(), selection(audience)),
+        credential,
+    )
+}
+
+fn prepare(cwd: &Path, args: &[&str], raw: &[u8]) -> PreparedCreateCommand {
+    let command = v2_create::parse_args(
+        ["create", PATH, "--input", "-"]
+            .into_iter()
+            .chain(args.iter().copied()),
+    )
+    .unwrap();
+    PreparedCreateCommand::preflight(command, &ReportCreateBinding, cwd, &mut &raw[..], false)
+        .unwrap()
+}
+
+fn metadata() -> Value {
+    json!({"id":REPORT,"workspaceId":WS,"displayName":"Report","type":"Report","future":null})
+}
+
+fn execution<E: OperationExecutor>(executor: E) -> CreateExecution<'static, E> {
+    CreateExecution {
+        executor,
+        observe: &|| CreateTransportEvidence {
+            http_status: None,
+            operation_id: None,
+        },
+    }
+}
+
+#[tokio::test]
+async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = format!(
+        " \r\n{}\r\n",
+        serde_json::to_string_pretty(&body()).unwrap()
+    )
+    .into_bytes();
+    let prepared = prepare(temp.path(), &["--project", "future"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let wire = Wire::new(vec![response(201, metadata())]);
+    let mut approval = Approval::allow(raw.clone());
+    approval.inspect_question = true;
+    let delivery = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(approval.calls, 1);
+    let question = approval.question.as_ref().unwrap();
+    assert!(question.contains("method=POST"));
+    assert!(question.contains(&format!(
+        "url=\"https://api.fabric.microsoft.com/v1/workspaces/{WS}/reports\""
+    )));
+    assert!(question.contains(&format!(
+        "body=\"{}\"",
+        std::str::from_utf8(&raw).unwrap().escape_debug()
+    )));
+    assert!(question.contains("audience=Fabric"));
+    assert!(question.contains("anticipatedEffects=[]"));
+    assert!(!question.contains('\n'));
+    assert_eq!(listing.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["status"], "completed");
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let receipt: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(receipt["data"], Value::Null);
+    assert_eq!(receipt["meta"]["resourceId"], REPORT);
+    assert_eq!(receipt["meta"]["workspaceId"], WS);
+    assert_eq!(receipt["meta"]["operationHandle"], Value::Null);
+    assert_eq!(receipt["meta"]["remoteReplayed"], false);
+    assert_eq!(receipt["meta"]["remoteWrite"], true);
+    assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 201);
+    let requests = wire.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].0, ResourceMethod::Post);
+    assert_eq!(
+        requests[0].1,
+        format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/reports")
+    );
+    assert_eq!(requests[0].2, raw);
+}
+
+#[tokio::test]
+async fn shared_four_mib_input_boundary_does_not_inherit_the_generic_one_mib_default() {
+    let temp = tempfile::tempdir().unwrap();
+    for size in [1024 * 1024 + 1, MAX_BYTES] {
+        let mut raw = serde_json::to_vec(&body()).unwrap();
+        raw.resize(size, b' ');
+        let prepared = prepare(temp.path(), &[], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(vec![response(201, metadata())]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(approval.calls, 1);
+        assert_eq!(wire.requests.lock().unwrap()[0].2, raw);
+    }
+}
+
+#[tokio::test]
+async fn denial_or_unavailable_approval_and_wrong_context_send_no_post() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for refusal in [
+        CreateApprovalError::Denied,
+        CreateApprovalError::Unavailable,
+    ] {
+        let prepared = prepare(temp.path(), &[], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(vec![]);
+        let mut approval = Approval::allow(raw.clone());
+        approval.result = Err(refusal);
+        assert!(matches!(prepared.execute(
+            &ReportCreateBinding, &client, &listing, execution(&wire), &mut approval, pending(),
+        ).await, Err(CreateCommandError::Approval(error)) if error == refusal));
+        assert_eq!(approval.calls, 1);
+        assert!(wire.requests.lock().unwrap().is_empty());
+    }
+    let prepared = prepare(temp.path(), &[], &raw);
+    let (client, credential) = client(Audience::OneLake);
+    let listing = Listing::new(json!([]));
+    let wire = Wire::new(vec![]);
+    let mut approval = Approval::allow(raw);
+    assert!(matches!(
+        prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await,
+        Err(CreateCommandError::Invalid)
+    ));
+    assert_eq!(listing.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert_eq!(approval.calls, 0);
+    assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn denied_discovery_never_becomes_missing_target_or_permission_to_create() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &[], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let wire = Wire::new(vec![]);
+    let mut approval = Approval::allow(raw);
+    assert!(matches!(
+        prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &DeniedListing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await,
+        Err(CreateCommandError::Discovery)
+    ));
+    assert_eq!(approval.calls, 0);
+    assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn original_interruption_cancels_pending_approval_before_any_mutation() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &["--timeout", "1ms"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let wire = Wire::new(vec![]);
+    let mut approval = Approval::allow(raw);
+    approval.pending = true;
+    let result = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            tokio::time::sleep(Duration::from_millis(5)),
+        )
+        .await;
+    assert!(matches!(result, Err(CreateCommandError::Interrupted)));
+    assert_eq!(approval.calls, 1);
+    assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn exact_existing_skip_is_unchanged_but_wrong_kind_and_ambiguity_never_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for rows in [
+        json!([metadata()]),
+        json!([metadata(), {"id":OP,"displayName":"Report","type":"Notebook","workspaceId":WS}]),
+        json!([{"id":REPORT,"displayName":"Report","type":"Notebook"}]),
+        json!([metadata(), metadata()]),
+        json!([{"id":REPORT,"displayName":"Report","type":"Report","workspaceId":OP}]),
+        json!([{"id":REPORT,"displayName":"report","type":"Report","workspaceId":WS}]),
+        json!([metadata(), {"id":OP,"displayName":"Report","workspaceId":WS}]),
+    ] {
+        let prepared = prepare(temp.path(), &["--if-exists", "skip"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(rows.clone());
+        let wire = Wire::new(vec![]);
+        let mut approval = Approval::allow(raw.clone());
+        let result = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await;
+        if rows == json!([metadata()])
+            || rows
+                == json!([metadata(), {"id":OP,"displayName":"Report","type":"Notebook","workspaceId":WS}])
+        {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+            assert_eq!(
+                delivery.report().value()["meta"]["contentEqualityClaimed"],
+                false
+            );
+            assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+            assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
+            assert_eq!(
+                delivery.report().value()["meta"]["anticipatedEffects"],
+                json!([])
+            );
+            assert!(
+                delivery.report().value()["meta"]
+                    .get("submission")
+                    .is_none()
+            );
+            assert_eq!(approval.calls, 1);
+        } else {
+            assert!(result.is_err());
+            assert_eq!(approval.calls, 0);
+        }
+        assert!(wire.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn malformed_created_and_accepted_responses_never_claim_complete_or_replay() {
+    let mut foreign_acceptance = accepted();
+    foreign_acceptance.headers.insert(
+        "Location".into(),
+        format!("https://example.invalid/v1/operations/{OP}"),
+    );
+    let mut bad_id = accepted();
+    bad_id
+        .headers
+        .insert("x-ms-operation-id".into(), "not-an-operation-id".into());
+    let replies = vec![
+        response(201, Value::Null),
+        response(201, json!({})),
+        response(
+            201,
+            json!({"id":REPORT,"workspaceId":OP,"displayName":"Report","type":"Report"}),
+        ),
+        response(
+            201,
+            json!({"id":REPORT,"workspaceId":WS,"displayName":"Wrong","type":"Report"}),
+        ),
+        response(
+            201,
+            json!({"id":REPORT,"workspaceId":WS,"displayName":"Report","type":"Notebook"}),
+        ),
+        OperationResponse {
+            status: 201,
+            body: b"{".to_vec(),
+            headers: BTreeMap::new(),
+        },
+        OperationResponse {
+            status: 202,
+            body: Vec::new(),
+            headers: BTreeMap::new(),
+        },
+        foreign_acceptance,
+        bad_id,
+    ];
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for reply in replies {
+        let prepared = prepare(temp.path(), &[], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(vec![reply]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(delivery.report().exit_code(), 0);
+        assert_ne!(delivery.report().value()["meta"]["status"], "completed");
+        assert_eq!(delivery.report().value()["meta"]["completed"], false);
+        assert_eq!(
+            delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+            true
+        );
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn paged_root_discovery_preserves_filter_and_only_skips_the_exact_root_report() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for folder in [None, Some(Value::Null)] {
+        let mut root = metadata();
+        if let Some(folder) = &folder {
+            root["folderId"] = folder.clone();
+        }
+        let nested = json!({
+            "id":OP,"displayName":"Report","type":"Report","workspaceId":WS,"folderId":OP
+        });
+        let listing = PagedListing {
+            pages: Mutex::new(VecDeque::from([
+                json!({"value":[nested],"continuationToken":"next page"}),
+                json!({"value":[root]}),
+            ])),
+            queries: Mutex::new(Vec::new()),
+        };
+        let prepared = prepare(temp.path(), &["--if-exists", "skip"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let wire = Wire::new(vec![]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+        assert_eq!(delivery.report().value()["meta"]["folderId"], Value::Null);
+        assert_eq!(
+            delivery.report().value()["meta"]["folderIdObserved"],
+            folder.is_some()
+        );
+        assert_eq!(approval.calls, 1);
+        assert!(wire.requests.lock().unwrap().is_empty());
+        assert!(listing.pages.lock().unwrap().is_empty());
+        assert_eq!(
+            *listing.queries.lock().unwrap(),
+            vec![
+                vec![("recursive".to_owned(), "false".to_owned())],
+                vec![
+                    ("recursive".to_owned(), "false".to_owned()),
+                    ("continuationToken".to_owned(), "next page".to_owned())
+                ],
+            ]
+        );
+    }
+}
+
+#[tokio::test]
+async fn nested_only_or_malformed_folder_matches_never_approve_or_create_the_root_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for folder in [
+        json!(OP),
+        json!(""),
+        json!("not-a-uuid"),
+        json!(false),
+        json!({}),
+    ] {
+        let mut nested = metadata();
+        nested["folderId"] = folder.clone();
+        let malformed = folder != json!(OP);
+        for rows in [json!([nested.clone()]), json!([metadata(), nested])] {
+            let prepared = prepare(temp.path(), &["--if-exists", "skip"], &raw);
+            let (client, _) = client(Audience::Fabric);
+            let listing = Listing::new(rows.clone());
+            let wire = Wire::new(vec![]);
+            let mut approval = Approval::allow(raw.clone());
+            let result = prepared
+                .execute(
+                    &ReportCreateBinding,
+                    &client,
+                    &listing,
+                    execution(&wire),
+                    &mut approval,
+                    pending(),
+                )
+                .await;
+            if malformed || rows.as_array().unwrap().len() == 1 {
+                assert!(matches!(result, Err(CreateCommandError::Invalid)));
+                assert_eq!(approval.calls, 0);
+            } else {
+                assert_eq!(
+                    result.unwrap().report().value()["meta"]["resourceId"],
+                    REPORT
+                );
+                assert_eq!(approval.calls, 1);
+            }
+            assert!(wire.requests.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn completed_report_folder_identity_is_checked_and_preserved_after_data_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for wait in [false, true] {
+        for folder in [
+            None,
+            Some(Value::Null),
+            Some(json!(OP)),
+            Some(json!("invalid")),
+            Some(json!(42)),
+        ] {
+            let mut result = metadata();
+            if let Some(folder) = &folder {
+                result["folderId"] = folder.clone();
+            }
+            let replies = if wait {
+                vec![
+                    accepted(),
+                    response(200, json!({"status":"Succeeded"})),
+                    response(200, result),
+                ]
+            } else {
+                vec![response(201, result)]
+            };
+            let args = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let prepared = prepare(temp.path(), &args, &raw);
+            let (client, _) = client(Audience::Fabric);
+            let listing = Listing::new(json!([]));
+            let wire = Wire::new(replies);
+            let mut approval = Approval::allow(raw.clone());
+            let delivery = prepared
+                .execute(
+                    &ReportCreateBinding,
+                    &client,
+                    &listing,
+                    execution(&wire),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .unwrap();
+            let is_root = folder.as_ref().is_none_or(Value::is_null);
+            assert_eq!(delivery.report().exit_code(), u8::from(!is_root));
+            assert_eq!(delivery.report().value()["meta"]["completed"], is_root);
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let receipt: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(receipt["data"], Value::Null);
+            assert_eq!(
+                receipt["meta"]["folderId"],
+                folder.clone().unwrap_or(Value::Null)
+            );
+            assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            if !wait {
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderId"],
+                    folder.clone().unwrap_or(Value::Null)
+                );
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderIdObserved"],
+                    folder.is_some()
+                );
+            }
+            assert_eq!(
+                wire.requests.lock().unwrap().len(),
+                if wait { 3 } else { 1 }
+            );
+        }
+    }
+}
+
+#[test]
+fn root_report_mount_preserves_omitted_or_null_folder_but_refuses_a_selected_folder() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in [None, Some(Value::Null), Some(json!(OP))] {
+        let mut supplied = body();
+        if let Some(folder) = &folder {
+            supplied["folderId"] = folder.clone();
+        }
+        let raw = serde_json::to_vec(&supplied).unwrap();
+        let parsed = command(false);
+        let prepared = PreparedCreateCommand::preflight(
+            parsed,
+            &ReportCreateBinding,
+            temp.path(),
+            &mut &raw[..],
+            false,
+        );
+        assert_eq!(prepared.is_ok(), folder.as_ref().is_none_or(Value::is_null));
+        if folder == Some(json!(OP)) {
+            assert!(validator().inspect(&target(), &supplied).is_ok());
+        }
+    }
+}
+
+#[tokio::test]
+async fn genuine_acceptance_and_lro_result_keep_operation_and_resource_ids_distinct() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for wait in [false, true] {
+        let prepared = prepare(temp.path(), if wait { &["--wait"] } else { &[] }, &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(vec![
+            accepted(),
+            response(200, json!({"status":"Succeeded"})),
+            response(200, metadata()),
+        ]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        let receipt = delivery.report().value();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(
+            receipt["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["completed"], wait);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            receipt["meta"]["resourceId"],
+            if wait { json!(REPORT) } else { Value::Null }
+        );
+        assert_eq!(
+            wire.requests.lock().unwrap().len(),
+            if wait { 3 } else { 1 }
+        );
+        if wait {
+            assert_eq!(
+                wire.waits.lock().unwrap().as_slice(),
+                [Duration::from_secs(2)]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn poll_failure_and_response_budget_retains_known_handle_or_resource_uncertainty() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for replies in [
+        vec![
+            accepted(),
+            response(500, json!({"errorCode":"OfflineFailure"})),
+        ],
+        vec![OperationResponse {
+            status: 201,
+            body: vec![b' '; MAX_BYTES + 1],
+            headers: BTreeMap::new(),
+        }],
+    ] {
+        let accepted_first = replies[0].status == 202;
+        let prepared = prepare(temp.path(), &["--wait"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(replies);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(delivery.report().exit_code(), 0);
+        assert!(delivery.report().error().is_some());
+        assert_eq!(delivery.report().value()["meta"]["completed"], false);
+        assert_eq!(
+            delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+            true
+        );
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
+        assert_eq!(
+            delivery.report().value()["meta"]["operationHandle"],
+            if accepted_first {
+                json!(format!("/operations/{OP}"))
+            } else {
+                Value::Null
+            },
+        );
+        assert_eq!(
+            wire.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.0 == ResourceMethod::Post)
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn report_identity_received_with_acceptance_survives_later_poll_failure() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &["--wait"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let mut acceptance = accepted();
+    let mut accepted_report = metadata();
+    accepted_report["folderId"] = Value::Null;
+    acceptance.body = serde_json::to_vec(&accepted_report).unwrap();
+    let wire = Wire::new(vec![
+        acceptance,
+        response(500, json!({"errorCode":"OfflineFailure"})),
+    ]);
+    let mut approval = Approval::allow(raw);
+    let delivery = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["completed"], false);
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["httpStatus"],
+        202
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["resource"],
+        json!({"id":REPORT,"workspaceId":WS,"displayName":"Report","type":"Report"})
+    );
+    assert_eq!(delivery.report().value()["meta"]["httpStatus"], 500);
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["folderId"],
+        Value::Null
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["folderIdObserved"],
+        true
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+        true
+    );
+    assert_eq!(wire.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn accepted_report_evidence_survives_malformed_final_result_and_data_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for final_body in [
+        b"{malformed".to_vec(),
+        serde_json::to_vec(&json!({
+            "id":OP,"workspaceId":WS,"displayName":"Wrong","type":"Notebook"
+        }))
+        .unwrap(),
+    ] {
+        let prepared = prepare(temp.path(), &["--wait", "--project", "missing"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let mut acceptance = accepted();
+        let mut accepted_report = metadata();
+        accepted_report["folderId"] = Value::Null;
+        acceptance.body = serde_json::to_vec(&accepted_report).unwrap();
+        let wire = Wire::new(vec![
+            acceptance,
+            response(200, json!({"status":"Succeeded"})),
+            OperationResponse {
+                status: 200,
+                body: final_body.clone(),
+                headers: BTreeMap::new(),
+            },
+        ]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["completed"], false);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(receipt["data"], Value::Null);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], REPORT);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["type"], "Report");
+        assert_eq!(receipt["meta"]["submission"]["folderId"], Value::Null);
+        assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+        assert_eq!(receipt["meta"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        if final_body.starts_with(b"{malformed") {
+            assert_eq!(
+                receipt["meta"]["unparsedResponseBodyBase64"],
+                STANDARD.encode(&final_body)
+            );
+        }
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
+        assert_eq!(
+            wire.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.0 == ResourceMethod::Post)
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_no_wait_acceptance_retains_bytes_and_handle_without_false_completion() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &["--project", "missing"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let malformed = b"{broken-acceptance";
+    let mut acceptance = accepted();
+    acceptance.body = malformed.to_vec();
+    let wire = Wire::new(vec![acceptance]);
+    let mut approval = Approval::allow(raw);
+    let delivery = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(delivery.report().exit_code(), 0);
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let receipt: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(receipt["data"], Value::Null);
+    assert_eq!(receipt["meta"]["completed"], false);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        receipt["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(
+        receipt["meta"]["unparsedAcceptanceBodyBase64"],
+        STANDARD.encode(malformed)
+    );
+    assert_eq!(
+        receipt["meta"]["unparsedResponseBodyBase64"],
+        STANDARD.encode(malformed)
+    );
+    assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+    assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    assert!(wire.waits.lock().unwrap().is_empty());
+}
+
+struct CancelAtPoll {
+    wire: Wire,
+    cancel: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+}
+
+impl OperationExecutor for &CancelAtPoll {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
+    {
+        Box::pin(async move { (&self.wire).execute(request).await })
+    }
+
+    fn wait(
+        &self,
+        _: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<(), OperationExecutionError>> + Send + '_>> {
+        Box::pin(async move {
+            self.cancel
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .send(())
+                .unwrap();
+            pending().await
+        })
+    }
+}
+
+#[tokio::test]
+async fn cancellation_after_acceptance_keeps_handle_without_remote_cancel_or_replay() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &["--wait"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let (cancel, interrupted) = tokio::sync::oneshot::channel();
+    let wire = CancelAtPoll {
+        wire: Wire::new(vec![{
+            let mut acceptance = accepted();
+            acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+            acceptance
+        }]),
+        cancel: Mutex::new(Some(cancel)),
+    };
+    let mut approval = Approval::allow(raw);
+    let delivery = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            async {
+                interrupted.await.unwrap();
+            },
+        )
+        .await
+        .unwrap();
+    assert_ne!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["error"]["code"], "Cancelled");
+    assert_eq!(
+        delivery.report().value()["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["httpStatus"],
+        202
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["resource"]["id"],
+        REPORT
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+        true
+    );
+    assert_eq!(delivery.report().value()["meta"]["remoteCancelled"], false);
+    assert_eq!(delivery.report().value()["meta"]["remoteReplayed"], false);
+    assert_eq!(wire.wire.requests.lock().unwrap().len(), 1);
+}
+
+struct BrokenWriter;
+impl Write for BrokenWriter {
+    fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+        Err(io::Error::other("offline output failure"))
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Err(io::Error::other("offline flush failure"))
+    }
+}
+
+#[tokio::test]
+async fn delivery_failure_after_acceptance_retains_handle_effect_and_no_clobber() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for output_file in [false, true] {
+        let output = temp.path().join("receipt.json");
+        let args = if output_file {
+            vec!["-o", output.to_str().unwrap()]
+        } else {
+            vec![]
+        };
+        let prepared = prepare(temp.path(), &args, &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let wire = Wire::new(vec![accepted()]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        if output_file {
+            std::fs::write(&output, b"do not replace").unwrap();
+        }
+        let Err(CreateCommandError::Delivery { report, .. }) = delivery.deliver(&mut BrokenWriter)
+        else {
+            panic!("local failure must retain original report");
+        };
+        assert_eq!(report.value()["meta"]["status"], "accepted");
+        assert_eq!(
+            report.value()["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(report.value()["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(report.value()["meta"]["remoteReplayed"], false);
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
+        if output_file {
+            assert_eq!(std::fs::read(output).unwrap(), b"do not replace");
+        }
+    }
+}
+
+struct ForbiddenRead;
+impl Read for ForbiddenRead {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        panic!("no input read permitted")
+    }
+}
+
+#[test]
+fn host_rejects_wrong_owner_profile_stdin_conflicts_invalid_input_and_policy_locally() {
+    let temp = tempfile::tempdir().unwrap();
+    for args in [
+        vec![
+            "create",
+            "/11111111-1111-1111-1111-111111111111.Workspace/Report.Notebook",
+            "--input",
+            "-",
+        ],
+        vec!["create", PATH, "--profile", "named", "--input", "-"],
+    ] {
+        let command = v2_create::parse_args(args).unwrap();
+        assert!(
+            PreparedCreateCommand::preflight(
+                command,
+                &ReportCreateBinding,
+                temp.path(),
+                &mut ForbiddenRead,
+                false,
+            )
+            .is_err()
+        );
+    }
+    let parsed = command(false);
+    assert!(
+        PreparedCreateCommand::preflight(
+            parsed,
+            &ReportCreateBinding,
+            temp.path(),
+            &mut ForbiddenRead,
+            true,
+        )
+        .is_err()
+    );
+    for bytes in [
+        b"".as_slice(),
+        b"null",
+        b"{}",
+        b"{",
+        br#"{"displayName":"Report","displayName":"Report"}"#,
+    ] {
+        let command = command(false);
+        assert!(
+            PreparedCreateCommand::preflight(
+                command,
+                &ReportCreateBinding,
+                temp.path(),
+                &mut &bytes[..],
+                false,
+            )
+            .is_err()
+        );
+    }
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for policy in ["overwrite", "duplicate"] {
+        let command =
+            v2_create::parse_args(["create", PATH, "--input", "-", "--if-exists", policy]).unwrap();
+        assert!(
+            PreparedCreateCommand::preflight(
+                command,
+                &ReportCreateBinding,
+                temp.path(),
+                &mut &raw[..],
+                false,
+            )
+            .is_err()
+        );
+    }
+    for policy in ["overwrite", "duplicate"] {
+        let command =
+            v2_create::parse_args(["create", PATH, "--input", "-", "--if-exists", policy]).unwrap();
+        assert!(
+            PreparedCreateCommand::preflight(
+                command,
+                &ReportCreateBinding,
+                temp.path(),
+                &mut ForbiddenRead,
+                false,
+            )
+            .is_err()
+        );
+    }
+    let force = v2_create::parse_args(["create", PATH, "--input", "-", "--force"]).unwrap();
+    assert!(
+        PreparedCreateCommand::preflight(
+            force,
+            &ReportCreateBinding,
+            temp.path(),
+            &mut ForbiddenRead,
+            false,
+        )
+        .is_err()
+    );
+    let mut oversized = raw.clone();
+    oversized.resize(MAX_BYTES + 1, b' ');
+    assert!(
+        PreparedCreateCommand::preflight(
+            command(false),
+            &ReportCreateBinding,
+            temp.path(),
+            &mut &oversized[..],
+            false,
+        )
+        .is_err()
+    );
+    let prepared_plan = command(false)
+        .plan(
+            target(),
+            Preflight::Leaf(LeafState::Missing),
+            &capabilities(),
+            Some(body()),
+            &validator(),
+        )
+        .unwrap();
+    let mut changed = body();
+    changed["description"] = json!("substitution");
+    assert!(
+        ReportCreateBinding
+            .operation(
+                &prepared_plan,
+                Some(&serde_json::to_vec(&changed).unwrap()),
+                false,
+            )
+            .is_err()
+    );
+}
