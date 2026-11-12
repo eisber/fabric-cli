@@ -53,6 +53,12 @@ These are synthetic placeholders, not usable service configuration. Supply
 previously known, authorized origins and IDs; this host does not discover them.
 Unknown fields, token/secret fields, relative paths, directories, symlinks,
 oversized files and malformed bindings fail before identity or HTTP.
+The reader opens the final component with Unix no-follow/nonblocking flags or
+Windows open-reparse-point flags, then validates the opened handle before
+reading. A final symlink substituted after metadata inspection is rejected.
+The selected parent directory namespace must be trusted and stable; this
+boundary does not claim containment against hostile ancestor replacement or
+hard-link/in-place changes by another writer with access to that namespace.
 The typed human owner must match exactly. IDs must be canonical nonzero GUIDs.
 The account and tenant must exactly match the existing selected native identity.
 The catalog must match both the existing Fabric endpoint and selected
