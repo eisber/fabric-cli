@@ -1,0 +1,16 @@
+{
+    "timestamp": "2000-01-01T00:00:00Z",
+    "status": "Success",
+    "command": "api",
+    "result": {
+        "data": [
+            {
+                "status_code": 200,
+                "text": {
+                    "ok": true,
+                    "label": "caf\u00e9"
+                }
+            }
+        ]
+    }
+}

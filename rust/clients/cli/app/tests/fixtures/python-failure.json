@@ -1,0 +1,9 @@
+{
+    "timestamp": "2000-01-01T00:00:00Z",
+    "status": "Failure",
+    "command": "api",
+    "result": {
+        "error_code": "Unauthorized",
+        "message": "No Rust identity selected. Run fab-rs auth login."
+    }
+}

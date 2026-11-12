@@ -1,0 +1,294 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Narrow donor-adapted raw API parsing, input validation, and response projection.
+#![forbid(unsafe_code)]
+
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use fabric_cli_command_contracts::{CommandError, python_truthy};
+use fabric_core::{ApiRequest, ApiResponse, Audience, MAX_REQUEST_BYTES};
+use serde_json::{Map, Value};
+use std::{collections::BTreeMap, io::Read, path::Path};
+
+/// Prepared API command; all local input validation has completed.
+pub struct PreparedApi {
+    /// Fixed token/origin audience.
+    pub audience: Audience,
+    /// Fully validated request, without authorization.
+    pub request: ApiRequest,
+    /// Optional local response projection.
+    pub query: Option<String>,
+    /// Include service headers only on explicit request.
+    pub show_headers: bool,
+    /// Return the actual initial response, without polling or background work.
+    pub asynchronous: bool,
+}
+
+/// Long-only approved API parser. No params, underscore aliases, or timing switches.
+pub fn command() -> Command {
+    Command::new("api")
+        .about("Send a raw API request; recognized operations poll by default (up to 600 seconds)")
+        .disable_help_flag(true)
+        .arg(Arg::new("help").long("help").action(ArgAction::Help))
+        .arg(Arg::new("endpoint").required(true))
+        .arg(
+            Arg::new("method")
+                .long("method")
+                .default_value("get")
+                .value_parser(["get", "post", "delete", "put", "patch"]),
+        )
+        .arg(
+            Arg::new("audience")
+                .long("audience")
+                .default_value("fabric")
+                .value_parser(["fabric", "storage", "azure", "powerbi"]),
+        )
+        .arg(
+            Arg::new("input")
+                .long("input")
+                .help("Inline JSON object, JSON file, or multipart file"),
+        )
+        .arg(
+            Arg::new("headers")
+                .long("headers")
+                .help("Safe key=value pairs separated by commas"),
+        )
+        .arg(
+            Arg::new("query")
+                .long("query")
+                .help("Local JMESPath response filter"),
+        )
+        .arg(
+            Arg::new("show-headers")
+                .long("show-headers")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("async")
+                .long("async")
+                .action(ArgAction::SetTrue)
+                .help("Send once and return the initial response; do not poll"),
+        )
+}
+
+/// Validate request bytes, headers, query, and origin before reading auth/config.
+pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
+    let value = |name| matches.get_one::<String>(name).map(String::as_str);
+    let audience = match value("audience") {
+        Some("fabric") => Audience::Fabric,
+        Some("storage") => Audience::Storage,
+        Some("azure") => Audience::Azure,
+        Some("powerbi") => Audience::PowerBi,
+        _ => return Err(invalid("Invalid audience")),
+    };
+    // Pinned process_nargs joins query/header tokens then strips boundary quote characters.
+    let query = value("query").map(|text| text.trim_matches(['"', '\'']).to_owned());
+    if let Some(query) = query.as_deref() {
+        if query.len() > 16 * 1024 {
+            return Err(invalid("JMESPath expression exceeds allocation bound"));
+        }
+        if !query.is_empty() {
+            fabric_cli_query::validate(query)
+                .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"))?;
+        }
+    }
+    let mut headers = parse_headers(value("headers"))?;
+    let body = load_input(value("input"), &mut headers)?;
+    let request = fabric_sdk_api::build_request(
+        audience,
+        value("method").unwrap_or("get"),
+        value("endpoint").unwrap_or_default(),
+        headers,
+        body,
+    )?;
+    Ok(PreparedApi {
+        audience,
+        request,
+        query,
+        show_headers: matches.get_flag("show-headers"),
+        asynchronous: matches.get_flag("async"),
+    })
+}
+
+fn invalid(message: &'static str) -> CommandError {
+    CommandError::new("InvalidInput", message)
+}
+
+/// First-`=` header splitting, with last case-insensitive duplicate value retained.
+pub fn parse_headers(text: Option<&str>) -> Result<BTreeMap<String, String>, CommandError> {
+    let mut headers = BTreeMap::new();
+    if let Some(text) = text {
+        let text = text.trim_matches(['"', '\'']);
+        if text.len() > 64 * 1024 {
+            return Err(invalid("Custom headers exceed allocation bound"));
+        }
+        for pair in text.split(',').filter(|_| !text.is_empty()) {
+            let (key, value) = pair.split_once('=').ok_or_else(|| {
+                invalid("Invalid format for headers. Use key=value pairs separated by commas.")
+            })?;
+            headers.insert(key.trim().to_ascii_lowercase(), value.trim().to_owned());
+        }
+    }
+    fabric_core::validate_headers(&headers)?;
+    Ok(headers)
+}
+
+fn load_input(
+    input: Option<&str>,
+    headers: &mut BTreeMap<String, String>,
+) -> Result<Vec<u8>, CommandError> {
+    let Some(input) = input else {
+        return Ok(Vec::new());
+    };
+    let text = input.trim_matches(['"', '\'']);
+    if text.len() > MAX_REQUEST_BYTES {
+        return Err(invalid("API input exceeds allocation bound"));
+    }
+    if text.starts_with('{') && text.ends_with('}') {
+        return json_body(text.as_bytes(), headers);
+    }
+    let path = Path::new(text);
+    // Reject special files before open: opening a named pipe can otherwise block indefinitely.
+    let metadata = std::fs::metadata(path).map_err(|_| {
+        CommandError::new(
+            "InvalidPath",
+            "API input file does not exist or cannot be read",
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(invalid("API input must be a regular file"));
+    }
+    if metadata.len() > MAX_REQUEST_BYTES as u64 {
+        return Err(invalid("API input exceeds allocation bound"));
+    }
+    let file = std::fs::File::open(path).map_err(|_| {
+        CommandError::new(
+            "InvalidPath",
+            "API input file does not exist or cannot be read",
+        )
+    })?;
+    if !file
+        .metadata()
+        .map_err(|_| invalid("Cannot inspect API input file"))?
+        .is_file()
+    {
+        return Err(invalid("API input must be a regular file"));
+    }
+    let mut bytes = Vec::new();
+    file.take((MAX_REQUEST_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| invalid("Cannot read API input file"))?;
+    if bytes.len() > MAX_REQUEST_BYTES {
+        return Err(invalid("API input exceeds allocation bound"));
+    }
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        return json_body(&bytes, headers);
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| invalid("Invalid multipart filename"))?;
+    multipart(name, &bytes, headers)
+}
+
+fn json_body(
+    bytes: &[u8],
+    headers: &mut BTreeMap<String, String>,
+) -> Result<Vec<u8>, CommandError> {
+    let value: Value = serde_json::from_slice(bytes)
+        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
+    let bytes = fabric_core_json::json_dumps(&value).into_bytes();
+    if bytes.len() > MAX_REQUEST_BYTES {
+        return Err(invalid("Encoded API input exceeds allocation bound"));
+    }
+    headers
+        .entry("content-type".into())
+        .or_insert_with(|| "application/json".into());
+    Ok(bytes)
+}
+
+fn multipart(
+    name: &str,
+    content: &[u8],
+    headers: &mut BTreeMap<String, String>,
+) -> Result<Vec<u8>, CommandError> {
+    if name.is_empty()
+        || name.len() > 1024
+        || name
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '"' | '/' | '\\'))
+    {
+        return Err(invalid("Invalid multipart filename"));
+    }
+    // Deterministic collision-free boundary for these bounded caller-owned bytes.
+    let mut boundary = "fab-rs-multipart".to_owned();
+    while content
+        .windows(boundary.len())
+        .any(|bytes| bytes == boundary.as_bytes())
+    {
+        boundary.push('x');
+        if boundary.len() > 70 {
+            return Err(invalid("Cannot frame multipart input safely"));
+        }
+    }
+    let mut body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\r\n"
+    )
+    .into_bytes();
+    let suffix = format!("\r\n--{boundary}--\r\n");
+    if body
+        .len()
+        .checked_add(content.len())
+        .and_then(|n| n.checked_add(suffix.len()))
+        .is_none_or(|length| length > MAX_REQUEST_BYTES)
+    {
+        return Err(invalid("Multipart API input exceeds allocation bound"));
+    }
+    body.extend_from_slice(content);
+    body.extend_from_slice(suffix.as_bytes());
+    headers
+        .entry("content-type".into())
+        .or_insert_with(|| format!("multipart/form-data; boundary={boundary}"));
+    Ok(body)
+}
+
+/// Shape the actual response like pinned Python raw API, including falsey-query fallback.
+pub fn response_data(
+    response: ApiResponse,
+    show_headers: bool,
+    query: Option<&str>,
+) -> Result<Value, CommandError> {
+    let mut payload = Map::new();
+    payload.insert("status_code".into(), Value::from(response.status));
+    if show_headers {
+        payload.insert(
+            "headers".into(),
+            serde_json::to_value(response.headers)
+                .map_err(|_| invalid("Invalid response headers"))?,
+        );
+    }
+    let response_text = std::str::from_utf8(&response.body)
+        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
+    let body = if response_text
+        .chars()
+        .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
+    {
+        Value::String("(Empty)".into())
+    } else {
+        serde_json::from_slice(&response.body)
+            .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?
+    };
+    payload.insert("text".into(), body);
+    let payload = Value::Object(payload);
+    if let Some(query) = query {
+        let projected = fabric_cli_query::search(&payload, query)
+            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"))?;
+        if python_truthy(&projected) {
+            return Ok(projected);
+        }
+    }
+    Ok(payload)
+}

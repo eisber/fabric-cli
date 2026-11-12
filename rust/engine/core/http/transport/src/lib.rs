@@ -1,0 +1,232 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Native pooled HTTPS, with platform trust and bounded wire/decoded bodies.
+#![forbid(unsafe_code)]
+use async_compression::tokio::bufread::{GzipDecoder, ZlibDecoder};
+use async_trait::async_trait;
+use fabric_core::{
+    ApiRequest, ApiResponse, CoreError, ErrorKind, HttpTransport, MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES, OperationContext,
+};
+use fabric_sdk_http::bounded;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Bytes;
+use hyper_rustls::HttpsConnector;
+use hyper_util::{
+    client::legacy::{Client, connect::HttpConnector},
+    rt::{TokioExecutor, TokioTimer},
+};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use tokio::io::AsyncReadExt;
+
+/// Explicit native transport. No redirect, proxy, auth discovery, or runtime setup.
+pub struct NativeHttpClient {
+    client: Client<HttpsConnector<HttpConnector>, Full<Bytes>>,
+}
+impl NativeHttpClient {
+    /// Create a TLS transport using the operating system trust policy.
+    pub fn new() -> Result<Self, CoreError> {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
+            .map_err(|_| error("Unable to initialize platform certificate verification"))?;
+        let tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|_| error("Unable to configure TLS"))?
+            .dangerous()
+            // Established OS verifier, not an insecure verification bypass.
+            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_no_client_auth();
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls)
+            .https_only()
+            .enable_http1()
+            .build();
+        let mut builder = Client::builder(TokioExecutor::new());
+        builder
+            .retry_canceled_requests(false)
+            .pool_timer(TokioTimer::new())
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(4)
+            .http1_max_buf_size(32 * 1024);
+        Ok(Self {
+            client: builder.build(connector),
+        })
+    }
+    async fn send_once(&self, request: ApiRequest) -> Result<ApiResponse, CoreError> {
+        if request.url.scheme() != "https" || request.body.len() > MAX_REQUEST_BYTES {
+            return Err(error("Native transport requires bounded HTTPS requests"));
+        }
+        let mut builder = http::Request::builder()
+            .method(request.method.as_str())
+            .uri(request.url.as_str());
+        for (name, value) in request.headers {
+            builder = builder.header(name, value);
+        }
+        let request = builder
+            .body(Full::new(Bytes::from(request.body)))
+            .map_err(|_| error("Invalid HTTP request"))?;
+        let response = self
+            .client
+            .request(request)
+            .await
+            .map_err(|_| error("HTTP send failed; request outcome may be uncertain"))?;
+        let status = response.status().as_u16();
+        if (300..400).contains(&status) {
+            return Err(CoreError::new(
+                ErrorKind::Protocol,
+                "HTTP redirects are not followed",
+            ));
+        }
+        let mut headers = BTreeMap::new();
+        let mut header_bytes = 0usize;
+        for (name, value) in response.headers() {
+            header_bytes = header_bytes
+                .saturating_add(name.as_str().len())
+                .saturating_add(value.len());
+            if header_bytes > 64 * 1024 {
+                return Err(protocol("Response headers exceed allocation bound"));
+            }
+            if headers.contains_key(name.as_str())
+                && [
+                    "location",
+                    "azure-asyncoperation",
+                    "x-ms-operation-id",
+                    "retry-after",
+                    "content-encoding",
+                ]
+                .contains(&name.as_str())
+            {
+                return Err(CoreError::new(
+                    ErrorKind::Protocol,
+                    "Duplicate operation control header",
+                ));
+            }
+            // Python Requests exposes HTTP header octets as Latin-1, joining
+            // repeated fields. Control headers above remain unambiguous.
+            let value: String = value.as_bytes().iter().copied().map(char::from).collect();
+            headers
+                .entry(name.as_str().to_owned())
+                .and_modify(|previous: &mut String| {
+                    previous.push_str(", ");
+                    previous.push_str(&value);
+                })
+                .or_insert(value);
+        }
+        let mut incoming = response.into_body();
+        let mut wire = Vec::new();
+        while let Some(frame) = incoming.frame().await {
+            let frame = frame.map_err(|_| error("HTTP response stream failed"))?;
+            if let Ok(bytes) = frame.into_data() {
+                if wire.len().saturating_add(bytes.len()) > MAX_RESPONSE_BYTES {
+                    return Err(protocol("Wire response exceeds allocation bound"));
+                }
+                wire.extend_from_slice(&bytes);
+            }
+        }
+        let body = if status == 204 {
+            Vec::new()
+        } else {
+            decode(wire, headers.get("content-encoding").map(String::as_str)).await?
+        };
+        Ok(ApiResponse {
+            status,
+            headers,
+            body,
+        })
+    }
+}
+fn error(message: &str) -> CoreError {
+    CoreError::new(ErrorKind::Transport, message)
+}
+fn protocol(message: &str) -> CoreError {
+    CoreError::new(ErrorKind::Protocol, message)
+}
+
+async fn decode(wire: Vec<u8>, encoding: Option<&str>) -> Result<Vec<u8>, CoreError> {
+    let encoding = encoding.unwrap_or("identity");
+    let mut reader: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send + '_>> =
+        if encoding.eq_ignore_ascii_case("gzip") {
+            let mut decoder = GzipDecoder::new(wire.as_slice());
+            decoder.multiple_members(true);
+            Box::pin(decoder)
+        } else if encoding.eq_ignore_ascii_case("deflate") {
+            let mut decoder = ZlibDecoder::new(wire.as_slice());
+            decoder.multiple_members(true);
+            Box::pin(decoder)
+        } else if encoding.eq_ignore_ascii_case("identity") {
+            return Ok(wire);
+        } else {
+            return Err(CoreError::new(
+                ErrorKind::Protocol,
+                "Unsupported response content encoding",
+            ));
+        };
+    let mut decoded = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        let count = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|_| protocol("Invalid compressed response"))?;
+        if count == 0 {
+            break;
+        }
+        if decoded.len().saturating_add(count) > MAX_RESPONSE_BYTES {
+            return Err(protocol("Decoded response exceeds allocation bound"));
+        }
+        decoded.extend_from_slice(&chunk[..count]);
+    }
+    Ok(decoded)
+}
+#[async_trait]
+impl HttpTransport for NativeHttpClient {
+    async fn send(
+        &self,
+        request: ApiRequest,
+        context: &OperationContext,
+    ) -> Result<ApiResponse, CoreError> {
+        bounded(context, self.send_once(request)).await?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bounded_gzip_and_identity_decode_offline() {
+        let gzip = vec![
+            31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 203, 72, 205, 201, 201, 7, 0, 134, 166, 16, 54, 5, 0,
+            0, 0,
+        ];
+        assert_eq!(decode(gzip, Some("gzip")).await.unwrap(), b"hello");
+        assert_eq!(decode(b"{}".to_vec(), None).await.unwrap(), b"{}");
+        assert_eq!(
+            decode(vec![0, 1, 2], Some("gzip")).await.unwrap_err().kind,
+            ErrorKind::Protocol
+        );
+        assert_eq!(
+            decode(vec![], Some("unsupported")).await.unwrap_err().kind,
+            ErrorKind::Protocol
+        );
+    }
+
+    #[tokio::test]
+    async fn compressed_small_wire_cannot_expand_past_bound() {
+        // Deterministic gzip member for one MiB of 'x'; 33 members fit in
+        // 35 KiB wire bytes but exceed the independent decoded allocation bound.
+        let mut member = vec![
+            31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 237, 193, 49, 1, 0, 0, 0, 194, 160, 218, 139, 111, 8,
+            95, 160,
+        ];
+        member.extend(std::iter::repeat_n(0, 1016));
+        member.extend([62, 3, 50, 156, 59, 21, 0, 0, 16, 0]);
+        let wire = member.repeat(33);
+        assert!(wire.len() < 64 * 1024);
+        assert_eq!(
+            decode(wire, Some("gzip")).await.unwrap_err().kind,
+            ErrorKind::Protocol
+        );
+    }
+}

@@ -1,0 +1,28 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Independent Python oracle
+
+The envelope fixtures were captured by executing `OutputStatus`, `OutputResult`,
+and `FabricCLIOutput` from pinned upstream commit
+`5b504195c63ef54c7382ca8e8a9d9759717f0ec5`, before comparing Rust output.
+The source classes were loaded with AST extraction and the timestamp fixed to
+`2000-01-01T00:00:00Z`; Python `json.dumps(..., indent=4)` supplied the bytes.
+They were not generated from Rust. Both files include the print newline.
+
+The host tests additionally assert independent cases from pinned
+`commands/api/fab_api_request.py` and `utils/fab_jmespath.py`: the query sees the
+full status/headers/text object; falsey projected collections/strings retain
+that object; scalar false, null, and zero become Python strings; projected
+lists are not wrapped again by `OutputResult`. Whitespace bodies become
+`"(Empty)"`; invalid nonempty JSON is an error.
+
+Coverage limit: these byte fixtures cover the envelope and ordered JSON body,
+not HTTP wire-header ordering. The agreed shared `ApiResponse` uses a
+`BTreeMap`, so displayed header keys are sorted rather than retaining wire
+insertion order. Header values and visibility are tested separately.
+
+Approved interface differences: long-only API switches, `--show-headers` rather
+than `--show_headers`, no `--params` (query text stays in the endpoint), required
+Rust binding, missing input files fail explicitly, default recognized-LRO
+polling, and `--async` returning the actual initial response once. These are not
+claims of Python flag or default-polling parity.
