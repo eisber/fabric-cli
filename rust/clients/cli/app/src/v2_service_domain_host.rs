@@ -109,6 +109,7 @@ impl<'a> BoundedDomainResolver<'a> {
             selector.to_owned()
         } else {
             let (request, field) = HiddenCollection::Domains.request()?;
+            let request = request.with_endpoint(self.context.endpoint())?;
             let response = api.send(&request, limit, self.cancelled.as_mut()).await?;
             let value = metadata(&response)?;
             let rows = value
@@ -128,7 +129,9 @@ impl<'a> BoundedDomainResolver<'a> {
             }
             selected.ok_or(ResolveError::Identity)?
         };
-        let request = HiddenResource::Domain(id.clone()).request()?;
+        let request = HiddenResource::Domain(id.clone())
+            .request()?
+            .with_endpoint(self.context.endpoint())?;
         let response = api.send(&request, limit, self.cancelled.as_mut()).await?;
         let value = metadata(&response)?;
         let (verified_id, name) = identity(&value)?;

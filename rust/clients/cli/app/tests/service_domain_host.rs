@@ -275,6 +275,11 @@ async fn actual_host_resolves_admin_identity_and_posts_exactly_once_on_selected_
             assert_eq!(fixture.posts(), 1);
             let requests = fixture.wire.requests.lock().unwrap();
             assert_eq!(requests.len(), 3);
+            assert!(
+                requests
+                    .iter()
+                    .all(|request| request.url().host_str() == Some(host))
+            );
             assert_eq!(requests[0].method(), Method::Get);
             assert_eq!(requests[0].url().path(), "/v1/admin/domains");
             assert_eq!(requests[1].method(), Method::Get);
