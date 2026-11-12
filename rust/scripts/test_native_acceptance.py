@@ -17,7 +17,8 @@ import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import native_acceptance as acceptance
 
@@ -68,6 +69,110 @@ def helper_request() -> dict:
         ],
     )
     return candidate
+
+
+class TerminalContractTests(unittest.TestCase):
+    """Explicit Rust EOF behavior; the frozen Python oracle remains unchanged."""
+
+    def setUp(self) -> None:
+        self.fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        self.eof = next(case for case in self.fixture["cases"] if case["name"] == "eof")
+        self.receipt = {
+            "exit": 0, "timeout": False, "output_limit": False,
+            "cleanup": "owned_tree_terminated",
+            "terminal": {
+                "raw_observed": True, "termios_restored": True,
+                "input_queue_limit": False, "input_bytes_written": 1,
+                "fixture_input_bytes_written": 1,
+            },
+        }
+
+    def test_current_fixture_explicitly_requires_clean_eof(self) -> None:
+        acceptance.validate_terminal_fixture(self.fixture)
+        self.assertTrue(acceptance.terminal_case_passed(
+            self.eof, self.receipt, b"fab-rs> \x1b[0m", b"",
+        ))
+
+    def test_old_error_is_rejected_on_either_stream(self) -> None:
+        error = b"Error in interactive session: \n"
+        for out, err in [(error, b""), (b"fab-rs> ", error)]:
+            with self.subTest(out=out, err=err):
+                self.assertFalse(acceptance.terminal_case_passed(self.eof, self.receipt, out, err))
+
+    def test_missing_input_or_terminal_cleanup_cannot_pass_silent_eof(self) -> None:
+        for section, key, value in [
+            (None, "exit", 1), (None, "timeout", True), (None, "output_limit", True),
+            (None, "cleanup", "unconfirmed"), (None, "execution_error", "synthetic"),
+            ("terminal", "raw_observed", False), ("terminal", "termios_restored", False),
+            ("terminal", "input_queue_limit", True), ("terminal", "fixture_input_bytes_written", 0),
+            ("terminal", "fixture_input_bytes_written", 2),
+        ]:
+            receipt = copy.deepcopy(self.receipt)
+            target = receipt if section is None else receipt[section]
+            target[key] = value
+            with self.subTest(section=section, key=key):
+                self.assertFalse(acceptance.terminal_case_passed(self.eof, receipt, b"", b""))
+
+    def test_other_terminal_cases_still_require_their_positive_output(self) -> None:
+        for case in self.fixture["cases"]:
+            if case["name"] == "eof":
+                continue
+            receipt = copy.deepcopy(self.receipt)
+            receipt["terminal"]["input_bytes_written"] = len(case["input"])
+            receipt["terminal"]["fixture_input_bytes_written"] = len(case["input"])
+            self.assertTrue(acceptance.terminal_case_passed(
+                case, receipt, case["contains"].encode(), b"",
+            ))
+            self.assertFalse(acceptance.terminal_case_passed(case, receipt, b"", b""))
+
+    def test_empty_or_removed_eof_assertions_and_old_schema_are_rejected(self) -> None:
+        for patch in [
+            {"contains": ""}, {"contains": "Error in interactive session:"},
+            {"not_contains": []}, {"not_contains": [""]}, {"input": ""},
+            {"input": "quit\r"}, {"exit": True},
+        ]:
+            fixture = copy.deepcopy(self.fixture)
+            next(case for case in fixture["cases"] if case["name"] == "eof").update(patch)
+            with self.subTest(patch=patch), self.assertRaises(acceptance.Rejected):
+                acceptance.validate_terminal_fixture(fixture)
+        fixture = copy.deepcopy(self.fixture)
+        fixture["schema"] = 1
+        with self.assertRaises(acceptance.Rejected):
+            acceptance.validate_terminal_fixture(fixture)
+
+    def test_other_cases_cannot_silently_drop_checks_or_add_unknown_fields(self) -> None:
+        for patch in [{"contains": None}, {"contains": ""}, {"unexpected": True}]:
+            fixture = copy.deepcopy(self.fixture)
+            fixture["cases"][0].update(patch)
+            with self.subTest(patch=patch), self.assertRaises(acceptance.Rejected):
+                acceptance.validate_terminal_fixture(fixture)
+
+    def test_cursor_reply_bytes_cannot_stand_in_for_fixture_input(self) -> None:
+        receipt = copy.deepcopy(self.receipt)
+        receipt["terminal"].update(input_bytes_written=6, fixture_input_bytes_written=0)
+        self.assertFalse(acceptance.terminal_case_passed(
+            self.eof, receipt, b"\x1b[6n", b"",
+        ))
+
+    def test_partial_writes_attribute_only_delivered_fixture_bytes(self) -> None:
+        pending = bytearray(b"\x1b[1;1R\x04quit\r")
+        flags = bytearray([0] * 6 + [1] + [0] * 5)
+        observed = []
+        with patch.object(acceptance.os, "write", side_effect=[3, 3, 1, 2, 3]) as write:
+            for _ in range(5):
+                observed.append(acceptance.write_terminal_input(123, pending, flags))
+        self.assertEqual(observed, [(3, 0), (3, 0), (1, 1), (2, 0), (3, 0)])
+        self.assertEqual(write.call_args_list[0].args, (123, bytearray(b"\x1b[1;1R\x04quit\r")))
+        self.assertEqual(pending, b"")
+        self.assertEqual(flags, b"")
+
+    def test_blocked_write_does_not_consume_fixture_tracking(self) -> None:
+        pending, flags = bytearray(b"\x04"), bytearray([1])
+        with patch.object(acceptance.os, "write", side_effect=BlockingIOError):
+            with self.assertRaises(BlockingIOError):
+                acceptance.write_terminal_input(123, pending, flags)
+        self.assertEqual(pending, b"\x04")
+        self.assertEqual(flags, b"\x01")
 
 
 class ContractTests(unittest.TestCase):
@@ -293,6 +398,114 @@ class FilesystemTests(unittest.TestCase):
         self.assertEqual(result["cleanup"], "owned_tree_terminated")
         self.assertEqual(result["cleanup_failure_codes"], [])
         self.assertLess(result["elapsed_seconds"], 1.8)
+
+    def test_mocked_posix_sends_eof_when_raw_mode_follows_the_only_prompt(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        for raw_on_observation in (3, 5):
+            with self.subTest(raw_on_observation=raw_on_observation):
+                child = Mock(pid=12345, returncode=None, stdin=None, stdout=None, stderr=None)
+                observations = polls = selections = 0
+                delivered = bytearray()
+                observed_descriptors = []
+
+                def poll() -> int | None:
+                    nonlocal polls
+                    polls += 1
+                    if child.returncode is None and polls > 8:
+                        child.returncode = 3
+                    return child.returncode
+
+                def attributes(_descriptor: int) -> list[int]:
+                    nonlocal observations
+                    observations += 1
+                    observed_descriptors.append(_descriptor)
+                    raw = observations >= raw_on_observation and child.returncode is None
+                    return [0, 0, 0, 0 if raw else 3]
+
+                def select_ready(read: list[int], write: list[int], _errors: list[int],
+                                 _timeout: float) -> tuple[list[int], list[int], list[int]]:
+                    nonlocal selections
+                    selections += 1
+                    return (read if selections == 1 else []), write, []
+
+                def write(_descriptor: int, data: bytes) -> int:
+                    delivered.extend(data)
+                    child.returncode = 0 if delivered == b"\x04" else 3
+                    return len(data)
+
+                child.poll.side_effect = poll
+                mock_os = SimpleNamespace(
+                    name="posix", set_blocking=Mock(), close=Mock(),
+                    read=Mock(return_value=b"$ "), write=Mock(side_effect=write),
+                    killpg=Mock(side_effect=ProcessLookupError),
+                )
+                modules = {
+                    "fcntl": SimpleNamespace(ioctl=Mock()),
+                    "pty": SimpleNamespace(openpty=Mock(return_value=(101, 102))),
+                    "select": SimpleNamespace(select=select_ready),
+                    "termios": SimpleNamespace(
+                        ECHO=1, ICANON=2, TIOCSWINSZ=1, error=OSError, tcgetattr=attributes,
+                    ),
+                }
+                with patch.dict(sys.modules, modules), patch.object(acceptance, "os", mock_os), \
+                        patch.object(acceptance, "signal", SimpleNamespace(SIGKILL=9)), \
+                        patch.object(acceptance.subprocess, "Popen", return_value=child):
+                    result, out, err = acceptance.execute(
+                        ["synthetic-mocked-posix"], self.root, {}, 1,
+                        time.monotonic() + 2, terminal=dict(case),
+                    )
+                self.assertEqual(mock_os.read.call_count, 1)
+                self.assertEqual(delivered, b"\x04")
+                self.assertEqual(observed_descriptors[0], 102)
+                self.assertEqual(set(observed_descriptors[1:]), {101})
+                self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
+                self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
+
+    @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
+    def test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        result, out, err = acceptance.execute(
+            [sys.executable, "-I", "-B", str(FIXTURES / "synthetic_child.py"), "cursor-only-exit"],
+            self.root, acceptance.environment(self.root), 2,
+            time.monotonic() + 3, terminal=dict(case),
+        )
+        self.assertEqual(result["exit"], 0)
+        self.assertFalse(result["timeout"])
+        self.assertTrue(result["terminal"]["raw_observed"])
+        self.assertTrue(result["terminal"]["termios_restored"])
+        self.assertGreaterEqual(result["terminal"]["input_bytes_written"], 6)
+        self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 0)
+        self.assertFalse(acceptance.terminal_case_passed(case, result, out, err))
+
+    @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
+    def test_actual_eof_byte_and_clean_restore_satisfy_fixture(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        result, out, err = acceptance.execute(
+            [sys.executable, "-I", "-B", str(FIXTURES / "synthetic_child.py"), "clean-eof"],
+            self.root, acceptance.environment(self.root), 2,
+            time.monotonic() + 3, terminal=dict(case),
+        )
+        self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
+        self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
+
+    @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
+    def test_eof_without_restoration_cannot_satisfy_fixture(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        result, out, err = acceptance.execute(
+            [sys.executable, "-I", "-B", str(FIXTURES / "synthetic_child.py"), "unclean-eof"],
+            self.root, acceptance.environment(self.root), 2,
+            time.monotonic() + 3, terminal=dict(case),
+        )
+        self.assertEqual(result["exit"], 0)
+        self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
+        self.assertTrue(result["terminal"]["raw_observed"])
+        self.assertIsNone(result["terminal"]["state_observation_error"])
+        self.assertFalse(result["terminal"]["termios_restored"])
+        self.assertFalse(acceptance.terminal_case_passed(case, result, out, err))
 
     @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
     def test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped(self) -> None:

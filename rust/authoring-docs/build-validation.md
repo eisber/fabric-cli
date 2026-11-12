@@ -82,6 +82,22 @@ The complete CLI preflight receives an isolated test directory under
 Its artifacts are retained with the native results; tests never need a fallback
 directory inside the checkout.
 
+Windows full-plan timing at source `5d2b201de8347c3d8055126c1405166c2d80c38a`
+showed that the executor's internal 120-minute limit could expire before the
+existing 150-minute job limit. In
+[PR run 42940191710](https://github.com/eisber/fabric-cli/actions/runs/42940191710),
+the unchanged 53-package, 38-profile, 29-contract plan timed out during
+`read-parity` after 293 commands; its receipt correctly remained incomplete.
+The same-source historical full run
+[42922714994](https://github.com/eisber/fabric-cli/actions/runs/42922714994)
+completed 305 commands in 119.66 minutes, with about three minutes of work from
+the first `read-parity` command through the final integrity check.
+The historical serial workflow therefore granted Windows a finite 135-minute
+plan budget. Local unsharded execution retains that explicit maximum; the
+current native CI partitions the plan into 15-minute jobs instead. Neither
+historical timing nor configured limits replace a complete current-head native
+run or establish that a new run passed.
+
 PTY cleanup drains already queued output while reaping only the owned child
 within the existing wait budget. A confirmed process-tree cleanup is distinct
 from observing terminal restoration: unavailable terminal state is recorded as

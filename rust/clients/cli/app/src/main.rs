@@ -4,6 +4,7 @@
 //! Experimental CLI entry point, not a replacement for the Python `fab`.
 #![cfg_attr(test, deny(unnameable_test_items))]
 
+mod acl_diagnostic;
 #[cfg(any(feature = "windows-broker", feature = "interactive"))]
 mod auth;
 #[cfg(all(windows, feature = "windows-broker"))]
@@ -96,7 +97,12 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     if arguments.len() == 1 {
         return repl_host::run();
     }
-    let invocation = parse_args(arguments);
+    let invocation = parse_args(&arguments);
+    if let Err(error) = &invocation
+        && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
+    {
+        return result;
+    }
     #[cfg(feature = "semantic-model")]
     if let Ok(Invocation::SemanticModel(command)) = &invocation {
         // Offline analysis validates before update policy or navigation setup.
@@ -118,6 +124,13 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         );
     }
     if let Ok(Invocation::NativeTabular(command)) = &invocation {
+        #[cfg(feature = "v2-run")]
+        if matches!(
+            command.operation,
+            fabric_cli::native_tabular::Operation::Run(_)
+        ) {
+            return dispatch_notebook_run(command).map(exit_status);
+        }
         return write_export(fabric_cli::native_tabular::not_configured(command)).map(exit_status);
     }
     #[cfg(feature = "self-update")]
@@ -147,6 +160,13 @@ fn dispatch(
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
         Ok(Invocation::NativeTabular(command)) => {
+            #[cfg(feature = "v2-run")]
+            if matches!(
+                command.operation,
+                fabric_cli::native_tabular::Operation::Run(_)
+            ) {
+                return dispatch_notebook_run(&command);
+            }
             return write_export(fabric_cli::native_tabular::not_configured(&command));
         }
         Ok(invocation @ Invocation::Tabular(_)) => {
@@ -203,6 +223,10 @@ fn dispatch(
             return dispatch_cancel(&command, Some(local_state));
         }
         Ok(Invocation::Delete(command)) => return delete_host::run(&command),
+        #[cfg(feature = "native-host")]
+        Ok(Invocation::MlEndpoint(command)) => {
+            return native_read::run_ml_endpoint(&command, local_state);
+        }
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
             write_error(
@@ -271,6 +295,7 @@ fn dispatch(
         #[cfg(not(feature = "native-host"))]
         Ok(
             Invocation::Read(_)
+            | Invocation::MlEndpoint(_)
             | Invocation::Execute(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
@@ -298,6 +323,33 @@ fn dispatch(
     } else {
         CommandOutcome::Returned(exit)
     })
+}
+
+#[cfg(feature = "v2-run")]
+fn dispatch_notebook_run(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    if let Err(error) = fabric_cli::run_notebook::preflight(command) {
+        let receipt = fabric_cli::run_notebook::Dispatch::unavailable(error);
+        serde_json::to_writer(&mut io::stderr().lock(), receipt.value())?;
+        writeln!(io::stderr().lock())?;
+        return Ok(CommandOutcome::Returned(receipt.exit_code()));
+    }
+    #[cfg(feature = "native-host")]
+    {
+        native_read::run_notebook(command)
+    }
+    #[cfg(not(feature = "native-host"))]
+    {
+        write_error(
+            CommandError {
+                code: "NotConfigured",
+                message: "Notebook Run requires an explicitly configured native credential and HTTP host. No Notebook was submitted.".into(),
+            },
+            1,
+        )
+        .map(|_| CommandOutcome::Returned(1))
+    }
 }
 
 #[cfg(feature = "v2-cancel")]

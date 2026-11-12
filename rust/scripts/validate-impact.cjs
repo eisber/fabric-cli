@@ -565,6 +565,7 @@ function runContracts(context, registry, run, probeCommand = spawnSync) {
 
 function options(argv) {
   const options = {execute: false, stage: 'all', commandTimeout: 600000, budget: 7200000};
+  const limits = {commandTimeout: 7200000, budget: 8100000};
   const seen = new Set();
   for (let index = 0; index < argv.length; index++) {
     const key = argv[index];
@@ -581,7 +582,7 @@ function options(argv) {
       if (['commandTimeout', 'budget'].includes(name)) {
         options[name] = Number(options[name]) * 1000;
         requireThat(Number.isSafeInteger(options[name]) && options[name] > 0 &&
-          options[name] <= 7200000, `Invalid timeout: ${key}`);
+          options[name] <= limits[name], `Invalid timeout: ${key}`);
       }
     }
   }
@@ -648,6 +649,7 @@ async function main(argv, execute) {
       ...(opts.stage === 'core' ? [] : checks.map(id => `${opts.platform}:check:${id}`)),
     ].sort(),
     complete_plan: false,
+    budget_ms: opts.budget, command_timeout_ms: opts.commandTimeout,
     toolchain,
     build_environment: buildEnvironment(),
     source_before: before, started_at: new Date(started).toISOString(), status: 'running',

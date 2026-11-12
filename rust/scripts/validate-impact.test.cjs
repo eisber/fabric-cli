@@ -721,6 +721,49 @@ test('the executor refuses unbounded timeouts, in-checkout artifacts and executi
   assert.throws(() => options([...args, '--platform', other, '--execute']), /actual native host/);
 });
 
+test('explicit plan headroom preserves defaults and the separate command timeout ceiling', t => {
+  const artifact = temporary(t);
+  const root = path.join(artifact, 'checkout');
+  fs.mkdirSync(root);
+  const args = ['--root', root, '--plan', path.join(artifact, 'plan.json'),
+    '--artifacts', path.join(artifact, 'logs')];
+  const defaults = options(args);
+  assert.equal(defaults.budget, 7200000);
+  assert.equal(defaults.commandTimeout, 600000);
+  const extended = options([...args, '--budget-seconds', '8100',
+    '--command-timeout-seconds', '7200']);
+  assert.equal(extended.budget, 8100000);
+  assert.equal(extended.commandTimeout, 7200000);
+  for (const [flag, maximum] of [['--budget-seconds', 8100], ['--command-timeout-seconds', 7200]]) {
+    assert.equal(options([...args, flag, '0.001'])[
+      flag === '--budget-seconds' ? 'budget' : 'commandTimeout'], 1);
+    for (const value of ['0', '-1', 'NaN', 'Infinity', String(maximum + 0.001),
+      String(maximum - 0.0001)]) {
+      assert.throws(() => options([...args, flag, value]), /Invalid (timeout|option)/, `${flag} ${value}`);
+    }
+  }
+  assert.throws(() => options([...args, '--budget-seconds', '8100',
+    '--command-timeout-seconds', '8100']), /Invalid timeout/);
+});
+
+test('extended plan budgets retain per-command and contract deadlines in actual command receipts', t => {
+  const root = temporary(t);
+  const now = Date.now();
+  const context = {root, artifacts: root, commandTimeout: 1800000,
+    deadline: now + 8100000, results: []};
+  for (const deadline of [undefined, now + 5000]) {
+    let actual;
+    commandResult({id: 'bounded-command', program: 'fixture', args: [],
+      ...(deadline ? {deadline} : {})}, context, (_, __, opts) => {
+      actual = opts.timeout;
+      return {status: 0, stdout: '', stderr: ''};
+    });
+    assert.equal(context.results.at(-1).timeout_ms, actual);
+    assert.ok(actual > 0 && actual <= (deadline ? 5000 : 120000));
+    if (!deadline) assert.equal(actual, 120000);
+  }
+});
+
 test('workflow always tests the planner, covers merge groups and periodic full runs, and has a stable fail-closed gate', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   assert.match(workflow, /merge_group:/);

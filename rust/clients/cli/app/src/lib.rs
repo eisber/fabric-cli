@@ -29,12 +29,15 @@ pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;
 pub mod local_commands;
+pub mod ml_endpoint;
 pub mod native_tabular;
 pub mod parser;
 mod projection;
 mod reads;
 #[cfg(feature = "v2-refresh")]
 pub mod refresh_command;
+#[cfg(feature = "v2-run")]
+pub mod run_notebook;
 #[cfg(feature = "runtime-v2")]
 pub mod runtime_v2;
 pub mod search_command;

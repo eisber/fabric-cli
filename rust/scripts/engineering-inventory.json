@@ -2,8 +2,20 @@
   "schema": 1,
   "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
   "pattern": "test_native_acceptance*.py",
-  "count": 38,
+  "count": 51,
   "windows_skips": [
+    [
+      "test_native_acceptance.FilesystemTests.test_actual_eof_byte_and_clean_restore_satisfy_fixture",
+      "requires_native_POSIX_PTY"
+    ],
+    [
+      "test_native_acceptance.FilesystemTests.test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery",
+      "requires_native_POSIX_PTY"
+    ],
+    [
+      "test_native_acceptance.FilesystemTests.test_eof_without_restoration_cannot_satisfy_fixture",
+      "requires_native_POSIX_PTY"
+    ],
     [
       "test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
       "requires_native_POSIX_PTY"

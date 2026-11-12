@@ -69,6 +69,8 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// Native serving operations on an exact owning MLModel item.
+    MlEndpoint(crate::ml_endpoint::EndpointCommand),
     /// Real run/query/execute frontend with an explicitly injected backend boundary.
     NativeTabular(crate::native_tabular::NativeCommand),
     /// Explicit tabular file delivery around one declared production operation.
@@ -161,13 +163,13 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
         .subcommand(crate::execute::command())
-        .subcommands(semantic_model_commands())
+        .subcommands(artifact_commands())
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
             Command::new("ls")
                 .visible_alias("dir")
-                .about("List workspaces or workspace items")
+                .about("List workspaces or workspace items; a final 'prefix*' filters children")
                 .args_override_self(true)
                 .infer_long_args(true)
                 .arg(Arg::new("path").num_args(0..))
@@ -185,7 +187,7 @@ pub fn command() -> Command {
                 )
                 .arg(Arg::new("query").short('q').long("query")
                     .help("JMESPath expression over the listing array; use --long -q '[].id' for item IDs"))
-                .after_help("Examples:\n  fab-rs ls 'Demo.Workspace' --long -q '[].id'\n  fab-rs ls / -q \"[?name=='Demo.Workspace'].id\"\nTo inspect the workspace itself, use: fab-rs get 'Demo.Workspace' -q id\nA bare field such as 'id' queries the whole listing array, not each item. Workspace item IDs are available only with --long."),
+                .after_help("Examples:\n  fab-rs ls 'marc*'\n  fab-rs ls 'Demo.Workspace/marc*'\n  fab-rs ls 'Demo.Workspace' --long -q '[].id'\n  fab-rs ls / -q \"[?name=='Demo.Workspace'].id\"\nA single trailing '*' filters children in one exact parent. Quote the path to prevent shell expansion. Only nonempty prefixes in the final segment are supported; other patterns and mutation wildcards are not supported.\nTo inspect the workspace itself, use: fab-rs get 'Demo.Workspace' -q id\nA bare field such as 'id' queries the whole listing array, not each item. Workspace item IDs are available only with --long."),
         )
         .subcommand(
             Command::new("get")
@@ -208,17 +210,23 @@ pub fn command() -> Command {
                         .action(ArgAction::SetTrue),
                 ),
         );
+    // Run extends feature-owned artifact groups, so compose it after their registration.
     crate::tabular_export::register(crate::native_tabular::register(command))
 }
 
 #[cfg(feature = "semantic-model")]
-fn semantic_model_commands() -> Vec<Command> {
-    vec![fabric_cli_semantic_model::command()]
+fn artifact_commands() -> Vec<Command> {
+    vec![fabric_cli_semantic_model::command().subcommand(crate::ml_endpoint::command())]
 }
 
 #[cfg(not(feature = "semantic-model"))]
-fn semantic_model_commands() -> Vec<Command> {
-    Vec::new()
+fn artifact_commands() -> Vec<Command> {
+    vec![
+        Command::new("artifact")
+            .about("Artifact capabilities")
+            .arg_required_else_help(true)
+            .subcommand(crate::ml_endpoint::command()),
+    ]
 }
 
 /// Parse arguments including argv[0], without printing or exiting.
@@ -322,6 +330,15 @@ where
     };
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
+    }
+    #[cfg(feature = "v2-run")]
+    if name == "artifact"
+        && let Some(notebook) = values.subcommand_matches("notebook")
+    {
+        let leaf = notebook
+            .subcommand_matches("run")
+            .ok_or_else(invalid_arguments)?;
+        return crate::native_tabular::from_matches("run", leaf).map(Invocation::NativeTabular);
     }
     let export = crate::tabular_export::request(&matches);
     let wrap = |mut invocation: Invocation| {
@@ -434,6 +451,11 @@ fn root_argument(args: &[OsString]) -> Option<usize> {
 }
 
 fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Error> {
+    if matches.subcommand().is_some_and(|(name, artifact)| {
+        name == "artifact" && artifact.subcommand_name() == Some("ml-endpoint")
+    }) {
+        return crate::ml_endpoint::from_matches(matches).map(Invocation::MlEndpoint);
+    }
     #[cfg(feature = "semantic-model")]
     if matches.subcommand_name() == Some("artifact") {
         return fabric_cli_semantic_model::AnalyzeCommand::from_matches(matches)

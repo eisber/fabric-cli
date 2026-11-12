@@ -251,6 +251,14 @@ selection digest, expected and completed shard obligations, queue/step
 durations, cache hits and the final conclusion. Injected timeout, cancellation,
 missing-receipt and stale-receipt tests must still fail closed.
 
+For unsharded local execution, the total budget defaults to 7,200 seconds and
+explicit `--budget-seconds` values retain the existing 8,100-second maximum.
+The configurable per-command ceiling defaults to 600 seconds and accepts values
+up to 7,200 seconds; the shorter command-class and contract budgets still apply.
+Receipts retain configured budgets and each command's actual timeout. Native
+CI uses the shorter setup-adjusted shard budget and 15-minute job ceiling above,
+not the historical two-hour serial-job allowance.
+
 The workflow does not configure branch protection or repository rulesets.
 Repository maintainers must separately require the stable gate where appropriate.
 An affected offline pass is not full-candidate acceptance, native installation
