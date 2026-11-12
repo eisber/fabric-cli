@@ -126,6 +126,12 @@ One bounded refresh is allowed on an initial `kid` miss, then at most one
 key-miss refresh attempt per five minutes for that document. Failed or cancelled
 refresh attempts also consume that interval.
 
+Cold-cache and expired-cache loads record a per-issuer attempt before awaiting
+HTTP. A failed or cancelled load cannot be retried for five minutes, even when
+no document was cached. An expired document is never used as fallback.
+Unexpired cached keys remain usable during a failed or cancelled key-miss
+refresh; neither failure discards that valid document or resets its lifetime.
+
 A signature failure never triggers a refresh. Retrieval has no redirects or
 automatic retries. No keys or principal proofs are persisted.
 
