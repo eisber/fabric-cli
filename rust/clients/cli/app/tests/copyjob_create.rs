@@ -22,6 +22,7 @@ use fabric_sdk::{
     items::create::CreateError,
 };
 use fabric_sdk_http::{ExecutionOptions, ExecutionTrace, HttpExecutor};
+use fabric_sdk_operations::OperationErrorKind;
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde_json::{Value, json};
 use std::{
@@ -705,6 +706,93 @@ async fn malformed_lro_result_keeps_previously_observed_acceptance_identity() {
         assert_eq!(value["meta"]["submission"]["resource"]["workspaceId"], WS);
         assert_eq!(value["meta"]["submission"]["resource"]["type"], "CopyJob");
         assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        host.assert_posts(1, None);
+    }
+}
+
+#[tokio::test]
+async fn unexpected_success_result_status_is_unknown_with_original_http_cause_and_acceptance() {
+    for status in [201, 202, 204] {
+        let host = Host::new([
+            listing(json!([])),
+            accepted(&metadata().to_string()),
+            response(200, r#"{"status":"Succeeded"}"#, &[]),
+            response(status, &metadata().to_string(), &[]),
+        ]);
+        let delivery = host
+            .execute(
+                prepare(&["--wait", "--project", "missing"], None),
+                &mut Approval::allow(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let cause = delivery
+            .report()
+            .error()
+            .expect("retain original shared HTTP cause");
+        assert!(matches!(
+            &cause.kind,
+            OperationErrorKind::Http { status: actual, .. } if *actual == status
+        ));
+        assert_eq!(cause.operation_id.as_deref(), Some(OP));
+        assert!(cause.mutation_may_have_occurred);
+        let value = receipt(delivery);
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["error"]["code"], "InvalidResponse");
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["httpStatus"], status);
+        assert_eq!(value["meta"]["observation"]["httpStatus"], status);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(value["meta"]["submission"]["resource"]["workspaceId"], WS);
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        assert_eq!(value["meta"]["remoteCancelled"], false);
+        host.assert_posts(1, None);
+        assert_eq!(host.http.requests.lock().unwrap().len(), 4);
+    }
+}
+
+#[tokio::test]
+async fn genuine_result_http_errors_remain_service_failures_without_losing_acceptance() {
+    for status in [400, 403, 409] {
+        let host = Host::new([
+            listing(json!([])),
+            accepted(&metadata().to_string()),
+            response(200, r#"{"status":"Succeeded"}"#, &[]),
+            response(status, r#"{"errorCode":"NativeResultRejected"}"#, &[]),
+        ]);
+        let delivery = host
+            .execute(
+                prepare(&["--wait"], None),
+                &mut Approval::allow(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        assert!(matches!(
+            &delivery.report().error().unwrap().kind,
+            OperationErrorKind::Http { status: actual, .. } if *actual == status
+        ));
+        let value = receipt(delivery);
+        assert_eq!(value["error"]["code"], "ServiceRejected");
+        assert_eq!(value["meta"]["status"], "failed");
+        assert_eq!(value["meta"]["httpStatus"], status);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
         assert_eq!(
             value["meta"]["operationHandle"],
             format!("/operations/{OP}")

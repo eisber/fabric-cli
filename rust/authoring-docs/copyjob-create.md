@@ -99,6 +99,11 @@ of a later poll/result status. In particular, malformed or incomplete final
 results cannot erase a known accepted resource from that protected metadata.
 Malformed no-wait acceptance retains its bounded raw bytes as labeled base64,
 not a completed resource or an invented ID.
+Unexpected success-class operation-result statuses (201/202/204 where the
+shared engine requires 200) remain `InvalidResponse`, unknown and nonzero,
+not provider-confirmed rejection. The original typed HTTP cause and latest
+status remain separate from the protected initial 202 identity and handle.
+Genuine HTTP errors retain service-failure classification; neither path replays.
 As documented by the shared host, a synchronous OS write already in progress is
 not an atomic cancellable transaction.
 
@@ -116,8 +121,8 @@ and does not send the generic-only `type` field or redundant null folder.
 
 Only the authorized shared-host logical diffs are consumed:
 `e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and the separately
-released `0454fb4` prepared-approval/submission-evidence and `caf2f7f`
-workspace-root/strict-lint updates.
+released `0454fb4` prepared-approval/submission-evidence, `caf2f7f`
+workspace-root/strict-lint and `0ec3848` unexpected-result-status updates.
 Notebook leaf implementation and producer ancestry are not adopted.
 
 `engine/sdk/tests/copyjob_create.rs` covers schema, unsupported policies and
