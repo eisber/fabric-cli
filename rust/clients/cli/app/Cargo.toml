@@ -29,6 +29,11 @@ path = "tests/run_notebook_wire.rs"
 required-features = ["native-host", "v2-run"]
 
 [[test]]
+name = "service_domain_host"
+path = "tests/service_domain_host.rs"
+required-features = ["v2-service-domain"]
+
+[[test]]
 name = "stage_deploy"
 path = "tests/stage_deploy.rs"
 required-features = ["v2-deploy"]
@@ -79,6 +84,7 @@ workspace-read-v2 = []
 v2-cancel = []
 v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
+v2-service-domain = ["native-host"]
 v2-copy = []
 v2-deploy = []
 v2-discovery = ["dep:fabric-sdk-discovery"]

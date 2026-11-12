@@ -33,6 +33,8 @@ mod v2_exists_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
+#[cfg(feature = "v2-service-domain")]
+mod v2_service_domain_main;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {
@@ -45,6 +47,13 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "v2-service-domain")]
+    if args.first().and_then(|value| value.to_str()) == Some("service") {
+        return std::process::ExitCode::from(finish(
+            v2_service_domain_main::run(args),
+            &mut io::stderr().lock(),
+        ));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -141,6 +150,9 @@ fn run() -> Result<(), Failure> {
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-service-domain")]
+        writeln!(io::stdout().lock(), "\nOpt-in service: service domain sync /.domains/<domain>/acl --role Contributor\nThe typed /.domains/<domain>.Domain target remains supported.\nDomain permission changes require verified admin metadata and immediate terminal approval.")
+            .map_err(|_| failed("OutputFailed", "Service help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
@@ -191,28 +203,8 @@ fn run() -> Result<(), Failure> {
     })?;
     let selection = headless::Selection::capture(&mode)
         .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
-        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
-            failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            )
-        })?,
-        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
-        Err(_) => {
-            return Err(failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            ));
-        }
-    };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .max_blocking_threads(2)
-        .build()
-        .map_err(|_| failed("RuntimeFailed", "The get runtime could not be created.", 1))?;
+    let endpoint = configured_endpoint()?;
+    let runtime = native_runtime()?;
     let result = runtime.block_on(async {
         let session = NativeSession::new(selection, endpoint, timeout)?;
         let executor = session.executor;
@@ -276,6 +268,32 @@ fn run() -> Result<(), Failure> {
             .map_err(command_failure)?;
     }
     Ok(())
+}
+
+fn configured_endpoint() -> Result<EndpointBinding, Failure> {
+    match std::env::var("FAB_RUST_FABRIC_HOST") {
+        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+            failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            )
+        }),
+        Err(std::env::VarError::NotPresent) => Ok(EndpointBinding::public(ServiceOrigin::Fabric)),
+        Err(_) => Err(failed(
+            "InvalidConfiguration",
+            "Invalid explicit Fabric endpoint.",
+            2,
+        )),
+    }
+}
+
+fn native_runtime() -> Result<tokio::runtime::Runtime, Failure> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(2)
+        .build()
+        .map_err(|_| failed("RuntimeFailed", "The get runtime could not be created.", 1))
 }
 
 struct NativeSession {
