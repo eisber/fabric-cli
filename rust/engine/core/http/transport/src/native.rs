@@ -185,17 +185,31 @@ impl HttpClient for NativeHttpClient {
             .method(request.method().as_str())
             .uri(request.url().as_str());
         let mut has_encoding = false;
+        let mut has_framing = false;
         for (name, value) in request.headers().iter() {
             has_encoding |= name.as_str() == "accept-encoding";
+            has_framing |= matches!(name.as_str(), "content-length" | "transfer-encoding");
             pending = pending.header(name.as_str(), value.as_str());
         }
         if !has_encoding {
             pending = pending.header("accept-encoding", "gzip, deflate");
         }
         let body = match request.body().clone() {
-            Body::Bytes(bytes) => Full::new(bytes)
-                .map_err(|never| match never {})
-                .boxed_unsync(),
+            Body::Bytes(bytes) => {
+                if bytes.is_empty()
+                    && !has_framing
+                    && matches!(
+                        request.method(),
+                        Method::Post | Method::Put | Method::Patch | Method::Delete
+                    )
+                {
+                    // Hyper omits the length for end-of-stream bodies; Fabric requires it.
+                    pending = pending.header(http::header::CONTENT_LENGTH, "0");
+                }
+                Full::new(bytes)
+                    .map_err(|never| match never {})
+                    .boxed_unsync()
+            }
             Body::SeekableStream(stream) => {
                 StreamBody::new(stream.map_ok(Frame::data).map_err(|error| {
                     failure(

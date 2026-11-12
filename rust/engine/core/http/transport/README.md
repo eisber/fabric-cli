@@ -57,6 +57,11 @@ remains HTTPS-only and still configures the connector to enforce HTTPS.
   any GET retry policy.
 - HTTPS uses HTTP/1.1 and TLS 1.2/1.3. HTTP/2, HTTP/3, TLS early data and client
   certificates are not enabled.
+- Empty byte bodies on POST, PUT, PATCH and DELETE explicitly send
+  `Content-Length: 0`, including definition-read POSTs. Existing framing headers,
+  streaming bodies and bodyless GET/HEAD requests are unchanged.
+- Definition-read orchestration polls validated operation IDs through the selected
+  Fabric endpoint. Cluster-origin Location headers are never credential destinations.
 - Socket timeouts are separate from the shared executor's overall deadline.
 - Responses preserve actual status and initial headers. Cookies are not managed.
 - Pull-driven gzip and zlib-wrapped deflate decoding retains backpressure and

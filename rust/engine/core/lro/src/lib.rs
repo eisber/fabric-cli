@@ -43,6 +43,7 @@ pub struct FabricOperation {
     body: Vec<u8>,
     completion: CompletionPolicy,
     source_read_operation_ids: bool,
+    bound_definition_polling: bool,
     metadata_read_evidence: bool,
     accept: Option<OperationAccept>,
 }
@@ -107,6 +108,7 @@ impl FabricOperation {
             body,
             completion,
             source_read_operation_ids: false,
+            bound_definition_polling: false,
             metadata_read_evidence: false,
             accept: None,
         })
@@ -133,6 +135,7 @@ impl FabricOperation {
             body,
             completion: operation.completion(),
             source_read_operation_ids: false,
+            bound_definition_polling: false,
             metadata_read_evidence: false,
             accept: None,
         })
@@ -181,6 +184,30 @@ impl FabricOperation {
             return Err(OperationErrorKind::InvalidInput);
         }
         self.source_read_operation_ids = true;
+        Ok(self)
+    }
+
+    /// Poll a definition read through the selected endpoint, never its Location host.
+    ///
+    /// Fabric can return a cluster-origin Location for a public definition read.
+    /// Its path must match the validated operation ID; the host is informational.
+    /// Poll and result requests still use only the caller's selected endpoint.
+    /// Other operations and external reconciliation retain strict origin checks.
+    ///
+    /// # Errors
+    /// Rejects calls other than POST getDefinition with PythonSynchronous completion.
+    pub fn with_bound_definition_polling(mut self) -> Result<Self, OperationErrorKind> {
+        if self.method != ResourceMethod::Post
+            || self.completion != CompletionPolicy::PythonSynchronous
+            || !self
+                .path
+                .split('?')
+                .next()
+                .is_some_and(|path| path.ends_with("/getDefinition"))
+        {
+            return Err(OperationErrorKind::InvalidInput);
+        }
+        self.bound_definition_polling = true;
         Ok(self)
     }
 }
@@ -574,7 +601,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if response.body.len() > self.limits.max_response_bytes.get() {
                 return Err(OperationErrorKind::Limit);
             }
-            self.resolve_accepted(response, completion, false, accept)
+            self.resolve_accepted(response, completion, false, false, accept)
                 .await
         }
         .await;
@@ -635,6 +662,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             response,
             operation.completion,
             operation.source_read_operation_ids,
+            operation.bound_definition_polling,
             operation.accept,
         )
         .await
@@ -645,6 +673,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         response: OperationResponse,
         completion: CompletionPolicy,
         source_read_operation_ids: bool,
+        bound_definition_polling: bool,
         accept: Option<OperationAccept>,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = completion == CompletionPolicy::PythonSynchronous;
@@ -666,7 +695,14 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             }
             let id = operation_id.unwrap_or("");
             if !location.is_empty() {
-                validate_source_origin(&self.endpoint, location)?;
+                if bound_definition_polling {
+                    if !valid_id(id) {
+                        return Err(OperationErrorKind::InvalidResponse);
+                    }
+                    validate_definition_location(location, &format!("/v1/operations/{id}"))?;
+                } else {
+                    validate_source_origin(&self.endpoint, location)?;
+                }
             }
             if location.contains("/jobs/instances/") || (location.is_empty() && id.is_empty()) {
                 return Ok(response);
@@ -687,10 +723,22 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         if !python && let Some(uri) = header(&response, "Location")? {
             validate_link(&self.endpoint, uri, &path)?;
         }
-        self.poll_operation(response, &path, completion, original, None, accept)
-            .await
+        self.poll_operation(
+            response,
+            &path,
+            completion,
+            original,
+            None,
+            accept,
+            bound_definition_polling,
+        )
+        .await
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Explicit shared polling policies retain their separate authority boundaries."
+    )]
     async fn poll_operation(
         &mut self,
         mut response: OperationResponse,
@@ -699,6 +747,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         mut original: Option<OperationResponse>,
         arm_check_status: Option<bool>,
         accept: Option<OperationAccept>,
+        bound_definition_polling: bool,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = completion == CompletionPolicy::PythonSynchronous;
         loop {
@@ -749,6 +798,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             }
             if python
                 && arm_check_status.is_none()
+                && !bound_definition_polling
                 && let Some(uri) = header(&response, "Location")?.filter(|uri| !uri.is_empty())
             {
                 validate_source_origin(&self.endpoint, uri)?;
@@ -757,6 +807,19 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                 .map_err(|_| OperationErrorKind::InvalidResponse)?;
             if !state.is_object() {
                 return Err(OperationErrorKind::InvalidResponse);
+            }
+            if bound_definition_polling
+                && let Some(uri) = header(&response, "Location")?.filter(|uri| !uri.is_empty())
+            {
+                let expected = if matches!(
+                    state.get("status").and_then(serde_json::Value::as_str),
+                    Some("Succeeded" | "Completed")
+                ) {
+                    format!("{path}/result")
+                } else {
+                    path.to_owned()
+                };
+                validate_definition_location(uri, &expected)?;
             }
             match state.get("status").and_then(serde_json::Value::as_str) {
                 Some("NotStarted" | "Running") if !python => {
@@ -1096,6 +1159,31 @@ fn validate_source_origin(endpoint: &EndpointBinding, uri: &str) -> Result<(), O
     endpoint
         .validate_url(&url)
         .map_err(|_| OperationErrorKind::InvalidLink)
+}
+
+fn validate_definition_location(uri: &str, path: &str) -> Result<(), OperationErrorKind> {
+    if uri.chars().any(|c| c.is_control() || c == '\\') || uri.contains(['?', '#']) {
+        return Err(OperationErrorKind::InvalidLink);
+    }
+    if uri == path {
+        return Ok(());
+    }
+    let url = Url::parse(uri).map_err(|_| OperationErrorKind::InvalidLink)?;
+    let raw_path = uri
+        .strip_prefix("https://")
+        .and_then(|rest| rest.split_once('/'))
+        .map(|(_, path)| path);
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || url.port_or_known_default() != Some(443)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != path
+        || raw_path != path.strip_prefix('/')
+    {
+        return Err(OperationErrorKind::InvalidLink);
+    }
+    Ok(())
 }
 
 fn public_operation_url(path: &str) -> Result<Url, OperationErrorKind> {

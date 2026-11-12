@@ -374,6 +374,104 @@ async fn explicit_source_read_keeps_relative_locations_and_opaque_id_opt_in() {
 }
 
 #[tokio::test]
+async fn definition_cluster_locations_are_inert_and_polling_stays_on_selected_endpoint() {
+    let credential = Arc::new(Credential::default());
+    let context = context(credential.clone());
+    let executor = Executor::default();
+    let cluster = "https://cluster.example.invalid";
+    executor.responses.lock().unwrap().extend([
+        response(
+            202,
+            "null",
+            &[
+                ("Location", &format!("{cluster}/v1/operations/{ID}")),
+                ("x-ms-operation-id", ID),
+                ("Retry-After", "0"),
+            ],
+        ),
+        response(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[("Location", &format!("{cluster}/v1/operations/{ID}/result"))],
+        ),
+        response(200, r#"{"definition":{"parts":[]}}"#, &[]),
+    ]);
+    let mut session = OperationSession::with_context(
+        &context,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let operation = FabricOperation::new(
+        ResourceMethod::Post,
+        "/v1/workspaces/ws/items/item/getDefinition",
+        Vec::new(),
+        CompletionPolicy::PythonSynchronous,
+    )
+    .unwrap()
+    .with_bound_definition_polling()
+    .unwrap();
+    let result = session.execute(operation).await.unwrap();
+    assert_eq!(result.body, br#"{"definition":{"parts":[]}}"#);
+    let requests = executor.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[1].url, format!("{ROOT}/v1/operations/{ID}"));
+    assert_eq!(requests[2].url, format!("{ROOT}/v1/operations/{ID}/result"));
+    assert!(requests.iter().all(|request| request.url.starts_with(ROOT)));
+}
+
+#[tokio::test]
+async fn definition_polling_rejects_mismatched_paths_and_unsafe_links_before_polling() {
+    for location in [
+        format!("https://cluster.example.invalid/v1/operations/{ID}/result"),
+        format!("https://cluster.example.invalid/v1/other/{ID}"),
+        format!("http://cluster.example.invalid/v1/operations/{ID}"),
+        format!("https://user@cluster.example.invalid/v1/operations/{ID}"),
+        format!("https://cluster.example.invalid/v1/operations/{ID}?query"),
+        format!("https://cluster.example.invalid/v1/other/../operations/{ID}"),
+    ] {
+        let credential = Arc::new(Credential::default());
+        let context = context(credential);
+        let executor = Executor::default();
+        executor.responses.lock().unwrap().push_back(response(
+            202,
+            "null",
+            &[("Location", &location), ("x-ms-operation-id", ID)],
+        ));
+        let mut session = OperationSession::with_context(
+            &context,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
+        );
+        let operation = FabricOperation::new(
+            ResourceMethod::Post,
+            "/v1/workspaces/ws/items/item/getDefinition",
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap()
+        .with_bound_definition_polling()
+        .unwrap();
+        assert_eq!(
+            session.execute(operation).await.unwrap_err().kind,
+            OperationErrorKind::InvalidLink
+        );
+        assert_eq!(executor.requests.lock().unwrap().len(), 1);
+    }
+    assert!(
+        operation(ResourceMethod::Get, CompletionPolicy::PythonSynchronous)
+            .with_bound_definition_polling()
+            .is_err()
+    );
+    assert!(
+        operation(ResourceMethod::Post, CompletionPolicy::PythonSynchronous)
+            .with_bound_definition_polling()
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn other_microsoft_hosts_are_not_trusted_for_initial_or_result_links() {
     for completion in [
         CompletionPolicy::ReturnAccepted,
