@@ -862,5 +862,44 @@ fn debug_and_errors_never_format_tokens_selected_ids_origins_or_provider_data() 
         assert!(!debug.contains(secret));
         assert!(!NativeError::InvalidResponse.to_string().contains(secret));
     }
+
+    #[test]
+    fn legacy_audiences_powerbi_origin_and_strict_native_fabric_guard_are_unchanged() {
+        assert_eq!(
+            Audience::Fabric.scope(),
+            "https://api.fabric.microsoft.com/.default"
+        );
+        assert_eq!(
+            Audience::OneLake.scope(),
+            "https://storage.azure.com/.default"
+        );
+        assert_eq!(
+            Audience::Arm.scope(),
+            "https://management.azure.com/.default"
+        );
+        assert_eq!(
+            Audience::Sql.scope(),
+            "https://database.windows.net/.default"
+        );
+        assert_eq!(ServiceOrigin::PowerBi.audience(), Audience::Fabric);
+        assert_eq!(ServiceOrigin::PowerBi.root_path(), "/v1.0/myorg");
+        let credential = Credential::new(token(FABRIC), token(PBI));
+        let wire = Wire::new([]);
+        let pbi_owner =
+            CredentialSelection::new(CLIENT, TENANT, Audience::PowerBiBootstrap).unwrap();
+        assert!(
+            fabric_sdk_http::native_runtime::NativeFabricExecutor::new(
+                RequestContext::with_endpoint(
+                    credential.clone(),
+                    pbi_owner,
+                    EndpointBinding::public(ServiceOrigin::Fabric)
+                ),
+                http(wire.clone(), Arc::new(Timer::default()))
+            )
+            .is_err()
+        );
+        assert!(credential.scopes.lock().unwrap().is_empty());
+        assert!(wire.requests.lock().unwrap().is_empty());
+    }
     assert!(wire.requests.lock().unwrap().is_empty());
 }
