@@ -165,7 +165,7 @@ impl LinkResolver for Resolver<'_> {
                 std::future::pending(),
             )
             .await
-            .map_err(|error| MutationError::new("ResolutionFailed", &error.to_string()))?;
+            .map_err(|error| MutationError::new("ResolutionFailed", error.to_string()))?;
             let ResolvedGetTarget::Item {
                 workspace_id,
                 item_id,

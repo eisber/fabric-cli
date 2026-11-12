@@ -35,6 +35,10 @@ mod v2_link_kql_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
+#[cfg(all(test, any(feature = "v2-link-kql", feature = "v2-refresh")))]
+#[allow(dead_code)]
+#[path = "../../../../tests/compatibility/jobs/support.rs"]
+mod v2_test_support;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {

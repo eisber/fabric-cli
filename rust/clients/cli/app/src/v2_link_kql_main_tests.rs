@@ -4,10 +4,7 @@
 //! Native file/resolver/approval adapters, without ambient credentials or effects.
 #![deny(unnameable_test_items)]
 
-#[allow(dead_code)]
-#[path = "../../../../tests/compatibility/jobs/support.rs"]
-mod support;
-
+use super::super::v2_test_support as support;
 use super::*;
 use fabric_sdk::{Audience, CredentialSelection, RequestContext};
 use serde_json::{Value, json};
