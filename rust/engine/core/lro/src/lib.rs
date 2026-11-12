@@ -70,6 +70,26 @@ impl OperationAccept {
 }
 
 impl FabricOperation {
+    /// Returns the validated method before authentication or execution.
+    pub const fn method(&self) -> ResourceMethod {
+        self.method
+    }
+
+    /// Returns the validated relative route, including any query.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Borrows the exact prepared bytes; inspection does not reserialize input.
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    /// Returns acceptance/wait intent for this same prepared operation.
+    pub const fn completion(&self) -> CompletionPolicy {
+        self.completion
+    }
+
     /// Construct a public Fabric operation, never an arbitrary origin.
     ///
     /// # Errors
