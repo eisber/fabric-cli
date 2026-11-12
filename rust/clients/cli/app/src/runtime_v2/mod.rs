@@ -12,6 +12,8 @@
 mod contract;
 #[cfg(feature = "native-host")]
 pub mod host;
+#[cfg(feature = "native-host")]
+pub mod livy_list;
 mod parser;
 mod path;
 

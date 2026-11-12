@@ -2,10 +2,12 @@
 
 # Experimental runtime v2 read head (H1)
 
-This is an additive **library** consumer of the composed native SDK at
+The H1 head is an additive **library** consumer of the composed native SDK at
 `c52a842e082a377e5fc2a179451f07ff521305df`. It executes real SDK reads through an
 injected `NativeExecutor`; preparing/printing a request is never remote success.
-It does not replace the Python CLI, Rust v1 parser, or existing executable.
+It does not replace the Python CLI or Rust v1 parser. The separately opt-in
+[Livy collection executable](#opt-in-livy-collection-executable) below mounts
+only that read leaf in `fab-cli-v2`.
 It is one incremental H1 slice, not implementation of all 28 grouped commands.
 
 ## Selected contracts and source
@@ -213,8 +215,9 @@ not passing runtime tests. After adding the feature/export, the coordinator's
 serialized validator must run the focused `fabric-cli` runtime-v2 test target,
 all-target checks/lints and affected consumers, then independent reviews.
 
-There is still **no standalone v2 HTTP/auth/output host or executable dispatch**.
-The default CLI is untouched. Caller-injected fakes prove neither deployed
+At the H1 checkpoint there was **no standalone v2 HTTP/auth/output host or executable dispatch**.
+The host and limited executable additions are described below; the default CLI
+is untouched. Caller-injected fakes prove neither deployed
 Notebook/Livy qualification nor real executable remote completion. HTTP
 authorization/redirect/deadline/streaming behavior, actual metadata-backed
 resolver, atomic no-clobber file sink, terminal stream policy, native platform
@@ -264,3 +267,82 @@ A separate supported Fabric-profile test injects an Azure credential and HTTP
 client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor`
 stack; negative Notebook tests verify that stack refuses before requesting a
 token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
+
+## Opt-in Livy collection executable
+
+`fabric-cli` with `headless,runtime-v2` mounts one additional operation in the
+existing `fab-cli-v2` binary:
+
+```text
+fab-cli-v2 list /<workspace-guid>.Workspace/<lakehouse-guid>.Lakehouse/sessions [supported list options]
+fab-cli-v2 list --help
+```
+
+`runtime_v2::livy_list::PreparedList` admits only `list` plus a typed Lakehouse or
+LivyService **collection**. The unchanged parser, `RuntimeHead`, receipt and
+`LivyService::list_sessions(ActivityPage)` remain the implementation. Notebook
+collections, individual session/statement reads, public history and Notebook
+facades are not claimed by this leaf. Both typed Livy collection spellings
+identify the same operation, not two registrations.
+
+The binary's production subset is explicitly **Fabric-profile Lakehouse only**.
+It requires the existing non-secret `FAB_RUST_FABRIC_HOST` selection, for example
+`msitapi.fabric.microsoft.com`, and an explicit existing `FAB_RUST_AUTH_MODE`
+configuration as described in [headless credentials](native-read-host.md#headless-credentials).
+It reuses `v2_main::NativeSession`, the existing account/tenant credential
+selection and `NativeFabricExecutor`. No new login, token input, profile flag,
+capacity scan, saved active owner or name-to-ID discovery is introduced.
+The GUID selectors are validated by the existing `ItemIdentity` contract before
+identity setup; display-name paths still require a separately injected resolver.
+
+The exact SDK binding is `LivyService::fabric_versioned` with `v1` and
+`2023-12-01`, producing:
+
+```text
+https://<explicit-host>/v1/workspaces/<workspace-guid>/lakehouses/<lakehouse-guid>/livyApi/versions/2023-12-01/sessions?$top=<limit>
+```
+
+The selected source's qualified Fabric route uses that version and
+`https://api.fabric.microsoft.com/.default`; it does not qualify arbitrary native
+or MWC hosts. The SDK's separate `fabric` factory still defaults to `2024-04-01`;
+this leaf makes its version choice explicit instead of changing that default.
+The existing exact-host, HTTPS, `/v1`, audience and context/executor checks are
+unchanged. Native `.LivyService` execution returns `UnsupportedCapability`
+**before identity**, even when a Fabric host is configured. A Lakehouse's native
+profile remains available only through `PreparedList::bind` with an independently
+authorized injected executor; the binary never probes it or falls back to it.
+
+Output uses the shared native host. One original 240-second deadline (the
+existing HTTP default) and one pinned Ctrl+C future cover preflight, credentials,
+streaming, serialization and delivery. Explicit `--timeout` remains unsupported;
+the executable does not silently reinterpret the library grammar. Files are
+create-new only, including an atomic second check at delivery. On Windows,
+redirect stdout or use `--output FILE`; raw UTF-8 receipt delivery to a console
+is not supported by the owned-output policy. Help and sanitized diagnostics use
+the same bounded owned-stream writer; there is no blocked synchronous fallback.
+Potentially blocking identity selection and `NativeSession` construction run
+through shared `host::setup` on an owned worker after path/output preflight,
+using that same deadline and pinned cancellation. The worker performs only
+local construction, never token acquisition or HTTP. A late local OS call can
+finish after interruption, but its result is discarded and runtime shutdown is
+bounded; it cannot start the subsequent SDK read.
+
+Native injected SDK lists use `size`; Fabric lists use `$top`. A valid zero,
+single or multiple-row page remains an array in provider order, retaining
+unknown fields and raw states. Coverage is only `provider_page`, with supplied
+provider total or null, and null continuation. Over-budget wire/data/receipt or
+record pages fail whole; no clipping or collect-all history claim. HTTP 202 is
+acceptance with null data when empty, never an empty completed collection or
+Spark readiness. A fresh existing `ExecutionTrace` preserves observed status on
+stream/retry failures; that status does not mean the read completed. Existing
+bounded HTTP GET retries are unchanged; there is no leaf retry or output replay.
+
+`livy_list_native` exercises the parser, leaf, shared host, actual SDK and
+Fabric HTTP/credential stack using scripted HTTP only. Native-profile query and
+header coverage uses an injected `NativeExecutor`, not a production native
+authorization claim. `livy_list_entry` exercises actual executable help and
+fail-closed offline configuration. Test source/registration is not a pass:
+focused execution, strict all-target lint, independent review and current-head
+native gates must have actual receipts before integration. No live Fabric/auth,
+session creation, compute, statement, public-history read or deployment
+qualification is established by these offline tests.

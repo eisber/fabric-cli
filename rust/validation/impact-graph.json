@@ -1878,7 +1878,9 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**",
+        "rust/clients/cli/app/tests/runtime_v2.rs",
+        "rust/clients/cli/app/tests/runtime_native_host.rs"
       ],
       "depends_on": [
         "sdk",
@@ -1890,11 +1892,32 @@
         {
           "package": "fabric-cli",
           "target": "test:runtime_v2"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_native_host"
         }
       ],
       "checks": [
         "dependency-graph"
       ]
+    },
+    {
+      "id": "cli-livy-list",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/runtime_v2/livy_list.rs",
+        "rust/clients/cli/app/src/v2_livy_list_main.rs",
+        "rust/clients/cli/app/tests/livy_list_native.rs",
+        "rust/clients/cli/app/tests/livy_list_entry.rs"
+      ],
+      "depends_on": ["cli-runtime-v2", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:livy_list_native"},
+        {"package": "fabric-cli", "target": "test:livy_list_entry"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph", "headless", "combined"]
     },
     {
       "id": "cli-resources",
@@ -3001,6 +3024,13 @@
     }
   ],
   "profiles": [
+    {
+      "id": "runtime-v2-native",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/runtime-v2", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "headless"]
+    },
     {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],

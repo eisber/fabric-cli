@@ -166,6 +166,16 @@ path = "tests/runtime_native_host.rs"
 required-features = ["runtime-v2", "native-host"]
 
 [[test]]
+name = "livy_list_native"
+path = "tests/livy_list_native.rs"
+required-features = ["runtime-v2", "native-host"]
+
+[[test]]
+name = "livy_list_entry"
+path = "tests/livy_list_entry.rs"
+required-features = ["runtime-v2", "headless"]
+
+[[test]]
 name = "graph_refresh_v2"
 path = "tests/graph_refresh_v2.rs"
 required-features = ["v2-refresh"]
