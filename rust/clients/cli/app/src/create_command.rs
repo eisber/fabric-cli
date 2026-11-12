@@ -21,8 +21,8 @@ use fabric_sdk::{
     },
 };
 use fabric_sdk_operations::{
-    FabricOperation, OperationError, OperationErrorKind, OperationExecutor, OperationLimits,
-    OperationSession,
+    FabricOperation, OperationError, OperationErrorKind, OperationExecutionError,
+    OperationExecutor, OperationLimits, OperationRequest, OperationResponse, OperationSession,
 };
 use futures_util::future::{Either, select};
 use serde_json::{Value, json};
@@ -33,6 +33,7 @@ use std::{
     num::NonZeroUsize,
     path::Path,
     pin::{Pin, pin},
+    sync::{Arc, Mutex},
 };
 
 /// Bound for raw input, each discovery/operation response, and final receipt.
@@ -253,17 +254,16 @@ impl PreparedCreateCommand {
                 .map_err(|_| CreateCommandError::Invalid)
             })
             .transpose()?;
-        let capabilities = binding.capabilities();
+        let capabilities = host_capabilities(binding);
         // Validate against the explicit parent ID before any discovery.
-        command
-            .plan(
-                target(&workspace, &name, &owner)?,
-                Preflight::Leaf(LeafState::Missing),
-                &capabilities,
-                input.clone(),
-                binding,
-            )
-            .map_err(CreateCommandError::Policy)?;
+        sdk::validate_create_request(
+            command.policy,
+            target(&workspace, &name, &owner)?,
+            &capabilities,
+            input.clone(),
+            binding,
+        )
+        .map_err(CreateCommandError::Policy)?;
         let output = match &command.output {
             OutputDestination::Stdout => None,
             OutputDestination::File(path) => Some(
@@ -299,7 +299,7 @@ impl PreparedCreateCommand {
         interrupted: impl Future<Output = ()> + Send,
     ) -> Result<CreateDelivery, CreateCommandError> {
         if binding.item_type() != self.owner
-            || binding.capabilities() != self.capabilities
+            || host_capabilities(binding) != self.capabilities
             || client.context().selection().audience() != Audience::Fabric
             || client.context().endpoint().origin() != ServiceOrigin::Fabric
         {
@@ -364,14 +364,16 @@ impl PreparedCreateCommand {
                 binding,
             )
             .map_err(CreateCommandError::Policy)?;
-        let operation = if matches!(plan.action(), CreateAction::Skip { .. }) {
-            None
-        } else {
-            Some(
+        let operation = match plan.action() {
+            CreateAction::Skip { .. } => None,
+            CreateAction::Create { .. } => Some(
                 binding
                     .operation(&plan, self.raw.as_deref(), self.command.wait)
                     .map_err(CreateCommandError::Policy)?,
-            )
+            ),
+            CreateAction::Replace { .. } | CreateAction::Duplicate { .. } => {
+                return Err(CreateCommandError::Policy(CreateError::UnsupportedPolicy));
+            }
         };
         {
             let authorize = pin!(approval.authorize(CreateApprovalRequest {
@@ -386,14 +388,22 @@ impl PreparedCreateCommand {
             }
         }
         let report = if let Some(operation) = operation {
+            let accepted = Arc::new(Mutex::new(None));
             let mut session = OperationSession::with_context(
                 client.context(),
-                execution.executor,
+                ObservedCreateExecutor {
+                    inner: execution.executor,
+                    accepted: accepted.clone(),
+                },
                 OperationLimits::default(),
                 interrupted.as_mut(),
             );
             let result = session.execute(operation).await;
-            let mut report = CreateReport::observe(&plan, result, &session);
+            let accepted = accepted
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            let mut report = CreateReport::observe(&plan, result, &session, accepted);
             report.retain_transport_evidence((execution.observe)());
             report
         } else {
@@ -404,6 +414,47 @@ impl PreparedCreateCommand {
             output: self.output,
             report,
         })
+    }
+}
+
+fn host_capabilities(binding: &dyn CreateBinding) -> CreateCapabilities {
+    let mut capabilities = binding.capabilities();
+    capabilities.replacement = None;
+    capabilities.duplicate = sdk::DuplicateSupport::Unsupported;
+    capabilities
+}
+
+struct ObservedCreateExecutor<E> {
+    inner: E,
+    accepted: Arc<Mutex<Option<Vec<u8>>>>,
+}
+
+impl<E: OperationExecutor> OperationExecutor for ObservedCreateExecutor<E> {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let initial =
+                request.method() == fabric_sdk_workspaces::mutations::ResourceMethod::Post;
+            let response = self.inner.execute(request).await?;
+            if initial && response.status == 202 && response.body.len() <= MAX_BYTES {
+                *self
+                    .accepted
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    Some(response.body.clone());
+            }
+            Ok(response)
+        })
+    }
+
+    fn wait(
+        &self,
+        delay: std::time::Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<(), OperationExecutionError>> + Send + '_>> {
+        self.inner.wait(delay)
     }
 }
 
@@ -480,6 +531,7 @@ impl CreateReport {
         plan: &CreatePlan,
         result: Result<fabric_sdk_operations::OperationResponse, OperationError>,
         session: &OperationSession<'_, E>,
+        accepted: Option<Vec<u8>>,
     ) -> Self {
         let (data, status, mut error) = match result {
             Ok(response) => {
@@ -512,7 +564,24 @@ impl CreateReport {
                 }
                 (data, response.status, None)
             }
-            Err(error) => return Self::failed(plan, Value::Null, error),
+            Err(error) => {
+                let accepted = accepted.filter(|bytes| !bytes.is_empty());
+                let data = accepted
+                    .as_deref()
+                    .and_then(|bytes| {
+                        fabric_cli_output::input::strict_json_bounded(bytes, MAX_BYTES).ok()
+                    })
+                    .unwrap_or(Value::Null);
+                let mut report = Self::failed(plan, data, error);
+                if let Some(bytes) = accepted
+                    && report.value["data"].is_null()
+                {
+                    use base64::Engine;
+                    report.value["meta"]["unparsedAcceptanceBodyBase64"] =
+                        json!(base64::engine::general_purpose::STANDARD.encode(bytes));
+                }
+                return report;
+            }
         };
         let evidence = evidence(&data, session.operation_id(), true, plan);
         let outcome: ExecutionOutcome<OperationError> = if status == 202 {
