@@ -1,0 +1,20 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+name: Rust unsigned unofficial preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    uses: ./.github/workflows/rust-native.yml
+    with:
+      preview: true
+    permissions:
+      contents: read
