@@ -4,6 +4,7 @@
 //! Experimental CLI entry point, not a replacement for the Python `fab`.
 #![cfg_attr(test, deny(unnameable_test_items))]
 
+mod acl_diagnostic;
 #[cfg(any(feature = "windows-broker", feature = "interactive"))]
 mod auth;
 #[cfg(all(windows, feature = "windows-broker"))]
@@ -96,7 +97,12 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     if arguments.len() == 1 {
         return repl_host::run();
     }
-    let invocation = parse_args(arguments);
+    let invocation = parse_args(&arguments);
+    if let Err(error) = &invocation
+        && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
+    {
+        return result;
+    }
     #[cfg(feature = "semantic-model")]
     if let Ok(Invocation::SemanticModel(command)) = &invocation {
         // Offline analysis validates before update policy or navigation setup.
@@ -217,6 +223,10 @@ fn dispatch(
             return dispatch_cancel(&command, Some(local_state));
         }
         Ok(Invocation::Delete(command)) => return delete_host::run(&command),
+        #[cfg(feature = "native-host")]
+        Ok(Invocation::MlEndpoint(command)) => {
+            return native_read::run_ml_endpoint(&command, local_state);
+        }
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
             write_error(
@@ -285,6 +295,7 @@ fn dispatch(
         #[cfg(not(feature = "native-host"))]
         Ok(
             Invocation::Read(_)
+            | Invocation::MlEndpoint(_)
             | Invocation::Execute(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)

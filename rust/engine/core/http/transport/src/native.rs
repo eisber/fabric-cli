@@ -194,22 +194,17 @@ impl HttpClient for NativeHttpClient {
         if !has_encoding {
             pending = pending.header("accept-encoding", "gzip, deflate");
         }
+        // Hyper omits automatic Content-Length for an already-ended empty body.
+        if request.method() == Method::Post
+            && matches!(request.body(), Body::Bytes(bytes) if bytes.is_empty())
+            && !has_framing
+        {
+            pending = pending.header("content-length", "0");
+        }
         let body = match request.body().clone() {
-            Body::Bytes(bytes) => {
-                if bytes.is_empty()
-                    && !has_framing
-                    && matches!(
-                        request.method(),
-                        Method::Post | Method::Put | Method::Patch | Method::Delete
-                    )
-                {
-                    // Hyper omits the length for end-of-stream bodies; Fabric requires it.
-                    pending = pending.header(http::header::CONTENT_LENGTH, "0");
-                }
-                Full::new(bytes)
-                    .map_err(|never| match never {})
-                    .boxed_unsync()
-            }
+            Body::Bytes(bytes) => Full::new(bytes)
+                .map_err(|never| match never {})
+                .boxed_unsync(),
             Body::SeekableStream(stream) => {
                 StreamBody::new(stream.map_ok(Frame::data).map_err(|error| {
                     failure(

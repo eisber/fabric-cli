@@ -29,6 +29,14 @@ pub(crate) fn run_workspace_v2(
 #[path = "native_get.rs"]
 mod get;
 
+#[cfg(any(windows, feature = "headless", feature = "interactive"))]
+#[path = "native_ml_endpoint.rs"]
+mod ml_endpoint;
+
+#[cfg(any(windows, feature = "headless", feature = "interactive"))]
+#[path = "native_output.rs"]
+mod output;
+
 #[path = "native_delete.rs"]
 mod delete;
 
@@ -114,6 +122,10 @@ use terminal_ui::NativeMutationUi;
     )
 )]
 enum NativeCommand<'a> {
+    MlEndpoint(
+        &'a fabric_cli::ml_endpoint::EndpointCommand,
+        std::time::Instant,
+    ),
     #[cfg(any(windows, feature = "headless"))]
     Execution(
         &'a fabric_cli::execute::host::ApprovedExecution,
@@ -136,6 +148,13 @@ fn has_bound_context(command: NativeCommand<'_>) -> bool {
         NativeCommand::Family(Invocation::Transfer(transfer)) => {
             transfer.kind != fabric_cli_transfer::TransferKind::Deploy
         }
+        NativeCommand::Family(Invocation::Resource(command)) => matches!(
+            command,
+            fabric_cli_mutations::frontdoor::ResourceCommand::Exists(_)
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Mkdir { .. }
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Set { .. }
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Remove { .. }
+        ),
         NativeCommand::Family(_) => false,
         _ => true,
     }
@@ -522,6 +541,52 @@ pub(crate) fn run(command: &ReadCommand, state: &mut BatchState) -> io::Result<C
     run_command(NativeCommand::Read(command), state)
 }
 
+pub(crate) fn run_ml_endpoint(
+    command: &fabric_cli::ml_endpoint::EndpointCommand,
+    state: &mut BatchState,
+) -> io::Result<CommandOutcome> {
+    let Some(deadline) = std::time::Instant::now().checked_add(command.timeout) else {
+        return write_error(failure(
+            "invalid_arguments",
+            "Invalid ML endpoint deadline.",
+            2,
+        ));
+    };
+    if command.input_path().is_some() {
+        #[cfg(any(windows, feature = "headless", feature = "interactive"))]
+        {
+            let runtime = match native_runtime() {
+                Ok(runtime) => runtime,
+                Err(error) => return write_error(error),
+            };
+            let input_command = command.clone();
+            let result = runtime.block_on(ml_endpoint::before_connect(async move {
+                tokio::task::spawn_blocking(move || {
+                    let mut command = input_command;
+                    let path = command.input_path().expect("selected local input").to_owned();
+                    let bytes = if path == "-" {
+                        fabric_cli::execute::host::read_input(&mut io::stdin().lock())
+                    } else {
+                        std::fs::File::open(&path).and_then(|mut file| fabric_cli::execute::host::read_input(&mut file))
+                    }.map_err(|_| failure("input_failed","Could not read bounded ML input (1 MiB maximum); no inference was submitted.",2))?;
+                    command.prepare_input(&bytes).map_err(|error| failure("invalid_score_input",error.message,2))?;
+                    Ok(command)
+                }).await.map_err(|_| failure("input_failed","ML input worker failed; no inference was submitted.",1))?
+            },deadline));
+            let result = finish_runtime(runtime, result);
+            return match result {
+                Ok(command) => run_command(NativeCommand::MlEndpoint(&command, deadline), state),
+                Err(error) => {
+                    let outcome = ml_endpoint::input_failure_outcome(&error);
+                    write_error(error)?;
+                    Ok(outcome)
+                }
+            };
+        }
+    }
+    run_command(NativeCommand::MlEndpoint(command, deadline), state)
+}
+
 pub(crate) fn run_execute(
     command: &fabric_cli::execute::ExecuteCommand,
     state: &mut BatchState,
@@ -837,7 +902,7 @@ fn run_selected(
         command,
         NativeCommand::Read(read) if read.kind == fabric_cli::parser::ReadKind::Get
     );
-    if is_get {
+    if is_get || matches!(command, NativeCommand::MlEndpoint(..)) {
         credential.bind_get(state)
     } else {
         credential.bind(state, home.clone())
@@ -847,6 +912,7 @@ fn run_selected(
         selected_read_options(command)?;
     }
     let skill = match command {
+        NativeCommand::MlEndpoint(..) => None,
         #[cfg(any(windows, feature = "headless"))]
         NativeCommand::Execution(..) => None,
         NativeCommand::Read(_) => None,
@@ -887,6 +953,20 @@ fn run_selected(
         .as_ref()
         .map(|navigation| std::sync::Arc::clone(navigation.current()));
     let result = runtime.block_on(async {
+        if matches!(command, NativeCommand::MlEndpoint(..)) {
+            let delivery = execute_delivery(
+                command, credential, &current, home, endpoint, settings, state, None,
+            ).await;
+            return match delivery {
+                Ok(delivery) => {
+                    let NativeCommand::MlEndpoint(_, deadline) = command else {
+                        unreachable!("selected ML endpoint");
+                    };
+                    ml_endpoint::publish(delivery, deadline).await
+                }
+                Err(error) => Err(error),
+            };
+        }
         if is_get {
             let clock = get::NativeClock(tokio::runtime::Handle::current());
             let resource_config = settings.get_resources.clone();
@@ -972,7 +1052,11 @@ async fn execute_delivery(
     let execution = matches!(command, NativeCommand::Execution(..));
     #[cfg(not(any(windows, feature = "headless")))]
     let execution = false;
-    let (client, identity_client) = native_clients(&credential, execution)?;
+    let (client, identity_client) = if let NativeCommand::MlEndpoint(ml, _) = command {
+        native_clients_with_options(&credential, ml_endpoint::transport_options(ml))?
+    } else {
+        native_clients(&credential, execution)?
+    };
     execute_injected_delivery(
         command,
         (credential, client, identity_client),
@@ -1124,15 +1208,24 @@ async fn execute_injected_delivery(
         NativeCommand::Execution(_, deadline) => Some(deadline),
         _ => None,
     };
-    let (sdk, executor) = connect_native(
+    let options = if let NativeCommand::MlEndpoint(ml, _) = command {
+        ml_endpoint::execution_options(ml)
+    } else {
+        fabric_sdk_http::ExecutionOptions::default()
+    };
+    let connecting = connect_native(
         credential,
         client,
         identity_client,
         endpoint,
-        fabric_sdk_http::ExecutionOptions::default(),
+        options,
         deadline,
-    )
-    .await?;
+    );
+    let (sdk, executor) = if let NativeCommand::MlEndpoint(_, deadline) = command {
+        ml_endpoint::before_connect(connecting, deadline).await?
+    } else {
+        connecting.await?
+    };
     execute_authenticated_injected(
         command,
         sdk,
@@ -1201,6 +1294,9 @@ async fn execute_authenticated_injected(
     broker_identity: bool,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
+    if let NativeCommand::MlEndpoint(command, deadline) = command {
+        return ml_endpoint::dispatch(command, &sdk, &executor, deadline).await;
+    }
     #[cfg(any(windows, feature = "headless"))]
     if let NativeCommand::Execution(approved, deadline) = command {
         return execute::dispatch(approved, deadline, &sdk, executor).await;
@@ -1238,6 +1334,7 @@ async fn execute_authenticated_injected(
         config: settings.reads,
     };
     let result = match command {
+        NativeCommand::MlEndpoint(..) => unreachable!("ML endpoints use their native result host"),
         #[cfg(any(windows, feature = "headless"))]
         NativeCommand::Execution(..) => unreachable!("execution uses its typed result host"),
         NativeCommand::Read(command) => {
@@ -1808,6 +1905,49 @@ mod tests {
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[test]
+    fn existing_core_resource_verbs_and_aliases_have_bound_contexts() {
+        for args in [
+            vec!["exists", "Demo.Workspace"],
+            vec!["mkdir", "New.Workspace"],
+            vec!["create", "New.Workspace"],
+            vec!["set", "Demo.Workspace", "-q", "description", "-i", "value"],
+            vec!["rm", "Demo.Workspace"],
+            vec!["del", "Demo.Workspace"],
+        ] {
+            let invocation =
+                fabric_cli::parser::parse_args(std::iter::once("fab-rs").chain(args)).unwrap();
+            assert!(matches!(&invocation, Invocation::Resource(_)));
+            assert!(has_bound_context(NativeCommand::Family(&invocation)));
+        }
+    }
+
+    #[test]
+    fn other_resource_verbs_and_acl_do_not_gain_nonpublic_endpoint_support() {
+        for args in [
+            vec!["ln", "Demo.Workspace/Link.Shortcut", "--type", "oneLake"],
+            vec![
+                "cp",
+                "Demo.Workspace/Book.Notebook",
+                "Demo.Workspace/Copy.Notebook",
+            ],
+            vec![
+                "mv",
+                "Demo.Workspace/Book.Notebook",
+                "Demo.Workspace/Moved.Notebook",
+            ],
+            vec!["start", "Demo.Workspace/Db.MirroredDatabase"],
+            vec!["stop", "Demo.Workspace/Db.MirroredDatabase"],
+            vec!["assign", "Demo.Capacity", "-W", "Demo.Workspace"],
+            vec!["unassign", "Demo.Capacity", "-W", "Demo.Workspace"],
+            vec!["acl", "ls", "Demo.Workspace"],
+        ] {
+            let invocation =
+                fabric_cli::parser::parse_args(std::iter::once("fab-rs").chain(args)).unwrap();
+            assert!(!has_bound_context(NativeCommand::Family(&invocation)));
+        }
+    }
 
     #[cfg(any(windows, feature = "headless"))]
     #[test]

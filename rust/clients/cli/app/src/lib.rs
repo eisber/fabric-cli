@@ -29,6 +29,7 @@ pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;
 pub mod local_commands;
+pub mod ml_endpoint;
 pub mod native_tabular;
 pub mod parser;
 mod projection;

@@ -91,11 +91,13 @@ impl std::error::Error for ExecutionError {}
 mod bound;
 mod capacities;
 pub use bound::PublicOrigin;
+mod evidence;
 mod folders;
 mod items;
 pub mod native_runtime;
 pub mod native_stream;
 mod operations;
+pub use evidence::{ExecutionEvidence, ExecutionTrace};
 #[cfg(test)]
 mod tests;
 
@@ -111,6 +113,7 @@ pub struct HttpExecutor {
     timer: Arc<dyn ExecutionTimer>,
     options: ExecutionOptions,
     endpoint: EndpointBinding,
+    trace: Option<ExecutionTrace>,
 }
 
 /// Optional bounded response progress, including headers before body suspension.
@@ -142,6 +145,7 @@ impl HttpExecutor {
             timer,
             options,
             endpoint: EndpointBinding::public(ServiceOrigin::Fabric),
+            trace: None,
         })
     }
 
@@ -173,6 +177,15 @@ impl HttpExecutor {
         let mut scoped = self.clone();
         scoped.options.timeout = remaining;
         Ok(scoped)
+    }
+
+    /// Observe this command's exchanges without changing transport/retry policy.
+    ///
+    /// Use a fresh trace per command. New exchanges clear older status/IDs;
+    /// clones intentionally share only the explicitly supplied observation.
+    pub fn with_trace(mut self, trace: ExecutionTrace) -> Self {
+        self.trace = Some(trace);
+        self
     }
 
     /// Executes one bounded request against the selected Fabric HTTPS origin.
@@ -331,20 +344,25 @@ impl HttpExecutor {
         limit: NonZeroUsize,
         progress: Option<&dyn ResponseProgress>,
     ) -> Result<WorkspaceResponse, ExecutionError> {
-        self.before_deadline(async {
-            // Python's outer 429 loop has four iterations. Its HTTPS adapter
-            // independently allows three status retries on each iteration.
-            for _ in 0..4 {
-                let response = self.read_with_retries(&request, limit, progress).await?;
-                if request.method() != Method::Get || response.status != 429 {
-                    return Ok(response);
+        let result = self
+            .before_deadline(async {
+                // Python's outer 429 loop has four iterations. Its HTTPS adapter
+                // independently allows three status retries on each iteration.
+                for _ in 0..4 {
+                    let response = self.read_with_retries(&request, limit, progress).await?;
+                    if request.method() != Method::Get || response.status != 429 {
+                        return Ok(response);
+                    }
+                    let delay = retry_after(&response.headers)?.unwrap_or(Duration::from_secs(10));
+                    self.wait_bounded(delay).await?;
                 }
-                let delay = retry_after(&response.headers)?.unwrap_or(Duration::from_secs(10));
-                self.wait_bounded(delay).await?;
-            }
-            Err(ExecutionError::RetriesExhausted)
-        })
-        .await
+                Err(ExecutionError::RetriesExhausted)
+            })
+            .await;
+        if let Some(trace) = &self.trace {
+            trace.finish(result.as_ref().err().copied());
+        }
+        result
     }
 
     fn validate_token(token: &AccessToken) -> Result<(), ExecutionError> {
@@ -374,12 +392,23 @@ impl HttpExecutor {
         progress: Option<&dyn ResponseProgress>,
     ) -> Result<WorkspaceResponse, ExecutionError> {
         for retry in 0..=3 {
+            if let Some(trace) = &self.trace {
+                trace.start(request.method());
+            }
             let raw = self
                 .client
                 .execute_request(request)
                 .await
-                .map_err(|_| ExecutionError::Transport)?;
+                .map_err(|error| {
+                    if let Some(trace) = &self.trace {
+                        trace.transport(error.kind());
+                    }
+                    ExecutionError::Transport
+                })?;
             let (status, headers, mut stream) = raw.deconstruct();
+            if let Some(trace) = &self.trace {
+                trace.headers(status.into(), &headers);
+            }
             let mut response = WorkspaceResponse {
                 status: status.into(),
                 body: Vec::new(),
@@ -393,7 +422,12 @@ impl HttpExecutor {
             }
             let mut chunks = 0_usize;
             while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|_| ExecutionError::Transport)?;
+                let chunk = chunk.map_err(|error| {
+                    if let Some(trace) = &self.trace {
+                        trace.transport(error.kind());
+                    }
+                    ExecutionError::Transport
+                })?;
                 if chunk.len() > limit.get() - response.body.len() {
                     if let Some(progress) = progress {
                         progress.body_omitted(&response)?;

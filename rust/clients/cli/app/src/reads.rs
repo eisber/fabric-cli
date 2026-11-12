@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+mod list_selection;
+pub(crate) use list_selection::ListSelection;
+
 use crate::{
     Projection, errors,
     parser::{ReadCommand, ReadKind},
@@ -176,10 +179,13 @@ impl ReadHost<'_> {
             ));
         }
         crate::session::get_options::preflight(command)?;
-        let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
+        let selection = ListSelection::new(command)?;
         let resolver = Resolver::new(self.lookup, Arc::clone(&self.current), self.home.clone());
         let target = resolver
-            .resolve(PathInput::Tokens(&tokens), ResolveOptions::default())
+            .resolve(
+                PathInput::Scalar(&selection.path),
+                ResolveOptions::default(),
+            )
             .map_err(|error| errors::error(&error.code, error.message))?;
         crate::session::get_options::validate_target(command, &target)?;
         let show_hidden = command.all || self.config.show_hidden;
@@ -208,7 +214,9 @@ impl ReadHost<'_> {
                         Arc::clone(&target),
                     )
                     .map_err(|error| errors::error(&error.code, error.message))?;
-                    rows.push(json!({"name": element.name(), "id": workspace.id}));
+                    if selection.matches(&element.name()) {
+                        rows.push(json!({"name": element.name(), "id": workspace.id}));
+                    }
                 }
                 rows.sort_by_cached_key(|row| {
                     row["name"].as_str().unwrap_or_default().to_lowercase()
@@ -256,8 +264,12 @@ impl ReadHost<'_> {
                     &["name"]
                 };
                 let data = self.list_projection(rows, columns, command)?;
-                let hidden = show_hidden
-                    .then(|| hidden(&[".capacities", ".connections", ".gateways", ".domains"]));
+                let hidden = show_hidden.then(|| {
+                    hidden(
+                        &[".capacities", ".connections", ".gateways", ".domains"],
+                        &selection,
+                    )
+                });
                 (data, hidden)
             }
             (ReadKind::List, NodeKind::Workspace(_)) => {
@@ -323,12 +335,15 @@ impl ReadHost<'_> {
                 };
                 let data = self.list_projection(rows, columns, command)?;
                 let hidden = show_hidden.then(|| {
-                    hidden(&[
-                        ".sparkpools",
-                        ".managedidentities",
-                        ".managedprivateendpoints",
-                        ".externaldatashares",
-                    ])
+                    hidden(
+                        &[
+                            ".sparkpools",
+                            ".managedidentities",
+                            ".managedprivateendpoints",
+                            ".externaldatashares",
+                        ],
+                        &selection,
+                    )
                 });
                 (data, hidden)
             }
@@ -409,6 +424,17 @@ impl ReadHost<'_> {
         columns: &[&str],
         command: &ReadCommand,
     ) -> Result<Value, CommandError> {
+        let selection = ListSelection::new(command)?;
+        let rows = rows
+            .into_iter()
+            .filter(|row| {
+                selection.matches(
+                    row["name"]
+                        .as_str()
+                        .expect("listing rows have string names"),
+                )
+            })
+            .collect();
         if let Some(query) = command.query.as_deref().filter(|query| !query.is_empty()) {
             return self
                 .projection
@@ -431,8 +457,14 @@ impl ReadHost<'_> {
     }
 }
 
-fn hidden(values: &[&str]) -> HiddenItems {
-    HiddenItems::Strings(values.iter().map(|value| (*value).to_owned()).collect())
+pub(crate) fn hidden(values: &[&str], selection: &ListSelection) -> HiddenItems {
+    HiddenItems::Strings(
+        values
+            .iter()
+            .filter(|value| selection.matches(value))
+            .map(|value| (*value).to_owned())
+            .collect(),
+    )
 }
 
 pub(crate) fn required_id(element: &Element) -> Result<&str, CommandError> {

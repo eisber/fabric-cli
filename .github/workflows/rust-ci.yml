@@ -130,7 +130,7 @@ jobs:
               pathlib.Path("receipt.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
               print(json.dumps(report))
           persist()
-          pattern, count = "test_native_acceptance*.py", 38
+          pattern, count = "test_native_acceptance*.py", 51
           suite = unittest.defaultTestLoader.discover(str(source), pattern=pattern)
           discovered = suite.countTestCases()
           if discovered != count:
@@ -143,15 +143,22 @@ jobs:
           original_execute = acceptance.execute
           def observe_execute(*args, **kwargs):
               captured = original_execute(*args, **kwargs)
-              if kwargs.get("terminal") is not None:
+              if kwargs.get("terminal") is not None and acceptance.os is os:
                   report["pty_receipts"].append(captured[0])
               return captured
           with open("native-acceptance.log", "w", encoding="utf-8") as log:
               with patch.object(acceptance, "execute", observe_execute):
                   result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
           skips = [(test.id(), reason) for test, reason in result.skipped]
-          expected = [("test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
-                       "requires_native_POSIX_PTY")] if os.name == "nt" else []
+          expected = [
+              ("test_native_acceptance.FilesystemTests." + name, "requires_native_POSIX_PTY")
+              for name in (
+                  "test_actual_eof_byte_and_clean_restore_satisfy_fixture",
+                  "test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery",
+                  "test_eof_without_restoration_cannot_satisfy_fixture",
+                  "test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
+              )
+          ] if os.name == "nt" else []
           success = result.wasSuccessful() and result.testsRun == count and not result.expectedFailures and skips == expected
           report["suites"].append({"pattern": pattern, "expected": count,
                                    "discovered": discovered, "run": result.testsRun,
@@ -195,6 +202,7 @@ jobs:
           node rust/scripts/validate-impact.cjs
           --plan "$RUNNER_TEMP/rust-impact-selection/native-plan.json"
           --artifacts "$RUNNER_TEMP/rust-impact-results"
+          --budget-seconds ${{ matrix.os == 'windows-2025' && 8100 || 7200 }}
           --restore-oracle-deps --execute
       - name: Retain plan and actual command exits, hashes and coverage
         if: always()

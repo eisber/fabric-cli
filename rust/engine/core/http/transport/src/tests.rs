@@ -32,6 +32,9 @@ mod metadata_tests;
 #[path = "provenance_tests.rs"]
 mod provenance_tests;
 
+#[path = "framing_tests.rs"]
+mod framing_tests;
+
 const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
 const ITEM: &str = "33333333-3333-3333-3333-333333333333";
 const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
@@ -203,88 +206,6 @@ fn explicit_configuration_rejects_invalid_values_without_disclosing_them() {
             Err(TransportError::InvalidTimeout)
         );
     }
-}
-
-#[tokio::test]
-async fn empty_write_requests_have_an_explicit_zero_content_length() {
-    let methods = [Method::Post, Method::Put, Method::Patch, Method::Delete];
-    let (tls, root) = test_tls();
-    let server = Server::start(
-        methods
-            .iter()
-            .map(|_| Reply::body(200, Vec::new()))
-            .collect(),
-        Some(tls),
-    )
-    .await;
-    let client = client(&server, vec![root]);
-    for method in methods {
-        let mut request = request(method, "/v1/items/synthetic/getDefinition");
-        request.set_body(Vec::<u8>::new());
-        assert!(
-            bytes(client.execute_request(&request).await.unwrap())
-                .await
-                .is_empty()
-        );
-    }
-    let requests = server.requests();
-    assert_eq!(requests.len(), methods.len());
-    for (wire, method) in requests.iter().zip(methods) {
-        let wire = String::from_utf8(wire.clone()).unwrap();
-        assert!(wire.starts_with(&format!(
-            "{} /v1/items/synthetic/getDefinition HTTP/1.1\r\n",
-            method.as_str()
-        )));
-        assert_eq!(
-            wire.lines()
-                .filter(|line| line.eq_ignore_ascii_case("content-length: 0"))
-                .count(),
-            1,
-            "{method:?} must explicitly frame its empty body"
-        );
-        assert!(!wire.to_ascii_lowercase().contains("transfer-encoding:"));
-        assert!(wire.ends_with("\r\n\r\n"));
-    }
-    server.stop().await;
-}
-
-#[tokio::test]
-async fn empty_read_requests_and_explicit_length_are_not_reframed() {
-    let methods = [Method::Get, Method::Head, Method::Post];
-    let (tls, root) = test_tls();
-    let server = Server::start(
-        methods
-            .iter()
-            .map(|_| Reply::body(200, Vec::new()))
-            .collect(),
-        Some(tls),
-    )
-    .await;
-    let client = client(&server, vec![root]);
-    for method in methods {
-        let mut request = request(method, "/v1/items/synthetic");
-        if method == Method::Post {
-            request.insert_header("content-length", "0");
-        }
-        assert!(
-            bytes(client.execute_request(&request).await.unwrap())
-                .await
-                .is_empty()
-        );
-    }
-    let requests = server.requests();
-    assert_eq!(requests.len(), methods.len());
-    for (wire, method) in requests.iter().zip(methods) {
-        let wire = String::from_utf8(wire.clone()).unwrap();
-        let lengths = wire
-            .lines()
-            .filter(|line| line.eq_ignore_ascii_case("content-length: 0"))
-            .count();
-        assert_eq!(lengths, usize::from(method == Method::Post));
-        assert!(!wire.to_ascii_lowercase().contains("transfer-encoding:"));
-        assert!(wire.ends_with("\r\n\r\n"));
-    }
-    server.stop().await;
 }
 
 #[tokio::test]

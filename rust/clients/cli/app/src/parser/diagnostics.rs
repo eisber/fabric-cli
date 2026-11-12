@@ -11,6 +11,9 @@ use clap::{
 /// Raw Clap messages, usages, suggestions and rejected values may contain user
 /// data. Only exact schema labels are projected from the error context.
 pub fn invalid_arguments_message(error: &clap::Error) -> String {
+    if let Some(message) = crate::ml_endpoint::input_diagnostic(error) {
+        return message.into();
+    }
     let description = match error.kind() {
         ErrorKind::MissingRequiredArgument => "Missing required argument(s)",
         ErrorKind::InvalidValue

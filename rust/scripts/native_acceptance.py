@@ -411,14 +411,27 @@ def wait_owned_process(child: subprocess.Popen[bytes], timeout: float, master: i
                 time.sleep(min(0.005, max(0, deadline - time.monotonic())))
 
 
-def terminal_state(slave: int, before: Any) -> tuple[bool, str | None]:
+def terminal_state(descriptor: int, before: Any) -> tuple[bool, str | None]:
     """Observe restoration separately from confirmed process/resource cleanup."""
     import termios
 
     try:
-        return termios.tcgetattr(slave) == before, None
+        return termios.tcgetattr(descriptor) == before, None
     except (OSError, termios.error):
         return False, "terminal_state_unavailable"
+
+
+def write_terminal_input(
+    master: int, pending: bytearray, fixture_bytes: bytearray,
+) -> tuple[int, int]:
+    """Count fixture bytes actually written separately from terminal protocol traffic."""
+    require(len(pending) == len(fixture_bytes), "terminal_input_tracking_mismatch")
+    written = os.write(master, pending[:4096])
+    require(0 <= written <= min(4096, len(pending)), "terminal_input_write_invalid")
+    fixture_written = sum(fixture_bytes[:written])
+    del pending[:written]
+    del fixture_bytes[:written]
+    return written, fixture_written
 
 
 def execute(
@@ -508,19 +521,22 @@ def execute(
             prompt = b"$ "
             dsr = 0
             input_bytes_written = 0
+            fixture_input_bytes_written = 0
             query_tail = b""
             pending = bytearray()
+            pending_fixture_bytes = bytearray()
 
-            def enqueue(data: bytes) -> None:
+            def enqueue(data: bytes, *, fixture_input: bool = False) -> None:
                 nonlocal input_queue_limit
                 if len(pending) + len(data) > LIMIT:
                     input_queue_limit = True
                 else:
                     pending.extend(data)
+                    pending_fixture_bytes.extend(bytes([int(fixture_input)]) * len(data))
 
             while (child.poll() is None and time.monotonic() < end
                    and not overflow.is_set() and not input_queue_limit):
-                flags = termios.tcgetattr(slave)[3]
+                flags = termios.tcgetattr(master)[3]
                 raw_observed |= not bool(flags & (termios.ECHO | termios.ICANON))
                 readable, writable, _ = select.select(
                     [master], [master] if pending else [], [],
@@ -543,26 +559,29 @@ def execute(
                     query_tail = (query_tail + chunk)[-3:]
                     dsr += queries
                     enqueue(b"\x1b[1;1R" * queries)
-                    if raw_observed and prompt in buffers[0] and not sent:
-                        enqueue(terminal["input"].encode("ascii"))
-                        sent = True
-                    if terminal["name"] == "interrupt" and sent and not interrupted:
-                        if b"Use 'quit' or 'exit'" in buffers[0]:
-                            enqueue(b"quit\r")
-                            interrupted = True
+                if raw_observed and prompt in buffers[0] and not sent:
+                    enqueue(terminal["input"].encode("ascii"), fixture_input=True)
+                    sent = True
+                if terminal["name"] == "interrupt" and sent and not interrupted:
+                    if b"Use 'quit' or 'exit'" in buffers[0]:
+                        enqueue(b"quit\r")
+                        interrupted = True
                 if (writable and pending and not overflow.is_set() and not input_queue_limit
                         and time.monotonic() < end):
                     try:
-                        written = os.write(master, pending[:4096])
+                        written, fixture_written = write_terminal_input(
+                            master, pending, pending_fixture_bytes,
+                        )
                     except BlockingIOError:
                         pass
                     except OSError:
                         break
                     else:
                         input_bytes_written += written
-                        del pending[:written]
+                        fixture_input_bytes_written += fixture_written
             terminal["protocol_cursor_queries"] = dsr
             terminal["protocol_input_bytes_written"] = input_bytes_written
+            terminal["fixture_input_bytes_written"] = fixture_input_bytes_written
             while (time.monotonic() < end and not overflow.is_set()
                    and select.select([master], [], [], 0)[0]):
                 try:
@@ -636,7 +655,8 @@ def execute(
                 cleanup = False
                 cleanup_failures.append("io_threads_still_active")
         if slave is not None:
-            restored, terminal_state_error = terminal_state(slave, before)
+            # Darwin revokes the slave descriptor when its controlling session exits.
+            restored, terminal_state_error = terminal_state(master, before)
             for descriptor in (master, slave):
                 try:
                     os.close(descriptor)
@@ -678,6 +698,7 @@ def execute(
             "state_observation_error": terminal_state_error,
             "cursor_queries": terminal.get("protocol_cursor_queries", 0),
             "input_bytes_written": terminal.get("protocol_input_bytes_written", 0),
+            "fixture_input_bytes_written": terminal.get("fixture_input_bytes_written", 0),
             "input_queue_limit": input_queue_limit,
         }
     return receipt, out, err
@@ -817,6 +838,45 @@ def validate_output(kind: str, out: bytes, err: bytes, version: str) -> None:
         require(parse(err) == (INVALID if kind == "invalid" else REDIRECTED), "error_schema")
     else:
         raise Rejected("unknown_output_schema")
+
+
+def validate_terminal_fixture(fixture: Any) -> None:
+    """Validate positive terminal expectations and the explicit clean-EOF exception."""
+    closed(fixture, {"schema", "cases"})
+    require(type(fixture["schema"]) is int and fixture["schema"] == 2
+            and type(fixture["cases"]) is list and len(fixture["cases"]) == 4,
+            "unknown_terminal_fixture")
+    for case in fixture["cases"]:
+        closed(case, {"name", "input", "contains", "not_contains", "exit"})
+        require(type(case["name"]) is str and type(case["input"]) is str
+                and 0 < len(case["input"]) <= 256 and case["input"].isascii()
+                and type(case["not_contains"]) is list
+                and type(case["exit"]) is int and case["exit"] == 0,
+                "unknown_terminal_fixture")
+        if case["name"] == "eof":
+            require(case["input"] == "\x04" and case["contains"] is None
+                    and case["not_contains"] == ["Error in interactive session:"],
+                    "unknown_terminal_fixture")
+        else:
+            require(type(case["contains"]) is str and 0 < len(case["contains"]) <= 256
+                    and not case["not_contains"], "unknown_terminal_fixture")
+    require({case["name"] for case in fixture["cases"]} ==
+            {"quit", "eof", "lexical-error", "interrupt"}, "unknown_terminal_fixture")
+
+
+def terminal_case_passed(
+    case: dict[str, Any], receipt: dict[str, Any], out: bytes, err: bytes,
+) -> bool:
+    """Require delivered input and restored terminal state, not just missing error text."""
+    terminal = receipt["terminal"]
+    return (receipt["exit"] == case["exit"] and not receipt["timeout"]
+            and not receipt["output_limit"] and receipt["cleanup"] != "unconfirmed"
+            and not receipt.get("execution_error")
+            and terminal["raw_observed"] and terminal["termios_restored"]
+            and not terminal["input_queue_limit"]
+            and terminal["fixture_input_bytes_written"] == len(case["input"].encode("ascii"))
+            and (case["contains"] is None or case["contains"].encode() in out)
+            and all(value.encode() not in out + err for value in case["not_contains"]))
 
 
 def validate_metadata(metadata: Any) -> None:
@@ -1091,22 +1151,9 @@ def run(
         fixture_path = Path(__file__).resolve().parents[1] / "tests" / "acceptance" / "native" / "terminal-inputs.json"
         fixture_raw = json_bytes(fixture_path, deadline)
         fixture = parse(fixture_raw)
-        closed(fixture, {"schema", "cases"})
-        require(type(fixture["schema"]) is int and fixture["schema"] == 1
-                and type(fixture["cases"]) is list and len(fixture["cases"]) == 4,
-                "unknown_terminal_fixture")
-        for case in fixture["cases"]:
-            closed(case, {"name", "input", "contains", "exit"})
-            require(type(case["name"]) is str and type(case["input"]) is str
-                    and len(case["input"]) <= 256 and case["input"].isascii()
-                    and type(case["contains"]) is str and 0 < len(case["contains"]) <= 256
-                    and type(case["exit"]) is int and case["exit"] == 0,
-                    "unknown_terminal_fixture")
-        require({case["name"] for case in fixture["cases"]} ==
-                {"quit", "eof", "lexical-error", "interrupt"}, "unknown_terminal_fixture")
+        validate_terminal_fixture(fixture)
         report["terminal_fixture_sha256"] = digest(fixture_raw)
         for case in fixture["cases"]:
-            closed(case, {"name", "input", "contains", "exit"})
             case_id = f"repl/{case['name']}"
             if system == "Windows":
                 record({"id": case_id, "status": "not_run", "reason": "requires_native_PTY_or_manual_terminal"})
@@ -1114,13 +1161,8 @@ def run(
             result = command("optional-combined", case_id, [], terminal=dict(case))
             if result is None:
                 continue
-            receipt, out, _ = result
-            terminal_result = receipt["terminal"]
-            if (receipt["exit"] == case["exit"] and not receipt["timeout"]
-                    and not receipt["output_limit"] and receipt["cleanup"] != "unconfirmed"
-                    and terminal_result["raw_observed"] and terminal_result["termios_restored"]
-                    and not terminal_result["input_queue_limit"]
-                    and case["contains"].encode() in out):
+            receipt, out, err = result
+            if terminal_case_passed(case, receipt, out, err):
                 receipt["status"] = "passed"
             else:
                 receipt["reason"] = "terminal_lifecycle_contract"

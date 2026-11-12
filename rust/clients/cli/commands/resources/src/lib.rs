@@ -67,11 +67,11 @@ pub const REGISTRATIONS: &[Registration] = &[
     },
     Registration {
         path: "acl set",
-        aliases: &[],
+        aliases: &["acl grant"],
     },
     Registration {
         path: "acl rm",
-        aliases: &["acl del"],
+        aliases: &["acl del", "acl revoke"],
     },
     Registration {
         path: "label set",

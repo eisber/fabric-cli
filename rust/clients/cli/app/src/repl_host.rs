@@ -53,9 +53,7 @@ fn finish<I>(
     output: &mut impl Write,
 ) -> io::Result<ExitCode> {
     match result {
-        Ok(StopReason::ExitCommand | StopReason::HostRequested) => Ok(ExitCode::SUCCESS),
-        Ok(StopReason::EndOfInput) => {
-            writeln!(output, "Error in interactive session: ")?;
+        Ok(StopReason::ExitCommand | StopReason::HostRequested | StopReason::EndOfInput) => {
             Ok(ExitCode::SUCCESS)
         }
         Err(RunError::Line(
@@ -178,6 +176,108 @@ mod tests {
         }
     }
 
+    struct ScriptedInput(VecDeque<Result<InputEvent, io::Error>>);
+
+    impl ShellInput for ScriptedInput {
+        type Error = io::Error;
+
+        fn read_input(&mut self, _: &str) -> Result<InputEvent, Self::Error> {
+            self.0.pop_front().expect("unexpected extra editor read")
+        }
+    }
+
+    #[test]
+    fn scripted_session_child() {
+        let Ok(case) = std::env::var("FAB_REPL_SESSION_TEST_CHILD") else {
+            return;
+        };
+        let events = match case.as_str() {
+            "eof" => vec![Ok(InputEvent::EndOfInput)],
+            "interrupt-eof" => vec![Ok(InputEvent::Interrupt), Ok(InputEvent::EndOfInput)],
+            "quit" | "exit" | "q" => vec![Ok(InputEvent::Line(case.clone()))],
+            "read-error" => vec![Err(io::Error::other("synthetic editor failure"))],
+            "host-stop" => vec![Ok(InputEvent::Line("get invalid-configuration".into()))],
+            "quotation" => vec![Ok(InputEvent::Line("get \"unfinished".into()))],
+            "escape" => vec![Ok(InputEvent::Line("get trailing\\".into()))],
+            _ => panic!("unknown scripted session case"),
+        };
+        let mut input = ScriptedInput(
+            events
+                .into_iter()
+                .chain([Ok(InputEvent::Line("must not execute".into()))])
+                .collect(),
+        );
+        let mut host = CommandShell {
+            state: BatchState::new_interactive(Ok(("/".into(), false))),
+            output: io::stdout(),
+            dispatch: synthetic_dispatch,
+        };
+        let result = fabric_cli_repl::run(&mut input, &mut host, Options::default());
+        let exit = finish(result, &mut host.output).unwrap();
+        assert_eq!(input.0.len(), 1);
+        host.output.flush().unwrap();
+        std::process::exit(if exit == ExitCode::SUCCESS {
+            0
+        } else if exit == ExitCode::from(2) {
+            2
+        } else {
+            assert_eq!(exit, ExitCode::from(1));
+            1
+        });
+    }
+
+    #[test]
+    fn scripted_sessions_preserve_exact_streams_and_exit_status() {
+        let welcome = "\nWelcome to the Fabric CLI \u{26a1}\nType 'help' for help. \n\n";
+        for (case, ending, exit) in [
+            ("eof", "", 0),
+            (
+                "interrupt-eof",
+                "\nUse 'quit' or 'exit' to leave interactive mode.\n",
+                0,
+            ),
+            ("quit", "Exiting interactive mode. Goodbye!\n", 0),
+            ("exit", "Exiting interactive mode. Goodbye!\n", 0),
+            ("q", "Exiting interactive mode. Goodbye!\n", 0),
+            (
+                "read-error",
+                "Error in interactive session: Interactive input failed.\n",
+                1,
+            ),
+            ("host-stop", "", 2),
+            (
+                "quotation",
+                "Error in interactive session: No closing quotation\n",
+                0,
+            ),
+            (
+                "escape",
+                "Error in interactive session: No escaped character\n",
+                0,
+            ),
+        ] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "repl_host::tests::scripted_session_child",
+                    "--nocapture",
+                    "--quiet",
+                ])
+                .env_clear()
+                .env("FAB_REPL_SESSION_TEST_CHILD", case)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(exit), "{case}: {output:?}");
+            assert_eq!(output.stderr, b"", "{case}");
+            // The self-executed test harness prints its banner before the session.
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                format!("\nrunning 1 test\n{welcome}{ending}"),
+                "{case}",
+            );
+        }
+    }
+
     #[test]
     fn fake_editor_uses_current_application_notices_without_terminal_setup() {
         let mut input = Input(VecDeque::from([
@@ -250,14 +350,25 @@ mod tests {
 
     #[test]
     fn resource_limits_and_editor_failures_are_not_normal_lexical_termination() {
-        for error in [
-            RunError::<io::Error, HostError>::Line(LineError::TooLong),
-            RunError::Line(LineError::TooManyTokens),
-            RunError::Input(io::Error::other("Synthetic editor failure")),
+        for (error, diagnostic) in [
+            (
+                RunError::<io::Error, HostError>::Line(LineError::TooLong),
+                "Interactive input exceeds the byte limit.",
+            ),
+            (
+                RunError::Line(LineError::TooManyTokens),
+                "Interactive input exceeds the token limit.",
+            ),
+            (
+                RunError::Input(io::Error::other("Synthetic editor failure")),
+                "Interactive input failed.",
+            ),
         ] {
+            let mut output = Vec::new();
+            assert_eq!(finish(Err(error), &mut output).unwrap(), ExitCode::from(1));
             assert_eq!(
-                finish(Err(error), &mut Vec::new()).unwrap(),
-                ExitCode::from(1)
+                output,
+                format!("Error in interactive session: {diagnostic}\n").as_bytes(),
             );
         }
         let error =
@@ -266,6 +377,83 @@ mod tests {
             finish(Err(error), &mut Vec::new()).unwrap_err().kind(),
             io::ErrorKind::BrokenPipe,
         );
+    }
+
+    struct FailingOutput {
+        remaining: usize,
+    }
+
+    impl Write for FailingOutput {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if bytes.len() > self.remaining {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            self.remaining -= bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn welcome_and_farewell_output_failures_remain_errors_not_eof() {
+        let welcome_bytes = ShellNotice::Welcome.message().unwrap().len() + 1;
+        for (remaining, unread) in [(0, 2), (welcome_bytes, 1)] {
+            let mut input = Input(VecDeque::from([
+                InputEvent::Line("quit".into()),
+                InputEvent::EndOfInput,
+            ]));
+            let mut host = CommandShell {
+                state: BatchState::new_interactive(Ok(("/".into(), false))),
+                output: FailingOutput { remaining },
+                dispatch,
+            };
+            let result = fabric_cli_repl::run(&mut input, &mut host, Options::default());
+            assert!(matches!(result, Err(RunError::Host(HostError::Io(_)))));
+            assert_eq!(
+                finish(result, &mut host.output).unwrap_err().kind(),
+                io::ErrorKind::BrokenPipe,
+            );
+            assert_eq!(input.0.len(), unread);
+        }
+    }
+
+    #[test]
+    fn diagnostic_output_failures_are_propagated() {
+        let result = Err(RunError::<io::Error, HostError>::Input(io::Error::other(
+            "synthetic editor failure",
+        )));
+        assert_eq!(
+            finish(result, &mut FailingOutput { remaining: 0 })
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::BrokenPipe,
+        );
+    }
+
+    #[test]
+    fn typed_editor_failures_are_diagnostics_not_normal_eof() {
+        for error in [
+            EditorError::Read(io::ErrorKind::BrokenPipe.into()),
+            EditorError::InputTooLong,
+            EditorError::UnsupportedSignal,
+        ] {
+            let mut output = Vec::new();
+            assert_eq!(
+                finish(
+                    Err(RunError::<EditorError, HostError>::Input(error)),
+                    &mut output,
+                )
+                .unwrap(),
+                ExitCode::from(1),
+            );
+            assert_eq!(
+                output,
+                b"Error in interactive session: Interactive input failed.\n",
+            );
+        }
     }
 
     fn synthetic_dispatch(

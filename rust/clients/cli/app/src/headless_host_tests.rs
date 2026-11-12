@@ -4,6 +4,9 @@
 //! The production native host uses the selected official credential and executor.
 #![deny(unnameable_test_items)]
 
+#[path = "headless_host_tests/prefix.rs"]
+mod prefix;
+
 use super::*;
 use async_trait::async_trait;
 use azure_core::{
