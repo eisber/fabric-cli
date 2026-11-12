@@ -41,11 +41,15 @@ pub enum ResolveError {
     Preparation,
 }
 
-/// Validate the existing typed path grammar without credentials or discovery.
+/// Validate a Domain ACL target or retained typed path without credentials or I/O.
 pub fn domain_selector(path: &str) -> Result<&str, ResolveError> {
     let selector = path
         .strip_prefix("/.domains/")
-        .and_then(|value| value.strip_suffix(".Domain"))
+        .and_then(|value| {
+            value
+                .strip_suffix("/acl")
+                .or_else(|| value.strip_suffix(".Domain"))
+        })
         .filter(|value| {
             !value.trim().is_empty()
                 && !matches!(*value, "." | "..")

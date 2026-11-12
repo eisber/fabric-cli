@@ -151,7 +151,7 @@ fn run() -> Result<(), Failure> {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-service-domain")]
-        writeln!(io::stdout().lock(), "\nOpt-in service: service domain sync /.domains/<domain>.Domain --role Contributor\nDomain permission changes require verified admin metadata and immediate terminal approval.")
+        writeln!(io::stdout().lock(), "\nOpt-in service: service domain sync /.domains/<domain>/acl --role Contributor\nThe typed /.domains/<domain>.Domain target remains supported.\nDomain permission changes require verified admin metadata and immediate terminal approval.")
             .map_err(|_| failed("OutputFailed", "Service help output failed.", 1))?;
         return Ok(());
     }

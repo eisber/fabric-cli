@@ -40,6 +40,7 @@ pub fn service_command() -> Command {
                 .subcommand(
                     Command::new("sync")
                         .about("Synchronize Domain Contributors to subdomains; requires Fabric admin permission")
+                        .after_help("Native host targets: /.domains/<domain>/acl or /.domains/<domain>.Domain. The role must be Contributor; immediate permission-change approval is required.")
                         .arg(Arg::new("path").required(true).value_name("PATH"))
                         .arg(
                             Arg::new("role")

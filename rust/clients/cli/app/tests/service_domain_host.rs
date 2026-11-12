@@ -11,7 +11,7 @@ use azure_core::{
     http::{AsyncRawResponse, HttpClient, Method, Request, headers::Headers},
     time::OffsetDateTime,
 };
-use fabric_cli::v2_service_domain_host::{PreparedDomainSync, ResolveError};
+use fabric_cli::v2_service_domain_host::{PreparedDomainSync, ResolveError, domain_selector};
 use fabric_cli_resources::service::{
     self as command, ExecuteError,
     service::{
@@ -35,7 +35,31 @@ use std::{
 
 const TENANT: &str = "11111111-1111-1111-1111-111111111111";
 const DOMAIN: &str = "22222222-2222-2222-2222-222222222222";
-const PATH: &str = "/.domains/Finance.Domain";
+const PATH: &str = "/.domains/Finance/acl";
+const TYPED_PATH: &str = "/.domains/Finance.Domain";
+
+#[test]
+fn acl_and_typed_addresses_resolve_the_same_exact_selector_without_child_traversal() {
+    for path in [PATH, TYPED_PATH] {
+        assert_eq!(domain_selector(path).unwrap(), "Finance");
+        let parsed = command::parse_args([
+            "fab-cli-v2",
+            "service",
+            "domain",
+            "sync",
+            path,
+            "--role",
+            "Contributor",
+        ])
+        .unwrap();
+        assert_eq!(parsed.path, path);
+    }
+    assert_eq!(
+        domain_selector("/.domains/Finance.Domain/acl").unwrap(),
+        "Finance.Domain"
+    );
+    assert!(domain_selector("/.domains/Finance/acl/child").is_err());
+}
 
 #[derive(Debug)]
 struct Credential(AtomicUsize);
@@ -150,8 +174,12 @@ impl Fixture {
     }
 
     async fn prepare(&self) -> PreparedDomainSync {
+        self.prepare_path(PATH).await
+    }
+
+    async fn prepare_path(&self, path: &str) -> PreparedDomainSync {
         PreparedDomainSync::prepare(
-            &sync_command(PATH, "Contributor"),
+            &sync_command(path, "Contributor"),
             &self.context,
             self.executor.clone(),
             pending(),
@@ -233,48 +261,51 @@ impl ApprovalPolicy for Policy {
 #[tokio::test]
 async fn actual_host_resolves_admin_identity_and_posts_exactly_once_on_selected_endpoint() {
     for host in ["api.fabric.microsoft.com", "dailyapi.fabric.microsoft.com"] {
-        let fixture = Fixture::new(replies(Reply::Response(200, vec![])), host);
-        let prepared = fixture.prepare().await;
-        let mut policy = Policy::new(&prepared, true);
-        let report = prepared
-            .execute(&fixture.context, &mut policy, pending())
-            .await
-            .unwrap();
-        assert_eq!(command::exit_code(&report), 0);
-        assert_eq!(policy.calls, 1);
-        assert_eq!(fixture.posts(), 1);
-        let requests = fixture.wire.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
-        assert_eq!(requests[0].method(), Method::Get);
-        assert_eq!(requests[0].url().path(), "/v1/admin/domains");
-        assert_eq!(requests[1].method(), Method::Get);
-        assert_eq!(
-            requests[1].url().path(),
-            format!("/v1/admin/domains/{DOMAIN}")
-        );
-        let post = &requests[2];
-        assert_eq!(post.url().host_str(), Some(host));
-        assert_eq!(
-            post.url().path(),
-            format!("/v1/admin/domains/{DOMAIN}/roleAssignments/syncToSubdomains")
-        );
-        assert!(post.url().query().is_none());
-        assert_eq!(
-            Bytes::from(post.body()).as_ref(),
-            br#"{"role":"Contributor"}"#
-        );
-        assert_eq!(
-            post.headers().get_str(&"content-type".into()).unwrap(),
-            "application/json"
-        );
-        assert!(post.headers().get_str(&"if-match".into()).is_err());
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        command::write_report(report, &mut stdout, &mut stderr).unwrap();
-        assert!(stderr.is_empty());
-        let receipt: Value = serde_json::from_slice(&stdout).unwrap();
-        assert_eq!(receipt["meta"]["sources"][0]["details"]["domainId"], DOMAIN);
-        assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 3);
+        for path in [PATH, TYPED_PATH] {
+            let fixture = Fixture::new(replies(Reply::Response(200, vec![])), host);
+            let prepared = fixture.prepare_path(path).await;
+            assert_eq!(prepared.operation().target().canonical_path(), path);
+            let mut policy = Policy::new(&prepared, true);
+            let report = prepared
+                .execute(&fixture.context, &mut policy, pending())
+                .await
+                .unwrap();
+            assert_eq!(command::exit_code(&report), 0);
+            assert_eq!(policy.calls, 1);
+            assert_eq!(fixture.posts(), 1);
+            let requests = fixture.wire.requests.lock().unwrap();
+            assert_eq!(requests.len(), 3);
+            assert_eq!(requests[0].method(), Method::Get);
+            assert_eq!(requests[0].url().path(), "/v1/admin/domains");
+            assert_eq!(requests[1].method(), Method::Get);
+            assert_eq!(
+                requests[1].url().path(),
+                format!("/v1/admin/domains/{DOMAIN}")
+            );
+            let post = &requests[2];
+            assert_eq!(post.url().host_str(), Some(host));
+            assert_eq!(
+                post.url().path(),
+                format!("/v1/admin/domains/{DOMAIN}/roleAssignments/syncToSubdomains")
+            );
+            assert!(post.url().query().is_none());
+            assert_eq!(
+                Bytes::from(post.body()).as_ref(),
+                br#"{"role":"Contributor"}"#
+            );
+            assert_eq!(
+                post.headers().get_str(&"content-type".into()).unwrap(),
+                "application/json"
+            );
+            assert!(post.headers().get_str(&"if-match".into()).is_err());
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            command::write_report(report, &mut stdout, &mut stderr).unwrap();
+            assert!(stderr.is_empty());
+            let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(receipt["meta"]["sources"][0]["details"]["domainId"], DOMAIN);
+            assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 3);
+        }
     }
 }
 
@@ -291,6 +322,13 @@ async fn local_preflight_rejects_role_path_tenant_audience_and_executor_before_c
         "/.domains/X%2fY.Domain",
         "/.domains/X\n.Domain",
         "/Other.Workspace/X.Domain",
+        "/.domains//acl",
+        "/.domains/../acl",
+        "/.domains/./acl",
+        "/.domains/Finance/acl/",
+        "/.domains/Finance/acl/child",
+        "/.domains/Finance/roleAssignments",
+        "/.domains/Finance%2fOther/acl",
     ] {
         assert!(
             PreparedDomainSync::prepare(
@@ -354,25 +392,30 @@ async fn local_preflight_rejects_role_path_tenant_audience_and_executor_before_c
 
 #[tokio::test]
 async fn explicit_uuid_requires_verified_singleton_not_tenant_discovery() {
-    let fixture = Fixture::new(
-        vec![response(metadata()), Reply::Response(200, vec![])],
-        "api.fabric.microsoft.com",
-    );
-    let prepared = PreparedDomainSync::prepare(
-        &sync_command(&format!("/.domains/{DOMAIN}.Domain"), "Contributor"),
-        &fixture.context,
-        fixture.executor.clone(),
-        pending(),
-    )
-    .await
-    .unwrap();
-    let mut policy = Policy::new(&prepared, true);
-    prepared
-        .execute(&fixture.context, &mut policy, pending())
+    for path in [
+        format!("/.domains/{DOMAIN}.Domain"),
+        format!("/.domains/{DOMAIN}/acl"),
+    ] {
+        let fixture = Fixture::new(
+            vec![response(metadata()), Reply::Response(200, vec![])],
+            "api.fabric.microsoft.com",
+        );
+        let prepared = PreparedDomainSync::prepare(
+            &sync_command(&path, "Contributor"),
+            &fixture.context,
+            fixture.executor.clone(),
+            pending(),
+        )
         .await
         .unwrap();
-    assert_eq!(fixture.wire.requests.lock().unwrap().len(), 2);
-    assert_eq!(fixture.posts(), 1);
+        let mut policy = Policy::new(&prepared, true);
+        prepared
+            .execute(&fixture.context, &mut policy, pending())
+            .await
+            .unwrap();
+        assert_eq!(fixture.wire.requests.lock().unwrap().len(), 2);
+        assert_eq!(fixture.posts(), 1);
+    }
 }
 
 #[tokio::test]
@@ -633,7 +676,10 @@ fn executable_mount_preserves_selected_grammar_and_refuses_unapproved_nontermina
     };
     let help = run(&["service", "domain", "sync", "--help"]);
     assert!(help.status.success());
-    assert!(String::from_utf8(help.stdout).unwrap().contains("--role"));
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("--role"));
+    assert!(help.contains("/.domains/<domain>/acl"));
+    assert!(help.contains("/.domains/<domain>.Domain"));
     for args in [
         vec!["service", "domain", "sync", PATH, "--role", "Admin"],
         vec!["service", "domain", "sync", PATH],
@@ -659,8 +705,10 @@ fn executable_mount_preserves_selected_grammar_and_refuses_unapproved_nontermina
         assert_eq!(result.status.code(), Some(2));
         assert!(result.stdout.is_empty());
     }
-    let result = run(&["service", "domain", "sync", PATH, "--role", "Contributor"]);
-    assert_eq!(result.status.code(), Some(1));
-    let error: Value = serde_json::from_slice(&result.stderr).unwrap();
-    assert_eq!(error["error"]["code"], "ApprovalRequired");
+    for path in [PATH, TYPED_PATH] {
+        let result = run(&["service", "domain", "sync", path, "--role", "Contributor"]);
+        assert_eq!(result.status.code(), Some(1));
+        let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "ApprovalRequired");
+    }
 }

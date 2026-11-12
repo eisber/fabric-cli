@@ -6,6 +6,7 @@ This bounded v2 binding implements:
 
 ```text
 service domain sync /.domains/<domain>.Domain --role Contributor
+service domain sync /.domains/<domain>/acl --role Contributor
 ```
 
 The role is required explicitly; no numeric or role default is introduced.
@@ -17,6 +18,7 @@ now mounts that same schema on the existing `fab-cli-v2` head:
 ```text
 cargo build --locked -p fabric-cli --features headless,v2-service-domain --bin fab-cli-v2
 fab-cli-v2 service domain sync /.domains/Finance.Domain --role Contributor
+fab-cli-v2 service domain sync /.domains/Finance/acl --role Contributor
 ```
 
 Default/legacy `fab-rs` and discovery parsers, identity providers and frozen
@@ -25,13 +27,17 @@ or unattended approval switches. Root and leaf help require no authentication.
 The existing explicit headless credential configuration and
 `FAB_RUST_FABRIC_HOST` selection apply; no ambient credential chain is installed.
 
-The November 4 selected studio capture described the conceptual
+The November 4 selected studio capture described the
 `/.domains/<domain>/acl` target, but did not select exact role flags or body.
 Its sync documentation link incorrectly addressed Lakehouse file sync. This
-executable deliberately uses the already committed `service.rs` grammar and
+executable uses the already committed `service.rs` argument grammar and
 `DomainTarget` contract from integration
 `345226c61f56448f6f0a6993679a816fb44aa1be`, not that unrelated file-sync grammar.
-The bounded typed `.Domain` spelling is not a claim of exact studio-spec parity.
+Both the selected `/acl` address and the retained typed `.Domain` address select
+the same bounded Domain resolver and Contributor-only SDK operation. The ACL
+suffix is an address for this Domain permission effect, not a generic ACL API.
+The exact addressed path remains in approval and receipt evidence; neither
+spelling permits child traversal or changes the wire route/body.
 
 ## Executable resolution and approval
 
