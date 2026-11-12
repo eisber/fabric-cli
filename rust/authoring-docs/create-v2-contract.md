@@ -219,7 +219,7 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
+| Executable integration | No default v2 mount; the opt-in [Warehouse binding](warehouse-create-v2.md) supplies a bounded native create route through the shared host. |
 | Resource backend | No backend proof establishes that a resource implements all requested policies. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 

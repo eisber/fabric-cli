@@ -120,8 +120,8 @@ definition-based creation are outside this bounded binding.
 
 The consumed shared-create changes are the logical diffs
 `e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, `0454fb4`, `caf2f7f`, and
-`0ec3848`. There is no Notebook
-leaf or producer ancestry adoption, custom authentication, parser, policy,
+`0ec3848`, and `44576b0`. There is no Notebook leaf or producer ancestry adoption,
+custom authentication, parser, policy,
 transport, LRO or output engine. See [the shared host](create-host.md).
 
 ## Offline coverage
@@ -137,5 +137,25 @@ Owned response regressions also require duplicate JSON keys, including escaped
 aliases and nested duplicates, to fail closed in initial and final resources.
 They retain bounded raw-response evidence and any separately valid initial
 acceptance identity rather than trusting a last-key-wins interpretation. The
-shared strict-response correction and native execution remain separate gates;
-adding these fixtures alone does not establish that the current host passes.
+shared strict-response correction is consumed without changing the global
+parser or importing the producer's resource tests.
+
+### Executed local evidence
+
+On November 12, 2026, Windows x86-64 at code revision
+`c479a396bc9966a4ce8d050164aaa848b4227bff` executed 34 Warehouse wire tests,
+7 executable tests, 9 generic create-host tests and 46 SDK create-policy tests:
+96 passed, with no ignored or filtered tests. The native `headless,v2-create`
+all-target check and strict Clippy passed. The metadata-derived default
+53-package all-target check and strict Clippy, and the `v2-create`-only
+all-target strict Clippy, also passed without suppression.
+
+The sole authorized local lease ran from 15:59:21 UTC to 16:54:21 UTC, within its
+original 16:59:21 UTC cleanup cutoff. Initial controller working-directory and
+offline missing-dependency failures were retained; only the private cache was
+restored, and the actual retest passed under the same lease and deadline.
+The full metadata-derived impact run remained incomplete when broad default
+test compilation reached the fixed work cutoff. Its timeout is not a full-plan
+pass or frozen-oracle, feature-profile, Linux or macOS proof. The final update
+after that revision changes documentation only; automated current-head CI and
+independent frontier review remain separate acceptance requirements.
