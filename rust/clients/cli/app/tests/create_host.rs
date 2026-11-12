@@ -259,6 +259,33 @@ fn unsupported_policies_fail_before_any_host_execution_even_for_missing_target()
 }
 
 #[test]
+fn unsupported_policies_never_consume_stdin_or_open_a_selected_input_file() {
+    let temp = tempfile::tempdir().unwrap();
+    for options in [
+        vec!["--if-exists", "overwrite"],
+        vec!["--if-exists", "duplicate"],
+        vec!["--force"],
+    ] {
+        for input in ["-", "does-not-exist.json"] {
+            let args = ["create", TARGET, "--input", input]
+                .into_iter()
+                .chain(options.iter().copied());
+            let command = v2_create::parse_args(args).unwrap();
+            assert!(matches!(
+                PreparedCreateCommand::preflight(
+                    command,
+                    &Binding,
+                    temp.path(),
+                    &mut ForbiddenRead,
+                    false,
+                ),
+                Err(CreateCommandError::Policy(CreateError::UnsupportedPolicy))
+            ));
+        }
+    }
+}
+
+#[test]
 fn output_preflight_never_creates_or_overwrites_a_file() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("receipt.json");

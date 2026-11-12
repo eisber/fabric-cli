@@ -10,7 +10,8 @@ use fabric_sdk_items::create::{
     CreateInputValidator, CreatePlan, CreateSupport, CreateTarget, DuplicateSupport,
     ExecutionOutcome, InputDisposition, LeafState, MutationEffect, NativeId, ObservationEvidence,
     Preflight, ReplacementEvidence, ReplacementUnit, ResourceIdentity, ResourceResult, SchemaRef,
-    SkipSupport, TargetScope, VerifiedOutcome, plan_create, verify_outcome,
+    SkipSupport, TargetScope, VerifiedOutcome, plan_create, validate_policy_support,
+    verify_outcome,
 };
 use serde_json::{Value, json};
 
@@ -147,6 +148,30 @@ fn capabilities() -> CreateCapabilities {
         replacement: Some(unit()),
         skip: SkipSupport::ExactExistingUnchanged,
         duplicate: DuplicateSupport::FreshIdentityWithRepeatedNames,
+    }
+}
+
+#[test]
+fn policy_support_admission_needs_neither_input_validation_nor_existence() {
+    let supported = capabilities();
+    let unsupported = CreateCapabilities {
+        create: CreateSupport::Unsupported,
+        replacement: None,
+        skip: SkipSupport::Unsupported,
+        duplicate: DuplicateSupport::Unsupported,
+        ..capabilities()
+    };
+    for policy in [
+        ConflictPolicy::Error,
+        ConflictPolicy::Overwrite,
+        ConflictPolicy::Skip,
+        ConflictPolicy::Duplicate,
+    ] {
+        assert_eq!(validate_policy_support(policy, &supported), Ok(()));
+        assert_eq!(
+            validate_policy_support(policy, &unsupported),
+            Err(CreateError::UnsupportedPolicy),
+        );
     }
 }
 
