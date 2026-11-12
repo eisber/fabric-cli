@@ -15,7 +15,7 @@ use azure_core::{
 };
 use fabric_cli::{
     create_command::{
-        CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateCommand,
+        CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding, CreateCommand,
         CreateCommandError, CreateDelivery, CreateExecution, CreateTransportEvidence, MAX_BYTES,
         PreparedCreateCommand, v2_create,
     },
@@ -24,15 +24,16 @@ use fabric_cli::{
 use fabric_sdk::{
     Audience, Client, CredentialSelection, RequestContext,
     items::create::{
-        CreateAction, CreateError, CreateTarget, LeafState, NativeId, Preflight, ResourceIdentity,
-        TargetScope,
+        CreateAction, CreateCapabilities, CreateError, CreateInputValidator, CreatePlan,
+        CreateTarget, DuplicateSupport, InputDisposition, LeafState, NativeId, Preflight,
+        ReplacementUnit, ResourceIdentity, SchemaRef, TargetScope,
     },
     notebook_create,
 };
 use fabric_sdk_http::{
     ExecutionFuture, ExecutionOptions, ExecutionTimer, ExecutionTrace, HttpExecutor,
 };
-use fabric_sdk_operations::OperationErrorKind;
+use fabric_sdk_operations::{FabricOperation, OperationErrorKind};
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
@@ -264,6 +265,41 @@ impl Fixture {
         approval: &mut dyn CreateApproval,
         interrupted: impl Future<Output = ()> + Send,
     ) -> Result<CreateDelivery, CreateCommandError> {
+        self.execute_bound_interrupted(&NotebookBinding, prepared, approval, interrupted)
+            .await
+    }
+
+    fn prepare_bound(
+        &self,
+        binding: &dyn CreateBinding,
+        extra: &[&str],
+    ) -> Result<PreparedCreateCommand, CreateCommandError> {
+        PreparedCreateCommand::preflight(
+            command(TARGET, extra, true),
+            binding,
+            &self.root,
+            &mut Cursor::new(RAW),
+            false,
+        )
+    }
+
+    async fn execute_bound(
+        &self,
+        binding: &dyn CreateBinding,
+        prepared: PreparedCreateCommand,
+        approval: &mut dyn CreateApproval,
+    ) -> Result<CreateDelivery, CreateCommandError> {
+        self.execute_bound_interrupted(binding, prepared, approval, pending())
+            .await
+    }
+
+    async fn execute_bound_interrupted(
+        &self,
+        binding: &dyn CreateBinding,
+        prepared: PreparedCreateCommand,
+        approval: &mut dyn CreateApproval,
+        interrupted: impl Future<Output = ()> + Send,
+    ) -> Result<CreateDelivery, CreateCommandError> {
         let observe = || {
             let evidence = self.trace.snapshot();
             CreateTransportEvidence {
@@ -273,7 +309,7 @@ impl Fixture {
         };
         prepared
             .execute(
-                &NotebookBinding,
+                binding,
                 &self.client,
                 &self.http,
                 CreateExecution {
@@ -1730,4 +1766,204 @@ async fn alphabetic_guid_case_does_not_weaken_unknown_workspace_rejection() {
     assert_eq!(value["meta"]["completed"], false);
     assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
     fixture.assert_requests(&[Method::Get, Method::Post]);
+}
+
+#[derive(Clone, Copy)]
+enum SyntheticNotebook {
+    SkipOnly,
+    Replacement,
+}
+
+fn replacement_unit() -> ReplacementUnit {
+    ReplacementUnit::new("offline.notebook.complete-definition").unwrap()
+}
+
+impl CreateInputValidator for SyntheticNotebook {
+    fn validate(
+        &self,
+        target: &CreateTarget,
+        schema: &SchemaRef,
+        supplied: Option<&Value>,
+    ) -> Result<InputDisposition, CreateError> {
+        notebook_create::NotebookCreateValidator.validate(target, schema, supplied)?;
+        if supplied.is_none() {
+            return Err(CreateError::InputRejected);
+        }
+        Ok(match self {
+            Self::SkipOnly => InputDisposition::SkipOnly,
+            Self::Replacement => InputDisposition::CreateAndReplace(replacement_unit()),
+        })
+    }
+}
+
+impl CreateBinding for SyntheticNotebook {
+    fn item_type(&self) -> &'static str {
+        "Notebook"
+    }
+
+    fn capabilities(&self) -> CreateCapabilities {
+        let mut capabilities = notebook_create::capabilities();
+        if matches!(self, Self::Replacement) {
+            capabilities.replacement = Some(replacement_unit());
+            capabilities.duplicate = DuplicateSupport::FreshIdentityWithRepeatedNames;
+        }
+        capabilities
+    }
+
+    fn operation(
+        &self,
+        _: &CreatePlan,
+        _: Option<&[u8]>,
+        _: bool,
+    ) -> Result<FabricOperation, CreateError> {
+        panic!("skip-only or unsupported replacement must never dispatch");
+    }
+}
+
+#[tokio::test]
+async fn initial_202_resource_survives_failed_poll_and_null_data_projection() {
+    let mut initial = accepted();
+    initial.body = ReplyBody::Bytes(serde_json::to_vec(&resource()).unwrap());
+    let service_error = json!({"errorCode":"NotebookCreateFailed","message":"offline failure"});
+    let fixture = Fixture::new(vec![
+        listing(vec![]),
+        initial,
+        Reply::json(
+            Method::Get,
+            operation_path(),
+            200,
+            json!({"status":"Failed","error":service_error}),
+        ),
+    ]);
+    let delivery = fixture
+        .execute(
+            fixture.prepare(&["--wait", "--project", "missing"], Some(RAW)),
+            &mut Approval::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let error = delivery.report().error().unwrap();
+    assert!(matches!(
+        &error.kind,
+        OperationErrorKind::OperationFailed { status, .. } if status == "Failed"
+    ));
+    assert_eq!(error.operation_id.as_deref(), Some(OP));
+    assert_eq!(error.raw_service_error.as_deref(), Some(&service_error));
+    assert!(error.mutation_may_have_occurred);
+    assert_eq!(delivery.report().value()["data"], resource());
+    let meta = delivery.report().value()["meta"].clone();
+    assert_eq!(meta["resourceId"], ITEM);
+    assert_eq!(meta["workspaceId"], WS);
+    assert_eq!(meta["observedResource"]["id"], ITEM);
+    assert_eq!(meta["observedResource"]["workspaceId"], WS);
+    assert_eq!(meta["observedResource"]["type"], "Notebook");
+    assert_eq!(meta["observedResource"]["displayName"], "Literal.name");
+    assert_eq!(meta["operationHandle"], format!("/operations/{OP}"));
+    assert_eq!(meta["completed"], false);
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let value: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["data"], Value::Null);
+    assert_eq!(value["meta"], meta);
+    assert_no_replay(&value);
+    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get]);
+    fixture.assert_post_body(RAW);
+}
+
+#[tokio::test]
+async fn skip_only_valid_input_preflights_and_skips_existing_without_native_operation() {
+    let binding = SyntheticNotebook::SkipOnly;
+    let fixture = Fixture::new(vec![listing(vec![resource()])]);
+    let prepared = fixture
+        .prepare_bound(&binding, &["--if-exists", "skip"])
+        .expect("preflight must not fabricate a missing target for valid skip-only input");
+    assert!(fixture.wire.requests.lock().unwrap().is_empty());
+    assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 0);
+    let mut approval = Approval::default();
+    let delivery = fixture
+        .execute_bound(&binding, prepared, &mut approval)
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    let value = deliver(delivery);
+    assert_eq!(value["meta"]["action"], "skip");
+    assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(value["meta"]["mutationMayHaveOccurred"], false);
+    assert_eq!(value["meta"]["contentEqualityClaimed"], false);
+    assert_eq!(approval.calls.len(), 1);
+    assert!(!approval.calls[0].remote_write);
+    assert_eq!(approval.calls[0].raw.as_deref(), Some(RAW));
+    fixture.assert_requests(&[Method::Get]);
+}
+
+#[tokio::test]
+async fn skip_only_input_missing_target_fails_after_discovery_before_approval_or_post() {
+    let binding = SyntheticNotebook::SkipOnly;
+    let fixture = Fixture::new(vec![listing(vec![])]);
+    let prepared = fixture
+        .prepare_bound(&binding, &["--if-exists", "skip"])
+        .unwrap();
+    let mut approval = Approval::default();
+    assert!(matches!(
+        fixture
+            .execute_bound(&binding, prepared, &mut approval)
+            .await,
+        Err(CreateCommandError::Policy(CreateError::InputCannotCreate))
+    ));
+    assert!(approval.calls.is_empty());
+    fixture.assert_requests(&[Method::Get]);
+}
+
+#[tokio::test]
+async fn replacement_advertisement_cannot_enable_host_overwrite_or_duplicate_dispatch() {
+    let binding = SyntheticNotebook::Replacement;
+    for existing in [false, true] {
+        let fixture = Fixture::new(vec![listing(if existing {
+            vec![resource()]
+        } else {
+            vec![]
+        })]);
+        for extra in [
+            vec!["--if-exists", "overwrite"],
+            vec!["--force"],
+            vec!["--if-exists", "duplicate"],
+        ] {
+            assert!(
+                matches!(
+                    fixture.prepare_bound(&binding, &extra),
+                    Err(CreateCommandError::Policy(CreateError::UnsupportedPolicy))
+                ),
+                "unsupported host policy must fail before discovering existing={existing}"
+            );
+        }
+        for extra in [vec![], vec!["--if-exists", "skip"]] {
+            assert!(fixture.prepare_bound(&binding, &extra).is_ok());
+        }
+        assert!(fixture.wire.requests.lock().unwrap().is_empty());
+        assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 0);
+        assert_eq!(fixture.wire.replies.lock().unwrap().len(), 1);
+    }
+    for extra in [vec![], vec!["--if-exists", "skip"]] {
+        let fixture = Fixture::new(vec![listing(vec![resource()])]);
+        let prepared = fixture.prepare_bound(&binding, &extra).unwrap();
+        let mut approval = Approval::default();
+        let result = fixture
+            .execute_bound(&binding, prepared, &mut approval)
+            .await;
+        if extra.is_empty() {
+            assert!(matches!(
+                result,
+                Err(CreateCommandError::Policy(CreateError::AlreadyExists))
+            ));
+            assert!(approval.calls.is_empty());
+        } else {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            assert_eq!(delivery.report().value()["meta"]["action"], "skip");
+            assert_eq!(approval.calls.len(), 1);
+            assert!(!approval.calls[0].remote_write);
+        }
+        fixture.assert_requests(&[Method::Get]);
+    }
 }
