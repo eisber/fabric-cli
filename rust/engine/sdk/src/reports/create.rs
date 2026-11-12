@@ -9,7 +9,7 @@
 
 use super::ReportDefinition;
 use crate::{
-    items::{ItemCollection, mutations::ItemMutations},
+    items::ItemCollection,
     representations::DefinitionRead,
     v2::WorkspaceIdentity,
 };
@@ -18,6 +18,7 @@ use fabric_sdk_items::create::{
     CreatePlan, CreateSupport, CreateTarget, DuplicateSupport, InputDisposition, SchemaRef,
     SkipSupport, TargetScope,
 };
+use fabric_sdk_items::mutations::ItemMutations;
 use fabric_sdk_workspaces::mutations::{
     CompletionPolicy, ResourceError, ResourceOperations, ResourceOutcome,
 };
