@@ -215,6 +215,11 @@ async fn no_clobber_is_checked_before_http_and_atomically_again_at_commit() {
     assert_eq!(error.kind, ReadErrorKind::Delivery);
     assert!(error.read_completed);
     assert!(!error.file_created);
+    let receipt = error.receipt.as_ref().unwrap();
+    assert_eq!(receipt.data, document());
+    assert_eq!(receipt.meta.http_status, 200);
+    assert!(!format!("{error:?}").contains("snowman"));
+    assert!(!error.to_string().contains("snowman"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), "racing owner");
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
@@ -241,8 +246,7 @@ impl TokenCredential for Credential {
 
 #[derive(Debug)]
 struct Wire {
-    status: u16,
-    body: Vec<u8>,
+    response: Mutex<Option<AsyncRawResponse>>,
     requests: Mutex<Vec<Request>>,
 }
 
@@ -252,11 +256,12 @@ impl HttpClient for Wire {
         let mut requests = self.requests.lock().unwrap();
         assert!(requests.is_empty(), "unexpected replay");
         requests.push(request.clone());
-        Ok(AsyncRawResponse::from_bytes(
-            self.status.into(),
-            Headers::new(),
-            self.body.clone(),
-        ))
+        Ok(self
+            .response
+            .lock()
+            .unwrap()
+            .take()
+            .expect("unexpected HTTP replay"))
     }
 }
 
@@ -268,10 +273,26 @@ fn production_stack(
     Arc<Credential>,
     Arc<Wire>,
 ) {
+    production_response(
+        AsyncRawResponse::from_bytes(200.into(), Headers::new(), body),
+        audience,
+    )
+}
+
+fn production_response(
+    response: AsyncRawResponse,
+    audience: Audience,
+) -> (
+    Result<NativeFabricExecutor, NativeError>,
+    Arc<Credential>,
+    Arc<Wire>,
+) {
+    let (status, mut headers, body) = response.deconstruct();
+    headers.insert("content-type", "application/json");
+    let response = AsyncRawResponse::new(status, headers, Box::pin(body));
     let credential = Arc::new(Credential::default());
     let wire = Arc::new(Wire {
-        status: 200,
-        body,
+        response: Mutex::new(Some(response)),
         requests: Mutex::new(Vec::new()),
     });
     let endpoint = EndpointBinding::public(ServiceOrigin::Fabric);
@@ -294,10 +315,12 @@ fn production_stack(
 async fn shared_host_uses_actual_sdk_authentication_and_http_for_supported_fabric_profile() {
     // This exercises the shared seam, not a new executable Livy leaf or MWC adapter.
     let input = parse_args(["fab-cli-v2", "list", SESSIONS, "--output", "result.json"]).unwrap();
-    let service = LivyService::fabric(
+    let service = LivyService::fabric_versioned(
         NativeEndpoint::new(Url::parse("https://api.fabric.microsoft.com/").unwrap()).unwrap(),
         "workspace",
         "lakehouse",
+        "v1",
+        "2023-12-01",
     )
     .unwrap();
     let resolver =
@@ -330,7 +353,7 @@ async fn shared_host_uses_actual_sdk_authentication_and_http_for_supported_fabri
     assert_eq!(requests[0].method(), Method::Get);
     assert_eq!(
         requests[0].url().as_str(),
-        "https://api.fabric.microsoft.com/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2024-04-01/sessions?$top=100"
+        "https://api.fabric.microsoft.com/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2023-12-01/sessions?%24top=100"
     );
 }
 
@@ -413,4 +436,503 @@ async fn original_deadline_and_latched_cancellation_prevent_preflight_and_acquis
     .await;
     assert_eq!(result.err().unwrap().kind, ReadErrorKind::Cancelled);
     assert!(!temp.path().join("result.json").exists());
+}
+
+#[tokio::test]
+async fn expired_or_cancelled_delivery_does_not_create_file_or_replay_http() {
+    for cancel in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = parse_args(["fab-cli-v2", "get", CONTENT, "-o", "result.json"]).unwrap();
+        let resolver = ExplicitResolver::new(
+            input.path.owner.clone(),
+            ResolvedTarget::Notebook(notebook()),
+        )
+        .unwrap();
+        let executor = ScriptedNotebook {
+            status: 200,
+            body: serde_json::to_vec(&document()).unwrap(),
+            calls: AtomicUsize::new(0),
+        };
+        let destination = Destination::check("result.json", temp.path()).unwrap();
+        let read = acquire(
+            &input,
+            &executor,
+            &resolver,
+            ReadOptions::default(),
+            &destination,
+            deadline(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        let end = if cancel {
+            deadline()
+        } else {
+            Instant::now() - Duration::from_secs(1)
+        };
+        let error = read
+            .deliver(destination, end, async move {
+                if !cancel {
+                    pending::<()>().await;
+                }
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            if cancel {
+                ReadErrorKind::Cancelled
+            } else {
+                ReadErrorKind::Timeout
+            }
+        );
+        assert!(error.read_completed);
+        assert!(!error.file_created);
+        assert!(!temp.path().join("result.json").exists());
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn pending_sdk_future_is_dropped_on_cancellation_and_original_deadline() {
+    struct Waiting(Arc<AtomicUsize>);
+    impl NativeExecutor for Waiting {
+        fn execute<'a>(
+            &'a self,
+            _: &'a NativeRequest,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<NativeResponse, NativeError>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                struct DropCount(Arc<AtomicUsize>);
+                impl Drop for DropCount {
+                    fn drop(&mut self) {
+                        self.0.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+                let _guard = DropCount(self.0.clone());
+                pending().await
+            })
+        }
+    }
+    for cancel in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = parse_args(["fab-cli-v2", "get", CONTENT, "-o", "result.json"]).unwrap();
+        let resolver = ExplicitResolver::new(
+            input.path.owner.clone(),
+            ResolvedTarget::Notebook(notebook()),
+        )
+        .unwrap();
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let executor = Waiting(dropped.clone());
+        let destination = Destination::check("result.json", temp.path()).unwrap();
+        let end = Instant::now() + Duration::from_millis(if cancel { 500 } else { 20 });
+        let signal = async move {
+            if cancel {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            } else {
+                pending::<()>().await;
+            }
+        };
+        let error = acquire(
+            &input,
+            &executor,
+            &resolver,
+            ReadOptions::default(),
+            &destination,
+            end,
+            signal,
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(
+            error.kind,
+            if cancel {
+                ReadErrorKind::Cancelled
+            } else {
+                ReadErrorKind::Timeout
+            }
+        );
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
+        assert!(!temp.path().join("result.json").exists());
+    }
+}
+
+#[tokio::test]
+async fn wire_and_selected_data_budgets_reject_without_clipped_success() {
+    for (options, max_bytes) in [
+        (
+            ReadOptions {
+                max_response_bytes: 8,
+                ..ReadOptions::default()
+            },
+            "1048576",
+        ),
+        (
+            ReadOptions {
+                max_data_bytes: 8,
+                ..ReadOptions::default()
+            },
+            "8",
+        ),
+        (
+            ReadOptions {
+                max_receipt_bytes: 8,
+                ..ReadOptions::default()
+            },
+            "1048576",
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = parse_args([
+            "fab-cli-v2",
+            "get",
+            CONTENT,
+            "-o",
+            "result.json",
+            "--max-bytes",
+            max_bytes,
+        ])
+        .unwrap();
+        let resolver = ExplicitResolver::new(
+            input.path.owner.clone(),
+            ResolvedTarget::Notebook(notebook()),
+        )
+        .unwrap();
+        let executor = ScriptedNotebook {
+            status: 200,
+            body: serde_json::to_vec(&document()).unwrap(),
+            calls: AtomicUsize::new(0),
+        };
+        let destination = Destination::check("result.json", temp.path()).unwrap();
+        let error = acquire(
+            &input,
+            &executor,
+            &resolver,
+            options,
+            &destination,
+            deadline(),
+            pending(),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(error.kind, ReadErrorKind::BudgetExceeded);
+        assert!(!temp.path().join("result.json").exists());
+    }
+}
+
+#[tokio::test]
+async fn actual_http_stream_bounds_errors_and_shapes_never_deliver_empty_success() {
+    use azure_core::{Bytes, error::ErrorKind};
+    use futures_util::stream;
+    for (response, options, expected) in [
+        (
+            AsyncRawResponse::from_bytes(
+                200.into(),
+                Headers::new(),
+                br#"{"sessions":[]}"#.to_vec(),
+            ),
+            ReadOptions {
+                max_response_bytes: 8,
+                ..ReadOptions::default()
+            },
+            ReadErrorKind::BudgetExceeded,
+        ),
+        (
+            AsyncRawResponse::new(
+                200.into(),
+                Headers::new(),
+                Box::pin(stream::iter([
+                    Ok(Bytes::from_static(br#"{"sessions":["#)),
+                    Err(azure_core::Error::with_message(
+                        ErrorKind::Io,
+                        "private-stream-error",
+                    )),
+                ])),
+            ),
+            ReadOptions::default(),
+            ReadErrorKind::InvalidResponse,
+        ),
+        (
+            AsyncRawResponse::from_bytes(200.into(), Headers::new(), b"{}".to_vec()),
+            ReadOptions::default(),
+            ReadErrorKind::InvalidResponse,
+        ),
+        (
+            AsyncRawResponse::from_bytes(
+                403.into(),
+                Headers::new(),
+                b"private-denied-body".to_vec(),
+            ),
+            ReadOptions::default(),
+            ReadErrorKind::Http,
+        ),
+    ] {
+        let input =
+            parse_args(["fab-cli-v2", "list", SESSIONS, "--output", "result.json"]).unwrap();
+        let service = LivyService::fabric(
+            NativeEndpoint::new(Url::parse("https://api.fabric.microsoft.com/").unwrap()).unwrap(),
+            "workspace",
+            "lakehouse",
+        )
+        .unwrap();
+        let resolver =
+            ExplicitResolver::new(input.path.owner.clone(), ResolvedTarget::Lakehouse(service))
+                .unwrap();
+        let (executor, credential, wire) = production_response(response, Audience::Fabric);
+        let executor = executor.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let destination = Destination::check("result.json", temp.path()).unwrap();
+        let error = acquire(
+            &input,
+            &executor,
+            &resolver,
+            options,
+            &destination,
+            deadline(),
+            pending(),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(error.kind, expected);
+        assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
+        assert!(!temp.path().join("result.json").exists());
+    }
+}
+
+#[tokio::test]
+async fn original_deadline_drops_actual_pending_http_body_without_retry() {
+    use futures_util::stream;
+    let response = AsyncRawResponse::new(200.into(), Headers::new(), Box::pin(stream::pending()));
+    let (executor, credential, wire) = production_response(response, Audience::Fabric);
+    let executor = executor.unwrap();
+    let input = parse_args(["fab-cli-v2", "list", SESSIONS, "--output", "result.json"]).unwrap();
+    let service = LivyService::fabric(
+        NativeEndpoint::new(Url::parse("https://api.fabric.microsoft.com/").unwrap()).unwrap(),
+        "workspace",
+        "lakehouse",
+    )
+    .unwrap();
+    let resolver =
+        ExplicitResolver::new(input.path.owner.clone(), ResolvedTarget::Lakehouse(service))
+            .unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let destination = Destination::check("result.json", temp.path()).unwrap();
+    let end = Instant::now() + Duration::from_millis(20);
+    let error = acquire(
+        &input,
+        &executor,
+        &resolver,
+        ReadOptions::default(),
+        &destination,
+        end,
+        pending(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert_eq!(error.kind, ReadErrorKind::Timeout);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    assert!(!temp.path().join("result.json").exists());
+}
+
+#[test]
+fn invalid_scope_ids_fail_before_token() {
+    for id in ["", "..", "notebook/foreign", "bad?query", "bad%2fescape"] {
+        assert!(
+            NotebookRuntime::new(
+                NativeEndpoint::new(
+                    Url::parse("https://selected.pbidedicated.windows.net/").unwrap()
+                )
+                .unwrap(),
+                "capacity",
+                "workspace",
+                id,
+                ContentLimits::default(),
+                1024,
+                100,
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn cancelled_queued_delivery_is_aborted_before_file_creation() {
+    struct Release(Option<std::sync::mpsc::Sender<()>>);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let temp = tempfile::tempdir().unwrap();
+        let input = parse_args(["fab-cli-v2", "get", CONTENT, "-o", "result.json"]).unwrap();
+        let resolver = ExplicitResolver::new(
+            input.path.owner.clone(),
+            ResolvedTarget::Notebook(notebook()),
+        )
+        .unwrap();
+        let executor = ScriptedNotebook {
+            status: 200,
+            body: serde_json::to_vec(&document()).unwrap(),
+            calls: AtomicUsize::new(0),
+        };
+        let destination = Destination::check("result.json", temp.path()).unwrap();
+        let end = deadline();
+        let read = acquire(
+            &input,
+            &executor,
+            &resolver,
+            ReadOptions::default(),
+            &destination,
+            end,
+            pending(),
+        )
+        .await
+        .unwrap();
+        let (release, wait) = std::sync::mpsc::channel();
+        let release = Release(Some(release));
+        let (started, started_wait) = tokio::sync::oneshot::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            started.send(()).unwrap();
+            wait.recv().unwrap();
+        });
+        started_wait.await.unwrap();
+        let error = read
+            .deliver(destination, end, async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ReadErrorKind::Cancelled);
+        assert!(!error.file_created);
+        drop(release);
+        blocker.await.unwrap();
+        tokio::task::spawn_blocking(|| ()).await.unwrap();
+        assert!(!temp.path().join("result.json").exists());
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    });
+    runtime.shutdown_timeout(Duration::from_millis(100));
+}
+
+#[tokio::test]
+async fn accepted_receipt_survives_delivery_failure_without_claiming_read_completion() {
+    let input = parse_args(["fab-cli-v2", "list", SESSIONS, "--output", "result.json"]).unwrap();
+    let service = LivyService::fabric_versioned(
+        NativeEndpoint::new(Url::parse("https://api.fabric.microsoft.com/").unwrap()).unwrap(),
+        "workspace",
+        "lakehouse",
+        "v1",
+        "2023-12-01",
+    )
+    .unwrap();
+    let resolver =
+        ExplicitResolver::new(input.path.owner.clone(), ResolvedTarget::Lakehouse(service))
+            .unwrap();
+    let (executor, credential, wire) = production_response(
+        AsyncRawResponse::from_bytes(202.into(), Headers::new(), Vec::new()),
+        Audience::Fabric,
+    );
+    let executor = executor.unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let destination = Destination::check("result.json", temp.path()).unwrap();
+    let end = deadline();
+    let read = acquire(
+        &input,
+        &executor,
+        &resolver,
+        ReadOptions::default(),
+        &destination,
+        end,
+        pending(),
+    )
+    .await
+    .unwrap();
+    std::fs::write(temp.path().join("result.json"), "racing owner").unwrap();
+    let error = read.deliver(destination, end, pending()).await.unwrap_err();
+    assert!(!error.read_completed);
+    assert_eq!(error.http_status, Some(202));
+    let receipt = error.receipt.unwrap();
+    assert_eq!(receipt.status, fabric_cli::runtime_v2::ReadStatus::Accepted);
+    assert_eq!(receipt.data, Value::Null);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("result.json")).unwrap(),
+        "racing owner"
+    );
+}
+
+#[tokio::test]
+async fn bounded_setup_preserves_typed_errors_and_discards_late_local_success() {
+    use fabric_cli::runtime_v2::host::{SetupError, setup};
+    let error = setup(deadline(), pending(), || {
+        Err::<(), _>("private configuration")
+    })
+    .await
+    .unwrap_err();
+    assert!(!format!("{error:?}").contains("private"));
+    assert!(matches!(error, SetupError::Work("private configuration")));
+    let (release, wait) = std::sync::mpsc::channel();
+    let (started, started_wait) = tokio::sync::oneshot::channel();
+    let end = Instant::now() + Duration::from_millis(100);
+    let worker = tokio::spawn(setup(end, pending(), move || {
+        started.send(()).unwrap();
+        wait.recv().unwrap();
+        Ok::<_, ()>(())
+    }));
+    started_wait.await.unwrap();
+    let error = worker.await.unwrap().unwrap_err();
+    assert!(matches!(error, SetupError::Host(ref error) if error.kind == ReadErrorKind::Timeout));
+    release.send(()).unwrap();
+}
+
+#[test]
+fn bounded_setup_aborts_queued_capture_on_cancellation_or_original_deadline() {
+    use fabric_cli::runtime_v2::host::{SetupError, setup};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for cancel in [false, true] {
+            let (release, wait) = std::sync::mpsc::channel();
+            let (started, started_wait) = tokio::sync::oneshot::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+            });
+            started_wait.await.unwrap();
+            let called = Arc::new(AtomicUsize::new(0));
+            let worker_called = called.clone();
+            let end = Instant::now() + Duration::from_millis(if cancel { 500 } else { 20 });
+            let error = setup(end, async move {
+                if cancel { tokio::time::sleep(Duration::from_millis(10)).await; }
+                else { pending::<()>().await; }
+            }, move || {
+                worker_called.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, ()>(())
+            }).await.unwrap_err();
+            release.send(()).unwrap();
+            blocker.await.unwrap();
+            tokio::task::spawn_blocking(|| ()).await.unwrap();
+            assert!(matches!(error, SetupError::Host(ref error) if error.kind == if cancel { ReadErrorKind::Cancelled } else { ReadErrorKind::Timeout }));
+            assert_eq!(called.load(Ordering::SeqCst), 0);
+        }
+    });
+    runtime.shutdown_timeout(Duration::from_millis(100));
 }

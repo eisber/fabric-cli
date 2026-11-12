@@ -76,6 +76,23 @@ no-clobber output; no private replacement host is installed by this leaf.
 Pin one cancellation future across preflight, acquisition and delivery, and
 bound runtime shutdown as required by the shared host.
 
+The corrected helper source is adopted through two exact owner-released packets:
+
+| Packet | Bytes | SHA256 |
+| --- | ---: | --- |
+| Shared helper correction through `67e16216017cf85560d1f30234a015335c6764dd` | 40055 | `0b5fba40419ff9bfbee0de050527794273406309b00d686e3c766279416181fc` |
+| Legacy-output compatibility fix through `e88526a1a0feb38b882b687783b28c6d189bf3cf` | 5191 | `8e938602a6df32547d813d1755bd38e7f2a907a304faed317fd4467c0acf66a6` |
+
+Both packets were hash-verified and sequence-checked in an isolated index before
+application. The first is three shared core files plus the original
+`c4d6a8396ac09cf45beaa26e11455df97d315e45` shared identity-capture extraction
+in `v2_main.rs`. It excludes the producer's Notebook content root hook and leaf.
+The second preserves legacy `write_owned` admission/detachment, while runtime
+setup/delivery explicitly use `write_owned_stoppable`. Completed observations
+remain in `HostError::receipt` after delivery failure, with sanitized diagnostics;
+an already-ready cancellation does not admit a runtime output worker.
+These source identities do not qualify the combined consumer executable.
+
 **Remaining executable prerequisite:** the released helper explicitly does
 not authorize Notebook workload MWC HTTP. An authoritative explicit immutable
 Notebook workload origin/capacity/workspace/artifact/account/audience binding
@@ -102,6 +119,9 @@ test fixture, **not** the production executable. Negative tests use the actual
 SDK credential/HTTP adapter and prove that Notebook workload routes and wrong
 audiences cannot access credentials or send HTTP through the Fabric adapter.
 They do not invent a successful Notebook HTTP binding.
+Leaf regressions also assert retained collection receipts on no-clobber failure
+and already-cancelled delivery without file creation, provider-data diagnostics
+or HTTP replay.
 
 The impact graph includes both test targets and an additive
 `runtime-notebook-list-host` profile with `runtime-v2,native-host` on Windows,
@@ -109,5 +129,18 @@ Linux and macOS. Required features prevent default-mode empty test targets from
 being reported as feature acceptance. Actual Rust test execution, approved
 Notebook scripted-HTTP transport and production executable process evidence
 remain gates. Source formatting and passing planner unit tests do not establish
-native acceptance. No live Fabric/auth read, provisioning, mutation or compute
-is authorized or claimed.
+native acceptance. Historical automatic CI at
+`7afd6c9b9f4925b2d9a01a87c6eb606b18170163` executed the 10-test collection suite
+and 6-test host suite successfully on Windows, Linux and macOS, but each overall
+native job failed the then-current shared `runtime_native_host` fixture.
+Those passes are not evidence for the corrected helper or the added regression.
+The old intermediate helper also failed a frozen legacy-output cancellation
+test in its own hosted validation; the second packet addresses that regression
+without changing the frozen test. New-head automatic CI must qualify this
+combined source. No further local heavy allocation, budget reset or manual CI
+replay is authorized. Independent read-only adoption review flagged a potential
+strict-Clippy blocker: the new private `write_owned_stoppable` entry point may
+be unused in the legacy executable's separate `native_read::output` module copy.
+This is a static finding, not an executed Clippy result; the shared helper owner
+must resolve it if confirmed without a consumer-local fork or lint weakening.
+No live Fabric/auth read, provisioning, mutation or compute is authorized or claimed.

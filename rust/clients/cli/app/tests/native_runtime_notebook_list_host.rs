@@ -226,8 +226,56 @@ async fn existing_destination_and_atomic_race_never_clobber_or_replay() {
     assert!(error.read_completed);
     assert!(!error.file_created);
     assert_eq!(error.bytes_written, 0);
+    let receipt = error.receipt.as_ref().unwrap();
+    assert_eq!(receipt.data, json!([]));
+    assert_eq!(receipt.target.native_url, ROUTE);
+    assert_eq!(receipt.meta.http_status, 200);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     assert_eq!(std::fs::read_to_string(path).unwrap(), "racing owner");
+}
+
+#[tokio::test]
+async fn already_cancelled_delivery_retains_collection_without_creating_file_or_replay() {
+    let root = tempfile::tempdir().unwrap();
+    let invocation = input(false, "result.json");
+    let rows = json!([{"id":"failed","state":"Failed","private":"retained-provider-field"}]);
+    let executor = Script::new(&rows);
+    let binding = resolver(&invocation, "https://selected.pbidedicated.windows.net");
+    let end = deadline();
+    let destination = prepare_destination(
+        invocation.output.clone(),
+        root.path().into(),
+        end,
+        pending(),
+    )
+    .await
+    .unwrap();
+    let observation = leaf::acquire(
+        &invocation,
+        &executor,
+        &binding,
+        ReadOptions::default(),
+        &destination,
+        end,
+        pending(),
+    )
+    .await
+    .unwrap();
+    let error = observation
+        .deliver(destination, end, async {})
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ReadErrorKind::Cancelled);
+    assert!(error.read_completed);
+    assert!(!error.file_created);
+    assert_eq!(error.bytes_written, 0);
+    let receipt = error.receipt.as_ref().unwrap();
+    assert_eq!(receipt.data, rows);
+    assert_eq!(receipt.target.native_url, ROUTE);
+    assert!(!format!("{error:?} {error}").contains("retained-provider-field"));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(!root.path().join("result.json").exists());
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
