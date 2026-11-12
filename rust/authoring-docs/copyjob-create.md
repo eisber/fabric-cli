@@ -104,6 +104,11 @@ shared engine requires 200) remain `InvalidResponse`, unknown and nonzero,
 not provider-confirmed rejection. The original typed HTTP cause and latest
 status remain separate from the protected initial 202 identity and handle.
 Genuine HTTP errors retain service-failure classification; neither path replays.
+All nonempty create responses use the existing bounded unique-key JSON decoder.
+Duplicate IDs or names, nested duplicates and escaped duplicate keys cannot
+replace initial acceptance identity or become successful no-wait acceptance.
+The exact rejected response bytes remain labeled base64 evidence, with original
+acceptance identity and handle retained independently where already observed.
 As documented by the shared host, a synchronous OS write already in progress is
 not an atomic cancellable transaction.
 
@@ -122,7 +127,8 @@ and does not send the generic-only `type` field or redundant null folder.
 Only the authorized shared-host logical diffs are consumed:
 `e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and the separately
 released `0454fb4` prepared-approval/submission-evidence, `caf2f7f`
-workspace-root/strict-lint and `0ec3848` unexpected-result-status updates.
+workspace-root/strict-lint, `0ec3848` unexpected-result-status and `44576b0`
+bounded strict-response updates.
 Notebook leaf implementation and producer ancestry are not adopted.
 
 `engine/sdk/tests/copyjob_create.rs` covers schema, unsupported policies and

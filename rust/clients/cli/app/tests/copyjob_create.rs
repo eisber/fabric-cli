@@ -716,6 +716,77 @@ async fn malformed_lro_result_keeps_previously_observed_acceptance_identity() {
 }
 
 #[tokio::test]
+async fn duplicate_response_members_retain_raw_bytes_and_original_acceptance_without_replay() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let duplicate_id = format!(
+        r#"{{"id":"{ITEM}","id":"{OP}","workspaceId":"{WS}","type":"CopyJob","displayName":"Exact"}}"#
+    );
+    let duplicate_name = format!(
+        r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"CopyJob","displayName":"Other","displayName":"Exact"}}"#
+    );
+    let nested = format!(
+        r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"CopyJob","displayName":"Exact","future":{{"key":1,"key":2}}}}"#
+    );
+    let escaped = format!(
+        r#"{{"id":"{ITEM}","\u0069d":"{OP}","workspaceId":"{WS}","type":"CopyJob","displayName":"Exact"}}"#
+    );
+    for body in [duplicate_id, duplicate_name, nested, escaped] {
+        for wait in [false, true] {
+            let mut replies = vec![listing(json!([]))];
+            if wait {
+                replies.push(accepted(&metadata().to_string()));
+                replies.push(response(200, r#"{"status":"Succeeded"}"#, &[]));
+                replies.push(response(200, &body, &[]));
+            } else {
+                replies.push(accepted(&body));
+            }
+            let host = Host::new(replies);
+            let delivery = host
+                .execute(
+                    prepare(if wait { &["--wait"] } else { &[] }, None),
+                    &mut Approval::allow(None),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            assert!(matches!(
+                &delivery.report().error().unwrap().kind,
+                OperationErrorKind::InvalidResponse
+            ));
+            let value = receipt(delivery);
+            assert_eq!(value["error"]["code"], "InvalidResponse");
+            assert_eq!(value["meta"]["status"], "unknown");
+            assert_eq!(value["meta"]["completed"], false);
+            assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(
+                value["meta"]["submission"]["operationHandle"],
+                format!("/operations/{OP}")
+            );
+            assert_eq!(
+                value["meta"]["unparsedResponseBodyBase64"],
+                STANDARD.encode(body.as_bytes())
+            );
+            if wait {
+                assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+                assert_eq!(value["meta"]["resourceId"], ITEM);
+                assert_eq!(value["data"]["id"], ITEM);
+            } else {
+                assert_eq!(value["meta"]["resourceId"], Value::Null);
+                assert_eq!(value["data"], Value::Null);
+                assert_eq!(
+                    value["meta"]["unparsedAcceptanceBodyBase64"],
+                    STANDARD.encode(body.as_bytes())
+                );
+            }
+            assert_eq!(value["meta"]["remoteReplayed"], false);
+            assert_eq!(value["meta"]["remoteCancelled"], false);
+            host.assert_posts(1, None);
+        }
+    }
+}
+
+#[tokio::test]
 async fn unexpected_success_result_status_is_unknown_with_original_http_cause_and_acceptance() {
     for status in [201, 202, 204] {
         let host = Host::new([
