@@ -119,6 +119,32 @@ source identity before and after the run. `--stage core` or `--stage contracts`
 is a partial run and is recorded as such; only the full `all` stage represents
 the complete plan on that host.
 
+Within one CORE phase, exact repeated single-package all-target test invocations
+for `fabric-sdk-transport`, `fabric-identity`, `fabric-identity-windows`,
+`fabric-cli-repl` and `fabric-cli-update` reuse their first successful execution.
+These offline suites use injected/memory fixtures, ephemeral loopback servers or
+owned per-test artifact directories; they do not prepare later profiles. Reuse
+requires identical ordered arguments (including features), effective working
+directory and full effective environment under the same recorded source,
+toolchain and native platform. Environment comparison is private in-memory
+hashing, not a secret-bearing receipt. The map exists only inside that CORE
+invocation; it is never shared with another run, head, platform or contract phase.
+Setup, arbitrary test packages and stateful registry contracts still execute
+normally. Source integrity is checked after CORE and again after all contracts;
+any mismatch fails the entire receipt, including its aliases.
+
+Every required profile/check label remains in `commands.json`. An
+`execution: "reused"` row names the original executed row through its zero-based
+`source_result_index` and `source_command_id`, retaining that row's actual exit,
+log paths and output hashes. Its elapsed time and executed test counts are zero,
+its timeout is null (no process was spawned), and `covered_tests_passed` /
+`covered_tests_ignored` describe coverage supplied by the source row. These are
+aliases, not independent passing executions. Receipt `commands` counts satisfied
+or attempted obligations; `commands_executed` and `commands_reused` separate real
+processes from aliases. Aggregate test counts include real executions only.
+Fewer processes alone do not prove that the full native plan fits its deadline;
+only the complete source-bound native receipt establishes that result.
+
 The executor defaults to a 7,200-second total budget and a 1,800-second
 per-command timeout. Explicit `--budget-seconds` values are bounded by 8,100
 seconds; `--command-timeout-seconds` retains its separate 7,200-second maximum.
