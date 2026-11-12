@@ -7,6 +7,14 @@
 
 use std::process::Command;
 
+#[cfg(all(
+    feature = "v2-deploy",
+    feature = "native-host",
+    any(windows, feature = "headless")
+))]
+#[path = "support/unconfigured_profile.rs"]
+mod unconfigured_profile;
+
 fn invoke(args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_fab-rs"));
     command.env_clear();
@@ -116,11 +124,13 @@ fn native_entry_validates_file_before_identity_and_missing_identity_never_contac
                 child.env(name, value);
             }
         }
-        let output = child
-            .env(
+        if wrong_type {
+            child.env(
                 "FAB_RUST_CONFIG_ROOT",
                 directory.path().join("missing-config"),
-            )
+            );
+        }
+        let output = child
             .args([
                 "--v2-deploy",
                 "deploy",
@@ -140,7 +150,7 @@ fn native_entry_validates_file_before_identity_and_missing_identity_never_contac
             if wrong_type {
                 "InvalidInput"
             } else {
-                "NotConfigured"
+                unconfigured_profile::error_code()
             }
         );
     }
