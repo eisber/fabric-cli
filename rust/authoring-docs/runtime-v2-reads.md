@@ -46,6 +46,13 @@ There are no per-artifact engines or duplicate MCP registrations. The facade
 rejects a non-Notebook typed path before resolution. The head independently
 rejects a resolver binding with the wrong owner type before native execution.
 
+`livy_session_get::claims` provides the narrow leaf predicate for an already
+parsed GET of a Lakehouse or native LivyService `sessions/id`. Its `run` delegates
+to the same head and SDK; it does not install executable routing, authorization,
+profile selection or output infrastructure. Collections, Notebook sessions and
+statement/result routes remain unclaimed. The existing Notebook facade does not
+accept Lakehouse or LivyService owners.
+
 Paths are logical resource paths, not Windows file paths or URLs:
 
 ```text
@@ -167,6 +174,9 @@ failed session/statement still succeeds as a read, with raw `state`, error/outpu
 and unknown fields retained. Notebook states remain raw with unknown workload
 classification; neither SDK nor head invents Spark readiness from Jupyter GET.
 Persisted Notebook outputs are never labeled live execution results.
+An exact classic session read accepts HTTP 200 or 202 only. Partial-content and
+other unexpected success statuses are rejected before receipt delivery, never
+promoted to a complete session observation.
 
 Native errors retain real HTTP status when available and never print provider
 bodies, source/code or output error details. Transport timeout/cancellation

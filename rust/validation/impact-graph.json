@@ -1878,7 +1878,10 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**",
+        "rust/clients/cli/app/tests/runtime_v2.rs",
+        "rust/clients/cli/app/tests/runtime_v2/**",
+        "rust/authoring-docs/runtime-v2-reads.md"
       ],
       "depends_on": [
         "sdk",

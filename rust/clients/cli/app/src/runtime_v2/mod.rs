@@ -17,6 +17,8 @@ pub use contract::*;
 pub use parser::{OPERATIONS, OperationRegistration, command_schema, parse_args};
 pub use path::{OwnerKind, OwnerPath, ReadFacet, TypedPath};
 
+pub mod livy_session_get;
+
 use fabric_sdk::{
     livy::{
         ActivityList, ActivityPage, BytePage, LivyRequest, LivyService, Observation, ResponseModel,
@@ -328,6 +330,11 @@ impl PreparedRead {
             }
             Self::LivySession(request, id) => {
                 let response = execute_livy(&request, executor).await?;
+                if !matches!(response.status(), 200 | 202) {
+                    let mut error = ReadError::new(ReadErrorKind::InvalidResponse);
+                    error.http_status = Some(response.status());
+                    return Err(error);
+                }
                 let mut observed = Observed::new(
                     Value::Null,
                     Representation::LivySession,
