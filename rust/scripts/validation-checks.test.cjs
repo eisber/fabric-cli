@@ -11,7 +11,7 @@ const {CHECK_IDS, commandsFor, validateRegistry, assertTransportGraphs} =
   require('./validation-checks.cjs');
 
 const EXPECTED_IDS = [
-  'selector-tests', 'command-inventory', 'oracle-tools', 'batch-oracle', 'transport', 'transport-graphs',
+  'selector-tests', 'process-supervision', 'command-inventory', 'oracle-tools', 'batch-oracle', 'transport', 'transport-graphs',
   'read-parity', 'json-parity', 'broker', 'repl', 'interactive', 'headless', 'certificate', 'updater',
   'combined', 'jobs-oracle', 'definitions-oracle', 'import-oracle', 'parameters-oracle',
   'export-oracle', 'native-read', 'context-output', 'broker-read-parity', 'sdk-example',
@@ -124,7 +124,7 @@ function withTargetEnvironment(value, action) {
 
 test('all canonical IDs are registered exactly once, including core-profile markers', () => {
   assert.deepEqual([...CHECK_IDS].sort(), [...EXPECTED_IDS].sort());
-  assert.equal(CHECK_IDS.length, 29);
+  assert.equal(CHECK_IDS.length, 30);
   assert.equal(new Set(CHECK_IDS).size, CHECK_IDS.length);
   assert.ok(Object.isFrozen(CHECK_IDS));
   assert.equal(validateRegistry(graph([...EXPECTED_IDS].reverse())), true);
@@ -278,7 +278,6 @@ test('selector tests include coverage tooling with absolute source paths and art
   assert.deepEqual(command.args, ['--test',
     path.join(rust, 'scripts', 'impact-plan.test.cjs'),
     path.join(rust, 'scripts', 'validate-impact.test.cjs'),
-    path.join(rust, 'scripts', 'validation-process.test.cjs'),
     path.join(rust, 'scripts', 'execution-evidence.test.cjs'),
     path.join(rust, 'scripts', 'impact-shards.test.cjs'),
     path.join(rust, 'scripts', 'impact-ci.test.cjs'),
@@ -290,6 +289,17 @@ test('selector tests include coverage tooling with absolute source paths and art
   assert.equal(command.cwd, artifacts);
   assert.deepEqual(command.env, {IMPACT_TEST_ROOT: artifacts,
     TMPDIR: artifacts, TEMP: artifacts, TMP: artifacts});
+});
+
+test('real process lifecycle tests run only as their selected native contract, not every selector dependency', () => {
+  const [selector] = commands('selector-tests');
+  assert.ok(!selector.args.some(arg => arg.endsWith('validation-process.test.cjs')));
+  const [supervision] = commands('process-supervision');
+  assert.equal(supervision.program, 'node');
+  assert.deepEqual(supervision.args, ['--test',
+    path.join(rust, 'scripts', 'validation-process.test.cjs')]);
+  assert.equal(supervision.cwd, artifacts);
+  assert.deepEqual(supervision.env, selector.env);
 });
 
 test('command inventory captures actual Cargo metadata before its candidate checker consumes that file', () => {

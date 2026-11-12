@@ -1277,6 +1277,7 @@ test('Dataflow implementation and tests select complete execution consumers with
       }
     }
     assert.ok(!result.checks.some(id => ['repl', 'updater', 'combined', 'certificate'].includes(id)));
+    assert.ok(!result.checks.includes('process-supervision'));
     const descriptors = ['linux', 'macos', 'windows'].map(platform => commands(result, platform));
     assert.deepEqual(descriptors[0], descriptors[1]);
     assert.deepEqual(descriptors[1], descriptors[2]);
@@ -1285,6 +1286,19 @@ test('Dataflow implementation and tests select complete execution consumers with
         item.package === 'fabric-cli' && item.target === 'bin:fab-rs' && item.profile === profile));
     }
   }
+});
+
+test('Process-supervisor changes retain all native lifecycle cases without taxing unrelated leaf changes', () => {
+  const input = dataflowFixture(['rust/scripts/validation-process.py']);
+  const catalog = require('../validation/impact-graph.json');
+  const check = catalog.checks.find(item => item.id === 'process-supervision');
+  input.graph.checks.find(item => item.id === check.id).inputs = check.inputs;
+  const selected = plan(input);
+  assert.equal(selected.mode, 'affected');
+  assert.deepEqual(selected.checks, ['process-supervision', 'selector-tests']);
+  assert.deepEqual(selected.packages, []);
+  const full = plan({...dataflowFixture(), full: true});
+  assert.ok(full.checks.includes('process-supervision'));
 });
 
 test('Dataflow and native execution cannot omit interactive DeviceCode composition or reintroduce unrelated suites', () => {
