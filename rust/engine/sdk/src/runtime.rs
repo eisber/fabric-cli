@@ -29,6 +29,21 @@ pub struct NativeDeadline {
 }
 
 impl NativeDeadline {
+    /// Retain an existing absolute monotonic expiry without starting a new budget.
+    ///
+    /// # Errors
+    /// Rejects an elapsed expiry or one more than 24 hours ahead.
+    pub fn until(expires: Instant) -> Result<Self, NativeError> {
+        let started = Instant::now();
+        let timeout = expires
+            .checked_duration_since(started)
+            .ok_or(NativeError::TimedOut)?;
+        let deadline =
+            fabric_sdk_operations::deadline::MonotonicDeadline::new(Duration::ZERO, timeout)
+                .map_err(|_| NativeError::InvalidInput)?;
+        Ok(Self { started, deadline })
+    }
+
     /// Begin a finite positive observation budget, at most 24 hours.
     ///
     /// # Errors

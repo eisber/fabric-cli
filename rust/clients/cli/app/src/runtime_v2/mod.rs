@@ -10,6 +10,11 @@
 #![deny(missing_docs)]
 
 mod contract;
+#[cfg(feature = "native-host")]
+pub mod host;
+pub mod native_runtime_notebook_list;
+#[cfg(feature = "notebook-workload")]
+pub mod notebook;
 mod parser;
 mod path;
 
