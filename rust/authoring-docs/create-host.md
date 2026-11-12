@@ -41,10 +41,13 @@ when it looks like a UUID. Name-based workspace resolution, explicit collections
 folders and artifact facade spellings are not installed by this helper.
 Bindings must not invent options or repurpose retrieval facet syntax.
 
-`execute(binding, client, items, executor, approval, interrupted)` consumes the
+`execute(binding, client, items, execution, approval, interrupted)` consumes the
 prepared command. It uses the client's same immutable Fabric context for complete
 item discovery, final SDK planning, approval, submission and polling. A partial,
 ambiguous, wrong-kind or wrong-scope listing never authorizes creation.
+Display names must match ordinally before an existing leaf can be skipped;
+case-insensitive collision detection does not prove that exact selection.
+GUID scope comparisons are case-insensitive without changing names or raw input.
 `CreateApproval::authorize` receives a borrowed `CreateApprovalRequest` with the
 exact plan, original input, context, remote-write effect and output/wait/timeout
 intent. Refusal dispatches nothing. There is no persisted approval, default
@@ -58,6 +61,13 @@ lost responses, malformed results, failed polling, and local delivery failures
 never trigger mutation replay or rollback. The caller must enforce the deadline
 before synchronous delivery; an OS file/stream write already in progress is not
 an atomic cancellable transaction.
+
+`CreateExecution` bundles the operation executor with a command-local header
+evidence accessor. The native runner attaches the existing `ExecutionTrace` only
+to mutation/poll execution, not discovery. A valid 202 operation UUID already
+received in headers survives a later body failure, response limit or cancellation.
+This additional evidence never upgrades an unknown/failed report to accepted or
+completed, and it never invents a resource ID.
 
 `CreateDelivery::report()` exposes unprojected evidence before delivery.
 `deliver(stdout)` projects only `data`, retaining resource identity, policy,
