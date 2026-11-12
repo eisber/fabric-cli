@@ -28,6 +28,10 @@ The first native mount requires an explicit workspace GUID and a literal
 Notebook display name. Workspace-name resolution, parent collections, folders,
 profiles, artifact facades and other item types are not mounted. There is no
 new `--name` option, implicit display name, or type inferred from a local filename.
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
 For an exact destination, omitted input creates a shell Notebook with precisely
 the name in that destination. Empty input and explicit JSON null are invalid.
 An explicit body must include `displayName` equal to the selected destination:

@@ -514,7 +514,7 @@ impl PreparedCreateCommand {
                 items,
                 &workspace,
                 ItemListOptions {
-                    query: Vec::new(),
+                    query: vec![("recursive".into(), "false".into())],
                     limits: ItemListLimits {
                         max_pages: NonZeroUsize::new(10).unwrap(),
                         max_items: NonZeroUsize::new(1_000).unwrap(),
@@ -530,6 +530,7 @@ impl PreparedCreateCommand {
             .iter()
             .filter(|item| item.display_name.eq_ignore_ascii_case(&self.name))
             .collect::<Vec<_>>();
+        let mut root_matches = Vec::new();
         for item in &matches {
             if !is_id(&item.id)
                 || item.item_type().is_none_or(|kind| kind.trim().is_empty())
@@ -540,10 +541,17 @@ impl PreparedCreateCommand {
             {
                 return Err(CreateCommandError::Invalid);
             }
+            if is_workspace_root(item.additional_fields.get("folderId"))? {
+                root_matches.push(*item);
+            }
         }
-        let mut typed = matches
+        if !matches.is_empty() && root_matches.is_empty() {
+            return Err(CreateCommandError::Invalid);
+        }
+        let mut typed = root_matches
             .iter()
             .filter(|item| item.item_type() == Some(self.owner));
+        let mut selected_folder = None;
         let state = match (typed.next(), typed.next()) {
             (None, _) if matches.is_empty() => LeafState::Missing,
             (None, _) => LeafState::WrongKind,
@@ -552,6 +560,7 @@ impl PreparedCreateCommand {
                 if item.display_name != self.name {
                     return Err(CreateCommandError::Policy(CreateError::NameChanged));
                 } else {
+                    selected_folder = item.additional_fields.get("folderId").cloned();
                     LeafState::Existing(
                         ResourceIdentity::new(
                             NativeId::new(&item.id).map_err(CreateCommandError::Policy)?,
@@ -657,6 +666,10 @@ impl PreparedCreateCommand {
         };
         report.value["meta"]["remoteWrite"] = json!(remote_write);
         report.value["meta"]["anticipatedEffects"] = json!(anticipated_effects);
+        if !remote_write {
+            report.value["meta"]["folderIdObserved"] = json!(selected_folder.is_some());
+            report.value["meta"]["folderId"] = json!(selected_folder);
+        }
         Ok(CreateDelivery {
             command: self.command,
             output: self.output,
@@ -672,10 +685,19 @@ fn host_capabilities(binding: &dyn CreateBinding) -> CreateCapabilities {
     capabilities
 }
 
+fn is_workspace_root(folder: Option<&Value>) -> Result<bool, CreateCommandError> {
+    match folder {
+        None | Some(Value::Null) => Ok(true),
+        Some(Value::String(id)) if is_id(id) => Ok(false),
+        _ => Err(CreateCommandError::Invalid),
+    }
+}
+
 struct SubmissionObservation {
     http_status: u16,
     operation_id: Option<String>,
     accepted_body: Option<Vec<u8>>,
+    folder_id: Option<Value>,
 }
 
 struct ObservedCreateExecutor<'a, E> {
@@ -716,6 +738,18 @@ impl<E: OperationExecutor> OperationExecutor for ObservedCreateExecutor<'_, E> {
                                     response.status == 202 && response.body.len() <= MAX_BYTES
                                 })
                                 .map(|response| response.body.clone()),
+                            folder_id: result
+                                .as_ref()
+                                .ok()
+                                .filter(|response| response.body.len() <= MAX_BYTES)
+                                .and_then(|response| {
+                                    fabric_cli_output::input::strict_json_bounded(
+                                        &response.body,
+                                        MAX_BYTES,
+                                    )
+                                    .ok()
+                                })
+                                .and_then(|body| body.get("folderId").cloned()),
                         });
                 }
             }
@@ -783,30 +817,36 @@ impl CreateReport {
                 http_status,
                 operation_id: evidence.operation_id.clone().filter(|id| is_id(id)),
                 accepted_body: None,
+                folder_id: None,
             };
             Some(&fallback)
         } else {
             None
         };
         if let Some(submission) = submission {
-            if submission.http_status == 202 {
-                if let Some(error) = &mut self.error
-                    && error.mutation_may_have_occurred
-                    && error.operation_id.is_none()
-                    && let Some(id) = &submission.operation_id
-                {
-                    self.value["meta"]["operationHandle"] = json!(format!("/operations/{id}"));
-                    error.operation_id = Some(id.clone());
-                }
+            if submission.http_status == 202
+                && let Some(error) = &mut self.error
+                && error.mutation_may_have_occurred
+                && error.operation_id.is_none()
+                && let Some(id) = &submission.operation_id
+            {
+                self.value["meta"]["operationHandle"] = json!(format!("/operations/{id}"));
+                error.operation_id = Some(id.clone());
             }
             self.value["meta"]["submission"] = json!({
                 "httpStatus":submission.http_status,
                 "operationHandle":self.value["meta"]["operationHandle"],
+                "folderId":submission.folder_id,
+                "folderIdObserved":submission.folder_id.is_some(),
             });
             if let Some(body) = &submission.accepted_body {
                 match fabric_cli_output::input::strict_json_bounded(body, MAX_BYTES) {
                     Ok(data) => {
                         if let Some(object) = data.as_object() {
+                            self.value["meta"]["submission"]["folderId"] =
+                                json!(object.get("folderId"));
+                            self.value["meta"]["submission"]["folderIdObserved"] =
+                                json!(object.contains_key("folderId"));
                             let resource = json!({
                                 "id":object.get("id"),"workspaceId":object.get("workspaceId"),
                                 "type":object.get("type"),"displayName":object.get("displayName"),
@@ -816,6 +856,12 @@ impl CreateReport {
                                 self.value["data"] = data;
                                 self.value["meta"]["resourceId"] = resource["id"].clone();
                                 self.value["meta"]["observedResource"] = resource;
+                                self.value["meta"]["folderId"] = self.value["data"]
+                                    .get("folderId")
+                                    .cloned()
+                                    .unwrap_or(Value::Null);
+                                self.value["meta"]["folderIdObserved"] =
+                                    json!(self.value["data"].get("folderId").is_some());
                             }
                         }
                     }
@@ -929,7 +975,8 @@ impl CreateReport {
         } else {
             ExecutionOutcome::Completed(evidence)
         };
-        let verified = sdk::verify_outcome(plan, outcome).is_ok();
+        let verified = sdk::verify_outcome(plan, outcome).is_ok()
+            && (status == 202 || is_workspace_root(data.get("folderId")).is_ok_and(|root| root));
         if !verified {
             error = Some(session.evidence(OperationErrorKind::InvalidResponse));
         }
@@ -1010,6 +1057,8 @@ impl CreateReport {
                     "completed":status=="completed",
                     "resourceId":data.get("id"),"workspaceId":plan.target().parent_id().as_str(),
                     "type":plan.target().item_type(),
+                    "folderId":data.get("folderId"),
+                    "folderIdObserved":data.get("folderId").is_some(),
                     "observedResource":data.as_object().map(|_| json!({
                         "id":data.get("id"),"workspaceId":data.get("workspaceId"),
                         "type":data.get("type"),"displayName":data.get("displayName")
