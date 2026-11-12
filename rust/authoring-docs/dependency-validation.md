@@ -2,6 +2,9 @@
 
 # Dependency-aware validation
 
+This validation-only draft measures documentation-only CI selection and is not
+intended for integration.
+
 The local validator and the Rust PR workflow use the same impact graph, planner,
 command registry and executor. They select complete Cargo test targets, not
 test-name substrings. Cargo remains responsible for compilation dependencies.
