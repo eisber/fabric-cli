@@ -219,6 +219,32 @@ test('default full packages are grouped but exact target commands remain separat
   assert.deepEqual(commands[1].args.slice(-5), ['--bin', 'demo', '--example', 'probe', '--lib']);
 });
 
+test('full Windows CLI targets compile under the build budget before unchanged runtime tests', () => {
+  const selected = {
+    mode: 'full', packages: ['fabric-cli', 'fabric-core'],
+    tests: [{package: 'fabric-cli', target: 'all'}, {package: 'fabric-core', target: 'all'}],
+    profiles: [{id: 'combined', packages: ['fabric-cli'],
+      features: ['fabric-cli/headless'], platforms: ['windows', 'linux', 'macos'],
+      tests: [{package: 'fabric-cli', target: 'all'}]}],
+  };
+  const windows = coreCommands(selected, 'windows');
+  const compilations = windows.filter(command => command.args.includes('--no-run'));
+  assert.equal(compilations.length, 2);
+  for (const compile of compilations) {
+    const runtime = windows[windows.indexOf(compile) + 1];
+    assert.equal(compile.id, `${runtime.id}:compile`);
+    assert.deepEqual(compile.args.slice(0, -1), runtime.args);
+    assert.equal(runtime.test, true);
+    assert.ok(!runtime.args.includes('--no-run'));
+    assert.equal(compile.test, undefined);
+  }
+  for (const platform of ['linux', 'macos']) {
+    assert.ok(!coreCommands(selected, platform).some(command => command.args.includes('--no-run')));
+  }
+  assert.ok(!coreCommands({...selected, mode: 'affected'}, 'windows')
+    .some(command => command.args.includes('--no-run')));
+});
+
 test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
   const root = temporary(t);
   const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};

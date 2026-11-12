@@ -88,7 +88,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: rust/target
-          key: rust-native-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-jobs2-dev0-test0-incr0-${{ matrix.cache_group }}-v1
+          key: rust-native-v5-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-jobs2-dev0-test0-incr0-${{ matrix.cache_group }}-v1
       - name: Record Cargo cache timing
         id: cache-time
         env:

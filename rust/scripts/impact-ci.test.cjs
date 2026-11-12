@@ -612,7 +612,7 @@ test('workflow preserves source-bound recomputation, bounded matrix, cache setti
   assert.ok(!caller.includes('runs-on:'), 'Pool coordinators must not consume native runners');
   assert.match(caller, /if: needs\.changes\.outputs\.run_native == 'true'/);
   assert.match(workflow, /timeout-minutes: 15/);
-  assert.match(workflow, /rust-native-v4-.*runner\.os.*runner\.arch.*rust-toolchain\.toml.*Cargo\.lock/);
+  assert.match(workflow, /rust-native-v5-.*runner\.os.*runner\.arch.*rust-toolchain\.toml.*Cargo\.lock/);
   assert.match(workflow, /jobs2-dev0-test0-incr0-\$\{\{ matrix\.cache_group \}\}/);
   assert.match(workflow, /actions\/cache\/restore@/);
   assert.match(workflow, /actions\/cache\/save@/);

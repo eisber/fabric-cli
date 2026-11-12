@@ -4,12 +4,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const {coreCommands, deduplicateCoreCommands} = require('./validate-impact.cjs');
 const {PLATFORMS, PROFILE_GROUP_SECONDS, SETUP_CLEANUP_SECONDS, WINDOWS_DEFAULT_PACKAGES,
+  FULL_PROFILE_GROUP_SECONDS, FULL_PROFILE_MAX_DOMAINS, FULL_PROFILE_COLD_SECONDS,
   shardsForPlan, selectShard, matrixForPlan} =
   require('./impact-shards.cjs');
 const {selectionDigest} = require('./impact-ci.cjs');
+const TIMINGS = require('./impact-shard-timings.json');
 
 function fixture(mode = 'affected') {
   return {schema: 1, head: 'a'.repeat(40), mode, files: ['rust/engine/core/contracts/src/lib.rs'],
@@ -63,6 +66,30 @@ function measuredLeaf() {
     checks, check_details: graph.checks.filter(check => checks.includes(check.id))};
 }
 
+// Exact full Cargo domains from run 43303660409 (head 1402dd06497c8bb46e246ad3e5578fa84c6d68a2).
+// Every selected package uses its complete all-targets command; native transport
+// test features include the CLI-forwarded feature recorded in that selection.
+function measuredFullProfiles(ids) {
+  const graph = require('../validation/impact-graph.json');
+  const profiles = graph.profiles.filter(profile => ids.includes(profile.id))
+    .map(profile => ({...structuredClone(profile),
+      tests: profile.packages.map(name => ({package: name, target: 'all'})),
+      test_features: Object.fromEntries(profile.packages.map(name => {
+        const own = profile.features.filter(feature => feature.startsWith(`${name}/`)).sort();
+        return [name, name === 'fabric-sdk-transport' && !own.length ?
+          ['fabric-sdk-transport/hyper-rustls'] : own];
+      })),
+    }));
+  const packages = [...new Set(profiles.flatMap(profile => profile.packages))].sort();
+  return {schema: 1, mode: 'full', files: [], packages,
+    tests: packages.map(name => ({package: name, target: 'all'})), profiles, checks: []};
+}
+
+function commandSignature(commands) {
+  return crypto.createHash('sha256').update(JSON.stringify(commands.map(command =>
+    [command.program, command.args, command.test || false]))).digest('hex').slice(0, 16);
+}
+
 test('dynamically selected shards retain all three native platforms', () => {
   const matrix = matrixForPlan(fixture(), coreCommands).include;
   assert.deepEqual([...new Set(matrix.map(entry => entry.os))].sort(),
@@ -86,6 +113,18 @@ test('cache producers are bounded per OS and immutable compilation cohort, not p
     for (const cohort of ['default', 'features']) assert.equal(native.filter(entry =>
       entry.cache_group === cohort && entry.cache_writer).length, 1);
     assert.ok(native.find(entry => entry.shard === 'preflight-clippy').cache_writer);
+  }
+});
+
+test('feature cache producer falls back to the oracle only when no profile is selected', () => {
+  const plan = fixture();
+  plan.profiles = [];
+  plan.checks = ['oracle-tools', 'frozen-verify'];
+  plan.check_details = [];
+  for (const platform of Object.keys(PLATFORMS)) {
+    const writer = matrixForPlan(plan, coreCommands).include.find(entry =>
+      entry.platform === platform && entry.cache_group === 'features' && entry.cache_writer);
+    assert.equal(writer.shard, 'contracts-oracle');
   }
 });
 
@@ -211,6 +250,11 @@ test('measured Dataflow domains use twelve balanced native jobs rather than twen
     const native = matrix.filter(entry => entry.platform === platform);
     assert.equal(native.filter(entry => entry.cache_writer).length, 2);
     assert.equal(native.filter(entry => entry.dependency_cache_writer).length, 1);
+    const featureWriter = native.find(entry => entry.cache_group === 'features' && entry.cache_writer);
+    assert.ok(featureWriter.shard.startsWith('profile-'),
+      'Seed the immutable feature cache with a profile, not the oracle-only build');
+    assert.equal(native.find(entry => entry.cache_group === 'default' && entry.cache_writer).shard,
+      defaults[0].id);
   }
   assert.ok(matrix.some(entry => entry.platform === 'macos' &&
     entry.estimate_basis.includes('cross-host-estimate')));
@@ -256,6 +300,104 @@ test('packing preserves exact default IDs, profile argv, aliases, checks and tar
       assert.ok(owner.commands.some(command => command.id.startsWith(`${marker}:`)));
     }
   }
+});
+
+for (const regression of [
+  {shard: '468264fc60318498', estimate: 703,
+    profiles: ['livy-arrow-ipc', 'native-read', 'native-read-repl', 'semantic-model-arguments',
+      'v2-cancel-combined', 'v2-copy', 'v2-graph-refresh-headless'],
+    censored: ['v2-graph-refresh-headless']},
+  {shard: '94b09b6fab6c103f', estimate: 709,
+    profiles: ['certificate-macos', 'headless', 'interactive', 'notebook-websocket',
+      'repl', 'v2-preview', 'workspace-read-v2-headless'],
+    censored: ['repl', 'v2-preview', 'workspace-read-v2-headless']},
+]) {
+  test(`full group ${regression.shard} cannot recombine its measured budget-exhausting prefix`, () => {
+    const plan = measuredFullProfiles(regression.profiles);
+    const samples = new Map();
+    for (const profile of plan.profiles) {
+      const commands = coreCommands({...plan, packages: profile.packages, profiles: [profile]}, 'linux')
+        .filter(command => !command.id.startsWith('default:'));
+      const sample = TIMINGS.full[commandSignature(commands)];
+      assert.ok(sample, `Changed recorded full command descriptors: ${profile.id}`);
+      assert.equal(sample[0], profile.id);
+      samples.set(profile.id, sample);
+    }
+    assert.ok(regression.estimate < PROFILE_GROUP_SECONDS);
+    const oldPrefix = [...samples.values()].reduce((sum, sample) => sum + sample[1], 0);
+    assert.ok(oldPrefix + FULL_PROFILE_COLD_SECONDS > PROFILE_GROUP_SECONDS,
+      'The real command prefix contradicts the old warm-mix estimate');
+    for (const platform of Object.keys(PLATFORMS)) {
+      const shards = shardsForPlan(plan, platform, coreCommands);
+      const profiles = shards.filter(shard => shard.domains.every(id => id.startsWith('profile-')));
+      assert.ok(profiles.length > 1);
+      for (const shard of profiles) {
+        assert.ok(shard.domains.length <= FULL_PROFILE_MAX_DOMAINS);
+        assert.ok(shard.estimated_seconds <= PROFILE_GROUP_SECONDS);
+        if (shard.domains.length > 1) {
+          assert.ok(shard.estimated_seconds <= FULL_PROFILE_GROUP_SECONDS);
+          assert.equal(shard.cold_reserve_seconds, FULL_PROFILE_COLD_SECONDS);
+        }
+        if (platform === 'linux') {
+          const prefix = shard.domains.reduce((sum, id) =>
+            sum + samples.get(id.slice('profile-'.length))[1], 0);
+          assert.ok(prefix + FULL_PROFILE_COLD_SECONDS < PROFILE_GROUP_SECONDS);
+          if (shard.estimate_basis !== 'full-incomplete-isolated') {
+            assert.ok(prefix + FULL_PROFILE_COLD_SECONDS <= shard.estimated_seconds);
+          }
+        }
+      }
+      for (const id of regression.censored) {
+        const isolated = selectShard(plan, platform, `profile-${id}`, coreCommands);
+        assert.deepEqual(isolated.domains, [`profile-${id}`]);
+        const profile = plan.profiles.find(candidate => candidate.id === id);
+        const nativeCommands = coreCommands({...plan, packages: profile.packages,
+          profiles: [profile]}, platform).filter(command => !command.id.startsWith('default:'));
+        const recorded = TIMINGS.full[commandSignature(nativeCommands)];
+        assert.equal(isolated.estimate_basis, recorded ?
+          'full-incomplete-isolated' : 'unmeasured-isolated');
+        assert.equal(isolated.estimated_seconds, PROFILE_GROUP_SECONDS,
+          'An interrupted or never-started domain must not become a cheap timing input');
+        assert.ok(isolated.commands.some(command => command.id === `${id}:clippy`));
+        assert.ok(isolated.commands.some(command => command.id === `${id}:test:fabric-cli`),
+          'Keep the interrupted or never-started last test command');
+      }
+      const expected = new Map(coreCommands(plan, platform)
+        .filter(command => !command.id.startsWith('default:')).map(command => [command.id, command]));
+      for (const shard of shards) for (const command of shard.commands) {
+        for (const id of command.aliases || [command.id]) {
+          if (!expected.has(id)) continue;
+          const original = expected.get(id);
+          assert.deepEqual(command.args, original.args);
+          assert.equal(command.program, original.program);
+          assert.equal(command.test, original.test);
+          assert.ok(shard.obligations.includes(`${platform}:core:${id}`));
+          expected.delete(id);
+        }
+      }
+      assert.equal(expected.size, 0, 'Retain every complete original profile command and alias');
+    }
+    const before = matrixForPlan(plan, coreCommands);
+    plan.profiles.reverse();
+    plan.packages.reverse();
+    plan.tests.reverse();
+    assert.deepEqual(matrixForPlan(plan, coreCommands), before);
+  });
+}
+
+test('full-mode cold guards constrain all sampled profiles, without changing affected packing', () => {
+  const plan = measuredFullProfiles(Object.values(TIMINGS.full).map(sample => sample[0]));
+  for (const platform of Object.keys(PLATFORMS)) {
+    for (const shard of shardsForPlan(plan, platform, coreCommands)) {
+      if (!shard.id.startsWith('profile-')) continue;
+      assert.ok(shard.domains.length <= FULL_PROFILE_MAX_DOMAINS);
+      if (shard.domains.length > 1) assert.ok(shard.estimated_seconds <= FULL_PROFILE_GROUP_SECONDS);
+    }
+  }
+  const leaf = measuredLeaf();
+  assert.equal(matrixForPlan(leaf, coreCommands).include.length, 12);
+  assert.ok(matrixForPlan(leaf, coreCommands).include.every(entry =>
+    !entry.estimate_basis.includes('full-')));
 });
 
 test('changed targets and explicit execution environments invalidate timing signatures', () => {
