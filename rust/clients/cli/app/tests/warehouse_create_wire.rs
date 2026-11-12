@@ -181,8 +181,9 @@ impl Harness {
                 operation_id: evidence.operation_id,
             }
         };
-        prepared
-            .execute(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            prepared.execute(
                 &WarehouseCreateBinding,
                 &self.client,
                 &self.executor,
@@ -192,8 +193,10 @@ impl Harness {
                 },
                 approval,
                 interrupted,
-            )
-            .await
+            ),
+        )
+        .await
+        .expect("scripted Warehouse execution exceeded its fixture budget")
     }
 
     fn assert_requests(&self, expected: &[(&str, String)]) {
@@ -231,7 +234,12 @@ impl CreateApproval for Approval {
         assert_eq!(request.plan().target().name(), "Exact");
         assert_eq!(request.plan().target().parent_id().as_str(), WS);
         assert_eq!(request.context().selection().account(), "synthetic-owner");
+        assert_eq!(request.context().selection().tenant(), WS);
         assert_eq!(request.context().selection().audience(), Audience::Fabric);
+        assert_eq!(
+            request.context().endpoint(),
+            &EndpointBinding::public(ServiceOrigin::Fabric)
+        );
         assert_eq!(request.plan().target().item_type(), "Warehouse");
         Box::pin(async move {
             if self.deny {

@@ -131,6 +131,14 @@ fn original_timeout_includes_blocked_local_stdin() {
         .unwrap();
     let held = child.stdin.take().unwrap();
     let started = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if started.elapsed() > Duration::from_secs(5) {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("original timeout failed to bound blocked input");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
     let output = child.wait_with_output().unwrap();
     drop(held);
     assert!(started.elapsed() < Duration::from_secs(5));
