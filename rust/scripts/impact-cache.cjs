@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const LIMITS = Object.freeze({target: 1024 ** 3, dependencies: 512 * 1024 ** 2});
+const LIMITS = Object.freeze({target: 1536 * 1024 ** 2, dependencies: 256 * 1024 ** 2});
 
 /** Measure bounded cache candidates without following links or mutating them. */
 function measure(roots, {limit, maxFiles = 250000, maxMs = 10000} = {}) {
@@ -56,7 +56,8 @@ function main(argv) {
   const root = path.resolve(__dirname, '..', '..');
   const cargo = process.env.CARGO_HOME || path.join(os.homedir(), '.cargo');
   const roots = kind === 'target' ? [path.join(root, 'rust', 'target')] :
-    [path.join(cargo, 'registry'), path.join(cargo, 'git')];
+    [path.join(cargo, 'registry', 'cache'), path.join(cargo, 'registry', 'index'),
+      path.join(cargo, 'git', 'db')];
   const metric = {...measure(roots, {limit: LIMITS[kind]}), kind,
     platform: process.env.IMPACT_PLATFORM, shard: process.env.IMPACT_SHARD,
     cache_group: process.env.IMPACT_CACHE_GROUP, writer: process.env.IMPACT_CACHE_WRITER === 'true'};

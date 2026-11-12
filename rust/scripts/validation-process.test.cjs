@@ -35,6 +35,7 @@ async function waitFor(predicate, message, timeout = STARTUP_WAIT_MS) {
 
 function alive(pid) {
   if (process.platform === 'linux') {
+    // kill(pid, 0) also succeeds for zombies; termination is not proof of reaping.
     try {
       const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
       const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];

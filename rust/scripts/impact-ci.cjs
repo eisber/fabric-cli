@@ -181,8 +181,8 @@ function main(argv) {
         `Selection: \`${result.selection_digest}\`\n\n` +
         `${result.shards} native shards; ${result.obligations} exact obligations passed.\n\n` +
         `Selection reasons: ${(plan.reasons || []).join('; ')}\n\n` +
-        'Cache policy: at most six immutable target-cohort entries (1 GiB raw each) and three ' +
-        'shared dependency entries (512 MiB raw each) per manifest/toolchain generation. ' +
+        'Cache policy: at most six immutable target-cohort entries (1.5 GiB raw each) and three ' +
+        'shared source-archive entries (256 MiB raw each) per manifest/toolchain generation. ' +
         'Oversize/late candidates skip cache saving, never validation obligations. ' +
         'Old dependency generations remain subject to the provider quota/eviction policy.\n\n' +
         '| Platform / shard | Commands (s) | Setup (s) | Restore (s) | Target/deps hit | Target raw MiB |\n' +

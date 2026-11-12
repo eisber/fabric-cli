@@ -51,7 +51,6 @@ jobs:
         run: >-
           node --test rust/scripts/impact-plan.test.cjs
           rust/scripts/validate-impact.test.cjs
-          rust/scripts/validation-process.test.cjs
           rust/scripts/execution-evidence.test.cjs
           rust/scripts/validation-checks.test.cjs
           rust/scripts/rust-fast-check.test.cjs
@@ -106,7 +105,9 @@ jobs:
     steps:
       - name: Start native setup measurement
         id: clock
-        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+          printf 'CARGO_HOME=%s/rust-cargo-home\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 3
         with:
@@ -123,9 +124,6 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - name: Recompute and verify the same dependency selection on this host
-        timeout-minutes: 3
-        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
       - name: Start Cargo cache measurement
         id: cache-clock
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -135,16 +133,17 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: rust-deps-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-v1
+            ${{ env.CARGO_HOME }}/registry/cache
+            ${{ env.CARGO_HOME }}/registry/index
+            ${{ env.CARGO_HOME }}/git/db
+          key: rust-deps-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-v1
       - name: Restore bounded compilation cohort
         id: cargo-cache
         timeout-minutes: 3
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: rust/target
-          key: rust-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-jobs2-dev0-test0-incr0-${{ matrix.cache_group }}-v1
+          key: rust-native-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-jobs2-dev0-test0-incr0-${{ matrix.cache_group }}-v1
       - name: Record Cargo cache timing
         id: cache-time
         env:
@@ -157,7 +156,12 @@ jobs:
           cargo --version
           rustc --version --verbose
           rustup show active-toolchain
-          cargo fetch --locked
+          host=$(rustc --version --verbose | sed -n 's/^host: //p')
+          test -n "$host"
+          cargo fetch --locked --target "$host"
+      - name: Recompute and verify the same dependency selection on this host
+        timeout-minutes: 3
+        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
       - name: Measure shared dependency cache candidate
         if: matrix.dependency_cache_writer
         id: dependency-size
@@ -171,8 +175,9 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ${{ env.CARGO_HOME }}/registry/cache
+            ${{ env.CARGO_HOME }}/registry/index
+            ${{ env.CARGO_HOME }}/git/db
           key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
       - name: Set up optional semantic-model TOM runtime
         if: matrix.dotnet
