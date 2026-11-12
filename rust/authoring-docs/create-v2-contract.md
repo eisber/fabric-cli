@@ -139,6 +139,13 @@ contract. It does not establish a general-purpose JSON Schema validation
 capability or automatic validation of every JSON body. Valid JSON syntax alone
 is not evidence that a body satisfies the resource contract.
 
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
 The CLI library contract composes those inputs without establishing an
 executable mount. A root parser registration, service-host adapter, and
 resource-specific backend evidence are separate integration requirements.
@@ -168,6 +175,11 @@ An accepted operation ID is not a created-resource ID or completion evidence.
 Partial, unknown, cancelled, and timed-out results must retain available
 operation and effect evidence. Cancellation or timeout stops local work; it does
 not prove that remote work stopped.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
 
 Do not automatically replay a mutation or claim rollback after cancellation,
 timeout, an unknown response, or a later failure. Failure to project or write a
