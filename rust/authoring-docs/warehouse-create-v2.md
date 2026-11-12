@@ -80,6 +80,9 @@ including the default collation for omitted or partial input. Those same bytes
 are submitted once; raw input alone is not the approval body. Protected
 `meta.submission` retains the initial POST status, resource and operation
 evidence separately from the latest `meta.observation` or `meta.httpStatus`.
+Unexpected 201, 202 or 204 operation-result responses remain unknown,
+non-completed `InvalidResponse` receipts with the original typed HTTP cause
+retained; they are neither success nor a definitive provider rejection.
 `--output` reuses the shared exact no-clobber sink. Live service, identity-policy,
 SQL connectivity and cross-platform acceptance are not implied by offline tests.
 
@@ -116,7 +119,8 @@ live proof that the legacy spelling is accepted. Broader optional API fields and
 definition-based creation are outside this bounded binding.
 
 The consumed shared-create changes are the logical diffs
-`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, `0454fb4`, and `caf2f7f`. There is no Notebook
+`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, `0454fb4`, `caf2f7f`, and
+`0ec3848`. There is no Notebook
 leaf or producer ancestry adoption, custom authentication, parser, policy,
 transport, LRO or output engine. See [the shared host](create-host.md).
 

@@ -1641,3 +1641,69 @@ async fn accepted_nested_folder_evidence_remains_submission_evidence_after_faile
     expected.push(("GET", format!("/v1/operations/{OP}")));
     harness.assert_requests(&expected);
 }
+
+#[tokio::test]
+async fn unexpected_success_result_status_is_unknown_not_a_definitive_service_rejection() {
+    for (status, code) in [
+        (StatusCode::Created, 201),
+        (StatusCode::Accepted, 202),
+        (StatusCode::NoContent, 204),
+    ] {
+        let mut initial = resource();
+        initial["folderId"] = Value::Null;
+        let harness = Harness::new(vec![
+            listing(json!([])),
+            accepted(initial, "0"),
+            reply(StatusCode::Ok, json!({"status":"Succeeded"})),
+            reply(status, resource()),
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(None, &["--wait", "--project", "`null`"]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        let report = delivery.report();
+        assert_eq!(report.exit_code(), 1);
+        let error = report
+            .error()
+            .expect("retain original typed operation failure");
+        assert!(matches!(
+            error.kind, fabric_sdk_operations::OperationErrorKind::Http { status, .. } if status == code
+        ));
+        assert_eq!(error.operation_id.as_deref(), Some(OP));
+        assert!(error.mutation_may_have_occurred);
+        let mut stdout = Vec::new();
+        delivery.deliver(&mut stdout).unwrap();
+        let receipt: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(receipt["error"]["code"], "InvalidResponse");
+        assert_eq!(receipt["meta"]["status"], "unknown");
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["httpStatus"], code);
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], code);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(receipt["meta"]["submission"]["folderId"], Value::Null);
+        assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(
+            receipt["meta"]["anticipatedEffects"][0]["kind"],
+            "meteredConsumption"
+        );
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_eq!(receipt["meta"]["remoteCancelled"], false);
+        assert_eq!(receipt["data"], Value::Null);
+        let mut expected = paths(true);
+        expected.extend([
+            ("GET", format!("/v1/operations/{OP}")),
+            ("GET", format!("/v1/operations/{OP}/result")),
+        ]);
+        harness.assert_requests(&expected);
+    }
+}
