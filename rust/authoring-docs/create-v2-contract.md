@@ -11,10 +11,37 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
-policy and CLI parsing; compilation and tests remain unverified.
+policy and CLI parsing. The shared [create host](create-host.md) composes those
+libraries without installing a generic artifact backend or another policy engine.
 The opt-in `v2-create` + `headless` `fab-cli-v2` executable now mounts only
 [metadata-only DataPipeline create](datapipeline-create.md) through the shared
 native host. This does not mount every resource or qualify live/platform parity.
+
+## Shared native approval and evidence
+
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
+The original timeout includes preflight, discovery, approval, submission,
+waiting and local receipt delivery. If it expires before delivery, no new file
+write starts; the unprojected report remains in the stderr timeout diagnostic.
+Without `--wait`, a 202 receipt says `accepted`, never `completed`.
+Polling failure, local cancellation/deadline, response limits, lost responses and
+receipt write/flush failures retain known handles and mutation uncertainty.
+This includes an operation UUID already received in 202 headers before a later
+body streaming failure or cancellation.
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
+There is no automatic replay or rollback. The exact output file is never
+overwritten; projection applies only to `data`, retaining identity and operation
+metadata outside it. No live Fabric, identity or resource-creation acceptance
+is established by the offline tests.
 
 ## Target grammar
 

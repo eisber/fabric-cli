@@ -162,31 +162,7 @@ impl CreateApproval for TerminalApproval {
         &'a mut self,
         request: CreateApprovalRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<(), CreateApprovalError>> + Send + 'a>> {
-        let question = format!(
-            "Approve {} create policy {} for {:?} in workspace {} using account {:?}, tenant {:?}, endpoint {:?}, remoteWrite={}, input={}, output={:?}, wait={}, timeout={:?}? Acceptance may not be completion. Local cancellation/output failure is not rollback; do not automatically replay.",
-            request.plan().target().item_type(),
-            request.plan().policy().as_str(),
-            request.plan().target().name(),
-            request.plan().target().parent_id().as_str(),
-            request.context().selection().account(),
-            request.context().selection().tenant(),
-            request.context().endpoint(),
-            request.remote_write(),
-            match request.plan().action() {
-                fabric_sdk::items::create::CreateAction::Create { input } =>
-                    input.supplied().map_or_else(
-                        || "<omitted: displayName from exact destination>".into(),
-                        serde_json::Value::to_string
-                    ),
-                _ => request.raw_input().map_or_else(
-                    || "<omitted>".into(),
-                    |raw| String::from_utf8_lossy(raw).escape_debug().to_string()
-                ),
-            },
-            request.command().output,
-            request.command().wait,
-            request.command().timeout,
-        );
+        let question = request.approval_question();
         Box::pin(async move {
             let approved = tokio::task::spawn_blocking(move || {
                 #[cfg(windows)]
