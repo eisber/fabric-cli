@@ -282,6 +282,9 @@ fn production_response(
     Arc<Credential>,
     Arc<Wire>,
 ) {
+    let (status, mut headers, body) = response.deconstruct();
+    headers.insert("content-type", "application/json");
+    let response = AsyncRawResponse::new(status, headers, body);
     let credential = Arc::new(Credential::default());
     let wire = Arc::new(Wire {
         response: Mutex::new(Some(response)),
@@ -343,7 +346,7 @@ async fn shared_host_uses_actual_sdk_authentication_and_http_for_supported_fabri
     assert_eq!(requests[0].method(), Method::Get);
     assert_eq!(
         requests[0].url().as_str(),
-        "https://api.fabric.microsoft.com/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2024-04-01/sessions?$top=100"
+        "https://api.fabric.microsoft.com/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2024-04-01/sessions?%24top=100"
     );
 }
 
