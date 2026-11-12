@@ -13,10 +13,22 @@ description = "Shared credential boundary and errors for the Fabric Rust librari
 [package.metadata.fabric]
 layer = "core"
 
+[features]
+default = []
+verified-principal = ["dep:base64", "dep:ring", "dep:serde_json", "dep:tokio"]
+
 [dependencies]
 azure_core.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+base64 = { workspace = true, optional = true }
+ring = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+async-trait.workspace = true
+chrono.workspace = true
 
 [lints]
 workspace = true

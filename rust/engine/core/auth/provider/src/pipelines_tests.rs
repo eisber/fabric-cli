@@ -132,6 +132,7 @@ fn guard() -> PipelinesHttp {
             .unwrap(),
             host: None,
             managed_client: None,
+            pbi_bootstrap: false,
         },
         config: config(),
     }
