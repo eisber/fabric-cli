@@ -23,6 +23,11 @@ selected owner, its exact typed path and the host-admitted policy subset.
 Shared native help never names another provider or advertises replacement and
 duplicate merely because a binding declares those capabilities.
 
+Before opening a selected input file or consuming stdin, the host calls the
+SDK's pure `validate_policy_support` admission. Unsupported policies reject
+without input I/O. Admitted policies still read and validate all explicit input
+before discovery or a possible unchanged skip result.
+
 The binding must validate its schema, owner, body/name identity, and supported
 native fields. It must independently bind original explicit bytes to the
 planner's validated input, without changing multipart payloads or metadata.
