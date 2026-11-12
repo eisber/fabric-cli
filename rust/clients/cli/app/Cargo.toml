@@ -19,6 +19,16 @@ name = "fab-rs"
 path = "src/main.rs"
 
 [[test]]
+name = "create_host"
+path = "tests/create_host.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "environment_create"
+path = "tests/environment_create.rs"
+required-features = ["v2-create-environment"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
@@ -77,6 +87,8 @@ semantic-model = ["dep:fabric-cli-semantic-model"]
 semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
+v2-create = []
+v2-create-environment = ["v2-create"]
 v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []
