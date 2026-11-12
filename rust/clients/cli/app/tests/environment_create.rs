@@ -1089,6 +1089,53 @@ async fn malformed_no_wait_acceptance_retains_status_handle_and_original_body_by
     rig.assert_requests(1);
 }
 
+#[tokio::test]
+async fn unexpected_success_class_result_is_unknown_and_preserves_original_typed_error() {
+    let temp = tempfile::tempdir().unwrap();
+    for status in [201, 202, 204] {
+        let rig = Rig::new([
+            listed(vec![]),
+            accepted(&resource().to_string()),
+            response(200, r#"{"status":"Succeeded"}"#, &[]),
+            response(status, &resource().to_string(), &[]),
+        ]);
+        let delivery = rig
+            .execute(
+                prepare(&["--wait", "--project", "missing"], None, temp.path()),
+                &mut Approval::allowing(None),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        assert!(matches!(
+            &delivery.report().error().expect("retain shared engine failure").kind,
+            fabric_sdk_operations::OperationErrorKind::Http { status: actual, .. } if *actual == status
+        ));
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let value: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["error"]["code"], "InvalidResponse");
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["httpStatus"], status);
+        assert_eq!(value["meta"]["observation"]["httpStatus"], status);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        assert_eq!(value["meta"]["remoteCancelled"], false);
+        rig.assert_requests(1);
+        assert_eq!(rig.http.requests.lock().unwrap().len(), 4);
+    }
+}
+
 struct BrokenWriter;
 impl Write for BrokenWriter {
     fn write(&mut self, _: &[u8]) -> io::Result<usize> {

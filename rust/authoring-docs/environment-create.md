@@ -96,6 +96,10 @@ Initial acceptance remains separate from the latest observation in protected
 `meta.submission.httpStatus`, `meta.submission.resource`, and
 `meta.submission.operationHandle`. A malformed final result cannot erase the
 accepted resource identity or promote the outcome to completed.
+An unexpected success-class status on the operation-result request is an invalid,
+unknown, nonzero outcome, not a definitive provider rejection. The original
+typed SDK HTTP error and actual status remain inspectable independently of that
+receipt classification.
 Completed 201 and final 200 results revalidate root placement. Observed
 `folderId` and `folderIdObserved` remain protected from data projection, including
 the initial submission's fields. A returned nested or malformed folder identity
