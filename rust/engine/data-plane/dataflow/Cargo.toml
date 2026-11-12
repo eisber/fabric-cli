@@ -8,7 +8,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Caller-injected native Dataflow Execute Query over shared bounded operations"
+description = "Caller-injected native Dataflow Execute Query with shared bounded operations"
 
 [package.metadata.fabric]
 layer = "sdk"
