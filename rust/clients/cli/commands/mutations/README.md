@@ -82,6 +82,12 @@ fixtures and expected outputs are unchanged.
 See [creation templates](templates/README.md) for path validation, dependent
 creation and ordering rules.
 
+`BlankSemanticModelCreate` exposes only the existing five-part blank template
+with validated outer display name and optional description. It preserves all
+embedded bytes and placeholders and accepts no user definition or connection.
+The separate [native v2 binding](../../../../authoring-docs/semantic-model-create.md)
+consumes this CLI-layer adapter without changing v1 creation.
+
 ## Storage and definitions
 
 Storage results retain their own create/append/flush evidence through
