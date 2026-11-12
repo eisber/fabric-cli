@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Execute experimental native Notebook metadata updates with exact caller approval and retained uncertainty receipts
+time: 2026-11-11T23:30:00Z
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber

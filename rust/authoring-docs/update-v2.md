@@ -13,11 +13,20 @@ fab-cli-v2 update /<workspace-guid>.Workspace/<item-guid>.Notebook --input metad
 fab-cli-v2 artifact lakehouse update /workspaces/<workspace-guid>/lakehouses/<item-guid> --input - --mode patch --plan
 ```
 
-The standalone experimental `fab-cli-v2` head supports local plans and help.
-It intentionally refuses mutation execution with `ApprovalHostRequired`; it does
-not install an automatic approval policy or sign in. Embedders use
+The opt-in `headless` experimental `fab-cli-v2` head executes Notebook metadata
+updates through the existing explicit `native-host` session. Both
+`artifact notebook update` and root `update` with a Notebook target use this host.
+It requires terminal stderr and an attached controlling console for explicit
+default-no approval of the exact context-bound request, including body, target,
+identity, endpoint, options, limits, `ExistingOnly` and `UnguardedConcurrency`.
+Structured stdin is never reused as approval input. No `--force`, automatic yes,
+credential fallback or interactive sign-in is installed. Lakehouse execution
+continues to require an injected host; its local plans are unchanged.
+Embedders use
 `fabric_cli::update::PreparedUpdateCommand` with explicit caller approval,
-request context, shared executor and whole-command interruption. The SDK can
+request context, shared executor and whole-command interruption. Its additive
+`with_context` boundary exposes the immutable request for asynchronous approval;
+execution still authorizes that exact request and consumes it once. The SDK can
 also be used directly through `fabric_sdk::items::update`. Neither library creates
 an HTTP client, credential provider, timer or runtime.
 
@@ -53,6 +62,15 @@ identities, conditions or handles. The default total timeout is 30 seconds;
 positive integer ms/s/m/h durations up to 24 hours are accepted. Embedded callers
 must enforce this whole-command budget through interruption and delivery checks.
 The standalone local plan does not install a cancellable stdin worker.
+Notebook execution bounds local input, approval, dispatch and delivery with one
+deadline and cancellation future. A stopped blocking input/console/output worker
+may still complete locally; runtime shutdown is bounded and no mutation is
+replayed. Delivery failure, cancellation or expiry retains the unprojected remote
+receipt on stderr; output may be incomplete and remote success is not undone.
+Confirmed success and acceptance exit successfully, but acceptance remains
+`status=accepted`, not completion. Partial, unknown and failed receipts exit
+nonzero without changing their protected classification. The native head has no
+cross-command metadata cache and applies no speculative rename.
 
 ## Approval, effects and outcomes
 
@@ -121,6 +139,11 @@ Offline contracts live in `engine/control-plane/resources/items/tests/update.rs`
 strict omission/null/duplicate fields, denied/NotFound/412/unknown/partial,
 approval mismatch, pre-dispatch cancellation, no replay, local no-clobber races,
 data-only projection and retained evidence after writer failures.
+`clients/cli/app/src/v2_update_notebook_host_tests.rs` additionally covers the
+native composition's exact approval binding, one-PATCH classifications,
+deadline evidence and no-clobber delivery. Real-process fixtures in
+`clients/cli/app/tests/update_v2.rs` establish local plan and strict-preflight
+behavior without credentials or live Fabric writes.
 Cycle-one counterexamples cover ambiguous server responses and marker-based
 SDK/host JSON and `Debug` redaction while verifying exact retained raw causes and
 one PATCH. The incorrect new-v2 test grouping 500 with established rejections was
