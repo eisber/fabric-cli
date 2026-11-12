@@ -54,6 +54,7 @@ const WS: &str = "11111111-2222-3333-4444-555555555555";
 const ITEM: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const OP: &str = "99999999-8888-7777-6666-555555555555";
 const OTHER_WS: &str = "00000000-1111-2222-3333-444444444444";
+const FOLDER: &str = "12345678-1234-5678-9abc-123456789abc";
 const TARGET: &str = "/11111111-2222-3333-4444-555555555555.Workspace/Literal.name.Notebook";
 const RAW: &[u8] = br#" {
   "displayName": "Literal.name",
@@ -139,6 +140,28 @@ impl HttpClient for Wire {
         assert_eq!(request.url().path(), reply.path);
         assert_eq!(request.url().host_str(), Some("api.fabric.microsoft.com"));
         assert!(request.headers().get_str(&"authorization".into()).is_ok());
+        if request.url().path().starts_with("/v1/workspaces/")
+            && request.url().path().ends_with("/items")
+        {
+            assert_eq!(request.method(), Method::Get);
+            let query = request.url().query_pairs().collect::<Vec<_>>();
+            assert_eq!(
+                query
+                    .iter()
+                    .filter(|(name, _)| name.as_ref() == "recursive")
+                    .map(|(_, value)| value.as_ref())
+                    .collect::<Vec<_>>(),
+                ["false"]
+            );
+            assert!(
+                query
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_ref(), "recursive" | "continuationToken"))
+            );
+            assert!(query.len() <= 2);
+        } else {
+            assert_eq!(request.url().query(), None);
+        }
         match reply.body {
             ReplyBody::Bytes(body) => Ok(AsyncRawResponse::from_bytes(
                 StatusCode::from(reply.status),
@@ -1096,10 +1119,10 @@ async fn complete_paged_discovery_replans_before_approval_or_mutation() {
     assert_eq!(delivery.report().value()["meta"]["action"], "skip");
     assert_eq!(approval.calls.len(), 1);
     let requests = fixture.wire.requests.lock().unwrap();
-    assert_eq!(requests[0].url().query(), None);
+    assert_eq!(requests[0].url().query(), Some("recursive=false"));
     assert_eq!(
         requests[1].url().query(),
-        Some("continuationToken=next%2B%2F%3D")
+        Some("recursive=false&continuationToken=next%2B%2F%3D")
     );
     drop(requests);
     fixture.assert_requests(&[Method::Get, Method::Get]);
@@ -1214,6 +1237,169 @@ async fn typed_skip_still_rejects_uncertain_matching_rows_beside_a_valid_noteboo
             assert!(approval.calls.is_empty());
             fixture.assert_requests(&[Method::Get]);
         }
+    }
+}
+
+#[tokio::test]
+async fn root_notebook_skip_ignores_valid_nested_same_name_in_either_order() {
+    let mut nested = resource();
+    nested["id"] = json!("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+    nested["folderId"] = json!(FOLDER);
+    for folder_observed in [false, true] {
+        let mut root = resource();
+        if folder_observed {
+            root["folderId"] = Value::Null;
+        }
+        for items in [
+            vec![root.clone(), nested.clone()],
+            vec![nested.clone(), root.clone()],
+        ] {
+            let binding = EffectNotebook::new(EffectDeclaration::UnknownRequired);
+            let fixture = Fixture::new(vec![listing(items)]);
+            let prepared = fixture
+                .prepare_bound(&binding, &["--if-exists", "skip"])
+                .unwrap();
+            let mut approval = binding.approval();
+            let delivery = fixture
+                .execute_bound(&binding, prepared, &mut approval)
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            let value = deliver(delivery);
+            assert_eq!(value["meta"]["action"], "skip");
+            assert_eq!(value["meta"]["status"], "unchanged");
+            assert_eq!(value["meta"]["resourceId"], ITEM);
+            assert_eq!(value["meta"]["folderId"], Value::Null);
+            assert_eq!(value["meta"]["folderIdObserved"], folder_observed);
+            assert_eq!(value["meta"]["remoteWrite"], false);
+            assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
+            assert_eq!(value["meta"]["mutationMayHaveOccurred"], false);
+            assert_eq!(value["meta"]["contentEqualityClaimed"], false);
+            assert_eq!(approval.calls.len(), 1);
+            assert_eq!(approval.calls[0].existing_id.as_deref(), Some(ITEM));
+            assert!(approval.calls[0].operation.is_none());
+            assert_eq!(binding.operations.load(Ordering::SeqCst), 0);
+            assert_eq!(binding.effects.load(Ordering::SeqCst), 0);
+            assert_no_replay(&value);
+            fixture.assert_requests(&[Method::Get]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn nested_only_name_match_is_unknown_root_scope_not_permission_to_create() {
+    let mut nested = resource();
+    nested["folderId"] = json!(FOLDER);
+    for extra in [vec![], vec!["--if-exists", "skip"]] {
+        let binding = EffectNotebook::new(EffectDeclaration::UnknownRequired);
+        let fixture = Fixture::new(vec![listing(vec![nested.clone()])]);
+        let prepared = fixture.prepare_bound(&binding, &extra).unwrap();
+        let mut approval = binding.approval();
+        assert!(matches!(
+            fixture
+                .execute_bound(&binding, prepared, &mut approval)
+                .await,
+            Err(CreateCommandError::Invalid)
+        ));
+        assert!(approval.calls.is_empty());
+        assert_eq!(binding.operations.load(Ordering::SeqCst), 0);
+        assert_eq!(binding.effects.load(Ordering::SeqCst), 0);
+        fixture.assert_requests(&[Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn malformed_folder_or_nested_identity_cannot_be_hidden_by_a_valid_root_match() {
+    let mut invalid_rows = Vec::new();
+    for folder in [
+        json!(""),
+        json!(" "),
+        json!("not-a-folder-guid"),
+        json!(7),
+        json!(false),
+        json!([]),
+        json!({}),
+    ] {
+        let mut row = resource();
+        row["folderId"] = folder;
+        invalid_rows.push(row);
+    }
+    let mut nested = resource();
+    nested["folderId"] = json!(FOLDER);
+    let mut invalid_id = nested.clone();
+    invalid_id["id"] = json!("unknown-resource-identity");
+    invalid_rows.push(invalid_id);
+    let mut unknown_type = nested.clone();
+    unknown_type["type"] = Value::Null;
+    invalid_rows.push(unknown_type);
+    let mut wrong_workspace = nested;
+    wrong_workspace["workspaceId"] = json!(OTHER_WS);
+    invalid_rows.push(wrong_workspace);
+    for invalid in invalid_rows {
+        for items in [
+            vec![invalid.clone()],
+            vec![resource(), invalid.clone()],
+            vec![invalid.clone(), resource()],
+        ] {
+            let fixture = Fixture::new(vec![listing(items)]);
+            let mut approval = Approval::default();
+            assert!(matches!(
+                fixture
+                    .execute(
+                        fixture.prepare(&["--if-exists", "skip"], Some(RAW)),
+                        &mut approval,
+                    )
+                    .await,
+                Err(CreateCommandError::Invalid)
+            ));
+            assert!(approval.calls.is_empty());
+            fixture.assert_requests(&[Method::Get]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn paged_root_query_preserves_scope_and_never_treats_nested_only_as_absence() {
+    let mut nested = resource();
+    nested["folderId"] = json!(FOLDER);
+    for root_found in [false, true] {
+        let first = Reply::json(
+            Method::Get,
+            list_path(),
+            200,
+            json!({"value":[nested],"continuationToken":"next+/="}),
+        );
+        let fixture = Fixture::new(vec![
+            first,
+            listing(if root_found { vec![resource()] } else { vec![] }),
+        ]);
+        let mut approval = Approval::default();
+        let result = fixture
+            .execute(
+                fixture.prepare(&["--if-exists", "skip"], Some(RAW)),
+                &mut approval,
+            )
+            .await;
+        if root_found {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            let value = deliver(delivery);
+            assert_eq!(value["meta"]["action"], "skip");
+            assert_eq!(value["meta"]["resourceId"], ITEM);
+            assert_eq!(approval.calls.len(), 1);
+            assert_eq!(approval.calls[0].existing_id.as_deref(), Some(ITEM));
+        } else {
+            assert!(matches!(result, Err(CreateCommandError::Invalid)));
+            assert!(approval.calls.is_empty());
+        }
+        let requests = fixture.wire.requests.lock().unwrap();
+        assert_eq!(requests[0].url().query(), Some("recursive=false"));
+        assert_eq!(
+            requests[1].url().query(),
+            Some("recursive=false&continuationToken=next%2B%2F%3D")
+        );
+        drop(requests);
+        fixture.assert_requests(&[Method::Get, Method::Get]);
     }
 }
 
@@ -1713,6 +1899,51 @@ async fn malformed_acceptance_cannot_claim_completion_or_follow_foreign_location
         assert_eq!(value["meta"]["completed"], false);
         assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
         assert_no_replay(&value);
+        fixture.assert_requests(&[Method::Get, Method::Post]);
+    }
+}
+
+#[tokio::test]
+async fn no_wait_non_json_202_keeps_exact_raw_acceptance_and_handle_without_success() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    for raw_body in [b"not-json".as_slice(), b"\xff\x00", b"{\"unfinished\":"] {
+        let mut initial = accepted();
+        initial.body = ReplyBody::Bytes(raw_body.to_vec());
+        let fixture = Fixture::new(vec![listing(vec![]), initial]);
+        let delivery = fixture
+            .execute(
+                fixture.prepare(&["--project", "missing"], Some(RAW)),
+                &mut Approval::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        assert_eq!(
+            delivery.report().error().unwrap().kind,
+            OperationErrorKind::InvalidResponse
+        );
+        let value = deliver(delivery);
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["resourceId"], Value::Null);
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+        for field in ["unparsedResponseBodyBase64", "unparsedAcceptanceBodyBase64"] {
+            assert_eq!(
+                STANDARD
+                    .decode(value["meta"][field].as_str().unwrap())
+                    .unwrap(),
+                raw_body
+            );
+        }
+        assert_no_replay(&value);
+        fixture.assert_post_body(RAW);
         fixture.assert_requests(&[Method::Get, Method::Post]);
     }
 }
@@ -2898,6 +3129,197 @@ async fn invalid_final_result_preserves_initial_acceptance_and_final_evidence_un
         assert_no_replay(&projected);
         fixture.assert_requests(&[Method::Get, Method::Post, Method::Get, Method::Get]);
         fixture.assert_post_body(RAW);
+    }
+}
+
+#[tokio::test]
+async fn completed_resource_with_nested_or_malformed_folder_is_not_root_create_success() {
+    for folder in [
+        json!(FOLDER),
+        json!(""),
+        json!(" "),
+        json!("not-a-folder-guid"),
+        json!(7),
+        json!(false),
+        json!([]),
+        json!({}),
+    ] {
+        for wait in [false, true] {
+            let mut observed = resource();
+            observed["folderId"] = folder.clone();
+            let mut replies = vec![listing(vec![])];
+            if wait {
+                replies.extend([
+                    accepted_resource(),
+                    state("Succeeded"),
+                    Reply::json(
+                        Method::Get,
+                        format!("{}/result", operation_path()),
+                        200,
+                        observed.clone(),
+                    ),
+                ]);
+            } else {
+                replies.push(Reply::json(
+                    Method::Post,
+                    create_path(),
+                    201,
+                    observed.clone(),
+                ));
+            }
+            let fixture = Fixture::new(replies);
+            let extra = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let mut approval = Approval::default();
+            let delivery = fixture
+                .execute(fixture.prepare(&extra, Some(RAW)), &mut approval)
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            let error = delivery.report().error().unwrap();
+            assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
+            assert_eq!(error.operation_id.as_deref(), wait.then_some(OP));
+            assert!(error.mutation_may_have_occurred);
+            assert_eq!(delivery.report().value()["data"], observed);
+            let meta = delivery.report().value()["meta"].clone();
+            assert_eq!(meta["status"], "unknown");
+            assert_eq!(meta["completed"], false);
+            assert_eq!(meta["resourceId"], ITEM);
+            assert_eq!(meta["folderId"], folder);
+            assert_eq!(meta["folderIdObserved"], true);
+            assert_eq!(meta["httpStatus"], if wait { 200 } else { 201 });
+            assert_eq!(
+                meta["observation"]["httpStatus"],
+                if wait { 200 } else { 201 }
+            );
+            assert_eq!(
+                meta["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            assert_eq!(
+                meta["submission"]["folderId"],
+                if wait { Value::Null } else { folder.clone() }
+            );
+            assert_eq!(meta["submission"]["folderIdObserved"], !wait);
+            let identity =
+                json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"});
+            assert_eq!(meta["observedResource"], identity);
+            if wait {
+                assert_eq!(meta["submission"]["resource"], identity);
+                assert_eq!(meta["operationHandle"], format!("/operations/{OP}"));
+            } else {
+                assert_eq!(meta["operationHandle"], Value::Null);
+            }
+            assert_eq!(approval.calls.len(), 1);
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let projected: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(projected["data"], Value::Null);
+            assert_eq!(projected["meta"], meta);
+            assert_no_replay(&projected);
+            fixture.assert_requests(if wait {
+                &[Method::Get, Method::Post, Method::Get, Method::Get]
+            } else {
+                &[Method::Get, Method::Post]
+            });
+            fixture.assert_post_body(RAW);
+        }
+    }
+}
+
+#[tokio::test]
+async fn omitted_and_null_root_folders_succeed_with_independent_protected_folder_observation() {
+    for wait in [false, true] {
+        for folder_observed in [false, true] {
+            let mut observed = resource();
+            if folder_observed {
+                observed["folderId"] = Value::Null;
+            }
+            let mut replies = vec![listing(vec![])];
+            if wait {
+                let mut initial = resource();
+                if !folder_observed {
+                    initial["folderId"] = Value::Null;
+                }
+                let mut acceptance = accepted();
+                acceptance.body = ReplyBody::Bytes(serde_json::to_vec(&initial).unwrap());
+                replies.extend([
+                    acceptance,
+                    state("Succeeded"),
+                    Reply::json(
+                        Method::Get,
+                        format!("{}/result", operation_path()),
+                        200,
+                        observed.clone(),
+                    ),
+                ]);
+            } else {
+                replies.push(Reply::json(
+                    Method::Post,
+                    create_path(),
+                    201,
+                    observed.clone(),
+                ));
+            }
+            let fixture = Fixture::new(replies);
+            let extra = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let delivery = fixture
+                .execute(fixture.prepare(&extra, Some(RAW)), &mut Approval::default())
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            assert!(delivery.report().error().is_none());
+            assert_eq!(delivery.report().value()["data"], observed);
+            let meta = delivery.report().value()["meta"].clone();
+            assert_eq!(meta["status"], "completed");
+            assert_eq!(meta["completed"], true);
+            assert_eq!(meta["resourceId"], ITEM);
+            assert_eq!(meta["folderId"], Value::Null);
+            assert_eq!(meta["folderIdObserved"], folder_observed);
+            assert_eq!(meta["submission"]["folderId"], Value::Null);
+            assert_eq!(
+                meta["submission"]["folderIdObserved"],
+                if wait {
+                    !folder_observed
+                } else {
+                    folder_observed
+                }
+            );
+            assert_eq!(meta["httpStatus"], if wait { 200 } else { 201 });
+            assert_eq!(
+                meta["observation"]["httpStatus"],
+                if wait { 200 } else { 201 }
+            );
+            assert_eq!(
+                meta["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            let identity =
+                json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"});
+            assert_eq!(meta["observedResource"], identity);
+            if wait {
+                assert_eq!(meta["submission"]["resource"], identity);
+            }
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let projected: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(projected["data"], Value::Null);
+            assert_eq!(projected["meta"], meta);
+            assert_no_replay(&projected);
+            fixture.assert_requests(if wait {
+                &[Method::Get, Method::Post, Method::Get, Method::Get]
+            } else {
+                &[Method::Get, Method::Post]
+            });
+            fixture.assert_post_body(RAW);
+        }
     }
 }
 
