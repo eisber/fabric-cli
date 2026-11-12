@@ -10,6 +10,8 @@
 #![deny(missing_docs)]
 
 mod contract;
+#[cfg(feature = "native-host")]
+pub mod host;
 mod parser;
 mod path;
 

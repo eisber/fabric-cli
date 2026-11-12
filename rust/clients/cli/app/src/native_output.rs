@@ -3,7 +3,6 @@
 
 //! Receipt-neutral owned output with bounded abandonment on the caller's runtime.
 
-use super::Failure;
 use fabric_cli_output::OutputStream;
 use std::{
     future::Future,
@@ -11,19 +10,19 @@ use std::{
     time::Instant,
 };
 
-pub(super) enum OwnedWrite<T> {
+pub(crate) enum OwnedWrite<T, F> {
     Complete(io::Result<T>),
     Deadline,
-    Cancelled(Failure),
+    Cancelled(F),
     WorkerFailed,
 }
 
-pub(super) async fn write_owned<W, T>(
+pub(crate) async fn write_owned<W, T, F>(
     mut writer: W,
     deadline: Instant,
-    cancelled: impl Future<Output = Failure>,
+    cancelled: impl Future<Output = F>,
     write: impl FnOnce(&mut W) -> io::Result<T> + Send + 'static,
-) -> OwnedWrite<T>
+) -> OwnedWrite<T, F>
 where
     W: Write + Send + 'static,
     T: Send + 'static,
@@ -43,7 +42,7 @@ where
     }
 }
 
-pub(super) fn owned_stream(stream: OutputStream, ascii_only: bool) -> io::Result<std::fs::File> {
+pub(crate) fn owned_stream(stream: OutputStream, ascii_only: bool) -> io::Result<std::fs::File> {
     // Abandoned workers must never retain Rust's global stdout/stderr lock.
     #[cfg(windows)]
     let file = {
