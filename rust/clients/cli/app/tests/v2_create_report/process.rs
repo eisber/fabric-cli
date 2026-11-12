@@ -127,12 +127,16 @@ fn blocked_stdin_exits_under_original_timeout_without_credentials() {
 
 #[test]
 fn blocked_stdout_or_stderr_is_not_success_or_permission_to_dispatch() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("readonly-stream");
-    std::fs::write(&path, b"unchanged").unwrap();
+    // Rust stdio ignores EBADF on POSIX; a closed-reader pipe proves a real write failure.
+    let (reader, mut writer) = std::io::pipe().unwrap();
+    drop(reader);
+    assert_eq!(
+        writer.write_all(b"probe").unwrap_err().kind(),
+        std::io::ErrorKind::BrokenPipe
+    );
     let output = finish(
         binary(&["create", "--help"])
-            .stdout(Stdio::from(std::fs::File::open(&path).unwrap()))
+            .stdout(writer)
             .spawn()
             .unwrap(),
     );
@@ -140,13 +144,18 @@ fn blocked_stdout_or_stderr_is_not_success_or_permission_to_dispatch() {
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["error"]["code"], "OutputFailed");
+    let (reader, mut writer) = std::io::pipe().unwrap();
+    drop(reader);
+    assert_eq!(
+        writer.write_all(b"probe").unwrap_err().kind(),
+        std::io::ErrorKind::BrokenPipe
+    );
     let output = finish(
         binary(&["create", "--not-a-registered-option"])
-            .stderr(Stdio::from(std::fs::File::open(&path).unwrap()))
+            .stderr(writer)
             .spawn()
             .unwrap(),
     );
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert_eq!(std::fs::read(path).unwrap(), b"unchanged");
 }
