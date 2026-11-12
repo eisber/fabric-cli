@@ -800,6 +800,151 @@ async fn malformed_acceptance_without_wait_keeps_both_body_and_initial_status() 
     harness.assert_wire(&raw, &[]);
 }
 
+fn duplicate_responses() -> Vec<String> {
+    let prefix = format!(
+        r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"KQLDatabase","displayName":"Database_1""#
+    );
+    vec![
+        format!(r#"{prefix},"id":"{OP}"}}"#),
+        format!(r#"{prefix},"\u0069d":"{OP}"}}"#),
+        format!(r#"{prefix},"displayName":"changed"}}"#),
+        format!(
+            r#"{prefix},"properties":{{"databaseType":"ReadWrite","databaseType":"Shortcut"}}}}"#
+        ),
+        format!(
+            r#"{prefix},"properties":{{"parentEventhouseItemId":"{PARENT}","\u0070arentEventhouseItemId":"{OP}"}}}}"#
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn duplicate_immediate_and_accepted_response_keys_remain_unknown_with_original_bytes() {
+    use base64::Engine;
+    use fabric_sdk_operations::OperationErrorKind;
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for status in [201, 202] {
+        for duplicate in duplicate_responses() {
+            let harness = Harness::new([
+                missing(),
+                if status == 202 {
+                    accepted(&duplicate, "0")
+                } else {
+                    response(status, &duplicate, &[])
+                },
+            ]);
+            let delivery = harness
+                .execute(
+                    prepare(&raw, &[]).unwrap(),
+                    &mut Approval::default(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            let report = delivery.report();
+            assert_eq!(report.exit_code(), 1);
+            assert!(matches!(
+                &report.error().unwrap().kind,
+                OperationErrorKind::InvalidResponse
+            ));
+            let value = report.value();
+            assert_eq!(value["error"]["code"], "InvalidResponse");
+            assert_eq!(value["data"], Value::Null);
+            assert_eq!(value["meta"]["status"], "unknown");
+            assert_eq!(value["meta"]["completed"], false);
+            assert_eq!(value["meta"]["resourceId"], Value::Null);
+            assert_eq!(value["meta"]["submission"]["httpStatus"], status);
+            assert_eq!(value["meta"]["submission"]["resource"], Value::Null);
+            assert_eq!(value["meta"]["observation"]["httpStatus"], status);
+            let handle = if status == 202 {
+                json!(format!("/operations/{OP}"))
+            } else {
+                Value::Null
+            };
+            assert_eq!(value["meta"]["operationHandle"], handle);
+            assert_eq!(value["meta"]["submission"]["operationHandle"], handle);
+            assert_eq!(
+                value["meta"]["unparsedResponseBodyBase64"],
+                base64::engine::general_purpose::STANDARD.encode(duplicate.as_bytes())
+            );
+            if status == 202 {
+                assert_eq!(
+                    value["meta"]["unparsedAcceptanceBodyBase64"],
+                    base64::engine::general_purpose::STANDARD.encode(duplicate.as_bytes())
+                );
+            }
+            assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(value["meta"]["remoteReplayed"], false);
+            assert_eq!(value["meta"]["remoteCancelled"], false);
+            harness.assert_wire(&raw, &[]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn duplicate_final_response_never_replaces_accepted_resource_identity() {
+    use base64::Engine;
+    use fabric_sdk_operations::OperationErrorKind;
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for duplicate in duplicate_responses() {
+        let harness = Harness::new([
+            missing(),
+            accepted(&resource().to_string(), "0"),
+            json_response(200, json!({"status":"Succeeded"})),
+            response(200, &duplicate, &[]),
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(&raw, &["--wait", "--project", "missing"]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        let report = delivery.report();
+        assert_eq!(report.exit_code(), 1);
+        assert!(matches!(
+            &report.error().unwrap().kind,
+            OperationErrorKind::InvalidResponse
+        ));
+        assert_eq!(report.value()["data"], resource());
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let value: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["error"]["code"], "InvalidResponse");
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(value["meta"]["observedResource"], resource());
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"], resource());
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["httpStatus"], 200);
+        assert_eq!(value["meta"]["observation"]["httpStatus"], 200);
+        assert_eq!(
+            value["meta"]["unparsedResponseBodyBase64"],
+            base64::engine::general_purpose::STANDARD.encode(duplicate.as_bytes())
+        );
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        assert_eq!(value["meta"]["remoteCancelled"], false);
+        harness.assert_wire(
+            &raw,
+            &[
+                &format!("/v1/operations/{OP}"),
+                &format!("/v1/operations/{OP}/result"),
+            ],
+        );
+    }
+}
+
 #[tokio::test]
 async fn malformed_final_result_keeps_submission_resource_independently_of_last_response() {
     use base64::Engine;

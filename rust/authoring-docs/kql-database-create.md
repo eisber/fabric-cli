@@ -69,6 +69,10 @@ The subsequent logical diff
 cause while treating unexpected success-class operation-result statuses as
 unknown, not as provider-confirmed rejection. No producer test ancestry is
 imported.
+The next one-file logical diff,
+`44576b07033b1c4796205b862c44074d4e5df165`, applies the existing bounded
+unique-key JSON decoder to nonempty native responses as well as input. It does
+not introduce another parser or change the shared SDK operation engine.
 The [selected create contract](create-v2-contract.md) is unchanged; its old
 unmounted-implementation inventory is historical, not a feature-support claim.
 
@@ -141,6 +145,11 @@ final bodies retain explicitly labeled base64 evidence, not fabricated JSON.
 An unexpected result HTTP 201, 202 or 204 retains the typed HTTP cause and
 original submission evidence, but remains `InvalidResponse`, unknown and
 nonzero. A genuine non-success HTTP rejection still reports failure.
+Duplicate response keys, including escaped aliases and nested duplicates,
+cannot establish acceptance or completed identity. Such responses retain their
+raw bytes as labeled base64 and remain unknown/nonzero. A malformed final
+response cannot replace an earlier accepted resource ID or operation handle,
+and protected submission evidence survives data projection.
 
 ## Acceptance evidence
 
