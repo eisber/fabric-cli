@@ -468,7 +468,7 @@ async fn malformed_partial_and_failed_list_pages_never_publish_schema() {
                     .last()
                     .unwrap()
                     .1
-                    .contains("continuation=next-page")
+                    .contains("continuationToken=next-page")
             );
             assert!(
                 host.requests()
