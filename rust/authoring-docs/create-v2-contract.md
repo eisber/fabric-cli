@@ -19,6 +19,11 @@ native host. This does not mount every resource or qualify live/platform parity.
 
 ## Shared native approval and evidence
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 Approval inspects the exact already-prepared method, bound URL and outgoing
 bytes, including the generated body for omitted input. Terminal controls are
 escaped without reserializing the body that will be transmitted. Additional
