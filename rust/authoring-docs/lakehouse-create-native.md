@@ -139,6 +139,12 @@ and available accepted resource identity independently of later
 poll/result therefore retains acceptance evidence without presenting a later
 HTTP 200 as the submission status or upgrading the outcome to completion.
 The submission identity and anticipated effects survive projection to null.
+An operation result with an unexpected success-class status, such as 201, 202
+or 204 where the engine requires 200, is an `InvalidResponse` with an unknown
+outcome and nonzero exit. It is not a provider-confirmed rejection. The original
+typed HTTP cause and status remain available independently of this receipt
+classification. Actual non-success HTTP responses and service-declared failed
+operations retain their native failed classification. None permits replay.
 
 ## Source evidence and validation boundary
 

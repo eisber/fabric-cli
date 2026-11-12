@@ -34,7 +34,8 @@ use fabric_sdk_http::{
     ExecutionError, ExecutionFuture, ExecutionOptions, ExecutionTimer, ExecutionTrace, HttpExecutor,
 };
 use fabric_sdk_operations::{
-    OperationExecutionError, OperationExecutor, OperationRequest, OperationResponse,
+    OperationErrorKind, OperationExecutionError, OperationExecutor, OperationRequest,
+    OperationResponse,
 };
 use serde_json::{Value, json};
 use std::{
@@ -1296,6 +1297,17 @@ async fn accepted_submission_survives_failed_cancelled_or_malformed_poll_results
         if mode == "malformed" {
             assert_eq!(meta["unparsedResponseBodyBase64"], "ew==");
         }
+        if mode == "failed" {
+            assert_eq!(meta["status"], "failed");
+            assert_eq!(
+                delivery.report().value()["error"]["code"],
+                "OperationFailed"
+            );
+            assert!(matches!(
+                &delivery.report().error().unwrap().kind,
+                OperationErrorKind::OperationFailed { status, .. } if status == "Failed"
+            ));
+        }
         let mut stdout = Vec::new();
         delivery.deliver(&mut stdout).unwrap();
         let value: Value = serde_json::from_slice(&stdout).unwrap();
@@ -1304,6 +1316,116 @@ async fn accepted_submission_survives_failed_cancelled_or_malformed_poll_results
         assert_eq!(
             value["meta"]["anticipatedEffects"][0]["resourceType"],
             "SQLEndpoint"
+        );
+        assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn unexpected_success_result_status_is_unknown_and_preserves_original_http_cause() {
+    let temp = tempfile::tempdir().unwrap();
+    for status in [201, 202, 204, 403] {
+        let mut initial = created();
+        initial["folderId"] = Value::Null;
+        let result_body = match status {
+            204 => String::new(),
+            403 => json!({
+                "errorCode":"NativeResultDenied","message":"synthetic-private-diagnostic"
+            })
+            .to_string(),
+            _ => created().to_string(),
+        };
+        let fixture = Fixture::new(vec![
+            listing(json!([])),
+            reply(
+                202,
+                &initial.to_string(),
+                &[
+                    ("Location", &operation_url()),
+                    ("x-ms-operation-id", OPERATION),
+                    ("Retry-After", "1"),
+                ],
+            ),
+            reply(
+                200,
+                r#"{"status":"Succeeded"}"#,
+                &[("Location", &format!("{}/result", operation_url()))],
+            ),
+            reply(status, &result_body, &[]),
+        ]);
+        let mut approval = approval(true);
+        let delivery = execute(
+            preflight(temp.path(), &["--wait", "--project", "missingField"]),
+            &fixture,
+            &mut approval,
+            false,
+            pending(),
+        )
+        .await
+        .unwrap();
+        let report = delivery.report();
+        assert_eq!(report.exit_code(), 1);
+        let error = report.error().unwrap();
+        assert!(matches!(
+            &error.kind,
+            OperationErrorKind::Http { status: actual, .. } if *actual == status
+        ));
+        assert_eq!(error.operation_id.as_deref(), Some(OPERATION));
+        assert!(error.mutation_may_have_occurred);
+        let expected_status = if status == 403 { "failed" } else { "unknown" };
+        let expected_code = if status == 403 {
+            "ServiceRejected"
+        } else {
+            "InvalidResponse"
+        };
+        assert_eq!(report.value()["error"]["code"], expected_code);
+        let meta = &report.value()["meta"];
+        assert_eq!(meta["status"], expected_status);
+        assert_eq!(meta["completed"], false);
+        assert_eq!(meta["httpStatus"], status);
+        assert_eq!(meta["observation"]["httpStatus"], status);
+        assert_eq!(meta["submission"]["httpStatus"], 202);
+        assert_eq!(meta["submission"]["resource"]["id"], ITEM);
+        assert_eq!(meta["submission"]["folderId"], Value::Null);
+        assert_eq!(meta["submission"]["folderIdObserved"], true);
+        assert_eq!(
+            meta["submission"]["operationHandle"],
+            format!("/operations/{OPERATION}")
+        );
+        assert_eq!(meta["resourceId"], ITEM);
+        assert_eq!(meta["mutationMayHaveOccurred"], true);
+        assert_eq!(meta["remoteReplayed"], false);
+        assert_eq!(meta["remoteCancelled"], false);
+        assert_eq!(report.value()["data"], initial);
+        let mut stdout = Vec::new();
+        delivery.deliver(&mut stdout).unwrap();
+        let value: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["status"], expected_status);
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OPERATION}")
+        );
+        assert_eq!(
+            value["meta"]["anticipatedEffects"][0]["resourceType"],
+            "SQLEndpoint"
+        );
+        let requests = fixture.network.requests.lock().unwrap();
+        assert_eq!(requests.len(), 4);
+        assert_eq!(
+            requests
+                .iter()
+                .map(|request| request.method)
+                .collect::<Vec<_>>(),
+            [Method::Get, Method::Post, Method::Get, Method::Get]
+        );
+        assert_eq!(requests[3].url, format!("{}/result", operation_url()));
+        assert_eq!(
+            approval.approved_request,
+            Some((requests[1].url.clone(), requests[1].body.clone()))
         );
         assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
     }
