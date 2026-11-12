@@ -1515,7 +1515,7 @@ async fn cancellation_during_202_body_retains_observed_headers_and_original_erro
         value["meta"]["operationHandle"],
         format!("/operations/{OP}")
     );
-    assert_eq!(value["meta"]["status"], "failed");
+    assert_eq!(value["meta"]["status"], "unknown");
     assert_eq!(value["meta"]["completed"], false);
     assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
     assert_no_replay(&value);
@@ -1562,7 +1562,7 @@ async fn oversized_or_failed_202_body_retains_known_handle_without_upgrading_fai
             value["meta"]["operationHandle"],
             format!("/operations/{OP}")
         );
-        assert_eq!(value["meta"]["status"], "failed");
+        assert_eq!(value["meta"]["status"], "unknown");
         assert_eq!(value["meta"]["completed"], false);
         assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
         assert_no_replay(&value);
