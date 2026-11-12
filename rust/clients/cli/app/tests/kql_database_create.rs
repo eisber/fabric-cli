@@ -103,6 +103,11 @@ impl CreateApproval for Approval {
             "name":request.plan().target().name(),
             "type":request.plan().target().item_type(),
             "body":request.raw_input().map(|bytes| serde_json::from_slice::<Value>(bytes).unwrap()),
+            "method":request.operation().map(|operation|format!("{:?}",operation.method())),
+            "url":request.url().map(|url|url.as_str()),
+            "wireBody":request.operation().map(|operation|String::from_utf8(operation.body().to_vec()).unwrap()),
+            "anticipatedEffects":request.anticipated_effects(),
+            "question":request.approval_question(),
             "account":request.context().selection().account(),
             "tenant":request.context().selection().tenant(),
             "audience":format!("{:?}",request.context().selection().audience()),
@@ -504,6 +509,27 @@ async fn native_post_preserves_full_bytes_and_immediate_approval_context() {
     assert_eq!(approved["audience"], "Fabric");
     assert!(approved["endpoint"].as_str().unwrap().contains(HOST));
     assert_eq!(approved["remoteWrite"], true);
+    assert_eq!(approved["method"], "Post");
+    assert_eq!(
+        approved["url"],
+        format!("https://{HOST}/v1/workspaces/{WS}/kqlDatabases")
+    );
+    assert_eq!(approved["wireBody"], std::str::from_utf8(&raw).unwrap());
+    assert_eq!(approved["anticipatedEffects"], json!([]));
+    let question = approved["question"].as_str().unwrap();
+    assert!(question.contains("method=POST"));
+    assert!(question.contains(&format!(
+        "url=\"https://{HOST}/v1/workspaces/{WS}/kqlDatabases\""
+    )));
+    assert!(
+        question.contains(
+            &std::str::from_utf8(&raw)
+                .unwrap()
+                .escape_debug()
+                .to_string()
+        )
+    );
+    assert!(question.contains("audience=Fabric"));
     assert_eq!(approved["timeout"], 30_000);
     assert_eq!(delivery.report().value()["meta"]["status"], "completed");
     assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
@@ -573,6 +599,15 @@ async fn exact_skip_collision_ambiguity_wrong_kind_scope_and_race_are_distinct()
                 false
             );
             assert_eq!(approval.calls[0]["remoteWrite"], false);
+            assert_eq!(approval.calls[0]["wireBody"], Value::Null);
+            assert_eq!(approval.calls[0]["url"], Value::Null);
+            assert_eq!(approval.calls[0]["anticipatedEffects"], json!([]));
+            assert!(
+                approval.calls[0]["question"]
+                    .as_str()
+                    .unwrap()
+                    .contains("no native request")
+            );
         }
         assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
     }
@@ -724,6 +759,120 @@ async fn malformed_acceptance_body_survives_poll_failure_as_explicit_base64() {
 }
 
 #[tokio::test]
+async fn malformed_acceptance_without_wait_keeps_both_body_and_initial_status() {
+    use base64::Engine;
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let harness = Harness::new([missing(), accepted("not-json", "0")]);
+    let delivery = harness
+        .execute(
+            prepare(&raw, &[]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    let value = delivery.report().value();
+    assert_eq!(delivery.report().exit_code(), 1);
+    assert_eq!(value["meta"]["status"], "unknown");
+    assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["resource"], Value::Null);
+    assert_eq!(
+        value["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["resourceId"], Value::Null);
+    assert_eq!(
+        value["meta"]["unparsedAcceptanceBodyBase64"],
+        base64::engine::general_purpose::STANDARD.encode(b"not-json")
+    );
+    assert_eq!(
+        value["meta"]["unparsedResponseBodyBase64"],
+        base64::engine::general_purpose::STANDARD.encode(b"not-json")
+    );
+    assert_eq!(value["meta"]["remoteReplayed"], false);
+    assert_eq!(value["meta"]["remoteCancelled"], false);
+    harness.assert_wire(&raw, &[]);
+}
+
+#[tokio::test]
+async fn malformed_final_result_keeps_submission_resource_independently_of_last_response() {
+    use base64::Engine;
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let harness = Harness::new([
+        missing(),
+        accepted(&resource().to_string(), "0"),
+        json_response(200, json!({"status":"Succeeded"})),
+        response(200, "not-json", &[]),
+    ]);
+    let delivery = harness
+        .execute(
+            prepare(&raw, &["--wait", "--project", "missing"]).unwrap(),
+            &mut Approval::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let value: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["data"], Value::Null);
+    assert_eq!(value["meta"]["status"], "unknown");
+    assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["resource"], resource());
+    assert_eq!(
+        value["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 200);
+    assert_eq!(value["meta"]["httpStatus"], 200);
+    assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(
+        value["meta"]["unparsedResponseBodyBase64"],
+        base64::engine::general_purpose::STANDARD.encode(b"not-json")
+    );
+    assert_eq!(value["meta"]["remoteReplayed"], false);
+    assert_eq!(value["meta"]["remoteCancelled"], false);
+    harness.assert_wire(
+        &raw,
+        &[
+            &format!("/v1/operations/{OP}"),
+            &format!("/v1/operations/{OP}/result"),
+        ],
+    );
+}
+
+#[tokio::test]
+async fn same_name_foreign_owner_is_not_a_second_kql_match() {
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let harness = Harness::new([json_response(
+        200,
+        json!({"value":[
+            {"id":PARENT,"workspaceId":WS,"displayName":"Database_1","type":"Eventhouse"},
+            resource()
+        ]}),
+    )]);
+    let mut approval = Approval::default();
+    let delivery = harness
+        .execute(
+            prepare(&raw, &["--if-exists", "skip"]).unwrap(),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+    assert_eq!(approval.calls.len(), 1);
+    assert_eq!(approval.calls[0]["remoteWrite"], false);
+    assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn accepted_handle_is_not_resource_identity_and_wait_fetches_actual_result() {
     let raw = serde_json::to_vec(&body()).unwrap();
     let harness = Harness::new([missing(), accepted("", "7")]);
@@ -805,6 +954,14 @@ async fn failed_poll_keeps_accepted_body_handle_status_and_service_error() {
         );
         assert_eq!(value["meta"]["remoteReplayed"], false);
         assert_eq!(value["meta"]["remoteCancelled"], false);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"], resource());
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["observation"]["httpStatus"], 200);
+        assert_eq!(value["meta"]["httpStatus"], 200);
         if state != "FutureState" {
             assert_eq!(value["meta"]["operationStatus"], state);
             assert_eq!(value["meta"]["serviceError"]["errorCode"], "ParentRejected");
@@ -915,6 +1072,13 @@ async fn cancellation_and_deadline_keep_accepted_evidence_without_remote_cancel(
         );
         assert_eq!(value["meta"]["remoteCancelled"], false);
         assert_eq!(value["meta"]["remoteReplayed"], false);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"], resource());
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["observation"]["httpStatus"], 202);
         assert_eq!(
             harness
                 .http
@@ -962,6 +1126,12 @@ async fn partial_acceptance_body_retains_observed_header_without_inventing_resou
     );
     assert_eq!(value["meta"]["resourceId"], Value::Null);
     assert_eq!(value["meta"]["status"], "unknown");
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        value["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(value["meta"]["submission"]["resource"], Value::Null);
     harness.assert_wire(&raw, &[]);
 }
 
@@ -996,6 +1166,9 @@ async fn projection_and_failed_delivery_keep_unprojected_evidence_and_no_clobber
             };
             assert_eq!(report.value()["data"], resource());
             assert_eq!(report.value()["meta"]["resourceId"], ITEM);
+            assert_eq!(report.value()["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(report.value()["meta"]["submission"]["resource"], resource());
+            assert_eq!(report.value()["meta"]["anticipatedEffects"], json!([]));
             assert_eq!(
                 report.value()["meta"]["operationHandle"],
                 format!("/operations/{OP}")
@@ -1006,6 +1179,9 @@ async fn projection_and_failed_delivery_keep_unprojected_evidence_and_no_clobber
             let value: Value = serde_json::from_slice(&output).unwrap();
             assert_eq!(value["data"], Value::Null);
             assert_eq!(value["meta"]["resourceId"], ITEM);
+            assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(value["meta"]["submission"]["resource"], resource());
+            assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
             assert_eq!(
                 value["meta"]["operationHandle"],
                 format!("/operations/{OP}")

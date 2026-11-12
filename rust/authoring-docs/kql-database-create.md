@@ -54,6 +54,11 @@ Notebook leaf or whole producer ancestry:
 `225903a35809f70b047f4e1ffc3af403cf295b57`,
 `99dc9638cd43ae532b799027abeb8fabdbbf4b38`,
 `9812bec9053d2c541172223c446703109c3acbe1`.
+The shared approval/submission-evidence correction is consumed next as the
+logical diff of `0454fb43f08c05f9f066ed5bcb686a8c426a0de1`, not its producer
+ancestry. Its Notebook-specific selected-contract documentation context is
+absent from this base and is not imported; the code, tests and shared-host
+documentation are adopted unchanged.
 The [selected create contract](create-v2-contract.md) is unchanged; its old
 unmounted-implementation inventory is historical, not a feature-support claim.
 
@@ -95,6 +100,11 @@ account/tenant, endpoint, policy, output and effects. Piped stderr is not an
 approval channel; refusal accesses no mutation endpoint. Force cannot bypass
 approval. There is no new authentication, parser, transport, LRO or policy
 engine, and no implicit identity/resource fallback.
+The approval borrows the exact already-prepared operation, including its
+method, bound URL and outgoing bytes; it does not reconstruct the request
+from a summary. This binding declares no additional child-resource creation.
+`anticipatedEffects` remains a disclosure, not evidence that an effect occurred
+or a permission/cost-free claim.
 
 Only one native KQLDatabase POST may be submitted. HTTP 202 is acceptance, not
 completion, and an operation ID is never a database ID. `--wait` uses the
@@ -104,6 +114,11 @@ uncertainty survive polling, cancellation, timeout, projection and output
 failure. Projection touches only receipt `data`. The no-clobber sink never
 replaces an existing output. Cancellation and local output errors do not imply
 remote rollback or authorize replay.
+Protected `meta.submission.httpStatus`, `resource` and `operationHandle`
+retain the original submission separately from `meta.observation.httpStatus`
+and the latest response. A failed poll's HTTP 200 must not replace the original
+202 acceptance or turn it into completion. Malformed complete acceptance or
+final bodies retain explicitly labeled base64 evidence, not fabricated JSON.
 
 ## Acceptance evidence
 
