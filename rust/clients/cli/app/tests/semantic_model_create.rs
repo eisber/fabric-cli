@@ -1162,6 +1162,78 @@ async fn cancellation_or_total_deadline_after_acceptance_never_replays_or_rolls_
 }
 
 #[tokio::test]
+async fn unexpected_success_result_status_stays_unknown_with_original_typed_http_cause() {
+    for status in [201, 202, 204, 400, 409, 500] {
+        let mut host = Host::new();
+        host.reply(200, json!({"value":[]}));
+        let mut initial = resource();
+        initial["folderId"] = Value::Null;
+        host.accepted(initial);
+        host.reply(200, json!({"status":"Succeeded"}));
+        host.reply(
+            status,
+            json!({"errorCode":"UnexpectedResult","message":"synthetic"}),
+        );
+        let failed = host
+            .run(&["--wait", "--project", "displayName"], b"")
+            .await
+            .unwrap();
+        assert_eq!(failed.report().exit_code(), 1);
+        assert!(matches!(
+            &failed.report().error().unwrap().kind,
+            fabric_sdk_operations::OperationErrorKind::Http { status: actual, .. } if *actual == status
+        ));
+        let mut bytes = Vec::new();
+        failed.deliver(&mut bytes).unwrap();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        let meta = &value["meta"];
+        assert_eq!(value["data"], "Exact");
+        assert_eq!(
+            value["error"]["code"],
+            if status < 300 {
+                "InvalidResponse"
+            } else {
+                "ServiceRejected"
+            }
+        );
+        assert_eq!(
+            meta["status"],
+            if status < 300 { "unknown" } else { "failed" }
+        );
+        assert_eq!(meta["completed"], false);
+        assert_eq!(meta["httpStatus"], status);
+        assert_eq!(meta["observation"]["httpStatus"], status);
+        assert_eq!(meta["submission"]["httpStatus"], 202);
+        assert_eq!(meta["submission"]["resource"]["id"], RESOURCE);
+        assert_eq!(meta["submission"]["folderId"], Value::Null);
+        assert_eq!(meta["submission"]["folderIdObserved"], true);
+        assert_eq!(
+            meta["submission"]["operationHandle"],
+            format!("/operations/{OPERATION}")
+        );
+        assert_eq!(meta["operationHandle"], format!("/operations/{OPERATION}"));
+        assert_eq!(meta["resourceId"], RESOURCE);
+        assert_eq!(meta["mutationMayHaveOccurred"], true);
+        assert_eq!(meta["remoteReplayed"], false);
+        assert_eq!(meta["remoteCancelled"], false);
+        let requests = host.requests();
+        assert_eq!(requests.len(), 4);
+        assert_eq!(
+            requests[1].1,
+            format!("/v1/workspaces/{WORKSPACE}/semanticModels")
+        );
+        assert_eq!(requests[3].1, format!("/v1/operations/{OPERATION}/result"));
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.0 == "POST")
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
 async fn malformed_final_and_no_wait_acceptance_retain_submission_outside_projection() {
     let mut host = Host::new();
     host.reply(200, json!({"value":[]}));

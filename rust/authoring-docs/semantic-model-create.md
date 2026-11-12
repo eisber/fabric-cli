@@ -83,6 +83,11 @@ HTTP 202 is accepted, not completed. Resource and operation IDs stay distinct.
 Known acceptance evidence survives poll, body, cancellation and output errors.
 Projection applies only to `data`; reconciliation metadata remains unprojected.
 Local cancellation and failed output are not remote rollback.
+An unexpected success-class operation-result status is `InvalidResponse` with
+an unknown, nonzero outcome, not proof of provider rejection or completion.
+The shared correction `0ec38482` retains the original typed HTTP cause and
+status separately from receipt classification and initial acceptance evidence.
+Genuine provider errors remain failures; neither case permits replay.
 
 The shared native terminal runner presents the exact template-expanded body,
 selected action, identity, audience, endpoint and effects for immediate approval.
