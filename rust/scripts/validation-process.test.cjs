@@ -34,6 +34,16 @@ async function waitFor(predicate, message, timeout = STARTUP_WAIT_MS) {
 }
 
 function alive(pid) {
+  if (process.platform === 'linux') {
+    try {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
+      if (state === 'Z' || state === 'X') return false;
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ESRCH') return false;
+      throw error;
+    }
+  }
   try { process.kill(pid, 0); return true; }
   catch (error) { if (error.code === 'ESRCH') return false; throw error; }
 }
@@ -47,7 +57,7 @@ test('only exact core Cargo executions deduplicate; aliases retain every obligat
   const base = {id: 'one:test', program: 'cargo', args: ['test', '--lib']};
   const same = {...base, id: 'two:test'};
   const unique = deduplicateCoreCommands([base, same, {...base, id: 'three:test',
-    env: {RUST_TEST_THREADS: '1'}}], context);
+    env: {FABRIC_DEDUP_TEST_VARIANT: 'distinct'}}], context);
   assert.equal(unique.length, 2);
   assert.deepEqual(unique[0].aliases, ['one:test', 'two:test']);
   assert.equal(commandIdentity(base, context), commandIdentity(same, context));
