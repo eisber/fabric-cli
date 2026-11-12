@@ -5,8 +5,11 @@
 The `fabric-sdk-items::lakehouse_create` module supplies a typed native request
 for the separate [v2 create contract](create-v2-contract.md). The SDK facade
 reexports the same module as `fabric_sdk::items::lakehouse_create`. It does not
-change v1 `mkdir`, install a transport, acquire an identity, or mount a command.
-Executable composition depends on the shared v2 create host.
+change v1 `mkdir`, install a transport, or acquire an identity.
+`fabric_cli::v2_create_lakehouse::LakehouseCreateBinding` composes that SDK with
+the released `v2-create` host. Executable registration depends on the separate
+native shared host; an injectable binding alone does not establish a runnable
+command.
 
 ## Native contract and capabilities
 
@@ -31,8 +34,9 @@ The native API documents `ItemDisplayNameAlreadyInUse`. This is the execution-ti
 conflict protection for creation, not a guarantee supplied by a preflight GET.
 If a target appears after a missing-target observation, the POST's native failure
 is retained; it is not converted into a skip, an update, or an automatic retry.
-Exact-name matching does not infer case folding or Unicode normalization. A
-service rejection for another spelling remains a native failure.
+The released host uses ASCII-case-insensitive discovery and preserves the
+requested body spelling. This leaf adds no Unicode normalization or additional
+lookup rules. A service rejection for another spelling remains a native failure.
 
 There is no documented complete identity-preserving replacement or repeated-name
 fresh-identity guarantee here. `overwrite`, `--force` and `duplicate` must fail

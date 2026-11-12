@@ -24,6 +24,11 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "v2_create_lakehouse"
+path = "tests/v2_create_lakehouse.rs"
+required-features = ["v2-create"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
