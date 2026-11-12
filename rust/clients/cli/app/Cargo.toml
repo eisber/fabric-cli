@@ -79,6 +79,10 @@ required-features = ["notebook-workload"]
 name = "runtime_notebook_native"
 required-features = ["notebook-workload"]
 
+[[test]]
+name = "runtime_notebook_session"
+required-features = ["headless"]
+
 [features]
 default = []
 semantic-model = ["dep:fabric-cli-semantic-model"]

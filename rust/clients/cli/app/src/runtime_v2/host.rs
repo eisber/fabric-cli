@@ -456,13 +456,10 @@ pub async fn diagnostic(error: &HostError, deadline: Instant) -> io::Result<()> 
 /// Rejects non-ASCII/oversized text and unavailable, failed or blocked streams.
 pub async fn write_stream(
     stream: OutputStream,
-    mut bytes: Vec<u8>,
+    bytes: Vec<u8>,
     deadline: Instant,
 ) -> io::Result<()> {
-    if bytes.len() > 16 * 1024 || !bytes.is_ascii() {
-        return Err(io::ErrorKind::InvalidInput.into());
-    }
-    bytes.push(b'\n');
+    let bytes = stream_bytes(bytes)?;
     let file = owned_output::owned_stream(stream, true)?;
     match owned_output::write_owned(file, deadline, std::future::pending::<()>(), move |file| {
         write_counted(
@@ -476,6 +473,51 @@ pub async fn write_stream(
     .await
     {
         owned_output::OwnedWrite::Complete(result) if Instant::now() < deadline => result,
+        _ => Err(io::ErrorKind::TimedOut.into()),
+    }
+}
+
+/// Write bounded help/diagnostics under the caller's original cancellation signal.
+///
+/// Queued workers are aborted, and active workers check cancellation between
+/// writes. An already-running OS write can finish after local abandonment.
+///
+/// # Errors
+/// Rejects invalid text, unavailable streams, interruption and delivery failures.
+pub async fn write_stream_cancelled(
+    stream: OutputStream,
+    bytes: Vec<u8>,
+    deadline: Instant,
+    cancelled: impl Future<Output = ()>,
+) -> io::Result<()> {
+    let bytes = stream_bytes(bytes)?;
+    let file = owned_output::owned_stream(stream, true)?;
+    write_stream_file(file, bytes, deadline, cancelled).await
+}
+
+fn stream_bytes(mut bytes: Vec<u8>) -> io::Result<Vec<u8>> {
+    if bytes.len() > 16 * 1024 || !bytes.is_ascii() {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+async fn write_stream_file(
+    file: std::fs::File,
+    bytes: Vec<u8>,
+    deadline: Instant,
+    cancelled: impl Future<Output = ()>,
+) -> io::Result<()> {
+    let stopped = Arc::new(AtomicBool::new(false));
+    let worker_stop = Arc::clone(&stopped);
+    match owned_output::write_owned_stoppable(file, deadline, cancelled, stopped, move |file| {
+        write_counted(file, &bytes, deadline, &AtomicUsize::new(0), &worker_stop)
+    })
+    .await
+    {
+        owned_output::OwnedWrite::Complete(result) if Instant::now() < deadline => result,
+        owned_output::OwnedWrite::Cancelled(()) => Err(io::ErrorKind::Interrupted.into()),
         _ => Err(io::ErrorKind::TimedOut.into()),
     }
 }
@@ -569,5 +611,46 @@ mod tests {
         assert!(matches!(result, owned_output::OwnedWrite::Cancelled(())));
         release.send(()).unwrap();
         completion.await.unwrap();
+    }
+
+    #[test]
+    fn cancelled_queued_help_or_diagnostic_writer_cannot_start_after_worker_release() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        let file = tempfile::tempfile().unwrap();
+        let observed = file.try_clone().unwrap();
+        runtime.block_on(async {
+            let (release, wait) = mpsc::channel();
+            let (started, ready) = tokio::sync::oneshot::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+            });
+            ready.await.unwrap();
+            let (cancel, cancelled) = tokio::sync::oneshot::channel();
+            let write = write_stream_file(
+                file,
+                b"must not begin queued help or diagnostics\n".to_vec(),
+                Instant::now() + Duration::from_secs(5),
+                async { cancelled.await.unwrap() },
+            );
+            let mut write = std::pin::pin!(write);
+            assert!(
+                std::future::poll_fn(|cx| {
+                    std::task::Poll::Ready(write.as_mut().poll(cx).is_pending())
+                })
+                .await
+            );
+            cancel.send(()).unwrap();
+            assert_eq!(write.await.unwrap_err().kind(), io::ErrorKind::Interrupted);
+            release.send(()).unwrap();
+            blocker.await.unwrap();
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+            assert_eq!(observed.metadata().unwrap().len(), 0);
+        });
+        runtime.shutdown_timeout(Duration::from_secs(1));
     }
 }

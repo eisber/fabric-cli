@@ -1898,7 +1898,15 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**",
+        "rust/clients/cli/app/src/v2_notebook_connect.rs",
+        "rust/clients/cli/app/src/v2_notebook_session_get.rs",
+        "rust/clients/cli/app/tests/runtime_native_host.rs",
+        "rust/clients/cli/app/tests/runtime_notebook_native.rs",
+        "rust/clients/cli/app/tests/runtime_notebook_session.rs",
+        "rust/authoring-docs/runtime-v2-reads.md",
+        "rust/authoring-docs/runtime-notebook-host.md",
+        "rust/authoring-docs/runtime-notebook-session-get.md"
       ],
       "depends_on": [
         "sdk",
@@ -1910,6 +1918,18 @@
         {
           "package": "fabric-cli",
           "target": "test:runtime_v2"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_native_host"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_notebook_native"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_notebook_session"
         }
       ],
       "checks": [
@@ -3021,6 +3041,20 @@
     }
   ],
   "profiles": [
+    {
+      "id": "notebook-session-get",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/notebook-workload"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "notebook-session-get-opt-out",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "notebook-workload-foundation",
       "packages": ["fabric-core", "fabric-sdk-http", "fabric-cli", "fabric-identity"],

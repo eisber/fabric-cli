@@ -5,7 +5,8 @@
 The opt-in `fab-cli-v2` features `headless,runtime-v2,notebook-workload`
 compose the existing runtime parser, shared host, Notebook SDK and
 `NativeNotebookExecutor`. They do not enable Notebook writes, compute,
-discovery or the separately owned session leaves.
+discovery. The shared connector does not itself mount a command: each read
+leaf claims only its own typed facet.
 
 ```text
 fab-cli-v2 get /Team.Workspace/Analysis.Notebook/src/content --output notebook.json
@@ -17,6 +18,9 @@ native IPYNB JSON value: unknown fields, string/line-array source and saved
 outputs are retained. The receipt is not a bare byte-identical `.ipynb` export:
 JSON formatting may change, and saved outputs are not live execution results.
 There is no item metadata or multipart-definition fallback.
+Content mounting belongs to its separate leaf. This branch mounts only
+[exact Jupyter session GET](runtime-notebook-session-get.md); it does not
+import the content leaf shown above.
 
 ## Explicit selection
 
