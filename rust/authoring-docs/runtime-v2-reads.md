@@ -249,6 +249,19 @@ delivery and abandoned workers are not rolled back or replayed; byte counts are
 snapshots, not a promise that an abandoned OS write has stopped. Front ends must
 bound runtime shutdown. Small ASCII diagnostics use owned stderr and the original
 deadline, with no synchronous fallback when it is blocked or time has expired.
+`HostError::receipt` retains the full completed observation on failed delivery,
+including an output-path race. Its `Debug`, `Display` and diagnostic output
+never print the retained source/output/URL. Only the caller may explicitly
+inspect that typed evidence; it does not authorize replay.
+
+Executable Fabric-profile child modules can reuse the existing
+`v2_main::capture_fabric_selection()` and `NativeSession::new(...)` parent
+composition. Ordinary GET consumes the same capture helper, so the existing
+auth mode, selected account/tenant and Fabric-host knobs have one unchanged
+implementation. No new configuration framework or credential provider is added.
+Construct `NativeFabricExecutor` from that exact session context and HTTP
+executor; the SDK scope must use the same explicitly selected endpoint.
+This supports the existing approved Fabric-profile boundary, not MWC.
 
 The host **does not authorize Notebook MWC execution**. The production
 `NativeFabricExecutor` still accepts only its exact Fabric `/v1` binding.

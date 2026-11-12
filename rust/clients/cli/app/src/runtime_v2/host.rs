@@ -60,7 +60,6 @@ impl RuntimeResolver for ExplicitResolver {
 }
 
 /// Sanitized host failure, independent of provider/source payloads.
-#[derive(Debug)]
 pub struct HostError {
     /// Read/validation/interruption category.
     pub kind: ReadErrorKind,
@@ -72,6 +71,11 @@ pub struct HostError {
     pub file_created: bool,
     /// Bytes accepted by the destination before local failure/interruption.
     pub bytes_written: usize,
+    /// Full completed observation retained for caller-owned reconciliation only.
+    ///
+    /// This can contain sensitive source/outputs. Diagnostics never serialize it.
+    /// Retention is not proof of delivery and never authorizes replay.
+    pub receipt: Option<Box<ReadReceipt>>,
 }
 
 impl From<ReadError> for HostError {
@@ -82,7 +86,21 @@ impl From<ReadError> for HostError {
             read_completed: error.receipt.is_some(),
             file_created: false,
             bytes_written: 0,
+            receipt: error.receipt,
         }
+    }
+}
+
+impl std::fmt::Debug for HostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostError")
+            .field("kind", &self.kind)
+            .field("http_status", &self.http_status)
+            .field("read_completed", &self.read_completed)
+            .field("file_created", &self.file_created)
+            .field("bytes_written", &self.bytes_written)
+            .field("receipt_retained", &self.receipt.is_some())
+            .finish()
     }
 }
 
@@ -293,6 +311,7 @@ impl PendingRead {
             read_completed: true,
             file_created: created.load(Ordering::SeqCst),
             bytes_written: written.load(Ordering::SeqCst),
+            receipt: Some(Box::new(self.receipt)),
         })
     }
 }

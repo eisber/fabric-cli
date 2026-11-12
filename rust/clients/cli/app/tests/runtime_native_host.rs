@@ -215,6 +215,11 @@ async fn no_clobber_is_checked_before_http_and_atomically_again_at_commit() {
     assert_eq!(error.kind, ReadErrorKind::Delivery);
     assert!(error.read_completed);
     assert!(!error.file_created);
+    let receipt = error.receipt.as_ref().unwrap();
+    assert_eq!(receipt.data, document());
+    assert_eq!(receipt.meta.http_status, 200);
+    assert!(!format!("{error:?}").contains("snowman"));
+    assert!(!error.to_string().contains("snowman"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), "racing owner");
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
@@ -284,7 +289,7 @@ fn production_response(
 ) {
     let (status, mut headers, body) = response.deconstruct();
     headers.insert("content-type", "application/json");
-    let response = AsyncRawResponse::new(status, headers, body);
+    let response = AsyncRawResponse::new(status, headers, Box::pin(body));
     let credential = Arc::new(Credential::default());
     let wire = Arc::new(Wire {
         response: Mutex::new(Some(response)),
@@ -310,10 +315,12 @@ fn production_response(
 async fn shared_host_uses_actual_sdk_authentication_and_http_for_supported_fabric_profile() {
     // This exercises the shared seam, not a new executable Livy leaf or MWC adapter.
     let input = parse_args(["fab-cli-v2", "list", SESSIONS, "--output", "result.json"]).unwrap();
-    let service = LivyService::fabric(
+    let service = LivyService::fabric_versioned(
         NativeEndpoint::new(Url::parse("https://api.fabric.microsoft.com/").unwrap()).unwrap(),
         "workspace",
         "lakehouse",
+        "v1",
+        "2023-12-01",
     )
     .unwrap();
     let resolver =
@@ -346,7 +353,7 @@ async fn shared_host_uses_actual_sdk_authentication_and_http_for_supported_fabri
     assert_eq!(requests[0].method(), Method::Get);
     assert_eq!(
         requests[0].url().as_str(),
-        "https://api.fabric.microsoft.com/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2024-04-01/sessions?%24top=100"
+        "https://api.fabric.microsoft.com/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2023-12-01/sessions?%24top=100"
     );
 }
 
@@ -554,19 +561,28 @@ async fn pending_sdk_future_is_dropped_on_cancellation_and_original_deadline() {
 
 #[tokio::test]
 async fn wire_and_selected_data_budgets_reject_without_clipped_success() {
-    for options in [
-        ReadOptions {
-            max_response_bytes: 8,
-            ..ReadOptions::default()
-        },
-        ReadOptions {
-            max_data_bytes: 8,
-            ..ReadOptions::default()
-        },
-        ReadOptions {
-            max_receipt_bytes: 8,
-            ..ReadOptions::default()
-        },
+    for (options, max_bytes) in [
+        (
+            ReadOptions {
+                max_response_bytes: 8,
+                ..ReadOptions::default()
+            },
+            "1048576",
+        ),
+        (
+            ReadOptions {
+                max_data_bytes: 8,
+                ..ReadOptions::default()
+            },
+            "8",
+        ),
+        (
+            ReadOptions {
+                max_receipt_bytes: 8,
+                ..ReadOptions::default()
+            },
+            "1048576",
+        ),
     ] {
         let temp = tempfile::tempdir().unwrap();
         let input = parse_args([
@@ -576,7 +592,7 @@ async fn wire_and_selected_data_budgets_reject_without_clipped_success() {
             "-o",
             "result.json",
             "--max-bytes",
-            "8",
+            max_bytes,
         ])
         .unwrap();
         let resolver = ExplicitResolver::new(

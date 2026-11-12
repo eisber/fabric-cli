@@ -187,32 +187,7 @@ fn run() -> Result<(), Failure> {
         )
     })?;
     let prepared = PreparedGet::preflight(command, &cwd).map_err(command_failure)?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
-        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
-            failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            )
-        })?,
-        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
-        Err(_) => {
-            return Err(failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            ));
-        }
-    };
+    let (selection, endpoint) = capture_fabric_selection()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(2)
@@ -281,6 +256,38 @@ fn run() -> Result<(), Failure> {
             .map_err(command_failure)?;
     }
     Ok(())
+}
+
+// Child command modules reuse this capture and NativeSession rather than
+// installing a second credential/transport selection chain.
+fn capture_fabric_selection() -> Result<(headless::Selection, EndpointBinding), Failure> {
+    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
+        failed(
+            "NotConfigured",
+            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
+            1,
+        )
+    })?;
+    let selection = headless::Selection::capture(&mode)
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
+        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+            failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            )
+        })?,
+        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
+        Err(_) => {
+            return Err(failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            ));
+        }
+    };
+    Ok((selection, endpoint))
 }
 
 struct NativeSession {
