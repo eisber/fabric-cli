@@ -233,6 +233,9 @@ impl PreparedCreateCommand {
         if owner != binding.item_type() || !is_id(&workspace) {
             return Err(CreateCommandError::Invalid);
         }
+        let capabilities = host_capabilities(binding);
+        sdk::validate_policy_support(command.policy, &capabilities)
+            .map_err(CreateCommandError::Policy)?;
         if let Some(project) = &command.project {
             fabric_cli_query::validate_projection(project)
                 .map_err(|_| CreateCommandError::Invalid)?;
@@ -282,7 +285,6 @@ impl PreparedCreateCommand {
                 .map_err(|_| CreateCommandError::Invalid)
             })
             .transpose()?;
-        let capabilities = host_capabilities(binding);
         // Validate against the explicit parent ID before any discovery.
         sdk::validate_create_request(
             command.policy,

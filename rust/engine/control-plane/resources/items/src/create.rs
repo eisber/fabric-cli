@@ -582,6 +582,22 @@ pub fn validate_create_request(
         supplied,
         disposition,
     };
+    validate_policy_support(policy, capabilities)?;
+    Ok(input)
+}
+
+/// Check policy capability without reading input or assuming target existence.
+///
+/// Hosts use this pure admission before file/stdin I/O. It grants no schema
+/// evidence: admitted requests must still validate every explicit input through
+/// [`validate_create_request`] and plan against real target discovery.
+///
+/// # Errors
+/// Returns [`CreateError::UnsupportedPolicy`] for an unadvertised policy.
+pub fn validate_policy_support(
+    policy: ConflictPolicy,
+    capabilities: &CreateCapabilities,
+) -> Result<(), CreateError> {
     match policy {
         ConflictPolicy::Error if capabilities.create == CreateSupport::Unsupported => {
             return Err(CreateError::UnsupportedPolicy);
@@ -597,7 +613,7 @@ pub fn validate_create_request(
         }
         _ => {}
     }
-    Ok(input)
+    Ok(())
 }
 
 fn require_creation_input(input: &ValidatedInput) -> Result<(), CreateError> {
