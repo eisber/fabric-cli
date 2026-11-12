@@ -28,10 +28,11 @@ test('bounded cache measurements retain exact byte counts and reject oversize sa
   assert.equal(measure([path.join(root, 'missing')], {limit: 8}).reason, 'empty');
 });
 
-test('cache caps limit six measured target cohorts plus three source archives to 9.75 GiB raw', () => {
-  assert.equal(LIMITS.target, 1536 * 1024 ** 2);
+test('cache caps accommodate measured complete cohorts while bounding each save', () => {
+  assert.equal(LIMITS.target, 3 * 1024 ** 3);
   assert.equal(LIMITS.dependencies, 256 * 1024 ** 2);
-  assert.equal((6 * LIMITS.target + 3 * LIMITS.dependencies) / 1024 ** 3, 9.75);
+  assert.equal((6 * LIMITS.target + 3 * LIMITS.dependencies) / 1024 ** 3, 18.75);
+  assert.ok(LIMITS.target > 2768 * 1024 ** 2);
 });
 
 test('cache CLI records raw size and bounded save eligibility without using ambient caches', t => {

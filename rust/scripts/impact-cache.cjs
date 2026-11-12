@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const LIMITS = Object.freeze({target: 1536 * 1024 ** 2, dependencies: 256 * 1024 ** 2});
+const LIMITS = Object.freeze({target: 3 * 1024 ** 3, dependencies: 256 * 1024 ** 2});
 
 /** Measure bounded cache candidates without following links or mutating them. */
 function measure(roots, {limit, maxFiles = 250000, maxMs = 10000} = {}) {

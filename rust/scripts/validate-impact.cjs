@@ -110,6 +110,17 @@ function coreCommands(plan, platform) {
         ownFeatures(profile, name), profile.id));
     }
   }
+  if (plan.mode === 'full' && platform === 'windows') {
+    return commands.flatMap(command => {
+      const testsWholeCli = command.program === 'cargo' && command.args[0] === 'test' &&
+        command.args.includes('--all-targets') && command.args.some((arg, index) =>
+          arg === '--package' && command.args[index + 1] === 'fabric-cli');
+      return testsWholeCli ? [{
+        id: `${command.id}:compile`, program: command.program,
+        args: [...command.args, '--no-run'],
+      }, command] : [command];
+    });
+  }
   return commands;
 }
 

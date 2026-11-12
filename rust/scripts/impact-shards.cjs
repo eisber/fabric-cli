@@ -16,6 +16,13 @@ const PROFILE_MARKERS = new Set(['interactive', 'headless', 'certificate', 'upda
 const PROFILE_GROUP_SECONDS = 720;
 const SETUP_CLEANUP_SECONDS = 180;
 const COLD_RESERVE_SECONDS = Object.freeze({linux: 120, windows: 180, macos: 180});
+// Full target sets cost substantially more than the historical serial warm
+// profiles. Seven-profile bins exhausted the executor budget in run 43303660409.
+// Bound full co-location independently of the unchanged affected-mode weights.
+const FULL_PROFILE_GROUP_SECONDS = 600;
+const FULL_PROFILE_MAX_DOMAINS = 2;
+const FULL_PROFILE_COLD_SECONDS = 180;
+const FULL_PROFILE_MIN_SECONDS = 120;
 const WINDOWS_DEFAULT_PACKAGES = 8;
 const HISTORICAL = new Map(Object.values(TIMINGS.historical));
 
@@ -46,7 +53,7 @@ function canonical(value) {
   return value;
 }
 
-function durationEstimate(commands, platform) {
+function durationEstimate(commands, platform, fullProfile = false) {
   // An unfamiliar execution environment or descriptor must not inherit a
   // familiar argv's timing. This affects placement only, never execution.
   const knownShape = commands.every(command => Object.keys(command).every(key =>
@@ -56,7 +63,10 @@ function durationEstimate(commands, platform) {
     .digest('hex').slice(0, 16) : null;
   const observed = TIMINGS.observed[signature];
   const historical = HISTORICAL.get(signature);
-  if (!observed && !historical) return {seconds: PROFILE_GROUP_SECONDS,
+  const full = fullProfile ? TIMINGS.full[signature] : undefined;
+  if (full && !full[2]) return {seconds: PROFILE_GROUP_SECONDS,
+    reserve: 0, basis: 'full-incomplete-isolated', isolated: true};
+  if (!observed && !historical && !full) return {seconds: PROFILE_GROUP_SECONDS,
     reserve: 0, basis: 'unmeasured-isolated', isolated: true};
   const index = {linux: 1, windows: 2, macos: 3}[platform];
   let seconds, basis, reserve;
@@ -68,14 +78,21 @@ function durationEstimate(commands, platform) {
     basis = observed[index] === null ? 'cross-host-estimate' : 'observed-mixed-cache';
     reserve = 60;
   } else {
-    seconds = historical * (platform === 'linux' ? 1 : 2);
+    seconds = (historical || full[1]) * (platform === 'linux' ? 1 : 2);
     basis = platform === 'linux' ? 'historical-warm-mix' : 'historical-cross-host-estimate';
     reserve = COLD_RESERVE_SECONDS[platform];
+  }
+  if (fullProfile) {
+    seconds = Math.max(seconds, (full?.[1] || 0) * (platform === 'linux' ? 1 : 2));
+    return {seconds: Math.max(FULL_PROFILE_MIN_SECONDS, Math.ceil(seconds * 1.1)),
+      reserve: FULL_PROFILE_COLD_SECONDS, isolated: false,
+      basis: full ? platform === 'linux' ? 'full-observed-cache-miss' : 'full-cross-host-estimate' :
+        `full-conservative-${basis}`};
   }
   return {seconds: Math.ceil(seconds * 1.1), reserve, basis, isolated: false};
 }
 
-function packDomains(domains, platform) {
+function packDomains(domains, platform, mode) {
   const cohorts = new Map(), bins = [];
   for (const domain of domains) {
     const key = domain.duration.isolated ? domain.id : JSON.stringify([domain.cohort, domain.dotnet]);
@@ -84,13 +101,16 @@ function packDomains(domains, platform) {
   }
   for (const cohort of cohorts.values()) {
     const first = cohort[0];
+    const fullProfiles = mode === 'full' && first.cohort === 'profile' && !first.duration.isolated;
+    const limit = fullProfiles ? FULL_PROFILE_GROUP_SECONDS : PROFILE_GROUP_SECONDS;
+    const domainLimit = fullProfiles ? FULL_PROFILE_MAX_DOMAINS : Infinity;
     const total = cohort.reduce((sum, domain) => sum + domain.duration.seconds, 0);
     const reserve = Math.max(...cohort.map(domain => domain.duration.reserve));
     // Do not turn a leaf into one nearly twelve-minute feature job merely to
     // minimize runner count. Two balanced feature cohorts still fit alongside
     // defaults and the isolated oracle in twelve jobs across three hosts.
     const count = Math.min(cohort.length, Math.max(
-      Math.ceil(total / (PROFILE_GROUP_SECONDS - reserve)),
+      Math.ceil(total / (limit - reserve)), Math.ceil(cohort.length / domainLimit),
       first.cohort === 'profile' && total > PROFILE_GROUP_SECONDS / 2 ? 2 : 1));
     const empty = () => ({domains: [], seconds: 0, reserve: 0, cohort: first.cohort,
       dotnet: first.dotnet, isolated: first.duration.isolated, formatting: 0});
@@ -99,10 +119,11 @@ function packDomains(domains, platform) {
       a.id.localeCompare(b.id))) {
       const compatible = bin => !domain.duration.isolated && !bin.isolated &&
         bin.cohort === domain.cohort && bin.dotnet === domain.dotnet &&
+        bin.domains.length < domainLimit &&
         (platform !== 'windows' || bin.formatting + domain.commands.filter(command =>
           command.args[0] === 'fmt').length <= WINDOWS_DEFAULT_PACKAGES) &&
         bin.seconds + domain.duration.seconds + Math.max(bin.reserve, domain.duration.reserve) <=
-          PROFILE_GROUP_SECONDS;
+          limit;
       // Longest-first, least-loaded placement balances the critical path. A
       // bounded spill bin handles heterogeneous reserves/formatting limits.
       let bin = [...native].sort((a, b) => a.seconds - b.seconds)
@@ -194,7 +215,8 @@ function shardsForPlan(plan, platform, coreCommands) {
     shards.push({id, commands, checks, obligations, selection_digest: digest,
       feature_group: featureGroup, engineering: false,
       order: shards.length, cohort: id.startsWith('default-') ? 'default' : 'profile',
-      duration: durationEstimate(commands, platform),
+      duration: durationEstimate(commands, platform,
+        plan.mode === 'full' && id.startsWith('profile-')),
       dotnet: commands.some(command => command.args.includes('--all-features') ||
         command.args.some(arg => arg.includes('semantic-model-dotnet'))), ...extra});
   };
@@ -283,7 +305,7 @@ function shardsForPlan(plan, platform, coreCommands) {
   // Effective cwd/environment defaults are shared by all commands in an owner;
   // explicit cwd/env and every other descriptor field participate in equality.
   shards = colocateEquivalentCommands(shards, platform);
-  shards = packDomains(shards, platform);
+  shards = packDomains(shards, platform, plan.mode);
   if (shards.length) {
     const engineering = shards.find(shard => shard.id === 'contracts-oracle') || shards[0];
     engineering.engineering = true;
@@ -334,6 +356,7 @@ function matrixForPlan(plan, coreCommands) {
     for (const cohort of ['default', 'features']) {
       const candidates = native.filter(entry => entry.cache_group === cohort);
       const writer = candidates.find(entry => entry.shard === 'preflight-clippy') ||
+        candidates.find(entry => entry.shard.startsWith('profile-')) ||
         candidates.find(entry => entry.shard.startsWith('default-cli')) || candidates[0];
       if (writer) writer.cache_writer = true;
     }
@@ -345,5 +368,6 @@ function matrixForPlan(plan, coreCommands) {
 }
 
 module.exports = {PLATFORMS, PROFILE_GROUP_SECONDS, SETUP_CLEANUP_SECONDS,
+  FULL_PROFILE_GROUP_SECONDS, FULL_PROFILE_MAX_DOMAINS, FULL_PROFILE_COLD_SECONDS,
   WINDOWS_DEFAULT_PACKAGES,
   shardsForPlan, selectShard, matrixForPlan};

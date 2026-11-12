@@ -192,6 +192,13 @@ Measured command descriptors are packed into bounded cohorts without merging
 their Cargo feature flags or losing original obligation IDs. Unknown command
 domains remain isolated until timings are available. Timing estimates include
 cold-build and setup/cleanup allowances; they are not passing performance data.
+Full-profile estimates use separate cold-run evidence: at most two complete
+profiles share a measured bin, with an estimated 600-second ceiling including
+180 seconds of cold-build allowance. Interrupted or unmeasured profiles remain
+isolated rather than treating an incomplete timing as a cheap completed run.
+This intentionally favors completing every required profile within its deadline
+over minimizing the full-plan job count. The affected Dataflow plan retains
+four jobs per native host.
 Frozen-source preparation, its dependent comparisons and final integrity check
 stay together. Full plans retain the all-feature Clippy and CLI preflights as
 separate obligations; affected plans no longer run those unconditional full
@@ -211,14 +218,17 @@ registry source trees, separately from `rust/target`.
 Keys include runner OS, architecture, pinned toolchain, lockfile,
 manifests and explicit build settings. Two immutable compilation cohorts per
 host (`default` and `features`) replace per-revision or per-shard cache keys.
-One designated producer per host/cohort saves at most 1.5 GiB of raw build output;
-the shared source-archive producer saves at most 256 MiB. The nine entries total
-at most 9.75 GiB raw per generation, before provider compression. Oversize candidates skip
+One designated producer per host/cohort saves at most 3 GiB of raw build output;
+the shared source-archive producer saves at most 256 MiB. Completed packed leaf
+cohorts measured 1,733-2,768 MiB raw, exceeding the earlier 1.5 GiB limit and
+preventing a useful warm cache. These are uncompressed bounds, not a reservation
+or an increase to the repository's provider cache quota. Oversize candidates skip
 cache saving, not validation. Metrics report candidate size, restore time and
 cache hit separately. Old manifest generations remain subject to provider
 eviction; no quota or billing settings are changed.
 Cargo still checks freshness and every selected test executes. Cached build
-outputs are not validation receipts. Bump the `v4` cache generation when changing
+outputs are not validation receipts. The compilation cache now uses `v5`, while
+dependency archives retain `v4`. Bump the corresponding generation when changing
 the compilation settings or cohort policy.
 
 The executor uses command-class limits: 120 seconds for tools, 300 seconds for
@@ -235,6 +245,11 @@ The full all-feature CLI preflight first compiles its exact test targets with
 `--no-run` under the compilation budget, then executes the unchanged targets
 under the test budget. Cold Windows compilation exceeded five minutes in the
 first hosted measurement; it must not consume the runtime-test allowance.
+Full Windows profiles that test every CLI target use the same compile-then-run
+split. Their cold compilation alone consumed 4 minutes 28 seconds to 4 minutes
+40 seconds in hosted measurements, leaving insufficient time for the complete
+test execution under a combined five-minute limit. Affected-target invocations
+remain unchanged.
 
 ### Slow-run investigation
 
