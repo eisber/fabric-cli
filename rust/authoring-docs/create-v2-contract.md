@@ -16,6 +16,11 @@ The opt-in `v2-create-environment` plus `headless` configuration now mounts the
 bounded [Environment metadata-only binding](environment-create.md) in
 `fab-cli-v2`. This is not a default/v1 mount or support for every resource/policy.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 ## Target grammar
 
 The target grammar is design notation, not a runnable command example:
