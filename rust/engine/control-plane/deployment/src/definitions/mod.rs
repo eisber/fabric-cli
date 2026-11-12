@@ -594,6 +594,18 @@ async fn execute_body<E: OperationExecutor>(
     let operation =
         FabricOperation::new(method, path, body, CompletionPolicy::PythonSynchronous)
             .map_err(|kind| DefinitionErrorKind::Operation(Box::new(session.evidence(kind))))?;
+    let operation = if method == ResourceMethod::Post
+        && path
+            .split('?')
+            .next()
+            .is_some_and(|path| path.ends_with("/getDefinition"))
+    {
+        operation
+            .with_bound_definition_polling()
+            .map_err(|kind| DefinitionErrorKind::Operation(Box::new(session.evidence(kind))))?
+    } else {
+        operation
+    };
     let response = session
         .execute(operation)
         .await

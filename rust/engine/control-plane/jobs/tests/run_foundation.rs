@@ -610,6 +610,57 @@ async fn received_acceptance_survives_deadline_on_response_and_byte_bound() {
 }
 
 #[test]
+fn notebook_cluster_acceptance_rebinds_only_exact_owner_paths_without_changing_strict_handles() {
+    use fabric_sdk_jobs::{EndpointBinding, ServiceOrigin};
+    for host in ["api.fabric.microsoft.com", "msitapi.fabric.microsoft.com"] {
+        let endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, host).unwrap();
+        let cluster = monitor().replace(
+            "api.fabric.microsoft.com",
+            "df-msit-scus-redirect.analysis.windows.net",
+        );
+        let handle = RunHandle::notebook_acceptance(&target(), &endpoint, &cluster).unwrap();
+        assert_eq!(handle.kind(), &RunHandleKind::Job(ID.into()));
+        assert_eq!(handle.endpoint(), &endpoint);
+        assert_eq!(handle.url().host_str(), Some(host));
+        assert_eq!(
+            handle.url().path(),
+            format!("/v1/workspaces/{WS}/items/{ITEM}/jobs/instances/{ID}")
+        );
+        assert!(RunHandle::job(&target(), &endpoint, &cluster).is_err());
+        for unsafe_location in [
+            cluster.replace(WS, "other"),
+            cluster.replace(ITEM, "other"),
+            cluster.replace(ID, ""),
+            cluster.replace(
+                "df-msit-scus-redirect.analysis.windows.net",
+                "unrelated.example",
+            ),
+            cluster.replace(
+                ".analysis.windows.net",
+                ".analysis.windows.net.unrelated.example",
+            ),
+            cluster.replace("https://", "http://"),
+            cluster.replace("https://", "https://user@"),
+            cluster.replace(".net/", ".net:444/"),
+            cluster.replace("/jobs/", "/%6aobs/"),
+            cluster.replace("/jobs/", "/other/../jobs/"),
+            format!("{cluster}?"),
+            format!("{cluster}#"),
+            format!("{cluster}/cancel"),
+            format!("{cluster}\\other"),
+        ] {
+            assert!(
+                RunHandle::notebook_acceptance(&target(), &endpoint, &unsafe_location).is_err(),
+                "{unsafe_location}"
+            );
+        }
+        let operation =
+            format!("https://df-msit-scus-redirect.analysis.windows.net/v1/operations/{ID}");
+        assert!(RunHandle::notebook_acceptance(&target(), &endpoint, &operation).is_err());
+    }
+}
+
+#[test]
 fn native_handle_scope_origin_collection_and_udf_correlation_are_distinct() {
     let endpoint = fabric_sdk_jobs::EndpointBinding::public(fabric_sdk_jobs::ServiceOrigin::Fabric);
     let handle = RunHandle::job(&target(), &endpoint, &monitor()).unwrap();
