@@ -5,7 +5,8 @@
 #![deny(unnameable_test_items)]
 
 use fabric_cli::create_command::{
-    CreateBinding, CreateCommandError, PreparedCreateCommand, command_for_binding, v2_create,
+    AnticipatedCreateEffect, CreateBinding, CreateCommandError, CreateEffectKind,
+    PreparedCreateCommand, command_for_binding, v2_create,
 };
 use fabric_sdk::items::create::{
     CreateCapabilities, CreateError, CreateInputValidator, CreatePlan, CreateSupport, CreateTarget,
@@ -60,6 +61,49 @@ impl Read for ForbiddenRead {
     fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
         panic!("stdin belongs to the caller, not an implicit consumer")
     }
+}
+
+#[test]
+fn anticipated_effect_disclosure_is_bounded_and_cannot_claim_observed_identity() {
+    let effect = AnticipatedCreateEffect::new(
+        CreateEffectKind::ChildResourceCreation,
+        Some("SyntheticChild"),
+        "The synthetic provider may create one child when its native defaults apply",
+        "offline-synthetic-contract/v1",
+    )
+    .unwrap();
+    assert_eq!(effect.resource_type(), Some("SyntheticChild"));
+    let value = serde_json::to_value(effect).unwrap();
+    assert_eq!(value["kind"], "childResourceCreation");
+    assert!(value.get("id").is_none());
+    assert!(value.get("completed").is_none());
+    assert!(
+        AnticipatedCreateEffect::new(
+            CreateEffectKind::ChildResourceCreation,
+            None,
+            "child",
+            "offline/v1",
+        )
+        .is_err()
+    );
+    assert!(
+        AnticipatedCreateEffect::new(
+            CreateEffectKind::MeteredConsumption,
+            None,
+            "hidden\u{1b}[2J",
+            "offline/v1",
+        )
+        .is_err()
+    );
+    assert!(
+        AnticipatedCreateEffect::new(
+            CreateEffectKind::MeteredConsumption,
+            None,
+            &"x".repeat(2049),
+            "offline/v1",
+        )
+        .is_err()
+    );
 }
 
 struct HelpBinding {

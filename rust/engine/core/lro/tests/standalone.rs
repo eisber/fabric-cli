@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 //! Direct SDK consumer: no facade, CLI, deployment or identity-backend dependency.
+#![deny(unnameable_test_items)]
 
 use async_trait::async_trait;
 use azure_core::{
@@ -91,6 +92,51 @@ fn response(status: u16, body: &str) -> OperationResponse {
         body: body.as_bytes().into(),
         headers: BTreeMap::new(),
     }
+}
+
+#[tokio::test]
+async fn prepared_wire_view_is_the_same_operation_consumed_by_execution() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .push_back(response(201, "{}"));
+    let raw = b" {\r\n  \"displayName\" : \"literal\\u0020name\"\r\n}\n";
+    let path = "/v1/workspaces/11111111-1111-1111-1111-111111111111/notebooks";
+    let operation = FabricOperation::new(
+        ResourceMethod::Post,
+        path,
+        raw.to_vec(),
+        CompletionPolicy::ReturnAccepted,
+    )
+    .unwrap();
+    assert_eq!(operation.method(), ResourceMethod::Post);
+    assert_eq!(operation.path(), path);
+    assert_eq!(operation.body(), raw);
+    assert_eq!(operation.completion(), CompletionPolicy::ReturnAccepted);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert!(executor.methods.lock().unwrap().is_empty());
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    assert_eq!(session.execute(operation).await.unwrap().status, 201);
+    assert_eq!(
+        *executor.methods.lock().unwrap(),
+        vec![ResourceMethod::Post]
+    );
+    assert_eq!(
+        *executor.urls.lock().unwrap(),
+        vec![format!("{ROOT}{path}")]
+    );
+    assert_eq!(*executor.bodies.lock().unwrap(), vec![raw.to_vec()]);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
