@@ -12,6 +12,10 @@ pub mod auth_commands;
 #[cfg(feature = "v2-cancel")]
 pub mod cancel;
 pub mod console;
+#[cfg(feature = "v2-create")]
+pub mod create_command;
+#[cfg(feature = "v2-create")]
+pub mod datapipeline_create;
 pub mod delete;
 pub mod deploy;
 mod errors;

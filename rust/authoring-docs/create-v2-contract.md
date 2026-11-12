@@ -11,8 +11,42 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
-policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+policy and CLI parsing. The shared [create host](create-host.md) composes those
+libraries without installing a generic artifact backend or another policy engine.
+The opt-in `v2-create` + `headless` `fab-cli-v2` executable now mounts only
+[metadata-only DataPipeline create](datapipeline-create.md) through the shared
+native host. This does not mount every resource or qualify live/platform parity.
+
+## Shared native approval and evidence
+
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
+The original timeout includes preflight, discovery, approval, submission,
+waiting and local receipt delivery. If it expires before delivery, no new file
+write starts; the unprojected report remains in the stderr timeout diagnostic.
+Without `--wait`, a 202 receipt says `accepted`, never `completed`.
+Polling failure, local cancellation/deadline, response limits, lost responses and
+receipt write/flush failures retain known handles and mutation uncertainty.
+This includes an operation UUID already received in 202 headers before a later
+body streaming failure or cancellation.
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
+There is no automatic replay or rollback. The exact output file is never
+overwritten; projection applies only to `data`, retaining identity and operation
+metadata outside it. No live Fabric, identity or resource-creation acceptance
+is established by the offline tests.
 
 ## Target grammar
 
@@ -202,8 +236,8 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
-| Resource backend | No backend proof establishes that a resource implements all requested policies. |
+| Executable integration | Opt-in `fab-cli-v2 create` selects only the native DataPipeline metadata binding; default/v1 aliases are unchanged. |
+| Resource backend | DataPipeline metadata supports error and exact-existing skip only; overwrite/duplicate remain unsupported. See the [bounded native contract](datapipeline-create.md). |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 
 CLI planning delegates to the SDK planner as the single shared policy authority.

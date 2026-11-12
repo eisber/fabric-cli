@@ -601,6 +601,40 @@
       "checks": ["sdk-graph"]
     },
     {
+      "id": "cli-create-host",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/create_command.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/tests/create_host.rs",
+        "rust/authoring-docs/create-host.md"
+      ],
+      "depends_on": ["sdk", "mutations", "output", "query", "storage-files"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:create_host"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-datapipeline-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/datapipeline_create.rs",
+        "rust/clients/cli/app/tests/datapipeline_create.rs",
+        "rust/clients/cli/app/tests/datapipeline_create_process.rs",
+        "rust/tests/compatibility/jobs/support.rs",
+        "rust/authoring-docs/datapipeline-create.md",
+        ".changes/unreleased/added-20261112-native-v2-datapipeline-create.yaml"
+      ],
+      "depends_on": ["cli-create-host"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:datapipeline_create"},
+        {"package": "fabric-cli", "target": "test:datapipeline_create_process"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -2896,6 +2930,8 @@
         "cli-get",
         "cli-reads",
         "cli-runtime-v2",
+        "cli-create-host",
+        "cli-datapipeline-create",
         "cli-resources",
         "cli-jobs",
         "cli-cancel",
@@ -3001,6 +3037,20 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],
