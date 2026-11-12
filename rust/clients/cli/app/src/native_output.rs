@@ -32,25 +32,11 @@ where
     T: Send + 'static,
 {
     // Existing hosts permit an already-started/queued output worker to finish.
-    // Runtime reads opt into stricter admission through write_owned_stoppable.
-    write_owned_inner(writer, deadline, cancelled, None, write).await
+    // Runtime reads explicitly supply a stop latch to select stricter admission.
+    write_owned_with_policy(writer, deadline, cancelled, None, write).await
 }
 
-pub(crate) async fn write_owned_stoppable<W, T, F>(
-    writer: W,
-    deadline: Instant,
-    cancelled: impl Future<Output = F>,
-    stopped: Arc<AtomicBool>,
-    write: impl FnOnce(&mut W) -> io::Result<T> + Send + 'static,
-) -> OwnedWrite<T, F>
-where
-    W: Write + Send + 'static,
-    T: Send + 'static,
-{
-    write_owned_inner(writer, deadline, cancelled, Some(stopped), write).await
-}
-
-async fn write_owned_inner<W, T, F>(
+pub(crate) async fn write_owned_with_policy<W, T, F>(
     mut writer: W,
     deadline: Instant,
     cancelled: impl Future<Output = F>,
