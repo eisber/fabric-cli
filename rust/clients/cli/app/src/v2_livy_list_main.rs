@@ -88,6 +88,8 @@ async fn execute(args: Vec<OsString>, root_help: bool, deadline: Instant) -> Res
              Run list --help for the experimental one-page Livy read contract.",
             super::ROOT_HELP
         );
+        #[cfg(feature = "v2-create")]
+        let text = format!("{text}\n\n{}", super::CREATE_HELP);
         return host::write_stream(OutputStream::Stdout, text.into_bytes(), deadline)
             .await
             .map_err(|_| Failure::Local("OutputFailed", "Help output failed.", 1));
