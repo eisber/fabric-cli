@@ -56,6 +56,20 @@ impl ItemExecutor for Listing {
     }
 }
 
+struct DeniedListing;
+impl ItemExecutor for DeniedListing {
+    fn execute<'a>(
+        &'a self,
+        _: ItemRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
+        Box::pin(std::future::ready(Ok(ItemResponse {
+            status: 403,
+            body: br#"{"errorCode":"InsufficientPrivileges"}"#.to_vec(),
+            headers: BTreeMap::new(),
+        })))
+    }
+}
+
 struct Approval {
     raw: Vec<u8>,
     result: Result<(), CreateApprovalError>,
@@ -241,6 +255,31 @@ async fn denial_or_unavailable_approval_and_wrong_context_send_no_post() {
     ));
     assert_eq!(listing.calls.load(Ordering::SeqCst), 0);
     assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert_eq!(approval.calls, 0);
+    assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn denied_discovery_never_becomes_missing_target_or_permission_to_create() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &[], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let wire = Wire::new(vec![]);
+    let mut approval = Approval::allow(raw);
+    assert!(matches!(
+        prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &DeniedListing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await,
+        Err(CreateCommandError::Discovery)
+    ));
     assert_eq!(approval.calls, 0);
     assert!(wire.requests.lock().unwrap().is_empty());
 }
@@ -735,6 +774,31 @@ fn host_rejects_wrong_owner_profile_stdin_conflicts_invalid_input_and_policy_loc
             .is_err()
         );
     }
+    for policy in ["overwrite", "duplicate"] {
+        let command =
+            v2_create::parse_args(["create", PATH, "--input", "-", "--if-exists", policy]).unwrap();
+        assert!(
+            PreparedCreateCommand::preflight(
+                command,
+                &ReportCreateBinding,
+                temp.path(),
+                &mut ForbiddenRead,
+                false,
+            )
+            .is_err()
+        );
+    }
+    let force = v2_create::parse_args(["create", PATH, "--input", "-", "--force"]).unwrap();
+    assert!(
+        PreparedCreateCommand::preflight(
+            force,
+            &ReportCreateBinding,
+            temp.path(),
+            &mut ForbiddenRead,
+            false,
+        )
+        .is_err()
+    );
     let mut oversized = raw.clone();
     oversized.resize(MAX_BYTES + 1, b' ');
     assert!(
