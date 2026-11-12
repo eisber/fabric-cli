@@ -4,7 +4,7 @@
 //! Warehouse-only native create schema over the shared create host and SDK.
 
 use crate::{
-    create_command::{CreateBinding, MAX_BYTES},
+    create_command::{AnticipatedCreateEffect, CreateBinding, CreateEffectKind, MAX_BYTES},
     get_target::is_id,
 };
 use fabric_sdk::items::{
@@ -25,6 +25,7 @@ pub const DEFAULT_COLLATION: &str = "Latin1_General_100_BIN2_UTF8";
 pub const CASE_INSENSITIVE_COLLATION: &str = "Latin1_General_100_CI_AS_KS_WS_SC_UTF8";
 
 const SCHEMA: &str = "fabric.warehouse.create/v1";
+const CONSUMPTION_CONTRACT: &str = "https://learn.microsoft.com/en-us/fabric/data-warehouse/usage-reporting (source c9d49756c2e184b61acde34d32f9aff63595db5b)";
 
 /// Native Warehouse creation only; no definition, SQL, query or child provisioning.
 pub struct WarehouseCreateBinding;
@@ -100,6 +101,22 @@ impl CreateBinding for WarehouseCreateBinding {
         )
         .map_err(|_| CreateError::InputRejected)?;
         FabricOperation::from_resource(&operation).map_err(|_| CreateError::InputRejected)
+    }
+
+    fn anticipated_effects(
+        &self,
+        plan: &CreatePlan,
+    ) -> Result<Vec<AnticipatedCreateEffect>, CreateError> {
+        let CreateAction::Create { input } = plan.action() else {
+            return Err(CreateError::UnsupportedPolicy);
+        };
+        self.validate(plan.target(), input.schema(), input.supplied())?;
+        Ok(vec![AnticipatedCreateEffect::new(
+            CreateEffectKind::MeteredConsumption,
+            Some("Warehouse"),
+            "Warehouse activity can consume Fabric capacity, including provider-managed background work. This request creates an empty Warehouse; it submits no SQL and claims no metered amount or observed charge.",
+            CONSUMPTION_CONTRACT,
+        )?])
     }
 }
 

@@ -67,8 +67,25 @@ means accepted, not completed. Resource IDs and operation IDs stay distinct and
 outside `--project` data projection. Failed polling, local cancellation,
 deadline expiry, projection failure, broken pipes and output races retain
 available unprojected evidence and never replay or roll back the mutation.
+Approval borrows the exact prepared method, bound URL and outgoing bytes,
+including the default collation for omitted or partial input. Those same bytes
+are submitted once; raw input alone is not the approval body. Protected
+`meta.submission` retains the initial POST status, resource and operation
+evidence separately from the latest `meta.observation` or `meta.httpStatus`.
 `--output` reuses the shared exact no-clobber sink. Live service, identity-policy,
 SQL connectivity and cross-platform acceptance are not implied by offline tests.
+
+The binding discloses anticipated metered Warehouse activity using
+[Warehouse consumption](https://learn.microsoft.com/en-us/fabric/data-warehouse/usage-reporting),
+source `c9d49756c2e184b61acde34d32f9aff63595db5b` (retrieved November 12, 2026).
+The provider documents both user and system/background capacity consumption.
+This disclosure claims no metered amount, charge, SQL execution or observed
+resource outcome. It survives projection in `meta.anticipatedEffects`, and skip
+declares no creation effects or outgoing request. The
+[semantic-model contract](https://learn.microsoft.com/en-us/fabric/data-warehouse/semantic-models),
+source `5815f8b8fe93f3cf508d7ba4af1f695972e865c0`, says default semantic models are
+no longer automatically created with Warehouses. No child model is provisioned
+or invented by this CLI.
 
 ## Source mapping and deliberate native field correction
 
@@ -90,8 +107,8 @@ alternative choices but uses the current documented field; it does not claim
 live proof that the legacy spelling is accepted. Broader optional API fields and
 definition-based creation are outside this bounded binding.
 
-The only consumed shared-create changes are the logical diffs
-`e84426a`, `ce89c07`, `225903a`, `99dc963`, and `9812bec`. There is no Notebook
+The consumed shared-create changes are the logical diffs
+`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and `0454fb4`. There is no Notebook
 leaf or producer ancestry adoption, custom authentication, parser, policy,
 transport, LRO or output engine. See [the shared host](create-host.md).
 
