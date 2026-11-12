@@ -827,3 +827,51 @@ fn cancelled_queued_delivery_is_aborted_before_file_creation() {
     });
     runtime.shutdown_timeout(Duration::from_millis(100));
 }
+
+#[tokio::test]
+async fn accepted_receipt_survives_delivery_failure_without_claiming_read_completion() {
+    let input = parse_args(["fab-cli-v2", "list", SESSIONS, "--output", "result.json"]).unwrap();
+    let service = LivyService::fabric_versioned(
+        NativeEndpoint::new(Url::parse("https://api.fabric.microsoft.com/").unwrap()).unwrap(),
+        "workspace",
+        "lakehouse",
+        "v1",
+        "2023-12-01",
+    )
+    .unwrap();
+    let resolver =
+        ExplicitResolver::new(input.path.owner.clone(), ResolvedTarget::Lakehouse(service))
+            .unwrap();
+    let (executor, credential, wire) = production_response(
+        AsyncRawResponse::from_bytes(202.into(), Headers::new(), Vec::new()),
+        Audience::Fabric,
+    );
+    let executor = executor.unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let destination = Destination::check("result.json", temp.path()).unwrap();
+    let end = deadline();
+    let read = acquire(
+        &input,
+        &executor,
+        &resolver,
+        ReadOptions::default(),
+        &destination,
+        end,
+        pending(),
+    )
+    .await
+    .unwrap();
+    std::fs::write(temp.path().join("result.json"), "racing owner").unwrap();
+    let error = read.deliver(destination, end, pending()).await.unwrap_err();
+    assert!(!error.read_completed);
+    assert_eq!(error.http_status, Some(202));
+    let receipt = error.receipt.unwrap();
+    assert_eq!(receipt.status, fabric_cli::runtime_v2::ReadStatus::Accepted);
+    assert_eq!(receipt.data, Value::Null);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("result.json")).unwrap(),
+        "racing owner"
+    );
+}

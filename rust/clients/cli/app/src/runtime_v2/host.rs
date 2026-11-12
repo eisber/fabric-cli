@@ -8,7 +8,7 @@
 
 use super::{
     OutputSink, OwnerPath, ParsedInvocation, ReadError, ReadErrorKind, ReadOptions, ReadReceipt,
-    ResolvedTarget, RuntimeHead, RuntimeResolver, TypedPath,
+    ReadStatus, ResolvedTarget, RuntimeHead, RuntimeResolver, TypedPath,
 };
 use fabric_cli_output::OutputStream;
 use fabric_sdk::runtime::{NativeError, NativeExecutor};
@@ -65,7 +65,7 @@ pub struct HostError {
     pub kind: ReadErrorKind,
     /// Real HTTP status, when a completed read supplied one.
     pub http_status: Option<u16>,
-    /// Whether a completed remote observation exists, not proof of delivery.
+    /// Whether a completed representation was observed, never merely HTTP 202.
     pub read_completed: bool,
     /// Whether this host created a destination file.
     pub file_created: bool,
@@ -83,7 +83,10 @@ impl From<ReadError> for HostError {
         Self {
             kind: error.kind,
             http_status: error.http_status,
-            read_completed: error.receipt.is_some(),
+            read_completed: error
+                .receipt
+                .as_ref()
+                .is_some_and(|receipt| receipt.status == ReadStatus::ReadComplete),
             file_created: false,
             bytes_written: 0,
             receipt: error.receipt,
@@ -308,7 +311,7 @@ impl PendingRead {
         Err(HostError {
             kind,
             http_status: Some(self.receipt.meta.http_status),
-            read_completed: true,
+            read_completed: self.receipt.status == ReadStatus::ReadComplete,
             file_created: created.load(Ordering::SeqCst),
             bytes_written: written.load(Ordering::SeqCst),
             receipt: Some(Box::new(self.receipt)),

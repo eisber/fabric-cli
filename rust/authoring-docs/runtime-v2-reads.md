@@ -253,6 +253,8 @@ deadline, with no synchronous fallback when it is blocked or time has expired.
 including an output-path race. Its `Debug`, `Display` and diagnostic output
 never print the retained source/output/URL. Only the caller may explicitly
 inspect that typed evidence; it does not authorize replay.
+An accepted-only receipt retains HTTP 202 and its `accepted` status, while the
+host diagnostic's `readCompleted` remains false even if output delivery fails.
 
 Executable Fabric-profile child modules can reuse the existing
 `v2_main::capture_fabric_selection()` and `NativeSession::new(...)` parent
