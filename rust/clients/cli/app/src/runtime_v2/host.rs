@@ -169,8 +169,14 @@ where
     T: Send + 'static,
     E: Send + 'static,
 {
-    let result =
-        owned_output::write_owned(io::sink(), deadline, cancelled, move |_| Ok(work())).await;
+    let result = owned_output::write_owned_stoppable(
+        io::sink(),
+        deadline,
+        cancelled,
+        Arc::new(AtomicBool::new(false)),
+        move |_| Ok(work()),
+    )
+    .await;
     if Instant::now() >= deadline {
         return Err(SetupError::Host(HostError::new(ReadErrorKind::Timeout)));
     }
@@ -534,13 +540,34 @@ mod tests {
 
     #[tokio::test]
     async fn already_cancelled_output_does_not_start_a_worker() {
-        let result = owned_output::write_owned(
+        let result = owned_output::write_owned_stoppable(
             io::sink(),
             Instant::now() + Duration::from_secs(1),
             async {},
+            Arc::new(AtomicBool::new(false)),
             |_| -> io::Result<()> { panic!("no worker after latched cancellation") },
         )
         .await;
         assert!(matches!(result, owned_output::OwnedWrite::Cancelled(())));
+    }
+
+    #[tokio::test]
+    async fn legacy_output_keeps_its_admitted_worker_without_changing_runtime_admission() {
+        let (release, wait) = mpsc::channel();
+        let (finished, completion) = tokio::sync::oneshot::channel();
+        let result = owned_output::write_owned(
+            io::sink(),
+            Instant::now() + Duration::from_secs(5),
+            async {},
+            move |_| {
+                wait.recv().unwrap();
+                finished.send(()).unwrap();
+                Ok(())
+            },
+        )
+        .await;
+        assert!(matches!(result, owned_output::OwnedWrite::Cancelled(())));
+        release.send(()).unwrap();
+        completion.await.unwrap();
     }
 }
