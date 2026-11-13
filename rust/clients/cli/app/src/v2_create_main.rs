@@ -29,6 +29,8 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
                 &fabric_cli::v2_create_report::ReportCreateBinding,
                 #[cfg(feature = "v2-kql-database-create")]
                 &fabric_cli::kql_database_create::KqlReadWriteCreate,
+                #[cfg(feature = "v2-create-eventhouse")]
+                &fabric_cli::eventhouse_create::EventhouseCreate,
             ];
             let mut stdout = io::stdout().lock();
             for binding in bindings {
@@ -154,6 +156,8 @@ fn selected_binding(destination: &OsStr) -> Result<&'static dyn CreateBinding, C
         "Report" => Ok(&fabric_cli::v2_create_report::ReportCreateBinding),
         #[cfg(feature = "v2-kql-database-create")]
         "KQLDatabase" => Ok(&fabric_cli::kql_database_create::KqlReadWriteCreate),
+        #[cfg(feature = "v2-create-eventhouse")]
+        "Eventhouse" => Ok(&fabric_cli::eventhouse_create::EventhouseCreate),
         _ => Err(CreateCommandError::Invalid),
     }
 }

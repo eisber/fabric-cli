@@ -88,11 +88,12 @@ test('real workflow conditions route only trusted integration PR targets and pus
   }
 });
 
-test('bounded Report and KQL conflict checks remain independent candidate-only PR steps', () => {
+test('bounded Report, KQL and Eventhouse conflict checks remain independent candidate-only PR steps', () => {
   const text = workflow('integration-smoke.yml');
   for (const [label, branch, prefix] of [
     ['Report66', 'dev/marcozo/reconcile-and-integrate-native-report-cr-toewpt', 'report'],
     ['KQL73', 'dev/marcozo/reconcile-and-integrate-kql-database-cre-toey4y', 'kql'],
+    ['Eventhouse76', 'dev/marcozo/evaluate-and-integrate-released-eventhou-tof03g', 'eventhouse'],
   ]) {
     const block = text.split(`      - name: Check the ${label} conflict candidate's `)[1]
       .split('\n      - name:')[0];
@@ -115,6 +116,17 @@ test('bounded Report and KQL conflict checks remain independent candidate-only P
     assert.ok(!block.includes('continue-on-error') && !block.includes('--all-features'));
     if (label === 'KQL73') {
       assert.match(block, /--no-default-features --features headless,v2-kql-database-create,runtime-v2 --test create_host --test kql_database_create --test kql_database_create_binary --test v2_create_report --test livy_list_entry/);
+    }
+    if (label === 'Eventhouse76') {
+      assert.match(block, /--features headless,v2-create-eventhouse,runtime-v2 --test eventhouse_create_binary/);
+      assert.match(block, /--features headless,v2-kql-database-create,runtime-v2 --test kql_database_create_binary/);
+      assert.match(block, /--features headless,v2-create-eventhouse,v2-kql-database-create,runtime-v2 --test create_host --test eventhouse_create --test kql_database_create --test create_binding_composition --test v2_create_report --test livy_list_entry/);
+      const after = text.split('      - name: Verify the optional Eventhouse76 check left source unchanged')[1]
+        .split('\n      - name:')[0];
+      assert.ok(after.includes('always()'));
+      assert.ok(after.includes(`github.event.pull_request.head.ref == '${branch}'`));
+      assert.ok(after.includes('eventhouse-create-after.json'));
+      assert.ok(after.includes('eventhouse-create-before.json'));
     }
   }
 });

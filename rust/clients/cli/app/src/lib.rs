@@ -17,6 +17,8 @@ pub mod create_command;
 pub mod delete;
 pub mod deploy;
 mod errors;
+#[cfg(feature = "v2-create-eventhouse")]
+pub mod eventhouse_create;
 pub mod execute;
 pub mod exists_command;
 #[cfg(feature = "native-host")]

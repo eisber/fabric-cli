@@ -107,6 +107,9 @@ const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /
 #[cfg(feature = "v2-kql-database-create")]
 const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<name>.KQLDatabase --input FILE|-\nReadWrite only; creationPayload requires an existing parentEventhouseItemId GUID.\nNo implicit Eventhouse creation, Shortcut, definition, query or ingestion.";
 
+#[cfg(feature = "v2-create-eventhouse")]
+const EVENTHOUSE_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Eventhouse [OPTIONS]\nMetadata-only Eventhouse creation requires immediate terminal approval. Run create --help.\nThe provider may create a same-name default KQL database and incur capacity or storage consumption; the client issues no child POST.";
+
 fn failed(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), Value::Null, exit)
 }
@@ -172,6 +175,9 @@ fn run() -> Result<(), Failure> {
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-kql-database-create")]
         writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create-eventhouse")]
+        writeln!(io::stdout().lock(), "\n{EVENTHOUSE_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }

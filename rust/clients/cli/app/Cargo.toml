@@ -34,6 +34,21 @@ path = "tests/kql_database_create_binary.rs"
 required-features = ["v2-kql-database-create", "headless"]
 
 [[test]]
+name = "eventhouse_create"
+path = "tests/eventhouse_create.rs"
+required-features = ["v2-create-eventhouse"]
+
+[[test]]
+name = "eventhouse_create_binary"
+path = "tests/eventhouse_create_binary.rs"
+required-features = ["v2-create-eventhouse", "headless"]
+
+[[test]]
+name = "create_binding_composition"
+path = "tests/create_binding_composition.rs"
+required-features = ["v2-create-eventhouse", "v2-kql-database-create", "headless"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
@@ -94,6 +109,7 @@ workspace-read-v2 = []
 v2-cancel = []
 v2-create = []
 v2-kql-database-create = ["v2-create"]
+v2-create-eventhouse = ["v2-create"]
 v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []
