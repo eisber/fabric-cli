@@ -45,6 +45,53 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "docs-search")]
+    if args.first().is_some_and(|value| value == "item")
+        || args.first().is_some_and(|value| value == "get")
+            && fabric_cli::docs_browse::selects_docs_get(&args)
+    {
+        let parsed = if args.first().is_some_and(|value| value == "item") {
+            fabric_cli::docs_browse::parse_item(args)
+        } else {
+            fabric_cli::docs_browse::parse_get(args)
+        };
+        let exit = match parsed {
+            Ok(command) => fabric_cli::docs_browse::write(&command,
+                &mut io::stdout().lock(), &mut io::stderr().lock()),
+            Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
+                write!(io::stdout().lock(), "{error}").map(|()|0)
+            }
+            Err(_) => {
+                writeln!(io::stderr().lock(), "{}", json!({"error":{"code":"invalid_arguments",
+                    "message":"Invalid local documentation arguments. Run fab-cli-v2 search docs --help."}})).map(|()|2)
+            }
+        };
+        return std::process::ExitCode::from(match exit {
+            Ok(exit) => exit,
+            Err(_) => finish(
+                Err(failed("OutputFailed", "Documentation output failed.", 1)),
+                &mut io::stderr().lock(),
+            ),
+        });
+    }
+    #[cfg(feature = "docs-search")]
+    if args.first().is_some_and(|value| value == "search")
+        && args.get(1).is_some_and(|value| value == "docs")
+    {
+        let result = fabric_cli::docs_search::run_args(
+            args,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        );
+        let exit = match result {
+            Ok(exit) => exit,
+            Err(_) => finish(
+                Err(failed("OutputFailed", "Docs search output failed.", 1)),
+                &mut io::stderr().lock(),
+            ),
+        };
+        return std::process::ExitCode::from(exit);
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -140,6 +187,9 @@ fn run() -> Result<(), Failure> {
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "docs-search")]
+        writeln!(io::stdout().lock(), "\nOffline exception: fab-cli-v2 search docs --text QUERY uses only the embedded documentation snapshot and requires no identity.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }

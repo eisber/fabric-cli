@@ -69,6 +69,12 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// Explicit offline retrieval from the immutable embedded documentation corpus.
+    #[cfg(feature = "docs-search")]
+    DocsSearch(crate::docs_search::DocsCommand),
+    /// Local stored-document retrieval or source-backed item documentation browsing.
+    #[cfg(feature = "docs-search")]
+    DocsBrowse(crate::docs_browse::DocsBrowseCommand),
     /// Native serving operations on an exact owning MLModel item.
     MlEndpoint(crate::ml_endpoint::EndpointCommand),
     /// Real run/query/execute frontend with an explicitly injected backend boundary.
@@ -151,6 +157,10 @@ pub fn command() -> Command {
     let command = update::register(command);
     #[cfg(feature = "v2-cancel")]
     let command = command.subcommand(cancel::command());
+    #[cfg(feature = "docs-search")]
+    let command = command.subcommand(crate::docs_search::command());
+    #[cfg(feature = "docs-search")]
+    let command = command.subcommand(crate::docs_browse::item_command());
     #[cfg(all(feature = "native-read", not(feature = "headless")))]
     let command = command.after_help("Native remote commands reuse the Windows account selected by auth login; FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID provide explicit overrides. Windows broker authentication is opt-in; remote credentials are silent and never show sign-in UI. FAB_RUST_CONTEXT defaults to / or the explicitly selected persisted session; FAB_RUST_HOME is optional. Local/config and family commands share the platform user configuration directory; FAB_RUST_CONFIG_ROOT overrides it. Mutations change remote state; job run may cancel on timeout. Native confirmations require explicit --force or an injected UI host. No token input or credential fallback is available. Config-driven deploy supports bounded root-level Notebooks with explicit unpublish.skip; other branches fail before writes.");
     #[cfg(feature = "headless")]
@@ -240,6 +250,31 @@ where
 {
     let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let root = root_argument(&args);
+    #[cfg(feature = "docs-search")]
+    if let Some(start) = root
+        && args[start] == "get"
+        && !args
+            .iter()
+            .take(start)
+            .any(|value| matches!(value.to_str(), Some("--version" | "-v" | "-V")))
+        && crate::docs_browse::selects_docs_get(&args[start..])
+    {
+        let local = std::iter::once(OsString::from("get"))
+            .chain(args.iter().skip(1).take(start - 1).cloned())
+            .chain(args.iter().skip(start + 1).cloned());
+        return match crate::docs_browse::parse_get(local) {
+            Ok(command) => Ok(Invocation::DocsBrowse(command)),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+                ) =>
+            {
+                Ok(Invocation::Display(error.to_string()))
+            }
+            Err(error) => Err(error),
+        };
+    }
     if root.and_then(|index| args[index].to_str()) == Some("delete") {
         args = delete::normalize(&args, root.expect("selected delete root"));
     }
@@ -255,6 +290,13 @@ where
     let mut parser = command();
     if root.and_then(|index| args[index].to_str()) == Some("execute") {
         // V1's inherited last-value-wins policy must not discard v2 selectors.
+        parser = parser.args_override_self(false);
+    }
+    #[cfg(feature = "docs-search")]
+    if matches!(
+        root.and_then(|index| args[index].to_str()),
+        Some("search" | "item")
+    ) {
         parser = parser.args_override_self(false);
     }
     if batch::has_root_option(&args) {
@@ -328,6 +370,14 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    #[cfg(feature = "docs-search")]
+    if name == "search" {
+        return crate::docs_search::from_matches(values).map(Invocation::DocsSearch);
+    }
+    #[cfg(feature = "docs-search")]
+    if name == "item" {
+        return crate::docs_browse::item_from_matches(values).map(Invocation::DocsBrowse);
+    }
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
     }

@@ -29,6 +29,12 @@ cargo run --locked -p fabric-cli --features native-read -- deploy --help
 Help, version and local command setup do not authenticate. Default and
 broker-only builds do not install a remote execution host.
 
+The optional `docs-search` feature adds credential-free `search docs` over a
+compile-time documentation snapshot. Set `FAB_DOCS_INDEX` to a finalized bundle
+when building a self-contained executable; without it the feature is engine-only
+and search fails explicitly. See [embedded documentation search](../../../authoring-docs/docs-search.md)
+for corpus preparation, offline attribution, query limits, and benchmarks.
+
 The offline legacy read probes accept only read invocations. Job and Dataflow
 `execute` invocations remain explicit errors in those probes; their dedicated
 command tests cover execution separately.

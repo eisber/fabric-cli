@@ -98,6 +98,29 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(&arguments);
+    #[cfg(feature = "docs-search")]
+    if let Ok(Invocation::Display(text)) = &invocation {
+        write!(io::stdout().lock(), "{text}")?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    #[cfg(feature = "docs-search")]
+    if let Ok(Invocation::DocsSearch(command)) = &invocation {
+        return fabric_cli::docs_search::write(
+            command,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        )
+        .map(ExitCode::from);
+    }
+    #[cfg(feature = "docs-search")]
+    if let Ok(Invocation::DocsBrowse(command)) = &invocation {
+        return fabric_cli::docs_browse::write(
+            command,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        )
+        .map(ExitCode::from);
+    }
     if let Err(error) = &invocation
         && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
     {
@@ -142,6 +165,13 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
             return Ok(exit_status(outcome));
         }
     }
+    #[cfg(feature = "docs-search")]
+    let mut state = if matches!(&invocation, Ok(Invocation::Batch(_))) {
+        BatchState::capture_deferred()
+    } else {
+        BatchState::capture()
+    };
+    #[cfg(not(feature = "docs-search"))]
     let mut state = BatchState::capture();
     dispatch(invocation, &mut state).map(exit_status)
 }
@@ -215,6 +245,24 @@ fn dispatch(
         Ok(Invocation::Display(text)) => {
             write!(io::stdout().lock(), "{text}")?;
             return Ok(CommandOutcome::Returned(0));
+        }
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsSearch(command)) => {
+            return fabric_cli::docs_search::write(
+                &command,
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            )
+            .map(CommandOutcome::Returned);
+        }
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsBrowse(command)) => {
+            return fabric_cli::docs_browse::write(
+                &command,
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            )
+            .map(CommandOutcome::Returned);
         }
         #[cfg(feature = "semantic-model")]
         Ok(Invocation::SemanticModel(command)) => return semantic_model::run(&command),
@@ -436,6 +484,15 @@ impl BatchHost for BatchExecution<'_> {
             dispatch(Ok(invocation), self.local_state)?;
             return Ok(BatchOutcome::Stop(2));
         }
+        #[cfg(feature = "docs-search")]
+        if !(matches!(
+            &invocation,
+            Invocation::DocsSearch(_) | Invocation::DocsBrowse(_)
+        ) || matches!(&invocation, Invocation::Display(_))
+            && arguments.first() == Some(&"search"))
+        {
+            self.local_state.capture_if_needed();
+        }
         let outcome = dispatch(Ok(invocation), self.local_state)?;
         Ok(match outcome {
             CommandOutcome::Returned(exit) if exits => BatchOutcome::Stop(exit),
@@ -448,7 +505,11 @@ impl BatchHost for BatchExecution<'_> {
     }
 
     fn summary(&mut self, invocation: &BatchInvocation) -> io::Result<()> {
-        let configured = if invocation.output_format.is_none() {
+        #[cfg(feature = "docs-search")]
+        let use_configuration = !self.local_state.is_deferred();
+        #[cfg(not(feature = "docs-search"))]
+        let use_configuration = true;
+        let configured = if invocation.output_format.is_none() && use_configuration {
             local_host::available_store()
                 .map_err(io::Error::other)?
                 .map(|store| store.read())

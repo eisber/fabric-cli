@@ -14,6 +14,10 @@ pub mod cancel;
 pub mod console;
 pub mod delete;
 pub mod deploy;
+#[cfg(feature = "docs-search")]
+pub mod docs_browse;
+#[cfg(feature = "docs-search")]
+pub mod docs_search;
 mod errors;
 pub mod execute;
 pub mod exists_command;
