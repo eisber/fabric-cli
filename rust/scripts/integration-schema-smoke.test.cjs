@@ -11,18 +11,24 @@ const {test} = require('node:test');
 const schema = require('./integration-schema-smoke.cjs');
 
 test('schema proof retains narrow offline targets and the registered process-test module', () => {
-  assert.equal(schema.COMMANDS.length, 4);
+  assert.equal(schema.COMMANDS.length, 5);
   assert.deepEqual(schema.COMMANDS[0], ['fetch', '--locked', '--target', 'x86_64-pc-windows-msvc']);
   for (const args of schema.COMMANDS.slice(1)) {
     assert.ok(args.includes('--offline') && args.includes('--locked'));
     assert.ok(!args.includes('--workspace') && !args.includes('--all-features'));
   }
   assert.ok(schema.COMMANDS[1].includes('schema_document'));
-  for (const name of ['v2_schema_native', 'v2_help', 'v2_discovery', 'v2_discovery_host', 'table_mounted']) {
+  for (const name of ['v2_schema_native', 'v2_help', 'v2_discovery', 'v2_discovery_host']) {
     assert.ok(schema.COMMANDS[2].includes(name));
   }
   assert.ok(schema.COMMANDS[3].includes('schema::tests::'));
   assert.ok(schema.COMMANDS[3].includes('fab-cli-discovery'));
+  const legacy = schema.COMMANDS[4];
+  assert.ok(legacy.includes('table_mounted'));
+  const source = fs.readFileSync(path.resolve(__dirname, '../clients/cli/app/tests/table_mounted.rs'), 'utf8');
+  const required = source.match(/#!\[cfg\(feature = "([^"]+)"\)\]/)?.[1];
+  assert.equal(required, 'native-read');
+  assert.ok(legacy[legacy.indexOf('--features') + 1].split(',').includes(required));
 });
 
 test('test evidence rejects empty, ignored, failing and missing targets without hiding counts', () => {

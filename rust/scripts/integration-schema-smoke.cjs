@@ -16,10 +16,12 @@ const COMMANDS = [
   ['test', '--offline', '--locked', '-p', 'fabric-sdk-tables', '--test', 'schema_document'],
   ['test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
     '--features', 'v2-discovery,headless', '--test', 'v2_schema_native', '--test', 'v2_help',
-    '--test', 'v2_discovery', '--test', 'v2_discovery_host', '--test', 'table_mounted'],
+    '--test', 'v2_discovery', '--test', 'v2_discovery_host'],
   ['test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
     '--features', 'v2-discovery,headless', '--bin', 'fab-cli-discovery', 'schema::tests::',
     '--', '--test-threads=1'],
+  ['test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
+    '--features', 'v2-discovery,headless,native-read', '--test', 'table_mounted'],
 ];
 
 function testResults(stdout) {
