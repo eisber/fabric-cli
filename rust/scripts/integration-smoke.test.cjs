@@ -140,6 +140,25 @@ test('bounded Report, KQL and Eventhouse conflict checks remain independent cand
   }
 });
 
+test('PR54 schema proof is candidate-only and never broadens the generic or postpush profile', () => {
+  const schema = require('./integration-schema-smoke.cjs');
+  const block = workflow('integration-smoke.yml').split("      - name: Check the PR54 candidate's ")[1]
+    .split('\n      - name:')[0];
+  const expression = block.match(/\n        if: >-\n((?:          .+\n)+)/)[1]
+    .trim().replace(/\s*\n\s*/g, ' ');
+  for (const [event, head, expected] of [
+    ['pull_request', schema.CANDIDATE, true], ['push', schema.CANDIDATE, false],
+    ['pull_request', `${schema.CANDIDATE}-lookalike`, false],
+    ['pull_request', 'unrelated', false], ['schedule', schema.CANDIDATE, false],
+  ]) {
+    assert.equal(evaluates(expression, event, smoke.BRANCH, ref, true, head), expected);
+  }
+  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /CARGO_TARGET_DIR: \$\{\{ runner.temp \}\}\/integration-smoke-target/);
+  assert.ok(block.includes('node rust/scripts/integration-schema-smoke.cjs'));
+  assert.ok(!block.includes('continue-on-error'));
+});
+
 test('PR source pin requires exact checkout and both exact parents, not source-only smoke', () => {
   const pin = () => smoke.sourcePin('pull_request', event, 'refs/pull/90/merge',
     combined, combined, [base, source], false);
