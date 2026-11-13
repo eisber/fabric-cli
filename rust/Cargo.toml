@@ -33,6 +33,7 @@ members = [
     "engine/control-plane/resources/workspaces",
     "engine/control-plane/search/client",
     "engine/control-plane/search/discovery",
+    "engine/control-plane/search/docs",
     "engine/control-plane/search/names",
     "engine/control-plane/search/relevance",
     "engine/control-plane/sql/database",
@@ -101,6 +102,7 @@ default-members = [
     "engine/control-plane/ontology/workload",
     "engine/control-plane/search/client",
     "engine/control-plane/search/discovery",
+    "engine/control-plane/search/docs",
     "engine/control-plane/search/names",
     "engine/control-plane/search/relevance",
     "engine/control-plane/sql/database",
@@ -120,6 +122,9 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-docs-search = { path = "engine/control-plane/search/docs" }
+tantivy = { version = "=0.27.0", default-features = false, features = ["lz4-compression", "zstd-compression", "stemmer"] }
+pulldown-cmark = { version = "=0.13.0", default-features = false }
 fabric-semantic-model-dotnet = { path = "engine/data-plane/semantic-model/dotnet", default-features = false }
 fabric-sdk-semantic-model = { path = "engine/data-plane/semantic-model/client", default-features = false }
 fabric-cli-semantic-model = { path = "clients/cli/commands/semantic-model", default-features = false }

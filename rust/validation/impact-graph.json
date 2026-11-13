@@ -3,6 +3,48 @@
   "schema": 1,
   "components": [
     {
+      "id": "docs-search",
+      "package": "fabric-docs-search",
+      "inputs": [
+        "rust/engine/control-plane/search/docs/**",
+        "rust/scripts/prepare_docs_corpus.py",
+        "rust/scripts/test_prepare_docs_corpus.py",
+        "rust/tests/performance/docs_search.py",
+        "rust/tests/performance/test_docs_search.py",
+        "rust/tests/performance/docs_space_impact.py",
+        "rust/tests/performance/test_docs_space_impact.py",
+        "rust/authoring-docs/docs-search.md"
+      ],
+      "depends_on": [],
+      "tests": [
+        {"package": "fabric-docs-search", "target": "lib"},
+        {"package": "fabric-docs-search", "target": "test:ingestion"},
+        {"package": "fabric-docs-search", "target": "test:rich_search"},
+        {"package": "fabric-docs-search", "target": "test:browse"},
+        {"package": "fabric-docs-search", "target": "example:benchmark"},
+        {"package": "fabric-docs-search", "target": "example:rich_probe"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-docs-search",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/docs_search.rs",
+        "rust/clients/cli/app/src/docs_browse.rs",
+        "rust/clients/cli/app/tests/docs_search.rs",
+        "rust/clients/cli/app/tests/docs_browse.rs"
+      ],
+      "depends_on": ["docs-search"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:docs_search"},
+        {"package": "fabric-cli", "target": "test:docs_browse"},
+        {"package": "fabric-cli", "target": "test:search_command"},
+        {"package": "fabric-cli", "target": "test:v2_search_binary"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "dataflow",
       "package": "fabric-sdk-dataflow",
       "inputs": [
@@ -3167,6 +3209,27 @@
     }
   ],
   "profiles": [
+    {
+      "id": "docs-search-builder",
+      "packages": ["fabric-docs-search"],
+      "features": ["fabric-docs-search/index-builder"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "docs-search-cli",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/docs-search"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "docs-search-preview",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/docs-search", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "runtime-v2-native",
       "packages": ["fabric-cli"],
