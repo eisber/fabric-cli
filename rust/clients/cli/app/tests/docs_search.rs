@@ -53,7 +53,16 @@ fn local_parser_accepts_only_explicit_docs_scope_and_finite_criteria() {
 
 #[test]
 fn quoted_and_escaped_parentheses_are_literal_query_content() {
-    for text in [r#""COUNT(""#, "'COUNT)'", r"COUNT\(", r"COUNT\)"] {
+    for text in [
+        r#""COUNT(""#,
+        "'COUNT)'",
+        r"COUNT\(",
+        r"COUNT\)",
+        r#"'completion: COUNT('"#,
+        r#""metadata_terms: COUNT)""#,
+        r"completion\: COUNT\(",
+        r#"'completion: "COUNT('"#,
+    ] {
         assert!(matches!(
             parse_args(["fab-rs", "search", "docs", "--text", text]).unwrap(),
             Invocation::DocsSearch(_)

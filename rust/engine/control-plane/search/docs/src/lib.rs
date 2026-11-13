@@ -400,6 +400,36 @@ pub fn embedded_corpus_info() -> Result<Option<BundleManifest>, SearchError> {
         .transpose()
 }
 
+#[derive(Default)]
+struct QuerySyntaxState {
+    quote: Option<char>,
+    escaped: bool,
+}
+
+impl QuerySyntaxState {
+    /// Advance the literal state and identify unquoted, unescaped syntax.
+    fn advance(&mut self, character: char) -> bool {
+        if self.escaped {
+            self.escaped = false;
+        } else if character == '\\' {
+            self.escaped = true;
+        } else if let Some(delimiter) = self.quote {
+            if character == delimiter {
+                self.quote = None;
+            }
+        } else if matches!(character, '"' | '\'') {
+            self.quote = Some(character);
+        } else {
+            return true;
+        }
+        false
+    }
+
+    fn is_complete(&self) -> bool {
+        self.quote.is_none() && !self.escaped
+    }
+}
+
 fn validate_options(options: &SearchOptions) -> Result<(), SearchError> {
     let text = &options.text;
     let mut depth = 0usize;
@@ -433,25 +463,12 @@ fn validate_options(options: &SearchOptions) -> Result<(), SearchError> {
             return Err(SearchError::InvalidQuery);
         }
     }
-    let mut quote = None;
-    let mut escaped = false;
+    let mut syntax = QuerySyntaxState::default();
     for character in text.chars() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if character == '\\' {
-            escaped = true;
-            continue;
-        }
-        if let Some(delimiter) = quote {
-            if character == delimiter {
-                quote = None;
-            }
+        if !syntax.advance(character) {
             continue;
         }
         match character {
-            '"' | '\'' => quote = Some(character),
             '(' => {
                 depth += 1;
                 if depth > 8 {
@@ -464,7 +481,7 @@ fn validate_options(options: &SearchOptions) -> Result<(), SearchError> {
             _ => {}
         }
     }
-    if depth != 0 || quote.is_some() || escaped {
+    if depth != 0 || !syntax.is_complete() {
         return Err(SearchError::InvalidQuery);
     }
     Ok(())

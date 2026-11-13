@@ -107,6 +107,9 @@ are passed to Tantivy, so a quoted function fragment such as `"COUNT("` is not
 an unclosed group. Unterminated quotes, dangling escapes, and genuinely unbalanced
 groups remain invalid. Combined `docs-search`/`runtime-v2` builds also list the
 credential-free docs commands in root help.
+Explicit-field validation shares those quote and escape rules: field-like
+text inside a literal is not a request to search an internal index field.
+Actual `completion:` and `metadata_terms:` field queries remain restricted.
 
 `--text`, `--suggest`, `--filters`, and `--corpus-info` are mutually exclusive.
 Duplicate scalar options, malformed filters, conflicting modes, and numeric bounds

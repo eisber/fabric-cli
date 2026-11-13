@@ -289,46 +289,40 @@ impl DocsSearch {
     }
 
     fn validate_explicit_fields(&self, text: &str) -> Result<(), SearchError> {
-        let mut quoted = false;
-        let mut escaped = false;
+        let mut syntax = crate::QuerySyntaxState::default();
         for (offset, character) in text.char_indices() {
-            if escaped {
-                escaped = false;
+            if !syntax.advance(character) {
                 continue;
             }
-            match character {
-                '\\' => escaped = true,
-                '"' => quoted = !quoted,
-                ':' if !quoted => {
-                    let preceding = text[..offset].trim_end();
-                    let start = preceding
-                        .char_indices()
-                        .rev()
-                        .find(|(_, c)| !c.is_ascii_alphanumeric() && *c != '_')
-                        .map_or(0, |(position, c)| position + c.len_utf8());
-                    let name = &preceding[start..];
-                    let needed = match name {
-                        "body_stem" if !self.manifest.features.stemmed => Some("stemmed"),
-                        "description" | "aliases" | "metadata_terms"
-                            if !self.manifest.features.metadata =>
-                        {
-                            Some("metadata")
-                        }
-                        "heading_context" if !self.manifest.features.hierarchy => Some("hierarchy"),
-                        "completion" if !self.manifest.features.autocomplete => {
-                            Some("autocomplete")
-                        }
-                        _ => None,
-                    };
-                    if let Some(feature) = needed {
-                        return Err(missing_feature(feature));
+            if character == ':' {
+                let preceding = text[..offset].trim_end();
+                let start = preceding
+                    .char_indices()
+                    .rev()
+                    .find(|(_, c)| !c.is_ascii_alphanumeric() && *c != '_')
+                    .map_or(0, |(position, c)| position + c.len_utf8());
+                let name = &preceding[start..];
+                let needed = match name {
+                    "body_stem" if !self.manifest.features.stemmed => Some("stemmed"),
+                    "description" | "aliases" | "metadata_terms"
+                        if !self.manifest.features.metadata =>
+                    {
+                        Some("metadata")
                     }
-                    if matches!(name, "metadata_terms" | "completion") {
-                        return Err(SearchError::InvalidQuery);
-                    }
+                    "heading_context" if !self.manifest.features.hierarchy => Some("hierarchy"),
+                    "completion" if !self.manifest.features.autocomplete => Some("autocomplete"),
+                    _ => None,
+                };
+                if let Some(feature) = needed {
+                    return Err(missing_feature(feature));
                 }
-                _ => {}
+                if matches!(name, "metadata_terms" | "completion") {
+                    return Err(SearchError::InvalidQuery);
+                }
             }
+        }
+        if !syntax.is_complete() {
+            return Err(SearchError::InvalidQuery);
         }
         Ok(())
     }
@@ -1233,6 +1227,47 @@ mod tests {
             let result = reader.search_rich(&options(text)).unwrap();
             assert_eq!(result.data.len(), 1, "{text}");
             assert_eq!(result.data[0].hit.source_path, "docs/functions.md");
+        }
+    }
+
+    #[test]
+    fn literal_field_like_text_uses_the_same_quote_and_escape_rules_as_grouping() {
+        for features in [IndexFeatures::full(), IndexFeatures::default()] {
+            let reader = fixture(
+                vec![Record::new(
+                    "docs/functions.md",
+                    "one",
+                    "Functions",
+                    "Say completion COUNT and metadata_terms COUNT to explain these literals.",
+                )],
+                features,
+            );
+            for text in [
+                r#"'completion: COUNT('"#,
+                r#""completion: COUNT(""#,
+                r#"'metadata_terms: COUNT)'"#,
+                r#""metadata_terms: COUNT)""#,
+                r"completion\: COUNT\(",
+                r#"'completion: "COUNT('"#,
+                r#""metadata_terms: 'COUNT)""#,
+                r#"'say \'completion: COUNT('"#,
+            ] {
+                let mut request = options(text);
+                request.stemming = features.stemmed;
+                let result = reader.search_rich(&request).unwrap();
+                assert_eq!(result.data.len(), 1, "{text}");
+                assert_eq!(result.data[0].hit.source_path, "docs/functions.md");
+            }
+            for text in [
+                "completion:COUNT",
+                "metadata_terms:COUNT",
+                r#"'completion: COUNT(' completion:COUNT"#,
+                r#""metadata_terms: COUNT)" metadata_terms:COUNT"#,
+            ] {
+                let mut request = options(text);
+                request.stemming = features.stemmed;
+                assert!(reader.search_rich(&request).is_err(), "{text}");
+            }
         }
     }
 
