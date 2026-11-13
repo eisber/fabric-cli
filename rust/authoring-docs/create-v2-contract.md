@@ -6,13 +6,38 @@ This document records owner-approved creation policy behavior and the separate
 CLI v2 implementation contract. Precise option grammar, exit and receipt-envelope
 details, timing, and source revision pins are implementation-contract details,
 not a claim of explicit owner approval for every broader user experience choice.
-It is not a command reference for the current executable. The current Rust
+It is not a general command reference for the current executable. The default Rust
 executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
-policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+policy and CLI parsing. The shared [create host](create-host.md) composes those
+libraries without installing a generic artifact backend or another policy engine.
+The [Report binding](report-native-reads.md#definition-create-schema-adapter)
+documents this branch's bounded opt-in native mount; default and v1 behavior
+remain separate.
+
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
+
+The opt-in `v2-create-eventhouse` feature now supplies the bounded standalone
+Eventhouse mount in `fab-cli-v2` with `headless`; see
+[Eventhouse creation](eventhouse-create.md) and the [shared host](create-host.md).
+This does not establish support for other types or all policies.
 
 ## Target grammar
 
@@ -54,6 +79,11 @@ Resource paths retain type suffixes, such as
 `WorkspaceName.Workspace/ItemName.Lakehouse`. This notation does not establish
 which resource types or collections implement each policy. The resolved schema
 and capability must support the requested destination form and operation.
+
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
 
 Preserve raw input bytes before any declared format conversion. Do not silently
 normalize line endings, change encoding, or reserialize structured content.
@@ -145,6 +175,13 @@ resource-specific backend evidence are separate integration requirements.
 Passing a library test cannot establish that the current binary supports the
 target command or that a Fabric API supports every policy.
 
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
 ## Outcomes and operation safety
 
 Keep requested policy, selected action, completion evidence, and effects
@@ -168,6 +205,11 @@ An accepted operation ID is not a created-resource ID or completion evidence.
 Partial, unknown, cancelled, and timed-out results must retain available
 operation and effect evidence. Cancellation or timeout stops local work; it does
 not prove that remote work stopped.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
 
 Do not automatically replay a mutation or claim rollback after cancellation,
 timeout, an unknown response, or a later failure. Failure to project or write a
@@ -202,7 +244,7 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
+| Executable integration | Opt-in standalone Eventhouse metadata create; no default/v1 change or general all-type mount. |
 | Resource backend | No backend proof establishes that a resource implements all requested policies. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 

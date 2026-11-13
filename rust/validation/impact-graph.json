@@ -643,6 +643,64 @@
       "checks": ["sdk-graph"]
     },
     {
+      "id": "cli-create-host",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/create_command.rs",
+        "rust/clients/cli/app/tests/create_host.rs",
+        "rust/authoring-docs/create-host.md"
+      ],
+      "depends_on": ["sdk", "mutations", "output", "query", "storage-files"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:create_host"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-kql-database-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/kql_database_create.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/tests/kql_database_create.rs",
+        "rust/clients/cli/app/tests/kql_database_create_binary.rs",
+        "rust/authoring-docs/kql-database-create.md",
+        ".changes/unreleased/added-20261112-kql-database-create.yaml"
+      ],
+      "depends_on": ["cli-create-host", "sdk", "mutations", "output", "query", "storage-files"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:kql_database_create"},
+        {"package": "fabric-cli", "target": "test:kql_database_create_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-eventhouse-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/eventhouse_create.rs",
+        "rust/clients/cli/app/src/kql_database_create.rs",
+        "rust/clients/cli/app/src/v2_create_report.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/src/v2_livy_list_main.rs",
+        "rust/clients/cli/app/tests/create_binding_composition.rs",
+        "rust/clients/cli/app/tests/eventhouse_create.rs",
+        "rust/clients/cli/app/tests/eventhouse_create_binary.rs",
+        "rust/authoring-docs/eventhouse-create.md",
+        ".changes/unreleased/added-20261112-eventhouse-create-v2.yaml"
+      ],
+      "depends_on": ["cli-create-host"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:eventhouse_create"},
+        {"package": "fabric-cli", "target": "test:eventhouse_create_binary"},
+        {"package": "fabric-cli", "target": "test:create_binding_composition"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -659,11 +717,26 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-report-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_create_report.rs",
+        "rust/clients/cli/app/tests/v2_create_report.rs",
+        "rust/clients/cli/app/tests/v2_create_report/**"
+      ],
+      "depends_on": ["cli-create-host", "report-native-reads"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:v2_create_report"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "report-native-reads",
       "package": "fabric-sdk",
       "inputs": [
         "rust/engine/sdk/src/reports/**",
         "rust/engine/sdk/tests/reports.rs",
+        "rust/engine/sdk/tests/report_create.rs",
         "rust/authoring-docs/report-native-reads.md"
       ],
       "depends_on": [
@@ -673,6 +746,10 @@
         {
           "package": "fabric-sdk",
           "target": "test:reports"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:report_create"
         },
         {
           "package": "fabric-sdk",
@@ -1920,7 +1997,9 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**",
+        "rust/clients/cli/app/tests/runtime_v2.rs",
+        "rust/clients/cli/app/tests/runtime_native_host.rs"
       ],
       "depends_on": [
         "sdk",
@@ -1932,11 +2011,32 @@
         {
           "package": "fabric-cli",
           "target": "test:runtime_v2"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_native_host"
         }
       ],
       "checks": [
         "dependency-graph"
       ]
+    },
+    {
+      "id": "cli-livy-list",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/runtime_v2/livy_list.rs",
+        "rust/clients/cli/app/src/v2_livy_list_main.rs",
+        "rust/clients/cli/app/tests/livy_list_native.rs",
+        "rust/clients/cli/app/tests/livy_list_entry.rs"
+      ],
+      "depends_on": ["cli-runtime-v2", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:livy_list_native"},
+        {"package": "fabric-cli", "target": "test:livy_list_entry"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph", "headless", "combined"]
     },
     {
       "id": "cli-resources",
@@ -3061,6 +3161,62 @@
       "id": "docs-search-preview",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/docs-search", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "runtime-v2-native",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/runtime-v2", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "headless"]
+    },
+    {
+      "id": "v2-kql-database-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-kql-database-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-eventhouse",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-eventhouse"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-kql-database-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-kql-database-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-eventhouse-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-eventhouse", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-eventhouse-kql-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-eventhouse", "fabric-cli/v2-kql-database-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create", "fabric-cli/headless"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["dependency-graph"]
     },

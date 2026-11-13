@@ -19,6 +19,36 @@ name = "fab-rs"
 path = "src/main.rs"
 
 [[test]]
+name = "create_host"
+path = "tests/create_host.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "kql_database_create"
+path = "tests/kql_database_create.rs"
+required-features = ["v2-kql-database-create"]
+
+[[test]]
+name = "kql_database_create_binary"
+path = "tests/kql_database_create_binary.rs"
+required-features = ["v2-kql-database-create", "headless"]
+
+[[test]]
+name = "eventhouse_create"
+path = "tests/eventhouse_create.rs"
+required-features = ["v2-create-eventhouse"]
+
+[[test]]
+name = "eventhouse_create_binary"
+path = "tests/eventhouse_create_binary.rs"
+required-features = ["v2-create-eventhouse", "headless"]
+
+[[test]]
+name = "create_binding_composition"
+path = "tests/create_binding_composition.rs"
+required-features = ["v2-create-eventhouse", "v2-kql-database-create", "headless"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
@@ -86,6 +116,9 @@ semantic-model = ["dep:fabric-cli-semantic-model"]
 semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
+v2-create = []
+v2-kql-database-create = ["v2-create"]
+v2-create-eventhouse = ["v2-create"]
 v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []
@@ -169,6 +202,21 @@ tokio.workspace = true
 name = "runtime_v2"
 path = "tests/runtime_v2.rs"
 required-features = ["runtime-v2"]
+
+[[test]]
+name = "runtime_native_host"
+path = "tests/runtime_native_host.rs"
+required-features = ["runtime-v2", "native-host"]
+
+[[test]]
+name = "livy_list_native"
+path = "tests/livy_list_native.rs"
+required-features = ["runtime-v2", "native-host"]
+
+[[test]]
+name = "livy_list_entry"
+path = "tests/livy_list_entry.rs"
+required-features = ["runtime-v2", "headless"]
 
 [[test]]
 name = "graph_refresh_v2"

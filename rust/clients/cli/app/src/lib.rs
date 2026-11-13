@@ -12,6 +12,8 @@ pub mod auth_commands;
 #[cfg(feature = "v2-cancel")]
 pub mod cancel;
 pub mod console;
+#[cfg(feature = "v2-create")]
+pub mod create_command;
 pub mod delete;
 pub mod deploy;
 #[cfg(feature = "docs-search")]
@@ -19,6 +21,8 @@ pub mod docs_browse;
 #[cfg(feature = "docs-search")]
 pub mod docs_search;
 mod errors;
+#[cfg(feature = "v2-create-eventhouse")]
+pub mod eventhouse_create;
 pub mod execute;
 pub mod exists_command;
 #[cfg(feature = "native-host")]
@@ -32,6 +36,8 @@ mod get_report;
 pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;
+#[cfg(feature = "v2-kql-database-create")]
+pub mod kql_database_create;
 pub mod local_commands;
 pub mod ml_endpoint;
 pub mod native_tabular;
@@ -52,6 +58,9 @@ pub mod stage_deploy;
 pub mod tables;
 pub mod tabular_export;
 pub mod update;
+/// Native Report definition binding for the separately opted-in shared create host.
+#[cfg(feature = "v2-create")]
+pub mod v2_create_report;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;

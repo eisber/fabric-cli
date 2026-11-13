@@ -29,7 +29,11 @@ use std::{
 
 #[path = "headless.rs"]
 mod headless;
+#[cfg(feature = "v2-create")]
+mod v2_create_main;
 mod v2_exists_main;
+#[cfg(feature = "runtime-v2")]
+mod v2_livy_list_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -92,6 +96,20 @@ fn main() -> std::process::ExitCode {
         };
         return std::process::ExitCode::from(exit);
     }
+    #[cfg(feature = "runtime-v2")]
+    {
+        let root_help = args.as_slice() == [std::ffi::OsStr::new("--help")];
+        if root_help || fabric_cli::runtime_v2::livy_list::claims(&args) {
+            return std::process::ExitCode::from(v2_livy_list_main::run(args, root_help));
+        }
+    }
+    #[cfg(feature = "v2-create")]
+    if args.first().and_then(|value| value.to_str()) == Some("create") {
+        return std::process::ExitCode::from(finish(
+            v2_create_main::run(args),
+            &mut io::stderr().lock(),
+        ));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -127,6 +145,17 @@ fn finish(result: Result<u8, Failure>, stderr: &mut dyn Write) -> u8 {
 }
 
 type Failure = (&'static str, String, Value, u8);
+
+const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
+
+#[cfg(feature = "v2-create")]
+const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
+
+#[cfg(feature = "v2-kql-database-create")]
+const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<name>.KQLDatabase --input FILE|-\nReadWrite only; creationPayload requires an existing parentEventhouseItemId GUID.\nNo implicit Eventhouse creation, Shortcut, definition, query or ingestion.";
+
+#[cfg(feature = "v2-create-eventhouse")]
+const EVENTHOUSE_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Eventhouse [OPTIONS]\nMetadata-only Eventhouse creation requires immediate terminal approval. Run create --help.\nThe provider may create a same-name default KQL database and incur capacity or storage consumption; the client issues no child POST.";
 
 fn failed(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), Value::Null, exit)
@@ -186,7 +215,16 @@ fn run() -> Result<(), Failure> {
         return Ok(());
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
-        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+        writeln!(io::stdout().lock(), "{ROOT_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create")]
+        writeln!(io::stdout().lock(), "\n{CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-kql-database-create")]
+        writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create-eventhouse")]
+        writeln!(io::stdout().lock(), "\n{EVENTHOUSE_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "docs-search")]
         writeln!(io::stdout().lock(), "\nOffline exception: fab-cli-v2 search docs --text QUERY uses only the embedded documentation snapshot and requires no identity.")
@@ -232,32 +270,7 @@ fn run() -> Result<(), Failure> {
         )
     })?;
     let prepared = PreparedGet::preflight(command, &cwd).map_err(command_failure)?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
-        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
-            failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            )
-        })?,
-        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
-        Err(_) => {
-            return Err(failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            ));
-        }
-    };
+    let (selection, endpoint) = capture_fabric_selection()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(2)
@@ -326,6 +339,38 @@ fn run() -> Result<(), Failure> {
             .map_err(command_failure)?;
     }
     Ok(())
+}
+
+// Child command modules reuse this capture and NativeSession rather than
+// installing a second credential/transport selection chain.
+fn capture_fabric_selection() -> Result<(headless::Selection, EndpointBinding), Failure> {
+    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
+        failed(
+            "NotConfigured",
+            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
+            1,
+        )
+    })?;
+    let selection = headless::Selection::capture(&mode)
+        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
+        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+            failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            )
+        })?,
+        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
+        Err(_) => {
+            return Err(failed(
+                "InvalidConfiguration",
+                "Invalid explicit Fabric endpoint.",
+                2,
+            ));
+        }
+    };
+    Ok((selection, endpoint))
 }
 
 struct NativeSession {
