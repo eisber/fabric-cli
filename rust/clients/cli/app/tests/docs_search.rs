@@ -52,6 +52,33 @@ fn local_parser_accepts_only_explicit_docs_scope_and_finite_criteria() {
 }
 
 #[test]
+fn quoted_and_escaped_parentheses_are_literal_query_content() {
+    for text in [r#""COUNT(""#, "'COUNT)'", r"COUNT\(", r"COUNT\)"] {
+        assert!(matches!(
+            parse_args(["fab-rs", "search", "docs", "--text", text]).unwrap(),
+            Invocation::DocsSearch(_)
+        ));
+        let output = local_docs(&["--text", text]);
+        match fabric_docs_search::DocsSearch::embedded() {
+            Ok(_) => {
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(result["status"], "succeeded");
+            }
+            Err(fabric_docs_search::SearchError::NotEmbedded) => {
+                assert_eq!(output.status.code(), Some(1));
+                assert!(output.stdout.is_empty());
+            }
+            Err(error) => panic!("Broken test corpus: {error}"),
+        }
+    }
+}
+
+#[test]
 fn rich_parser_accepts_bounded_search_and_alternative_local_modes() {
     for args in [
         vec![
@@ -907,6 +934,25 @@ fn existing_non_docs_display_batches_retain_configured_summary_format() {
 #[cfg(feature = "headless")]
 #[test]
 fn preview_head_routes_docs_before_remote_identity_selection() {
+    let root = Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+        .args(["--help"])
+        .env("FAB_RUST_AUTH_MODE", "private-provider")
+        .output()
+        .unwrap();
+    assert!(root.status.success());
+    assert!(root.stderr.is_empty());
+    let help = String::from_utf8(root.stdout).unwrap();
+    for expected in [
+        "Offline exception:",
+        "fab-cli-v2 search docs --text QUERY",
+        "get docs/<article-path>",
+        "item lakehouse docs",
+        "require no identity",
+    ] {
+        assert!(help.contains(expected), "{expected}: {help}");
+    }
+    #[cfg(feature = "runtime-v2")]
+    assert!(help.contains("Opt-in runtime list:"));
     let output = Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
         .args(["search", "docs", "--help"])
         .env("FAB_RUST_AUTH_MODE", "private-provider")

@@ -148,6 +148,9 @@ type Failure = (&'static str, String, Value, u8);
 
 const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
 
+#[cfg(feature = "docs-search")]
+const DOCS_HELP: &str = "Offline exception: fab-cli-v2 search docs --text QUERY, get docs/<article-path>, and item lakehouse docs use only the embedded documentation snapshot and require no identity.";
+
 #[cfg(feature = "v2-create")]
 const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
 
@@ -227,7 +230,7 @@ fn run() -> Result<(), Failure> {
         writeln!(io::stdout().lock(), "\n{EVENTHOUSE_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "docs-search")]
-        writeln!(io::stdout().lock(), "\nOffline exception: fab-cli-v2 search docs --text QUERY uses only the embedded documentation snapshot and requires no identity.")
+        writeln!(io::stdout().lock(), "\n{DOCS_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }

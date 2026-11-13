@@ -212,6 +212,26 @@ class DocsSearchContracts(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(benchmark.BenchmarkError):
                 benchmark.load_queries(value)
 
+    def test_fixture_nesting_ignores_quoted_and_escaped_parentheses(self) -> None:
+        for text in [
+            '"COUNT("', "'COUNT('", r"COUNT\(", r"COUNT\)",
+            r"COUNT\\\(", r'"say \"COUNT("', r"'say \'COUNT('",
+            """("COUNT(" OR 'SUM)')""",
+            '(((((((("COUNT((((((((("))))))))',
+        ]:
+            value = copy.deepcopy(self.fixture)
+            value["cases"][0].update(text=text, fuzzy=0)
+            with self.subTest(text=text):
+                self.assertEqual(benchmark.load_queries(value)[0]["text"], text)
+        for text in [
+            r"COUNT\\(", '"COUNT(', "'COUNT(", "COUNT\\",
+            '("COUNT("', '"COUNT(")', '((((((((("COUNT(")))))))))',
+        ]:
+            value = copy.deepcopy(self.fixture)
+            value["cases"][0].update(text=text, fuzzy=0)
+            with self.subTest(text=text), self.assertRaises(benchmark.BenchmarkError):
+                benchmark.load_queries(value)
+
     def test_summary_retains_outliers_and_uses_nearest_rank_p95(self) -> None:
         values = list(range(1, 31))
         values[-1] = 10000

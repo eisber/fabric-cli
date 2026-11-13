@@ -250,8 +250,22 @@ def load_queries(value: Any) -> list[dict[str, Any]]:
         ):
             raise BenchmarkError("Query exceeds the supported syntax/budget")
         depth = 0
+        quote = None
+        escaped = False
         for character in text:
-            if character == "(":
+            if escaped:
+                escaped = False
+                continue
+            if character == "\\":
+                escaped = True
+                continue
+            if quote is not None:
+                if character == quote:
+                    quote = None
+                continue
+            if character in ("'", '"'):
+                quote = character
+            elif character == "(":
                 depth += 1
             elif character == ")":
                 depth -= 1
@@ -259,6 +273,8 @@ def load_queries(value: Any) -> list[dict[str, Any]]:
                 raise BenchmarkError("Query nesting exceeds budget")
         if depth:
             raise BenchmarkError("Unbalanced query grouping")
+        if quote is not None or escaped:
+            raise BenchmarkError("Unterminated query quote or escape")
         _integer(case["limit"], 1, 50)
         _integer(case["fuzzy"], 0, 2)
         if case["fuzzy"] and '"' in text:

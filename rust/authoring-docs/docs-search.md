@@ -101,6 +101,13 @@ including no matches, goes to stdout; invalid arguments exit 2, and unavailable
 or damaged indexes exit 1 with diagnostics on stderr. No failed search becomes
 a successful empty result or switches to a remote source.
 
+The eight-level Boolean-group bound counts only unquoted, unescaped parentheses.
+Both single- and double-quoted query literals and backslash-escaped parentheses
+are passed to Tantivy, so a quoted function fragment such as `"COUNT("` is not
+an unclosed group. Unterminated quotes, dangling escapes, and genuinely unbalanced
+groups remain invalid. Combined `docs-search`/`runtime-v2` builds also list the
+credential-free docs commands in root help.
+
 `--text`, `--suggest`, `--filters`, and `--corpus-info` are mutually exclusive.
 Duplicate scalar options, malformed filters, conflicting modes, and numeric bounds
 are rejected before opening the index or configuring a remote host. Only

@@ -1218,6 +1218,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn quoted_and_escaped_function_fragments_reach_the_rich_query_parser() {
+        let reader = fixture(
+            vec![Record::new(
+                "docs/functions.md",
+                "one",
+                "Functions",
+                "Use COUNT(value) to count records.",
+            )],
+            IndexFeatures::full(),
+        );
+        for text in [r#""COUNT(""#, "'COUNT)'", r"COUNT\(", r"COUNT\)"] {
+            let result = reader.search_rich(&options(text)).unwrap();
+            assert_eq!(result.data.len(), 1, "{text}");
+            assert_eq!(result.data[0].hit.source_path, "docs/functions.md");
+        }
+    }
+
     fn metadata_fixture() -> DocsSearch {
         fixture(
             vec![

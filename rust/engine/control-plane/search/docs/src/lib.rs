@@ -433,8 +433,25 @@ fn validate_options(options: &SearchOptions) -> Result<(), SearchError> {
             return Err(SearchError::InvalidQuery);
         }
     }
+    let mut quote = None;
+    let mut escaped = false;
     for character in text.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(delimiter) = quote {
+            if character == delimiter {
+                quote = None;
+            }
+            continue;
+        }
         match character {
+            '"' | '\'' => quote = Some(character),
             '(' => {
                 depth += 1;
                 if depth > 8 {
@@ -447,7 +464,7 @@ fn validate_options(options: &SearchOptions) -> Result<(), SearchError> {
             _ => {}
         }
     }
-    if depth != 0 {
+    if depth != 0 || quote.is_some() || escaped {
         return Err(SearchError::InvalidQuery);
     }
     Ok(())
@@ -691,6 +708,40 @@ mod tests {
         invalid.text = "\"OneLake shortcuts\"".into();
         assert!(invalid.validate().is_err());
         assert!(fixture().search(&options("unknownfield:secret")).is_err());
+    }
+
+    #[test]
+    fn query_nesting_counts_only_unquoted_unescaped_groups() {
+        for text in [
+            r#""COUNT(""#,
+            "'COUNT('",
+            r"COUNT\(",
+            r"COUNT\)",
+            r"COUNT\\\(",
+            r#""say \"COUNT(""#,
+            r"'say \'COUNT('",
+            r#"("COUNT(" OR 'SUM)')"#,
+            "((((((((\"COUNT(((((((((\"))))))))",
+        ] {
+            assert!(options(text).validate().is_ok(), "{text}");
+        }
+        for text in [
+            r"COUNT\\(",
+            r#""COUNT("#,
+            "'COUNT(",
+            "COUNT\\",
+            r#"("COUNT(""#,
+            r#""COUNT(")"#,
+            r#"((((((((("COUNT(")))))))))"#,
+        ] {
+            assert!(options(text).validate().is_err(), "{text}");
+        }
+        let reader = fixture();
+        for text in [r#""OneLake(""#, "'OneLake)'", r"OneLake\(", r"OneLake\)"] {
+            let result = reader.search(&options(text)).unwrap();
+            assert_eq!(result.data.len(), 1, "{text}");
+            assert_eq!(result.data[0].workload, "onelake", "{text}");
+        }
     }
 
     #[test]
