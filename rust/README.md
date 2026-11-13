@@ -55,6 +55,12 @@ The opt-in [workspace v2 read slice](authoring-docs/workspace-v2-reads.md) uses 
 executable and the native GET `fab-cli-v2` entry point; no preview overwrites
 another's Cargo output or selects a provider implicitly.
 
+The opt-in [ReadWrite KQLDatabase create slice](authoring-docs/kql-database-create.md)
+mounts the selected CREATE grammar in `fab-cli-v2` with
+`v2-kql-database-create,headless`. It requires strict native JSON and an explicit
+existing Eventhouse GUID; it never creates a parent, Shortcut, connection or
+query/ingestion workload. Default and v1 creation behavior is unchanged.
+
 The source roots separate reusable functionality from CLI-specific interaction.
 Paths below are relative to this directory; each package leaf retains its own
 manifest, source, tests, examples and assets:

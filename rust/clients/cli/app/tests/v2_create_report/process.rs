@@ -49,6 +49,8 @@ fn actual_binary_root_and_create_help_disclose_the_report_mount_without_credenti
         assert!(help.contains("Report"));
         assert!(help.contains("create"));
         assert!(help.contains("approval"));
+        #[cfg(feature = "v2-kql-database-create")]
+        assert!(help.contains("KQLDatabase"));
         #[cfg(feature = "runtime-v2")]
         if args == ["--help"] {
             assert!(help.contains("Livy"));

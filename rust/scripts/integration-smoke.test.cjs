@@ -34,9 +34,9 @@ function jobCondition(text, job) {
   return block.match(/\n    if: \$\{\{ (.+) \}\}/)?.[1];
 }
 
-function evaluates(expression, name, target, branchRef, succeeded = true) {
+function evaluates(expression, name, target, branchRef, succeeded = true, head = '') {
   return vm.runInNewContext(expression, {
-    github: {event_name: name, event: {pull_request: {base: {ref: target}}}, ref: branchRef},
+    github: {event_name: name, event: {pull_request: {base: {ref: target}, head: {ref: head}}}, ref: branchRef},
     always: () => true, success: () => succeeded,
   }, {timeout: 1000});
 }
@@ -85,6 +85,37 @@ test('real workflow conditions route only trusted integration PR targets and pus
   for (const retained of ['merge_group:', 'schedule:', 'workflow_dispatch:',
     'os: [windows-2025, ubuntu-24.04, macos-15]', '--workspace --all-targets --all-features']) {
     assert.ok(full.includes(retained), `Full diagnostic path lost: ${retained}`);
+  }
+});
+
+test('bounded Report and KQL conflict checks remain independent candidate-only PR steps', () => {
+  const text = workflow('integration-smoke.yml');
+  for (const [label, branch, prefix] of [
+    ['Report66', 'dev/marcozo/reconcile-and-integrate-native-report-cr-toewpt', 'report'],
+    ['KQL73', 'dev/marcozo/reconcile-and-integrate-kql-database-cre-toey4y', 'kql'],
+  ]) {
+    const block = text.split(`      - name: Check the ${label} conflict candidate's `)[1]
+      .split('\n      - name:')[0];
+    const expression = block.match(/\n        if: >-\n((?:          .+\n)+)/)[1]
+      .trim().replace(/\s*\n\s*/g, ' ');
+    for (const [event, head, expected] of [
+      ['pull_request', branch, true], ['push', branch, false],
+      ['pull_request', `${branch}-lookalike`, false],
+      ['pull_request', 'unrelated', false], ['schedule', branch, false],
+    ]) {
+      assert.equal(evaluates(expression, event, smoke.BRANCH, ref, true, head), expected);
+    }
+    assert.match(block, /timeout-minutes: 10/);
+    assert.match(block, /CARGO_TARGET_DIR: \$\{\{ runner.temp \}\}\/integration-smoke-target/);
+    assert.match(block, /cargo fetch --locked --target x86_64-pc-windows-msvc/);
+    assert.match(block, /cargo test --offline --locked -p fabric-sdk-operations --test standalone --test endpoint_context/);
+    assert.match(block, /cargo test --offline --locked -p fabric-sdk-items --test create_policy/);
+    assert.match(block, /cargo test --offline --locked -p fabric-sdk --test report_create/);
+    assert.ok(block.includes(`source-inventory.cjs "$receipts/${prefix}-create-before.json"`));
+    assert.ok(!block.includes('continue-on-error') && !block.includes('--all-features'));
+    if (label === 'KQL73') {
+      assert.match(block, /--no-default-features --features headless,v2-kql-database-create,runtime-v2 --test create_host --test kql_database_create --test kql_database_create_binary --test v2_create_report --test livy_list_entry/);
+    }
   }
 });
 
