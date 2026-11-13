@@ -79,6 +79,12 @@ Catalog, relevance, and hybrid metadata-search contracts. The same local source
 is available in `fab-cli-v2` when both `headless` and `docs-search` are selected.
 Docs execute before configuration, credentials, update checks, and remote hosts.
 
+The `Rust embedded docs` workflow checks the exact PR head on a hosted Linux
+runner. It tests the SDK producer, builds the full pinned public corpus, runs
+the embedded CLI contracts alongside existing runtime/create routes, and matches
+the executable's corpus probe to the generated manifest. Its retained provenance
+is feature-specific evidence, not a replacement for other required native checks.
+
 ```text
 fab-rs search docs --text "OneLake shortcuts"
 fab-rs search docs --text '"workspace identity"' --format text
