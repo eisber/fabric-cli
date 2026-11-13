@@ -87,10 +87,23 @@ const REGISTRY = Object.freeze({
     commands: c => [c.command('node', ['--test',
       c.file(c.rust, 'scripts', 'impact-plan.test.cjs'),
       c.file(c.rust, 'scripts', 'validate-impact.test.cjs'),
+      c.file(c.rust, 'scripts', 'execution-evidence.test.cjs'),
+      c.file(c.rust, 'scripts', 'impact-shards.test.cjs'),
+      c.file(c.rust, 'scripts', 'impact-ci.test.cjs'),
+      c.file(c.rust, 'scripts', 'impact-cache.test.cjs'),
       c.file(c.rust, 'scripts', 'validation-checks.test.cjs'),
       c.file(c.rust, 'scripts', 'rust-fast-check.test.cjs'),
       c.file(c.rust, 'scripts', 'rust-coverage.test.cjs'),
       c.file(c.rust, 'scripts', 'managed-bpa-acceptance.test.cjs')], {
+      cwd: c.artifacts,
+      env: {IMPACT_TEST_ROOT: c.artifacts, TMPDIR: c.artifacts,
+        TEMP: c.artifacts, TMP: c.artifacts},
+    })],
+  },
+  'process-supervision': {
+    step: 'Verify native subprocess lifetime, timeout and cleanup contracts',
+    commands: c => [c.command('node', ['--test',
+      c.file(c.rust, 'scripts', 'validation-process.test.cjs')], {
       cwd: c.artifacts,
       env: {IMPACT_TEST_ROOT: c.artifacts, TMPDIR: c.artifacts,
         TEMP: c.artifacts, TMP: c.artifacts},

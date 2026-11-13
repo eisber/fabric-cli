@@ -719,17 +719,19 @@ test('full dispatch requires real fast success at the combined immutable head', 
 });
 
 test('full native matrix restores the pinned deployment oracle before comparisons', () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const workflow = ['rust-ci.yml', 'rust-native-shard.yml'].map(name =>
+    fs.readFileSync(path.resolve(__dirname, '../../.github/workflows', name), 'utf8')).join('\n');
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));
   const runner = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
   assert.ok(runner.includes("path.join('scripts', 'rust-fast-requirements.txt')"));
-  const restore = runner.indexOf('restoreOracleDependencies(context, checkRun, probeCommand);');
-  assert.ok(restore >= 0 && runner.indexOf('checkRun({...command', restore) > restore);
+  const restore = runner.indexOf('return after(restoreOracleDependencies(context, checkRun, probeCommand), () =>');
+  assert.ok(restore >= 0 && runner.indexOf('after(checkRun({...command', restore) > restore);
   assert.ok(runner.includes("['definitions-oracle', 'parameters-oracle', 'import-oracle', 'export-oracle']"));
 });
 
 test('full native workflow routes every oracle through isolated source and absolute candidate probes', () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const workflow = ['rust-ci.yml', 'rust-native-shard.yml'].map(name =>
+    fs.readFileSync(path.resolve(__dirname, '../../.github/workflows', name), 'utf8')).join('\n');
   assert.ok(workflow.includes('node rust/scripts/validate-impact.cjs'));
   assert.ok(workflow.includes('node --test rust/scripts/impact-plan.test.cjs'));
   const setup = commandsFor('oracle-tools', nativeContext);

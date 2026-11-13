@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const {plan, commands, main, reverseConsumers, verifyPlan} = require('./impact-plan.cjs');
+const {execFileSync} = require('node:child_process');
+const {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata} = require('./impact-plan.cjs');
 
 // Pure data fixtures and injected I/O: this suite never runs Git/Cargo, creates
 // a scratch checkout, reads credentials, or uses the host temporary directory.
@@ -273,9 +274,9 @@ test('Shared reverseConsumers rejects cycles, duplicates, unknown seeds and path
   }])], ['core']), /path dependency name mismatch/);
 });
 
-test('Workspace/root/any nested Cargo, toolchain, workflow and planner changes require full', () => {
+test('Workspace/root Cargo, toolchain, workflow and planner changes require full', () => {
   for (const file of ['rust/Cargo.toml', 'rust/Cargo.lock', 'Cargo.toml',
-    'rust/engine/control-plane/deployment/Cargo.toml', 'rust/rust-toolchain.toml', '.cargo/config.toml',
+    'rust/rust-toolchain.toml', '.cargo/config.toml',
     '.github/workflows/check.yml', 'rust/validation/impact-graph.json',
     'rust/scripts/impact-plan.test.cjs', 'rust/scripts/rust-fast-check.cjs']) {
     const result = select([file]);
@@ -310,6 +311,24 @@ test('Documentation directory renames classify both deleted and added Markdown p
   assert.equal(result.mode, 'none');
   assert.deepEqual(result.packages, []);
   assert.deepEqual(commands(result, 'win32'), {commands: [], checks: [], skipped: []});
+});
+
+test('A required changelog entry does not widen an otherwise affected package change', () => {
+  const source = 'rust/engine/control-plane/deployment/src/notebook.rs';
+  const changelog = '.changes/unreleased/optimization-ci-selection.yaml';
+  const alone = select([changelog]);
+  assert.equal(alone.mode, 'none');
+  const expected = select([source]);
+  const actual = select([source, changelog]);
+  assert.equal(actual.mode, 'affected');
+  for (const key of ['packages', 'profiles', 'checks', 'tests']) {
+    assert.deepEqual(actual[key], expected[key], key);
+  }
+  const declared = select([changelog], input => {
+    input.graph.components[0].inputs.push('.changes/unreleased/*.yaml');
+  });
+  assert.equal(declared.mode, 'affected', 'Declared executable dependencies override documentation classification');
+  assert.equal(select(['.changes/generate.py']).mode, 'full');
 });
 
 test('Declared noncode inputs run component closures; check inputs run their own dependency closure', () => {
@@ -650,6 +669,156 @@ test('File content snapshots prevent unchanged-HEAD fingerprints from hiding dir
   assert.equal(first.metadata_input_digest, modified.metadata_input_digest);
 });
 
+function withSnapshotStats(phases, callback) {
+  const source = path.join(__dirname, 'impact-plan.test.cjs');
+  const original = Object.fromEntries(['lstatSync', 'fstatSync', 'openSync', 'readSync', 'closeSync']
+    .map(name => [name, fs[name]]));
+  const descriptors = new Map(), state = {reads: 0, opened: 0, closed: 0};
+  let pathStats = 0;
+  const transform = (stat, phase) => {
+    const change = phases[phase]?.(stat);
+    if (change instanceof Error) throw change;
+    return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, change || {});
+  };
+  try {
+    fs.lstatSync = (file, ...args) => {
+      const stat = original.lstatSync(file, ...args);
+      return String(file) === source ? transform(stat, pathStats++ % 2 === 0 ? 'initial' : 'final') : stat;
+    };
+    fs.openSync = (file, ...args) => {
+      const descriptor = original.openSync(file, ...args);
+      if (String(file) === source) { descriptors.set(descriptor, 0); state.opened++; }
+      return descriptor;
+    };
+    fs.fstatSync = (descriptor, ...args) => {
+      const stat = original.fstatSync(descriptor, ...args);
+      if (!descriptors.has(descriptor)) return stat;
+      const count = descriptors.get(descriptor);
+      descriptors.set(descriptor, count + 1);
+      return transform(stat, count === 0 ? 'opened' : 'after');
+    };
+    fs.readSync = (...args) => {
+      if (descriptors.has(args[0])) state.reads++;
+      return original.readSync(...args);
+    };
+    fs.closeSync = descriptor => {
+      if (descriptors.delete(descriptor)) state.closed++;
+      return original.closeSync(descriptor);
+    };
+    return callback(state);
+  } finally {
+    Object.assign(fs, original);
+    for (const descriptor of descriptors.keys()) original.closeSync(descriptor);
+  }
+}
+
+function snapshotInput() {
+  return {...fixture(), root: path.resolve(__dirname, '..', '..'), files: ['rust/scripts/impact-plan.test.cjs']};
+}
+
+test('First-open ctime materialization uses a stable same-handle baseline without changing content evidence', () => {
+  const input = snapshotInput(), baseline = plan(input);
+  withSnapshotStats({initial: stat => ({ctimeNs: stat.ctimeNs - 1000000000n})}, state => {
+    const result = plan(input);
+    assert.deepEqual(result.file_snapshot, baseline.file_snapshot);
+    assert.equal(result.fingerprint, baseline.fingerprint);
+    assert.equal(verifyPlan(result).valid, true);
+    assert.ok(state.reads > 0);
+    assert.equal(state.opened, state.closed);
+  });
+});
+
+test('Path identity, size, mode and timestamps cannot change between lstat and opening the descriptor', () => {
+  for (const field of ['dev', 'ino', 'size', 'mode', 'mtimeNs', 'birthtimeNs']) {
+    withSnapshotStats({initial: stat => ({[field]: stat[field] + 1n})}, state => {
+      assert.throws(() => plan(snapshotInput()), /Input changed while hashing/, field);
+      assert.equal(state.reads, 0, `Opened a different ${field} snapshot before hashing`);
+      assert.equal(state.opened, state.closed);
+    });
+  }
+});
+
+test('Same-handle mutations during reading still fail, including ctime-only writes with restored mtime and size', () => {
+  for (const field of ['dev', 'ino', 'size', 'mode', 'mtimeNs', 'birthtimeNs', 'ctimeNs']) {
+    withSnapshotStats({after: stat => ({[field]: stat[field] + 1n})}, state => {
+      assert.throws(() => plan(snapshotInput()), /Input changed while hashing/, field);
+      assert.ok(state.reads > 0);
+      assert.equal(state.opened, state.closed);
+    });
+  }
+});
+
+test('Final pathname replacement, symlink substitution and deletion cannot validate an unchanged open handle', () => {
+  const replacements = [
+    ...['dev', 'ino', 'size', 'mode', 'mtimeNs', 'birthtimeNs', 'ctimeNs']
+      .map(field => stat => ({[field]: stat[field] + 1n})),
+    () => ({mode: 0o120777n}),
+    () => Object.assign(new Error('Deleted while hashing'), {code: 'ENOENT'}),
+  ];
+  for (const final of replacements) withSnapshotStats({final}, state => {
+    assert.throws(() => plan(snapshotInput()), /Input changed while hashing/);
+    assert.ok(state.reads > 0);
+    assert.equal(state.opened, state.closed);
+  });
+});
+
+test('Replacement inode comparison retains precision beyond JavaScript Number range', () => {
+  const ino = 9007199254740992n;
+  assert.equal(Number(ino), Number(ino + 1n));
+  withSnapshotStats({initial: () => ({ino}), opened: () => ({ino}), after: () => ({ino}),
+    final: () => ({ino: ino + 1n})}, () => {
+    assert.throws(() => plan(snapshotInput()), /Input changed while hashing/);
+  });
+});
+
+test('Real writes with restored mtime/size and pathname replacement during hashing cannot produce a source receipt', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  for (const mutation of ['write', 'replace']) {
+    const directory = path.join(root, 'rust', 'target', `impact-plan-snapshot-${process.pid}-${crypto.randomUUID()}`);
+    const source = path.join(directory, 'source.rs'), moved = path.join(directory, 'original.rs');
+    const original = Object.fromEntries(['openSync', 'readSync', 'closeSync'].map(name => [name, fs[name]]));
+    const descriptors = new Set();
+    let mutated = false;
+    fs.mkdirSync(directory, {recursive: true});
+    fs.writeFileSync(source, 'original bytes\n');
+    fs.utimesSync(source, new Date(0), new Date(0));
+    const before = fs.statSync(source, {bigint: true});
+    try {
+      fs.openSync = (file, ...args) => {
+        const descriptor = original.openSync(file, ...args);
+        if (String(file) === source && args[0] === 'r') descriptors.add(descriptor);
+        return descriptor;
+      };
+      fs.readSync = (...args) => {
+        const count = original.readSync(...args);
+        if (count && descriptors.has(args[0]) && !mutated) {
+          mutated = true;
+          if (mutation === 'replace') fs.renameSync(source, moved);
+          fs.writeFileSync(source, mutation === 'replace' ? 'original bytes\n' : 'modified bytes\n');
+          fs.utimesSync(source, new Date(0), new Date(0));
+          const current = fs.statSync(source, {bigint: true});
+          assert.equal(current.size, before.size);
+          assert.equal(current.mtimeNs, before.mtimeNs);
+          if (mutation === 'write') assert.notEqual(current.ctimeNs, before.ctimeNs);
+        }
+        return count;
+      };
+      fs.closeSync = descriptor => {
+        descriptors.delete(descriptor);
+        return original.closeSync(descriptor);
+      };
+      const input = {...fixture(), root, files: [path.relative(root, source).split(path.sep).join('/')]};
+      assert.throws(() => plan(input), /Input changed while hashing/, mutation);
+      assert.equal(mutated, true);
+      assert.equal(descriptors.size, 0);
+    } finally {
+      Object.assign(fs, original);
+      for (const descriptor of descriptors) original.closeSync(descriptor);
+      fs.rmSync(directory, {recursive: true, force: true});
+    }
+  }
+});
+
 function cliFixture({files = ['rust/engine/control-plane/deployment/src/notebook.rs'], dirty = [], untracked = [],
   tracked = ['rust/engine/control-plane/deployment/tests/common/mod.rs'],
   unavailable = false, env = {}} = {}) {
@@ -764,6 +933,30 @@ test('CLI inventory freezes tracked helpers and all untracked sources, not only 
   assert.equal(result.inputs.root, ROOT);
   assert.equal(result.inputs.head, fixture.head);
   assert.equal(result.inputs.script_digest, result.script_digest);
+});
+
+test('CLI whole-checkout inventory and verification tolerate only pre-read first-open ctime materialization', () => {
+  const value = cliFixture({files: [], tracked: ['rust/scripts/impact-plan.test.cjs']});
+  const root = path.resolve(__dirname, '..', '..'), execute = value.hooks.exec;
+  value.args[value.args.indexOf('--root') + 1] = root;
+  value.hooks.exec = (program, args, cwd) => {
+    assert.equal(cwd, root);
+    return execute(program, args, ROOT);
+  };
+  withSnapshotStats({initial: stat => ({ctimeNs: stat.ctimeNs - 1000000000n})}, state => {
+    const result = main(value.args, value.hooks);
+    assert.equal(result.synthetic_scope, false);
+    assert.equal(result.head_complete, true);
+    assert.equal(result.inputs.inventory.scope, 'git-tracked-and-untracked');
+    assert.equal(result.inputs.inventory.files[0].state, 'file');
+    assert.equal(verifyPlan(result, {root, exec: value.hooks.exec, read: value.hooks.read}).valid, true);
+    assert.ok(state.reads > 0);
+    assert.equal(state.opened, state.closed);
+    withSnapshotStats({after: stat => ({ctimeNs: stat.ctimeNs + 1n})}, () => {
+      assert.throws(() => verifyPlan(result, {root, exec: value.hooks.exec, read: value.hooks.read}),
+        /Input changed while hashing/);
+    });
+  });
 });
 
 test('verifyPlan validates CLI receipt integrity, HEAD, graph, metadata and source inventory without Cargo', () => {
@@ -1090,4 +1283,762 @@ test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forward
   const manifest = fs.readFileSync(path.join(root,
     'rust/engine/core/http/executor/Cargo.toml'), 'utf8');
   assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
+});
+
+function dataflowFixture(files = ['rust/engine/data-plane/dataflow/src/lib.rs']) {
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  const dataflow = clone(catalog.components.find(item => item.id === 'dataflow'));
+  const execute = clone(catalog.components.find(item => item.id === 'cli-execute'));
+  const locations = {'fabric-sdk-dataflow': 'rust/engine/data-plane/dataflow',
+    'fabric-cli': 'rust/clients/cli/app', 'fabric-cli-v2': 'rust/clients/cli/v2'};
+  const owned = (name, dependencies, tests, features) => {
+    const directory = locations[name];
+    const value = pkg(name, dependencies, [], features);
+    value.manifest_path = absolute(`${directory}/Cargo.toml`);
+    value.targets = tests.map(test => {
+      const [kind, targetName] = test.target === 'lib' ? ['lib', name] : test.target.split(':');
+      return target(targetName, kind, `${directory}/${kind === 'test' ? 'tests' : 'src'}/${targetName}.rs`);
+    });
+    return value;
+  };
+  const cliFeatures = {default: [], 'native-read': [], headless: [], interactive: [], 'v2-cancel': [],
+    repl: [], 'semantic-model': [], 'v2-discovery': [], 'self-update': []};
+  const packages = [
+    owned('fabric-sdk-dataflow', [], dataflow.tests, {default: []}),
+    owned('fabric-cli', [{name: 'fabric-sdk-dataflow', path: absolute(locations['fabric-sdk-dataflow'])}],
+      [...execute.tests, {target: 'test:workspace_contract'}], cliFeatures),
+    owned('fabric-cli-v2', [{name: 'fabric-cli', path: absolute(locations['fabric-cli']), optional: true}],
+      [{target: 'lib'}], {default: [], 'windows-broker': [], 'self-update': []}),
+    pkg('fabric-identity', [], [], {default: [], 'windows-broker': [], headless: [], interactive: []}),
+    pkg('fabric-sdk-transport', [], [], {default: [], 'hyper-rustls': []}),
+  ];
+  const profiles = catalog.profiles.filter(item => ['native-read', 'headless', 'interactive', 'v2-cancel',
+    'repl', 'semantic-model-arguments', 'v2-discovery', 'cli-v2-broker', 'cli-v2-updater',
+    'cli-v2-combined'].includes(item.id)).map(clone);
+  // Keep the real profile/check identity, with only the unrelated REPL package
+  // added to this compact metadata fixture.
+  packages.push(pkg('fabric-cli-repl', [], [], {default: [], 'reedline-editor': []}));
+  const checks = catalog.checks.map(item => ({id: item.id, packages: [], depends_on: item.depends_on,
+    platforms: item.platforms}));
+  const components = [dataflow, execute,
+    ...['operations', 'sdk-workspaces', 'output', 'http'].map(id =>
+      ({id, package: 'fabric-sdk-dataflow', profiles: [], tests: []})),
+    {id: 'workspace-architecture', package: 'fabric-cli', coverage: 'structural',
+      tests: [{package: 'fabric-cli', target: 'test:workspace_contract'}],
+      checks: ['dependency-graph', 'command-inventory']}];
+  return {root: ROOT, metadata: metadata(packages), files,
+    graph: {schema: 1, components, profiles, checks}};
+}
+
+function deploymentCatalogFixture(files) {
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  const ids = ['deploy-notebook', 'deploy-spark-environment', 'transfer', 'cli-deployment',
+    'cli-get', 'cli-search-v2', 'metadata-exists-v2', 'engine-query'];
+  const components = ids.map(id => clone(catalog.components.find(item => item.id === id)));
+  const prerequisites = [...new Set(components.flatMap(item => item.depends_on))]
+    .filter(id => !ids.includes(id));
+  for (const id of prerequisites) {
+    const component = catalog.components.find(item => item.id === id);
+    components.push({id, package: component.package, profiles: [], tests: []});
+  }
+  const structural = clone(catalog.components.find(item => item.id === 'workspace-architecture'));
+  structural.depends_on = [];
+  components.push(structural);
+  const locations = {'fabric-deploy': 'rust/engine/control-plane/deployment',
+    'fabric-cli-transfer': 'rust/clients/cli/commands/transfer', 'fabric-cli': 'rust/clients/cli/app',
+    'fabric-cli-v2': 'rust/clients/cli/v2', 'fabric-sdk': 'rust/engine/sdk',
+    'fabric-sdk-query': 'rust/engine/data-plane/query'};
+  const dependencies = {'fabric-deploy': ['fabric-sdk'], 'fabric-cli-transfer': ['fabric-deploy'],
+    'fabric-cli': ['fabric-cli-transfer', 'fabric-deploy'], 'fabric-cli-v2': ['fabric-cli'],
+    'fabric-sdk-query': ['fabric-sdk']};
+  // Retain production component edges and targets, with compact Cargo paths.
+  // Feature/platform fanout is measured separately against actual metadata.
+  const names = [...new Set(['fabric-cli-v2', ...components.flatMap(component =>
+    [component.package, ...component.tests.map(item => item.package)])])];
+  const packages = names.map(name => {
+    const directory = locations[name] || packageDirectory(name);
+    const value = pkg(name, (dependencies[name] || []).map(dependency =>
+      ({name: dependency, path: absolute(locations[dependency])})));
+    value.manifest_path = absolute(`${directory}/Cargo.toml`);
+    const targets = new Set(['lib', ...components.flatMap(component => component.tests)
+      .filter(item => item.package === name).map(item => item.target)]);
+    value.targets = [...targets].map(key => {
+      const [kind, targetName] = key === 'lib' ? ['lib', name] : key.split(':');
+      return target(targetName, kind, `${directory}/${kind === 'test' ? 'tests' : 'src'}/${targetName}.rs`);
+    });
+    return value;
+  });
+  const checks = catalog.checks.map(item =>
+    ({id: item.id, depends_on: item.depends_on, platforms: item.platforms}));
+  return {root: ROOT, metadata: metadata(packages), files,
+    graph: {schema: 1, components, profiles: [], checks}};
+}
+
+for (const [component, file, ownTargets, excludedTargets] of [
+  ['deploy-notebook', 'rust/engine/control-plane/deployment/src/notebook.rs',
+    ['notebook', 'repository', 'parameter_transforms', 'planner_source'],
+    ['configured_flags', 'publisher_source_contract']],
+  ['deploy-spark-environment', 'rust/engine/control-plane/deployment/src/workflow/families/environment.rs',
+    ['configured_flags', 'publisher_source_contract'], ['notebook', 'repository', 'parameter_transforms']],
+]) {
+  test(`Production ${component} excludes sibling-only targets but retains deployment consumers`, () => {
+    const result = plan(deploymentCatalogFixture([file]));
+    assert.equal(result.mode, 'affected');
+    assert.deepEqual(result.changed_packages, ['fabric-deploy']);
+    assert.ok(result.components.includes(component));
+    const sibling = component === 'deploy-notebook' ? 'deploy-spark-environment' : 'deploy-notebook';
+    assert.ok(!result.components.includes(sibling));
+    for (const target of ownTargets) assert.ok(testKeys(result).includes(`fabric-deploy/test:${target}`), target);
+    for (const target of excludedTargets) assert.ok(!testKeys(result).includes(`fabric-deploy/test:${target}`), target);
+    for (const key of ['fabric-deploy/lib', 'fabric-deploy/test:workflow',
+      'fabric-cli-transfer/test:commands', 'fabric-cli/test:deploy_full', 'fabric-cli/test:deploy_mount',
+      'fabric-cli/test:get_host', 'fabric-cli/test:workspace_contract', 'fabric-cli-v2/all']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    for (const name of ['fabric-deploy', 'fabric-cli-transfer', 'fabric-cli']) {
+      assert.ok(!testKeys(result).includes(`${name}/all`), name);
+    }
+    assert.ok(!testKeys(result).includes('fabric-sdk-query/test:kql_contract'));
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const compile = commands(result, platform).commands.find(item => item.kind === 'check');
+      for (const name of ['fabric-deploy', 'fabric-cli-transfer', 'fabric-cli', 'fabric-cli-v2']) {
+        assert.ok(compile.args.includes(name), name);
+      }
+    }
+  });
+}
+
+test('Production deployment sibling union retains both exact suites and new unknown Cargo consumers', () => {
+  const input = deploymentCatalogFixture([
+    'rust/engine/control-plane/deployment/src/notebook.rs',
+    'rust/engine/control-plane/deployment/src/workflow/families/environment.rs',
+  ]);
+  const consumer = pkg('deployment-plugin', [{
+    name: 'fabric-deploy', path: absolute('rust/engine/control-plane/deployment'),
+  }]);
+  input.metadata.packages.push(consumer);
+  input.metadata.workspace_members.push(consumer.id);
+  const result = plan(input);
+  for (const key of ['fabric-deploy/test:notebook', 'fabric-deploy/test:publisher_source_contract',
+    'fabric-cli-transfer/test:commands', 'fabric-cli/test:deploy_mount', 'deployment-plugin/all']) {
+    assert.ok(testKeys(result).includes(key), key);
+  }
+  assert.ok(result.packages.includes('deployment-plugin'));
+  assert.equal(new Set(testKeys(result)).size, result.tests.length);
+});
+
+test('Production engine query keeps its contract and structural consumers without deployment sibling tests', () => {
+  const result = plan(deploymentCatalogFixture(['rust/engine/data-plane/query/src/kql.rs']));
+  assert.equal(result.mode, 'affected');
+  assert.deepEqual(result.changed_packages, ['fabric-sdk-query']);
+  assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-v2', 'fabric-sdk-query']);
+  assert.deepEqual(result.components, ['engine-query', 'workspace-architecture']);
+  assert.deepEqual(testKeys(result), ['fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
+  assert.deepEqual(result.profiles, []);
+  assert.deepEqual(result.checks, ['command-inventory', 'dependency-graph', 'selector-tests']);
+  assert.ok(!testKeys(result).some(key => /fabric-deploy|fabric-cli-transfer|\/all$/.test(key)));
+});
+
+function onelakeCatalogFixture(files) {
+  const input = deploymentCatalogFixture(files);
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  input.graph.components.push(clone(catalog.components.find(item => item.id === 'onelake')));
+  const directory = 'rust/engine/data-plane/onelake/client';
+  const onelake = pkg('fabric-sdk-onelake');
+  onelake.manifest_path = absolute(`${directory}/Cargo.toml`);
+  onelake.targets = [target('fabric_sdk_onelake', 'lib', `${directory}/src/lib.rs`),
+    target('consumer', 'test', `${directory}/tests/consumer.rs`),
+    target('link', 'test', `${directory}/tests/link.rs`)];
+  input.metadata.packages.push(onelake);
+  input.metadata.workspace_members.push(onelake.id);
+  input.metadata.packages.find(item => item.name === 'fabric-sdk').dependencies.push(
+    {name: onelake.name, path: absolute(directory)});
+  return input;
+}
+
+test('OneLake implementation and link contracts retain the complete link target and Cargo consumers', () => {
+  for (const file of ['rust/engine/data-plane/onelake/client/src/lib.rs',
+    'rust/engine/data-plane/onelake/client/src/link.rs',
+    'rust/engine/data-plane/onelake/client/tests/link.rs']) {
+    const result = plan(onelakeCatalogFixture([file]));
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-sdk-onelake']);
+    assert.deepEqual(testKeys(result).filter(key => key.startsWith('fabric-sdk-onelake/')),
+      ['fabric-sdk-onelake/lib', 'fabric-sdk-onelake/test:consumer', 'fabric-sdk-onelake/test:link']);
+    for (const name of ['fabric-sdk', 'fabric-deploy', 'fabric-cli-transfer', 'fabric-cli', 'fabric-cli-v2']) {
+      assert.ok(result.packages.includes(name), name);
+      assert.ok(testKeys(result).includes(`${name}/all`), `${name}: unknown consumer coverage stays conservative`);
+    }
+    assert.ok(result.checks.includes('resource-oracle'));
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const link = commands(result, platform).commands.find(item =>
+        item.kind === 'test' && item.package === 'fabric-sdk-onelake' && item.target === 'test:link');
+      assert.ok(link, platform);
+      assert.deepEqual(link.args.slice(-2), ['--test', 'link'], 'complete target, not a test-name filter');
+    }
+  }
+});
+
+function storageCatalogFixture(files) {
+  const input = deploymentCatalogFixture(files);
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  const storage = clone(catalog.components.find(item => item.id === 'storage-files'));
+  input.graph.components[input.graph.components.findIndex(item => item.id === storage.id)] = storage;
+  input.graph.components.push(clone(catalog.components.find(item => item.id === 'cli-update-v2')));
+  for (const id of new Set(input.graph.components.flatMap(item => item.depends_on || []))) {
+    if (input.graph.components.some(item => item.id === id)) continue;
+    const component = catalog.components.find(item => item.id === id);
+    input.graph.components.push({id, package: component.package, profiles: [], tests: []});
+    if (!input.metadata.packages.some(item => item.name === component.package)) {
+      const value = pkg(component.package);
+      input.metadata.packages.push(value);
+      input.metadata.workspace_members.push(value.id);
+    }
+  }
+  const directory = 'rust/clients/cli/commands/storage';
+  const owner = input.metadata.packages.find(item => item.name === storage.package);
+  owner.manifest_path = absolute(`${directory}/Cargo.toml`);
+  owner.targets = [target('fabric_cli_storage_files', 'lib', `${directory}/src/lib.rs`),
+    ...['download', 'exact_output', 'local_adapter', 'resource_command', 'selected_adapter', 'upload']
+      .map(name => target(name, 'test', `${directory}/tests/${name}.rs`))];
+  const cli = input.metadata.packages.find(item => item.name === 'fabric-cli');
+  cli.dependencies.push({name: owner.name, path: absolute(directory)});
+  cli.targets.push(target('update_v2', 'test', 'rust/clients/cli/app/tests/update_v2.rs'));
+  cli.targets.find(item => item.name === 'fab-cli-v2')['required-features'] = ['headless'];
+  input.graph.profiles = catalog.profiles.filter(item =>
+    ['native-read', 'headless', 'interactive', 'combined'].includes(item.id)).map(clone);
+  for (const profile of input.graph.profiles) {
+    for (const name of profile.packages) {
+      if (input.metadata.packages.some(item => item.name === name)) continue;
+      const value = pkg(name);
+      input.metadata.packages.push(value);
+      input.metadata.workspace_members.push(value.id);
+    }
+    for (const feature of profile.features) {
+      const [name, local] = feature.split('/');
+      input.metadata.packages.find(item => item.name === name).features[local] = [];
+    }
+  }
+  return input;
+}
+
+test('Storage source selects exact-output and complete GET/search/update consumers with native profiles', () => {
+  for (const file of ['rust/clients/cli/commands/storage/src/lib.rs',
+    'rust/clients/cli/commands/storage/src/exact_output.rs', 'rust/clients/cli/commands/storage/src/local.rs']) {
+    const input = storageCatalogFixture([file]);
+    const result = plan(input);
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-cli-storage-files']);
+    for (const component of ['storage-files', 'cli-get', 'cli-search-v2', 'cli-update-v2']) {
+      assert.ok(result.components.includes(component), component);
+    }
+    for (const key of ['fabric-cli-storage-files/lib', 'fabric-cli-storage-files/test:download',
+      'fabric-cli-storage-files/test:exact_output', 'fabric-cli-storage-files/test:upload',
+      'fabric-cli/test:get_command', 'fabric-cli/test:explicit_get',
+      'fabric-cli/test:search_command', 'fabric-cli/test:search_wire',
+      'fabric-cli/test:v2_get_binary', 'fabric-cli/test:v2_search_binary',
+      'fabric-cli/test:update_v2', 'fabric-cli/bin:fab-cli-v2',
+      'fabric-cli/test:deploy_mount', 'fabric-cli-v2/all']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    for (const id of ['native-read', 'headless', 'interactive', 'combined']) {
+      assert.ok(result.profiles.some(item => item.id === id), id);
+    }
+    for (const id of ['headless', 'combined']) {
+      const profile = result.profiles.find(item => item.id === id);
+      for (const target of ['bin:fab-cli-v2', 'test:v2_get_binary', 'test:v2_search_binary']) {
+        assert.ok(profile.tests.some(item => item.target === target), `${id}/${target}`);
+      }
+    }
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const executable = commands(result, platform).commands;
+      assert.ok(executable.some(item => item.kind === 'test' && item.package === 'fabric-cli-storage-files' &&
+        item.target === 'test:exact_output' && item.args.at(-2) === '--test'));
+      assert.ok(executable.some(item => item.kind === 'test' && item.target === 'bin:fab-cli-v2' &&
+        item.profile === 'headless'));
+    }
+  }
+});
+
+test('Storage coverage correction only adds obligations and preserves unknown consumer fallback', () => {
+  const input = storageCatalogFixture(['rust/clients/cli/commands/storage/src/exact_output.rs']);
+  const previous = clone(input);
+  previous.graph.components.find(item => item.id === 'storage-files').tests =
+    previous.graph.components.find(item => item.id === 'storage-files').tests
+      .filter(item => item.target !== 'test:exact_output');
+  for (const id of ['cli-get', 'cli-search-v2']) {
+    const component = previous.graph.components.find(item => item.id === id);
+    component.depends_on = component.depends_on.filter(id => id !== 'storage-files');
+    if (id === 'cli-get') component.tests = component.tests.filter(item =>
+      !['test:get_command', 'test:explicit_get'].includes(item.target));
+  }
+  const before = plan(previous), after = plan(input);
+  for (const key of testKeys(before)) assert.ok(testKeys(after).includes(key), key);
+  for (const profile of before.profiles) assert.ok(after.profiles.some(item => item.id === profile.id), profile.id);
+  for (const check of before.checks) assert.ok(after.checks.includes(check), check);
+  assert.ok(!testKeys(before).includes('fabric-cli-storage-files/test:exact_output'));
+  assert.ok(!testKeys(before).includes('fabric-cli/test:explicit_get'));
+  const consumer = pkg('storage-unknown', [{
+    name: 'fabric-cli-storage-files', path: absolute('rust/clients/cli/commands/storage'),
+  }]);
+  input.metadata.packages.push(consumer);
+  input.metadata.workspace_members.push(consumer.id);
+  assert.ok(testKeys(plan(input)).includes('storage-unknown/all'));
+  for (const file of ['rust/clients/cli/app/src/get_command.rs', 'rust/clients/cli/app/src/get_metadata.rs']) {
+    assert.ok(testKeys(plan({...input, files: [file]})).includes('fabric-cli/all'),
+      'Previously unmapped GET source still uses conservative package fallback');
+  }
+});
+
+function stageDeploymentFixture(files) {
+  const input = dataflowFixture(files);
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  input.graph.components.push(...['deploy-stage', 'cli-deploy-stage'].map(id =>
+    clone(catalog.components.find(item => item.id === id))));
+  input.graph.profiles.push(clone(catalog.profiles.find(item => item.id === 'v2-deploy')));
+  const deployDirectory = 'rust/engine/control-plane/deployment';
+  const transferDirectory = 'rust/clients/cli/commands/transfer';
+  const deploy = pkg('fabric-deploy');
+  deploy.manifest_path = absolute(`${deployDirectory}/Cargo.toml`);
+  deploy.targets = [target('fabric_deploy', 'lib', `${deployDirectory}/src/lib.rs`),
+    target('stage', 'test', `${deployDirectory}/tests/stage.rs`)];
+  const transfer = pkg('fabric-cli-transfer', [{name: deploy.name, path: absolute(deployDirectory)}]);
+  transfer.manifest_path = absolute(`${transferDirectory}/Cargo.toml`);
+  transfer.targets = [target('fabric_cli_transfer', 'lib', `${transferDirectory}/src/lib.rs`)];
+  input.metadata.packages.push(deploy, transfer);
+  input.metadata.workspace_members.push(deploy.id, transfer.id);
+  const cli = input.metadata.packages.find(item => item.name === 'fabric-cli');
+  cli.features['v2-deploy'] = [];
+  cli.dependencies.push({name: deploy.name, path: absolute(deployDirectory)},
+    {name: transfer.name, path: absolute(transferDirectory)});
+  cli.targets.push(
+    target('stage_deploy', 'test', 'rust/clients/cli/app/tests/stage_deploy.rs', ['v2-deploy']),
+    target('stage_deploy_entry', 'test', 'rust/clients/cli/app/tests/stage_deploy_entry.rs'));
+  return input;
+}
+
+test('Stage deployment scopes its explicit feature without unrelated CLI suites or losing Cargo consumers', () => {
+  for (const file of ['rust/engine/control-plane/deployment/src/stage.rs',
+    'rust/engine/control-plane/deployment/tests/stage.rs', 'rust/authoring-docs/native-stage-deployment.md']) {
+    const result = plan(stageDeploymentFixture([file]));
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-deploy']);
+    assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-transfer', 'fabric-cli-v2', 'fabric-deploy']);
+    assert.deepEqual(result.profiles.map(item => item.id),
+      ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'v2-deploy']);
+    for (const key of ['fabric-deploy/test:stage', 'fabric-cli/test:stage_deploy',
+      'fabric-cli/test:stage_deploy_entry', 'fabric-cli/test:workspace_contract',
+      'fabric-cli-transfer/all', 'fabric-cli-v2/all']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    assert.ok(!testKeys(result).some(key => /execute|notebook|spark/.test(key)));
+    assert.ok(!testKeys(result).includes('fabric-cli/all'));
+    const stage = result.tests.find(item => item.target === 'test:stage_deploy');
+    assert.equal(stage.default_available, false);
+    assert.deepEqual(stage.required_features, ['v2-deploy']);
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const tests = commands(result, platform).commands.filter(item => item.kind === 'test');
+      assert.ok(tests.some(item => item.target === 'test:stage_deploy_entry' && item.profile === undefined));
+      for (const target of ['test:stage_deploy', 'test:stage_deploy_entry']) {
+        assert.ok(tests.some(item => item.target === target && item.profile === 'v2-deploy'), target);
+      }
+    }
+  }
+});
+
+test('Stage deployment CLI source and exact tests share the same explicit feature obligation', () => {
+  for (const file of ['rust/clients/cli/app/src/stage_deploy.rs',
+    'rust/clients/cli/app/tests/stage_deploy.rs', 'rust/clients/cli/app/tests/stage_deploy_entry.rs']) {
+    const result = plan(stageDeploymentFixture([file]));
+    assert.deepEqual(result.changed_packages, ['fabric-cli'], file);
+    assert.deepEqual(result.profiles.map(item => item.id),
+      ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'v2-deploy']);
+    assert.ok(testKeys(result).includes('fabric-cli/test:stage_deploy'));
+    assert.ok(testKeys(result).includes('fabric-cli/test:stage_deploy_entry'));
+    assert.ok(testKeys(result).includes('fabric-cli-v2/all'));
+    assert.ok(!testKeys(result).includes('fabric-cli/all'));
+  }
+});
+
+test('Independent capability obligations compose and unknown source still restores full feature fallback', () => {
+  const files = ['rust/engine/control-plane/deployment/src/stage.rs',
+    'rust/engine/data-plane/dataflow/src/lib.rs'];
+  const combined = plan(stageDeploymentFixture(files));
+  assert.deepEqual(combined.profiles.map(item => item.id),
+    ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'headless', 'interactive', 'native-read', 'v2-deploy']);
+  assert.ok(testKeys(combined).includes('fabric-cli/test:execute_host'));
+  assert.ok(testKeys(combined).includes('fabric-cli/test:stage_deploy'));
+  const unknown = plan(stageDeploymentFixture([...files, 'rust/clients/cli/app/src/unmapped.rs']));
+  assert.ok(testKeys(unknown).includes('fabric-cli/all'));
+  assert.ok(unknown.profiles.some(item => item.id === 'repl'));
+  assert.ok(unknown.profiles.some(item => item.id === 'v2-cancel'));
+});
+
+test('Dataflow implementation and tests select complete execution consumers without unrelated CLI profiles', () => {
+  for (const file of ['rust/engine/data-plane/dataflow/src/lib.rs',
+    'rust/engine/data-plane/dataflow/tests/execute_query.rs',
+    'rust/engine/data-plane/dataflow/tests/fixtures/result.json']) {
+    const result = plan(dataflowFixture([file]));
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-sdk-dataflow']);
+    for (const name of ['fabric-cli', 'fabric-cli-v2', 'fabric-sdk-dataflow']) assert.ok(result.packages.includes(name));
+    for (const key of ['fabric-sdk-dataflow/lib', 'fabric-sdk-dataflow/test:execute_query',
+      'fabric-cli/lib', 'fabric-cli/bin:fab-rs', 'fabric-cli/test:execute_host',
+      'fabric-cli/test:execute_cli_contract', 'fabric-cli/test:execute_arguments',
+      'fabric-cli/test:native_tabular', 'fabric-cli/test:job_arguments']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    assert.ok(!testKeys(result).includes('fabric-cli/all'));
+    assert.ok(testKeys(result).includes('fabric-cli-v2/all'), 'unmapped real Cargo consumer stays conservative');
+    assert.deepEqual(result.profiles.map(item => item.id),
+      ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'headless', 'interactive', 'native-read']);
+    for (const profile of result.profiles.filter(item => ['headless', 'interactive', 'native-read'].includes(item.id))) {
+      for (const target of ['lib', 'bin:fab-rs', 'test:execute_host', 'test:execute_cli_contract']) {
+        assert.ok(profile.tests.some(item => item.package === 'fabric-cli' && item.target === target));
+      }
+    }
+    assert.ok(!result.checks.some(id => ['repl', 'updater', 'combined', 'certificate'].includes(id)));
+    assert.ok(!result.checks.includes('process-supervision'));
+    const descriptors = ['linux', 'macos', 'windows'].map(platform => commands(result, platform));
+    assert.deepEqual(descriptors[0], descriptors[1]);
+    assert.deepEqual(descriptors[1], descriptors[2]);
+    for (const profile of [undefined, 'headless', 'interactive', 'native-read']) {
+      assert.ok(descriptors[0].commands.some(item => item.kind === 'test' &&
+        item.package === 'fabric-cli' && item.target === 'bin:fab-rs' && item.profile === profile));
+    }
+  }
+});
+
+test('Process-supervisor changes retain all native lifecycle cases without taxing unrelated leaf changes', () => {
+  const input = dataflowFixture(['rust/scripts/validation-process.py']);
+  const catalog = require('../validation/impact-graph.json');
+  const check = catalog.checks.find(item => item.id === 'process-supervision');
+  input.graph.checks.find(item => item.id === check.id).inputs = check.inputs;
+  const selected = plan(input);
+  assert.equal(selected.mode, 'affected');
+  assert.deepEqual(selected.checks, ['process-supervision', 'selector-tests']);
+  assert.deepEqual(selected.packages, []);
+  const full = plan({...dataflowFixture(), full: true});
+  assert.ok(full.checks.includes('process-supervision'));
+});
+
+test('Dataflow and native execution cannot omit interactive DeviceCode composition or reintroduce unrelated suites', () => {
+  for (const file of ['rust/engine/data-plane/dataflow/src/lib.rs',
+    'rust/engine/data-plane/dataflow/tests/execute_query.rs',
+    'rust/clients/cli/app/src/native_execute.rs',
+    'rust/clients/cli/app/src/native_execute_tests.rs']) {
+    const result = plan(dataflowFixture([file]));
+    const interactive = result.profiles.find(item => item.id === 'interactive');
+    assert.ok(interactive, `Missing interactive execution coverage: ${file}`);
+    assert.deepEqual(interactive.platforms, ['linux', 'macos', 'windows']);
+    assert.ok(interactive.features.includes('fabric-cli/interactive'));
+    assert.ok(interactive.features.includes('fabric-identity/interactive'));
+    assert.ok(result.checks.includes('interactive'));
+    const windows = commands(result, 'windows');
+    for (const target of ['lib', 'bin:fab-rs', 'test:execute_host', 'test:execute_cli_contract']) {
+      assert.ok(windows.commands.some(item => item.kind === 'test' && item.package === 'fabric-cli' &&
+        item.target === target && item.profile === 'interactive'), `${file}: ${target}`);
+    }
+    assert.ok(result.profiles.some(item => item.id === 'native-read'), 'broker is covered by native-read');
+    assert.ok(!result.profiles.some(item => ['windows-broker', 'repl', 'semantic-model-arguments',
+      'v2-cancel', 'v2-discovery'].includes(item.id)), file);
+    assert.ok(!result.checks.some(id => ['repl', 'updater', 'combined', 'certificate'].includes(id)), file);
+  }
+});
+
+test('Execution sources and exact fixture/contract targets use the same scoped capability', () => {
+  const input = dataflowFixture();
+  for (const file of input.graph.components.find(item => item.id === 'cli-execute').inputs) {
+    const result = plan({...input, files: [file]});
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-cli']);
+    assert.ok(result.components.includes('cli-execute'));
+    assert.ok(!result.profiles.some(item => ['repl', 'v2-cancel', 'v2-discovery',
+      'semantic-model-arguments'].includes(item.id)), file);
+    assert.ok(testKeys(result).includes('fabric-cli/test:execute_cli_contract'));
+    assert.ok(testKeys(result).includes('fabric-cli/bin:fab-rs'));
+  }
+  // Merely sharing a package or a similarly named directory is not coverage.
+  const unknown = plan({...input, files: ['rust/clients/cli/app/src/new_execute_consumer.rs']});
+  assert.ok(testKeys(unknown).includes('fabric-cli/all'));
+  assert.ok(unknown.profiles.some(item => item.id === 'v2-cancel'));
+});
+
+test('New unmodeled Cargo execution consumer retains full target and feature/check fallback', () => {
+  const input = dataflowFixture();
+  const consumer = pkg('new-consumer', [{
+    name: 'fabric-sdk-dataflow', path: absolute('rust/engine/data-plane/dataflow'),
+  }], [], {default: [], special: []});
+  input.metadata.packages.push(consumer);
+  input.metadata.workspace_members.push(consumer.id);
+  input.graph.profiles.push({id: 'new-consumer-special', packages: ['new-consumer'],
+    features: ['new-consumer/special'], checks: ['new-consumer-contract']});
+  input.graph.checks.push({id: 'new-consumer-contract', packages: ['new-consumer']});
+  const result = plan(input);
+  assert.ok(result.packages.includes('new-consumer'));
+  assert.ok(testKeys(result).includes('new-consumer/all'));
+  assert.ok(result.profiles.some(item => item.id === 'new-consumer-special'));
+  assert.ok(result.checks.includes('new-consumer-contract'));
+});
+
+test('Explicit capability feature obligations are validated and do not weaken exact required features', () => {
+  assert.throws(() => select([], input => input.graph.components[0].profiles = ['missing']),
+    /Unknown component profile/);
+  assert.throws(() => select(['rust/clients/cli/app/src/native.rs'], input => {
+    nativeProfile(input);
+    input.graph.components.at(-1).profiles = [];
+  }), /no applicable profile/);
+  const result = select(['rust/clients/cli/app/src/native.rs'], input => {
+    nativeProfile(input);
+    input.graph.components.at(-1).profiles = ['native-windows'];
+    input.graph.profiles.push({id: 'unrelated-cli', packages: ['cli'], features: ['cli/native']});
+  });
+  assert.deepEqual(result.profiles.map(item => item.id), ['native-windows']);
+  assert.deepEqual(result.tests[0].required_features, ['native']);
+});
+
+test('Feature dependency paths select forwarded optional capabilities, not all ordinary CLI dependencies', () => {
+  const input = fixture();
+  input.files = ['rust/engine/models/src/lib.rs'];
+  input.graph.components = [{id: 'models', package: 'models',
+    inputs: ['rust/engine/models/src/**'], profiles: [], tests: [{package: 'models', target: 'lib'}]},
+  {id: 'consumer', package: 'cli', depends_on: ['models'], profiles: [],
+    tests: [{package: 'cli', target: 'lib'}, {package: 'deploy', target: 'lib'}, {package: 'adapter', target: 'lib'}]}];
+  input.graph.checks = [];
+  const cli = input.metadata.packages.find(item => item.name === 'cli');
+  cli.features = {default: [], capability: ['adapter/capability'], unrelated: []};
+  input.metadata.packages.find(item => item.name === 'adapter').features.capability = ['deploy/capability'];
+  input.metadata.packages.find(item => item.name === 'deploy').features.capability = ['models/special'];
+  input.metadata.packages.find(item => item.name === 'models').features.special = [];
+  input.graph.profiles = [
+    {id: 'forwarded', packages: ['cli'], features: ['cli/capability']},
+    {id: 'unrelated', packages: ['cli'], features: ['cli/unrelated']},
+  ];
+  const result = plan(input);
+  assert.deepEqual(result.profiles.map(item => item.id), ['forwarded']);
+  assert.deepEqual(result.checks, []);
+});
+
+test('Shared inputs and explicit full preserve all profiles, targets, checks and platforms', () => {
+  const input = dataflowFixture([]);
+  const full = plan({...input, full: true});
+  for (const file of ['rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
+    'rust/validation/impact-graph.json', '.github/workflows/rust-ci.yml']) {
+    const result = plan({...input, files: [file]});
+    assert.equal(result.mode, 'full');
+    assert.deepEqual(result.profiles, full.profiles);
+    assert.deepEqual(result.checks, full.checks);
+    assert.deepEqual(result.packages, full.packages);
+    for (const platform of ['linux', 'macos', 'windows']) {
+      assert.deepEqual(commands(result, platform), commands(full, platform));
+    }
+  }
+});
+
+test('Known leaf manifest with old metadata scopes existing consumers, while missing/invalid bases fail full', () => {
+  const input = dataflowFixture(['rust/engine/data-plane/dataflow/Cargo.toml']);
+  input.baseMetadata = clone(input.metadata);
+  const result = plan(input);
+  assert.equal(result.mode, 'affected');
+  assert.ok(testKeys(result).includes('fabric-sdk-dataflow/all'));
+  assert.ok(testKeys(result).includes('fabric-cli/test:execute_host'));
+  assert.ok(!testKeys(result).includes('fabric-cli/all'));
+  assert.ok(!result.profiles.some(item => item.id === 'v2-cancel'));
+  assert.equal(result.base_metadata_digest.length, 64);
+  assert.equal(result.inputs.base_metadata_digest, result.base_metadata_digest);
+  assert.equal(plan({...input, baseMetadata: undefined}).mode, 'full');
+  assert.equal(plan({...input, baseMetadata: {version: 2}}).mode, 'full');
+  assert.equal(plan({...input, files: ['rust/engine/unknown/Cargo.toml']}).mode, 'full');
+});
+
+test('A leaf manifest cannot hide a simultaneous unmapped source/helper change in the same package', () => {
+  const input = fixture();
+  input.baseMetadata = clone(input.metadata);
+  input.files = ['rust/engine/control-plane/deployment/Cargo.toml',
+    'rust/engine/control-plane/deployment/tests/common/new.rs'];
+  assert.deepEqual(testKeys(plan(input)), ['adapter/all', 'cli/all', 'deploy/all']);
+});
+
+test('Leaf manifests use both old and new consumers for removed and newly added dependency edges', () => {
+  for (const removed of [false, true]) {
+    const input = fixture();
+    input.graph = {schema: 1};
+    input.baseMetadata = clone(input.metadata);
+    input.files = ['rust/engine/control-plane/deployment/Cargo.toml'];
+    const side = removed ? input.metadata : input.baseMetadata;
+    side.packages.find(item => item.name === 'deploy').dependencies = [];
+    const result = plan(input);
+    assert.equal(result.mode, 'affected');
+    assert.deepEqual(result.changed_packages, ['deploy', 'models']);
+    assert.deepEqual(result.packages, ['adapter', 'cli', 'deploy', 'models']);
+    assert.deepEqual(testKeys(result), ['adapter/all', 'cli/all', 'deploy/all', 'models/all']);
+    assert.ok(!result.packages.includes('unrelated'));
+  }
+});
+
+test('Removed optional, dev, build, renamed and target-specific dependencies remain in manifest union', () => {
+  for (const kind of [null, 'dev', 'build']) {
+    const input = fixture();
+    input.graph = {schema: 1};
+    input.baseMetadata = clone(input.metadata);
+    input.baseMetadata.packages.find(item => item.name === 'deploy').dependencies[0] = {
+      name: 'models', rename: 'renamed', path: absolute('rust/engine/models'),
+      kind, optional: true, target: 'cfg(windows)', features: [], uses_default_features: false,
+    };
+    input.metadata.packages.find(item => item.name === 'deploy').dependencies = [];
+    input.files = ['rust/engine/control-plane/deployment/Cargo.toml'];
+    const result = plan(input);
+    assert.equal(result.mode, 'affected');
+    assert.deepEqual(result.packages, ['adapter', 'cli', 'deploy', 'models']);
+  }
+});
+
+test('Manifest default/dependency-feature changes cover affected dependency consumers without unrelated packages', () => {
+  for (const change of ['default', 'dependency-default', 'dependency-feature']) {
+    const input = fixture();
+    input.graph = {schema: 1};
+    input.metadata.packages.find(item => item.name === 'models').features.special = [];
+    input.baseMetadata = clone(input.metadata);
+    const deploy = input.metadata.packages.find(item => item.name === 'deploy');
+    if (change === 'default') deploy.features.default = ['models/special'];
+    if (change === 'dependency-default') deploy.dependencies[0].uses_default_features = false;
+    if (change === 'dependency-feature') deploy.dependencies[0].features = ['special'];
+    input.files = ['rust/engine/control-plane/deployment/Cargo.toml'];
+    const result = plan(input);
+    assert.equal(result.mode, 'affected', change);
+    assert.deepEqual(result.changed_packages, ['deploy', 'models']);
+    assert.deepEqual(result.packages, ['adapter', 'cli', 'deploy', 'models']);
+    assert.ok(result.tests.every(item => item.target === 'all'));
+  }
+});
+
+test('Removed/renamed packages and moved manifests explicitly require full rather than dropping old consumers', () => {
+  for (const change of ['removed', 'renamed', 'moved']) {
+    const input = fixture();
+    input.graph = {schema: 1};
+    input.baseMetadata = clone(input.metadata);
+    const unrelated = input.baseMetadata.packages.find(item => item.name === 'unrelated');
+    if (change === 'removed') {
+      input.metadata.packages = input.metadata.packages.filter(item => item.name !== 'unrelated');
+      input.metadata.workspace_members = input.metadata.workspace_members.filter(id => id !== unrelated.id);
+    }
+    if (change === 'renamed') unrelated.name = 'old-package';
+    if (change === 'moved') unrelated.manifest_path = absolute('rust/engine/old-package/Cargo.toml');
+    input.files = ['rust/engine/unrelated/Cargo.toml'];
+    const result = plan(input);
+    assert.equal(result.mode, 'full', change);
+    assert.match(result.reason, /removal, rename or workspace membership/);
+    assert.equal(result.packages.length, input.metadata.packages.length);
+  }
+});
+
+test('Base manifest extraction is bounded data-only Git show and isolated Python parsing', () => {
+  const input = fixture(), calls = [];
+  const value = baseManifestMetadata(input.metadata, ROOT, '1'.repeat(40), args => {
+    calls.push(args);
+    assert.equal(args[0], 'show');
+    return '# synthetic TOML';
+  }, (program, args, cwd, options) => {
+    assert.equal(program, 'python');
+    assert.deepEqual(args.slice(0, 3), ['-I', '-B', '-c']);
+    assert.equal(cwd, ROOT);
+    const payload = JSON.parse(options.input);
+    assert.equal(Object.keys(payload.manifests).length, input.metadata.packages.length + 1);
+    assert.equal(payload.manifests['rust/Cargo.toml'], '# synthetic TOML');
+    assert.ok(!args[3].includes('subprocess'));
+    assert.ok(!args[3].includes('eval('));
+    return JSON.stringify(input.metadata);
+  });
+  assert.deepEqual(value, input.metadata);
+  assert.equal(calls.length, 6);
+  assert.throws(() => baseManifestMetadata(input.metadata, ROOT, '1'.repeat(40),
+    () => 'x'.repeat(1024 * 1024 + 1), () => assert.fail('must not parse oversized data')), /parsing bounds/);
+});
+
+test('Offline TOML parser preserves inherited/aliased/conditional dependency and default-feature semantics', context => {
+  let python;
+  for (const program of ['python', 'python3']) {
+    try {
+      execFileSync(program, ['-I', '-B', '-c', 'import tomllib'], {timeout: 15000, windowsHide: true});
+      python = program;
+      break;
+    } catch { /* Missing Python intentionally selects full in production. */ }
+  }
+  if (!python) return context.skip('Python 3.11+ unavailable; full-fallback behavior covered separately');
+  const documents = {
+    'rust/Cargo.toml': `[workspace]
+members = ["engine/models", "engine/consumer"]
+[workspace.dependencies]
+shared = { package = "models", path = "engine/models", default-features = false, features = ["special"] }
+`,
+    'rust/engine/models/Cargo.toml': `[package]
+name = "models"
+[features]
+default = []
+special = []
+`,
+    'rust/engine/consumer/Cargo.toml': `[package]
+name = "consumer"
+[features]
+default = ["enabled"]
+enabled = ["dep:shared", "shared/special"]
+[dependencies]
+shared = { workspace = true, optional = true }
+external = { package = "models", version = "1", optional = true }
+[target.'cfg(windows)'.dev-dependencies]
+renamed = { package = "models", path = "../models", default-features = false }
+[build-dependencies]
+build_model = { package = "models", path = "../models" }
+`,
+  };
+  const current = metadata([pkg('models', [], [], {default: [], special: []}), pkg('consumer')]);
+  const parse = () => baseManifestMetadata(current, ROOT, '1'.repeat(40),
+    args => documents[args[1].slice(41)], (program, args, cwd, extra) =>
+      execFileSync(python, args, {...extra, encoding: 'utf8', timeout: 15000, windowsHide: true}));
+  const old = parse(), consumer = old.packages.find(item => item.name === 'consumer');
+  assert.deepEqual(consumer.features.default, ['enabled']);
+  assert.deepEqual(consumer.features.external, ['dep:external']);
+  assert.equal(consumer.features.shared, undefined, 'dep: explicitly suppresses Cargo implicit feature');
+  const shared = consumer.dependencies.find(item => item.rename === 'shared');
+  assert.equal(shared.name, 'models');
+  assert.equal(shared.optional, true);
+  assert.equal(shared.uses_default_features, false);
+  assert.deepEqual(shared.features, ['special']);
+  assert.equal(shared.path, absolute('rust/engine/models'));
+  assert.ok(consumer.dependencies.some(item => item.kind === 'dev' && item.target === 'cfg(windows)' &&
+    item.rename === 'renamed' && item.uses_default_features === false));
+  assert.ok(consumer.dependencies.some(item => item.kind === 'build' && item.rename === 'build_model'));
+  assert.deepEqual(reverseConsumers(old.packages, ['models']), ['consumer', 'models']);
+  // Old metadata is consumed through the same validated model and union.
+  const result = plan({root: ROOT, metadata: current, baseMetadata: old, graph: {schema: 1},
+    files: ['rust/engine/consumer/Cargo.toml']});
+  assert.equal(result.mode, 'affected');
+  assert.deepEqual(result.packages, ['consumer', 'models']);
+  documents['rust/Cargo.toml'] = documents['rust/Cargo.toml'].replace('"engine/consumer"', '"engine/*"');
+  assert.throws(parse, /Offline base TOML metadata unavailable/);
+});
+
+test('CLI old-manifest discovery uses PR base or local HEAD and falls full when offline TOML parsing is unavailable', () => {
+  for (const useBase of [true, false]) {
+    const value = cliFixture({files: ['rust/engine/control-plane/deployment/Cargo.toml'],
+      dirty: ['rust/engine/control-plane/deployment/Cargo.toml']});
+    const execute = value.hooks.exec;
+    value.hooks.exec = (program, args, cwd, options) => {
+      if (program === 'python') return value.hooks.read(value.paths.metadata);
+      if (program === 'git' && args[0] === 'show') {
+        assert.ok(args[1].startsWith(`${useBase ? value.base : value.head}:`));
+        return '# synthetic TOML';
+      }
+      return execute(program, args, cwd, options);
+    };
+    const result = main([...value.args, ...(useBase ? ['--base', value.base] : [])], value.hooks);
+    assert.equal(result.mode, 'affected');
+    assert.equal(result.inputs.base_metadata_ref, useBase ? value.base : value.head);
+    assert.equal(result.base_metadata_digest.length, 64);
+    assert.equal(verifyPlan(result, {root: ROOT, read: value.hooks.read, exec: value.hooks.exec}).valid, true);
+  }
+  const missing = cliFixture({dirty: ['rust/engine/control-plane/deployment/Cargo.toml']});
+  const result = main(missing.args, missing.hooks);
+  assert.equal(result.mode, 'full');
+  assert.match(result.reason, /metadata unavailable or unsupported/);
 });

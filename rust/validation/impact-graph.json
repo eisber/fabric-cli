@@ -45,6 +45,47 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "dataflow",
+      "package": "fabric-sdk-dataflow",
+      "inputs": [
+        "rust/engine/data-plane/dataflow/src/**",
+        "rust/engine/data-plane/dataflow/tests/**",
+        "rust/engine/data-plane/dataflow/README.md"
+      ],
+      "depends_on": ["operations", "sdk-workspaces"],
+      "tests": [
+        {"package": "fabric-sdk-dataflow", "target": "lib"},
+        {"package": "fabric-sdk-dataflow", "target": "test:execute_query"}
+      ],
+      "profiles": [],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-execute",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/execute.rs",
+        "rust/clients/cli/app/src/execute_host.rs",
+        "rust/clients/cli/app/src/native_execute.rs",
+        "rust/clients/cli/app/src/native_execute_tests.rs",
+        "rust/clients/cli/app/tests/execute_arguments.rs",
+        "rust/clients/cli/app/tests/execute_host.rs",
+        "rust/clients/cli/app/tests/execute_cli_contract.rs"
+      ],
+      "depends_on": ["dataflow", "operations", "output", "http"],
+      "tests": [
+        {"package": "fabric-cli", "target": "lib"},
+        {"package": "fabric-cli", "target": "bin:fab-rs"},
+        {"package": "fabric-cli", "target": "test:execute_arguments"},
+        {"package": "fabric-cli", "target": "test:execute_host"},
+        {"package": "fabric-cli", "target": "test:execute_cli_contract"},
+        {"package": "fabric-cli", "target": "test:native_tabular"},
+        {"package": "fabric-cli", "target": "test:job_arguments"}
+      ],
+      "profiles": ["native-read", "headless", "interactive"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "engine-query",
       "package": "fabric-sdk-query",
       "inputs": [
@@ -1073,7 +1114,9 @@
       "id": "onelake",
       "package": "fabric-sdk-onelake",
       "inputs": [
-        "rust/engine/data-plane/onelake/client/src/**"
+        "rust/engine/data-plane/onelake/client/src/**",
+        "rust/engine/data-plane/onelake/client/tests/consumer.rs",
+        "rust/engine/data-plane/onelake/client/tests/link.rs"
       ],
       "depends_on": [
         "core",
@@ -1087,6 +1130,10 @@
         {
           "package": "fabric-sdk-onelake",
           "target": "test:consumer"
+        },
+        {
+          "package": "fabric-sdk-onelake",
+          "target": "test:link"
         }
       ],
       "checks": [
@@ -1259,6 +1306,10 @@
         {
           "package": "fabric-cli-storage-files",
           "target": "test:download"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:exact_output"
         },
         {
           "package": "fabric-cli-storage-files",
@@ -1503,12 +1554,14 @@
       "package": "fabric-deploy",
       "inputs": [
         "rust/engine/control-plane/deployment/src/stage.rs",
+        "rust/engine/control-plane/deployment/tests/stage.rs",
         "rust/authoring-docs/native-stage-deployment.md"
       ],
       "depends_on": ["operations"],
       "tests": [
         {"package": "fabric-deploy", "target": "test:stage"}
       ],
+      "profiles": [],
       "checks": ["dependency-graph"]
     },
     {
@@ -1896,6 +1949,7 @@
       "depends_on": [
         "definitions",
         "transfer",
+        "storage-files",
         "query",
         "output",
         "sdk-workspaces",
@@ -1914,6 +1968,14 @@
         {
           "package": "fabric-cli",
           "target": "test:get_options"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_command"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:explicit_get"
         },
         {
           "package": "fabric-cli",
@@ -2115,13 +2177,16 @@
       "id": "cli-deploy-stage",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/stage_deploy.rs"
+        "rust/clients/cli/app/src/stage_deploy.rs",
+        "rust/clients/cli/app/tests/stage_deploy.rs",
+        "rust/clients/cli/app/tests/stage_deploy_entry.rs"
       ],
       "depends_on": ["deploy-stage"],
       "tests": [
         {"package": "fabric-cli", "target": "test:stage_deploy"},
         {"package": "fabric-cli", "target": "test:stage_deploy_entry"}
       ],
+      "profiles": ["v2-deploy"],
       "checks": ["dependency-graph"]
     },
     {
@@ -2928,6 +2993,7 @@
       "depends_on": [
         "sdk-search",
         "sdk",
+        "storage-files",
         "query",
         "cli-headless",
         "cli-get"
@@ -3944,6 +4010,21 @@
     }
   ],
   "checks": [
+    {
+      "id": "process-supervision",
+      "packages": [],
+      "components": [],
+      "inputs": [
+        "rust/scripts/validation-process.cjs",
+        "rust/scripts/validation-process.py",
+        "rust/scripts/validation-process.test.cjs",
+        "rust/scripts/validation_posix.py",
+        "rust/scripts/validate-impact.cjs",
+        "rust/scripts/validate-impact.test.cjs"
+      ],
+      "platforms": ["windows", "linux", "macos"],
+      "depends_on": ["selector-tests"]
+    },
     {
       "id": "selector-tests",
       "packages": [],
