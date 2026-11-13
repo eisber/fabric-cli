@@ -34,7 +34,6 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUST_TEST_THREADS: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-      CARGO_TARGET_DIR: ${{ runner.temp }}/docs-target
     defaults:
       run:
         shell: bash
@@ -47,6 +46,7 @@ jobs:
       - name: Record exact source and check lightweight contracts
         run: |
           mkdir -p "$RUNNER_TEMP/docs-results"
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/docs-target" >> "$GITHUB_ENV"
           git rev-parse HEAD | tee "$RUNNER_TEMP/docs-results/source.txt"
           rustc --version --verbose | tee "$RUNNER_TEMP/docs-results/rustc.txt"
           cargo --version | tee "$RUNNER_TEMP/docs-results/cargo.txt"
