@@ -43,6 +43,7 @@ function evaluates(expression, name, target, branchRef, succeeded = true, head =
 
 test('real workflow conditions route only trusted integration PR targets and push refs', () => {
   const full = workflow('rust-ci.yml');
+  const native = workflow('rust-native-shard.yml');
   const minimal = workflow('integration-smoke.yml');
   const optional = workflow('semantic-model-bpa.yml');
   for (const [name, target, branchRef, selected] of [
@@ -83,9 +84,17 @@ test('real workflow conditions route only trusted integration PR targets and pus
   assert.match(full, /needs: \[changes, native\]/);
   assert.match(full, /if: needs.changes.outputs.run_native == 'true'/);
   for (const retained of ['merge_group:', 'schedule:', 'workflow_dispatch:',
-    'os: [windows-2025, ubuntu-24.04, macos-15]', '--workspace --all-targets --all-features']) {
+    'uses: ./.github/workflows/rust-native-shard.yml']) {
     assert.ok(full.includes(retained), `Full diagnostic path lost: ${retained}`);
   }
+  assert.ok(native.includes('matrix: ${{ fromJSON(inputs.matrix) }}'));
+  assert.ok(native.includes('node rust/scripts/validate-impact.cjs'));
+  const {matrixForPlan, shardsForPlan} = require('./impact-shards.cjs');
+  const diagnostic = {mode: 'full', files: [], packages: [], tests: [], profiles: [], checks: []};
+  assert.deepEqual([...new Set(matrixForPlan(diagnostic).include.map(entry => entry.os))].sort(),
+    ['macos-15', 'ubuntu-24.04', 'windows-2025']);
+  assert.ok(shardsForPlan(diagnostic, 'windows').flatMap(shard => shard.commands).some(command =>
+    command.args.join(' ').includes('--workspace --all-targets --all-features')));
 });
 
 test('bounded Report, KQL and Eventhouse conflict checks remain independent candidate-only PR steps', () => {
