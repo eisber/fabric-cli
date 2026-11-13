@@ -57,6 +57,15 @@ provider checks/reviews still apply. The serial integration driver must recheck
 source/base/conflicts and authority before merging and require postmerge basic
 smoke before the next separately authorized queue entry.
 
+The PR54 integration candidate additionally runs a candidate-branch-only Windows
+offline schema proof after the generic minimum. It checks SDK schema documents,
+the native provider, discovery/help/process targets and legacy TABLE mounting
+with `v2-discovery,headless`. The discovery binary's registered schema test module
+includes the shared-undrained-pipe deadline/cancellation cases and their existing
+four-second bounds. Separate receipts retain actual counts, filtered tests, exits,
+both output hashes and unchanged source inventories. This optional leaf proof is
+not rerun on postmerge pushes and is not broker, live-service or three-OS evidence.
+
 ## Full qualification and historical evidence
 
 Current local and PR selection uses the shared

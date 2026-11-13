@@ -40,6 +40,18 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
         run: node rust/scripts/integration-smoke.cjs "$env:RUNNER_TEMP/integration-smoke-receipts"
+      - name: Check the PR54 candidate's native schema leaf offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/integrate-native-lakehouse-schema-discov-tofmij'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+        run: >-
+          node rust/scripts/integration-schema-smoke.cjs
+          "$env:RUNNER_TEMP/integration-smoke-receipts/schema"
       - name: Check the Report66 conflict candidate's optional shared paths offline
         if: >-
           github.event_name == 'pull_request' &&
