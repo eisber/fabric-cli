@@ -149,6 +149,12 @@ bindings, validators, capability evidence, dispatch selection and tests. They
 must not duplicate policy, HTTP, identity, approval or output engines.
 No sibling provider is enabled by this helper alone.
 
+The standalone [Eventhouse binding](eventhouse-create.md) consumes only the five
+authorized generic helper logical diffs, independently of the Notebook leaf.
+Its documented same-name default KQL database and anticipated service-side
+effects require exact typed discovery and explicit approval disclosure; a
+single client POST must not be presented as evidence of no server-created child.
+
 `tests/create_host.rs` exercises the helper with a synthetic typed binding,
 independently of any native Notebook leaf. Native leaves additionally need real
 parser-to-host-to-SDK-to-scripted-HTTP tests and executable boundary tests.
@@ -173,3 +179,18 @@ KQLDatabase before input I/O; no suffix-only dispatch or fallback binding is use
 Create help renders each enabled binding's existing selected grammar, and root
 help retains Report, KQL and Livy disclosures. This bounded candidate proof is
 not the full feature/platform qualification.
+
+The released Eventhouse76 integration candidate adds its own bounded Windows
+step, with the original ten-minute bound and locked Windows dependency fetch.
+It exercises Eventhouse wire and executable tests alongside the shared LRO,
+create policy, Report SDK, shared host, Report, KQL and Livy regressions using
+`headless,v2-create-eventhouse,v2-kql-database-create,runtime-v2`.
+The exact parsed metadata target selects the enabled binding before input I/O.
+Combined root help retains every enabled disclosure, including anticipated
+provider-created KQL children and capacity/storage consumption. This is
+provisional candidate evidence, not full Eventhouse or platform qualification.
+The original Eventhouse and KQL executable suites retain their exact source
+and run in their respective feature sets: each intentionally rejects the other
+disabled owner. A separate combined executable suite enables both and checks
+typed schema selection, cross-owner input rejection, local approval fencing
+and help without changing those original expectations.

@@ -92,6 +92,8 @@ async fn execute(args: Vec<OsString>, root_help: bool, deadline: Instant) -> Res
         let text = format!("{text}\n\n{}", super::CREATE_HELP);
         #[cfg(feature = "v2-kql-database-create")]
         let text = format!("{text}\n\n{}", super::KQL_CREATE_HELP);
+        #[cfg(feature = "v2-create-eventhouse")]
+        let text = format!("{text}\n\n{}", super::EVENTHOUSE_CREATE_HELP);
         return host::write_stream(OutputStream::Stdout, text.into_bytes(), deadline)
             .await
             .map_err(|_| Failure::Local("OutputFailed", "Help output failed.", 1));
