@@ -10,6 +10,11 @@ license.workspace = true
 publish.workspace = true
 description = "Explicit Azure CLI identity binding with memory-only token reuse"
 
+[[test]]
+name = "process_tree"
+path = "tests/process_tree.rs"
+harness = false
+
 [dependencies]
 fabric-core.workspace = true
 azure_core.workspace = true

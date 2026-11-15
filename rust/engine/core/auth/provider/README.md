@@ -27,12 +27,19 @@ waits, with their operation cancellation/deadline; explicit login is bounded
 internally. Other library callers must likewise bound and drop SDK acquisition
 on cancellation/deadline. The
 production executor bounds stdout/stderr and uses `process-wrap` Unix process
-groups / Windows Job Objects so dropping acquisition kills its owned process
-tree rather than only the SDK shell. Provider output and errors are never copied
+groups / Windows Job Objects so dropping acquisition requests termination of
+the SDK shell and contained descendants. It does not await a cleanup-completion
+barrier; a Unix descendant that leaves the group/session is not contained by
+this mechanism. Provider output and errors are never copied
 into public diagnostics. The supported scopes are exactly the three fixed
 product scopes; Power BI deliberately shares Fabric's scope.
 
 `tests/azure_cli.rs` injects the actual Azure SDK process boundary, synthetic
 tokens, clock, and cancellation. It does not invoke Azure CLI or contact Azure.
+`tests/process_tree.rs` exercises the production executor and real SDK shell in
+an isolated subprocess with a native fake `az` and contained descendant. It
+checks cancellation, real deadlines, inherited-pipe stalls, bounded return and
+OS process termination. Its private PATH/configuration never changes the test
+runner's environment, and no installed Azure CLI or Azure endpoint is used.
 Restricted auth/core changes still require Fabric CLI team review; authored
 tests are not evidence of execution until the integration owner runs them.

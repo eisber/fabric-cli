@@ -137,9 +137,10 @@ async fn bounded<T>(
     }
 }
 
-/// SDK process executor. Dropping acquisition terminates the owned child; output is bounded.
+/// SDK process executor with bounded output and group/job termination on acquisition drop.
 ///
 /// The Azure SDK supplies its own command. This adapter does not implement a token protocol.
+/// Drop requests termination of contained descendants without awaiting a cleanup barrier.
 #[derive(Debug)]
 pub struct ProcessExecutor;
 
@@ -151,7 +152,7 @@ struct ProcessGuard {
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
         if !self.finished {
-            // Kill the entire owned process group/job, not just the SDK's shell.
+            // Request group/job termination, not just termination of the SDK shell.
             let _ = self.child.start_kill();
         }
     }
@@ -270,7 +271,7 @@ type ScopeSlot = Arc<Mutex<Option<AccessToken>>>;
 ///
 /// Detected identity drift or invalid identity metadata disables all cached scopes.
 /// The caller must bound SDK acquisition using its operation cancellation/deadline;
-/// dropping that future releases cache locks and terminates the owned process tree.
+/// dropping that future releases cache locks and requests owned group/job termination.
 pub struct BoundCredential {
     session: Arc<AzureCliSession>,
     binding: Binding,
