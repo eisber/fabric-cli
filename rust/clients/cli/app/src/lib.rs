@@ -258,7 +258,7 @@ fn write_failure(
 
 fn welcome(stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
     let output = "Welcome to fab-rs.\n\n\n\
-                  Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth                      Authentication commands\n  fab-rs --help                   All commands\n";
+                  Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth             Authentication commands\n  fab-rs --help           All commands\n";
     if stdout.write_all(output.as_bytes()).is_err() {
         let _ = stderr.write_all(b"Cannot write welcome output\n");
         return 1;

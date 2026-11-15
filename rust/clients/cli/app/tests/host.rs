@@ -30,7 +30,7 @@ const TENANT: &str = "00000000-0000-0000-0000-000000000001";
 const PRINCIPAL: &str = "00000000-0000-0000-0000-000000000002";
 static FILE_ID: AtomicUsize = AtomicUsize::new(0);
 const WELCOME: &str = "Welcome to fab-rs.\n\n\n\
-                      Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth                      Authentication commands\n  fab-rs --help                   All commands\n";
+                      Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth             Authentication commands\n  fab-rs --help           All commands\n";
 
 fn binding() -> Binding {
     Binding {
