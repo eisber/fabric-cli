@@ -418,7 +418,7 @@ async fn raw_and_job_responses_do_not_invent_protocols() {
             response(
                 202,
                 "job",
-                &[("location", "/v1/workspaces/id/items/id/jobs/instances/job")],
+                &[("location", "/v1/items/id/jobs/instances/job")],
             ),
         ),
         (
@@ -442,6 +442,178 @@ async fn raw_and_job_responses_do_not_invent_protocols() {
         assert_eq!(result.status, initial.status);
         assert_eq!(result.body, initial.body);
         assert!(http.calls.lock().unwrap().is_empty());
+    }
+}
+#[tokio::test]
+async fn job_polling_uses_each_response_hint_or_ten_seconds_without_backoff() {
+    let location = "/v1/workspaces/workspace/items/item/jobs/instances/job?token=CANARY";
+    let initial = response(202, "", &[("location", location), ("retry-after", "7")]);
+    let terminal = response(
+        200,
+        r#"{"status":"Completed","metadata":{"$serde_json::private::Number":"ordinary"},"failureReason":null}"#,
+        &[
+            ("x-terminal", "retained"),
+            ("location", "https://evil.invalid/ignored"),
+        ],
+    );
+    let http = Script::new(vec![
+        response(200, r#"{"status":"NotStarted"}"#, &[("retry-after", "3")]),
+        response(200, r#"{"status":"InProgress"}"#, &[]),
+        response(
+            200,
+            r#"{"status":"InProgress"}"#,
+            &[("retry-after", "invalid")],
+        ),
+        terminal.clone(),
+    ]);
+    let clock = FakeClock::new();
+    let result = complete(
+        &http,
+        &clock,
+        Audience::Fabric,
+        initial,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, terminal.status);
+    assert_eq!(result.body, terminal.body);
+    assert_eq!(result.headers, terminal.headers);
+    assert_eq!(
+        *clock.sleeps.lock().unwrap(),
+        [7, 3, 10, 10].map(Duration::from_secs)
+    );
+    assert_eq!(
+        *clock.warnings.lock().unwrap(),
+        vec!["Invalid Retry-After header; using 10-second job polling interval"]
+    );
+    let requests = http.calls.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(
+        requests.iter().all(|request| request.url.path()
+            == "/v1/workspaces/workspace/items/item/jobs/instances/job")
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.url.query() == Some("token=CANARY"))
+    );
+}
+
+#[tokio::test]
+async fn job_initial_delay_and_terminal_statuses_follow_job_protocol() {
+    let location = "/v1/workspaces/workspace/items/item/jobs/instances/job";
+    for (hint, seconds) in [
+        (None, 10),
+        (Some("60"), 60),
+        (Some("Thu, 01 Jan 1970 00:00:07 GMT"), 7),
+        (Some("invalid"), 10),
+        (Some("0"), 0),
+    ] {
+        for (status, expected) in [
+            ("Completed", None),
+            ("Deduped", None),
+            ("Failed", Some(ErrorKind::Service)),
+            ("Cancelled", Some(ErrorKind::Service)),
+            ("Unknown", Some(ErrorKind::Protocol)),
+        ] {
+            let mut headers = vec![("location", location)];
+            if let Some(hint) = hint {
+                headers.push(("retry-after", hint));
+            }
+            let terminal = response(200, &format!(r#"{{"status":"{status}"}}"#), &[]);
+            let http = Script::new(vec![terminal.clone()]);
+            let clock = FakeClock::new();
+            let result = complete(
+                &http,
+                &clock,
+                Audience::Fabric,
+                response(202, "", &headers),
+                CancellationToken::new(),
+            )
+            .await;
+            if let Some(kind) = expected {
+                let error = result.unwrap_err();
+                assert_eq!(error.kind, kind);
+                let recovery = error.recovery.unwrap();
+                assert_eq!(recovery.operation_id, None);
+                assert_eq!(
+                    recovery.status_url,
+                    format!("https://api.fabric.microsoft.com{location}")
+                );
+            } else {
+                assert_eq!(result.unwrap().body, terminal.body);
+            }
+            assert_eq!(
+                *clock.sleeps.lock().unwrap(),
+                vec![Duration::from_secs(seconds)]
+            );
+            assert_eq!(http.calls.lock().unwrap().len(), 1);
+        }
+    }
+    for terminal in [
+        response(200, "", &[]),
+        response(200, "invalid", &[]),
+        response(200, "{}", &[]),
+        response(202, r#"{"status":"Completed"}"#, &[]),
+        response(302, "", &[("location", "https://evil.invalid")]),
+    ] {
+        let http = Script::new(vec![terminal]);
+        let error = complete(
+            &http,
+            &FakeClock::new(),
+            Audience::Fabric,
+            response(202, "", &[("location", location)]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        assert!(error.recovery.is_some());
+        assert_eq!(http.calls.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn job_budget_and_local_cancellation_preserve_query_redacted_recovery() {
+    let location = "/v1/workspaces/workspace/items/item/jobs/instances/job?secret=CANARY";
+    for cancel in [false, true] {
+        let cancellation = CancellationToken::new();
+        if cancel {
+            cancellation.cancel();
+        }
+        let http = Script::new(vec![]);
+        let clock = FakeClock::new();
+        let error = complete(
+            &http,
+            &clock,
+            Audience::Fabric,
+            response(202, "", &[("location", location), ("retry-after", "601")]),
+            cancellation,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error.kind,
+            if cancel {
+                ErrorKind::Cancelled
+            } else {
+                ErrorKind::Timeout
+            }
+        );
+        let recovery = error.recovery.unwrap();
+        assert!(recovery.outcome_uncertain);
+        assert_eq!(recovery.operation_id, None);
+        assert!(!recovery.status_url.contains("CANARY"));
+        assert!(http.calls.lock().unwrap().is_empty());
+        assert_eq!(
+            *clock.sleeps.lock().unwrap(),
+            if cancel {
+                vec![]
+            } else {
+                vec![Duration::from_secs(600)]
+            }
+        );
     }
 }
 #[tokio::test]

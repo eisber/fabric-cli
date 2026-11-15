@@ -265,7 +265,7 @@ fn multipart(
 }
 
 /// Validate initial response JSON before reconciliation can replace its body.
-/// Empty bodies use the same pinned Python whitespace policy as final output.
+/// Empty bodies use the same whitespace policy as final output.
 pub fn validate_response_body(body: &[u8]) -> Result<(), CommandError> {
     response_body(body).map(|_| ())
 }
@@ -277,7 +277,7 @@ fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
         .chars()
         .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
     {
-        Ok(Value::String("(Empty)".into()))
+        Ok(Value::String(String::new()))
     } else {
         fabric_core_json::decode(bytes)
             .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))

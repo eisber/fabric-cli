@@ -61,7 +61,8 @@ Refresh rejects tenant/principal drift; subscription-only changes are allowed.
 
 Data uses the Python envelope, ordered keys, four-space JSON, ASCII escaping,
 and a trailing newline. Headers appear only with `--show-headers`. Empty and
-whitespace bodies become `"(Empty)"`; invalid nonempty JSON is a failure.
+whitespace bodies become `""` (an approved difference from Python's `"(Empty)"`
+marker); invalid nonempty JSON is a failure.
 Nonempty JMESPath queries preserve empty results rather than returning the
 original payload, a security-driven difference from Python. Projected lists
 remain lists; empty objects and strings appear as elements in `result.data`.

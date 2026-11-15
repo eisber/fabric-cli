@@ -14,6 +14,8 @@ use url::Url;
 pub enum OperationKind {
     /// Fabric status JSON.
     Fabric,
+    /// Fabric job-instance status JSON.
+    FabricJob,
     /// ARM Azure-AsyncOperation status JSON.
     ArmStatus,
     /// ARM Location HTTP status semantics.
@@ -104,6 +106,14 @@ fn fabric_id(url: &Url) -> Option<String> {
         .trim_end_matches('/');
     valid_id(tail).then(|| tail.to_owned())
 }
+fn fabric_job(url: &Url) -> bool {
+    let segments: Vec<_> = url.path().split('/').collect();
+    matches!(
+        segments.as_slice(),
+        ["", "v1", "workspaces", workspace, "items", item, "jobs", "instances", job]
+            if valid_id(workspace) && valid_id(item) && valid_id(job)
+    )
+}
 fn id_handle(id: &str) -> OperationHandle {
     OperationHandle {
         url: Url::parse(&format!("{}/operations/{id}", Audience::Fabric.base_url()))
@@ -145,6 +155,13 @@ fn discover(audience: Audience, head: &ApiResponse) -> Result<Option<OperationHa
             }
             if let Some(location) = head.header("location") {
                 let url = validate_operation_url(audience, location)?;
+                if fabric_job(&url) {
+                    return Ok(Some(OperationHandle {
+                        url,
+                        operation_id: None,
+                        kind: OperationKind::FabricJob,
+                    }));
+                }
                 if url.path().contains("/jobs/instances/") {
                     return Ok(None);
                 }

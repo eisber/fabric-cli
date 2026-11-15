@@ -6,7 +6,7 @@
 has no mutation request to replay. All status/result requests are bodyless GETs
 without caller headers; authentication is supplied by the injected executor.
 
-The fixed policy is 600 monotonic seconds, starting at reconciliation, with
+The fixed Fabric/ARM policy is 600 monotonic seconds, starting at reconciliation, with
 1-second initial delay, doubling pending-response backoff, no attempt limit,
 and no separate interval cap. Valid `Retry-After` seconds or HTTP dates are
 not-before constraints. Invalid values invoke the caller's safe diagnostic
@@ -18,11 +18,22 @@ result retrieval share the deadline and cancellation token. Local cancellation
 does not cancel backend work.
 
 Fabric accepts validated operation Location or ID-only handles. Conflicts fail
-closed; job-instance Locations remain raw. Successful status without an advertised
+closed. Successful status without an advertised
 result, and the documented `OperationHasNoResult` result error, return the actual
 terminal status response. ARM prioritizes Azure-AsyncOperation over Location;
 on completion it returns the initial body/headers with status normalized to 200,
 matching the retained Python shape. Other audiences are raw.
+
+Fabric job-instance Locations use a separate JSON status protocol. Only exact
+`/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
+routes are recognized, after the same URL safety checks. Job polling uses each
+response's `Retry-After`, or 10 seconds when absent/invalid (invalid hints emit a
+safe diagnostic), without doubling. It shares the 600-second budget and safe GET
+executor. `NotStarted`/`InProgress` remain pending; `Completed`/`Deduped` return
+the actual terminal job response. `Failed`/`Cancelled`, unexpected HTTP statuses,
+and malformed/unknown JSON statuses fail with query-redacted job-URL recovery.
+No job result URL is fetched, no mutation is replayed, and local timeout or
+cancellation never cancels the remote job. Unsupported job routes remain raw.
 
 Status and result-error JSON use the shared bounded `fabric-core-json` decoder.
 Reserved serde marker names remain ordinary object keys, including in unrelated

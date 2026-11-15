@@ -14,8 +14,8 @@ The host tests additionally assert independent cases from pinned
 full status/headers/text object; scalar false, null, and zero become Python
 strings; projected lists are not wrapped again by `OutputResult`. Unlike Python,
 Rust preserves empty projected collections/strings instead of returning the
-full response. Whitespace bodies become
-`"(Empty)"`; invalid nonempty JSON is an error.
+full response. Whitespace bodies now become `""`, an approved output change
+from Python's `"(Empty)"` marker; invalid nonempty JSON is an error.
 
 Additional integer expectations in the host/shared-JSON tests come from Python
 `json.loads`/`json.dumps`, not from Rust serialization. They cover `u64`/`i64`
@@ -41,5 +41,6 @@ Approved interface differences: long-only API switches, `--show-headers` rather
 than `--show_headers`, no `--params` (query text stays in the endpoint), required
 Rust binding, missing input files fail explicitly, default recognized-LRO
 polling, `--async` returning the actual initial response once, and preserving
-empty query results. These are not claims of Python flag or default-polling
+empty query results. Job-instance polling and empty body strings are additional
+approved differences. These are not claims of Python flag or default-polling
 parity.

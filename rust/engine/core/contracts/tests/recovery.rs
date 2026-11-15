@@ -148,3 +148,54 @@ fn raw_statuses_jobs_and_other_audiences_do_not_invent_recovery() {
         assert!(capture.recovery().is_none());
     }
 }
+
+#[test]
+fn job_handles_require_exact_instance_routes_and_safe_origins() {
+    for location in [
+        "/v1/workspaces/workspace/items/item/jobs/instances/job?secret=CANARY",
+        "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
+    ] {
+        for id in [None, Some("separate-operation-id")] {
+            let mut fields = vec![("Location", location)];
+            if let Some(id) = id {
+                fields.push(("x-ms-operation-id", id));
+            }
+            let fields = headers(&fields);
+            let handle = operation_handle(Audience::Fabric, 202, &fields)
+                .unwrap()
+                .unwrap();
+            assert_eq!(handle.kind(), OperationKind::FabricJob);
+            assert_eq!(handle.operation_id(), None);
+            assert!(!handle.recovery().status_url.contains("CANARY"));
+            let capture = ResponseHeadCapture::new(Audience::Fabric);
+            capture.record(202, &fields).unwrap();
+            assert_eq!(
+                capture.recovery().unwrap().status_url,
+                handle.recovery().status_url
+            );
+        }
+    }
+    for location in [
+        "/v1/workspaces/workspace/items/item/jobs/instances?jobType=Execute",
+        "/v1/workspaces/workspace/items/item/jobs/instances/job/cancel",
+        "/v1/workspaces/workspace/items/item/jobs/instances/",
+    ] {
+        assert!(
+            operation_handle(Audience::Fabric, 202, &headers(&[("location", location)]))
+                .unwrap()
+                .is_none()
+        );
+    }
+    for location in [
+        "https://evil.invalid/v1/workspaces/workspace/items/item/jobs/instances/job",
+        "https://user:CANARY@api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
+        "/v1/workspaces/workspace/items/item/jobs/instances/%2e%2e/job",
+        "/v1/workspaces/workspace/items/item/jobs/instances/job#CANARY",
+    ] {
+        let error = operation_handle(Audience::Fabric, 202, &headers(&[("location", location)]))
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        assert!(error.recovery.is_none());
+        assert!(!error.message.contains("CANARY"));
+    }
+}

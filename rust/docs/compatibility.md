@@ -90,7 +90,8 @@ authority for implementation evidence.
 - Only the Python-shaped JSON envelope: `timestamp`, `status`, `command`, and
   `result.data` response objects with `status_code` and `text`. Four-space
   indentation and trailing newline; optional `headers` only with
-  `--show-headers`. Empty/whitespace bodies become `"(Empty)"`; nonempty invalid
+  `--show-headers`. Empty/whitespace bodies become `""`, an approved departure
+  from Python's `"(Empty)"` marker; nonempty invalid
   JSON is an error, not a text fallback. Initial response JSON is validated before
   default polling can replace it; invalid accepted bodies retain safe recovery
   information and do not trigger a status GET. Diagnostics do not contaminate stdout.
@@ -102,12 +103,13 @@ authority for implementation evidence.
 ## Default polling is an extension
 
 Python raw `api` returns before shared LRO processing and has no `--wait` flag.
-Rust automatically waits only for recognized Fabric/ARM operations.
+Rust automatically waits for recognized Fabric/ARM operations and Fabric job
+instances.
 `--async` is an approved escape hatch: one initial request, unchanged response,
 no sleeps, status/result fetches, or background process.
 No `--wait`, `--wait=false`, `--no-wait`, `--lro-config`, or timing flags.
 
-Fixed policy: 600-second monotonic polling budget, initial fallback 1 second,
+Fixed Fabric/ARM policy: 600-second monotonic polling budget, initial fallback 1 second,
 factor 2, no separate attempt limit or interval cap. Valid server delta-seconds
 or HTTP-date `Retry-After` is a not-before constraint, never permission to poll
 earlier; invalid values use fallback with safe diagnostics. Delays, credential
@@ -116,11 +118,28 @@ remaining budget. Initial request timeout is separately 240 seconds.
 
 Fabric 202 with validated operation Location polls even without an operation ID.
 ID-only responses construct `/v1/operations/{id}`. Conflicting ID/URL fails
-explicitly. Job-instance `/jobs/instances/` Locations retain Python's exclusion.
+explicitly.
 `Succeeded`/`Completed` fetch a validated advertised result, otherwise return the
 actual terminal response. Only documented `OperationHasNoResult` suppresses a
 result-fetch error; unrelated errors remain failures. No fabricated 200 copy of
 the original body for result-less Fabric completion.
+
+Fabric job-instance Locations of the exact form
+`/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
+are reconciled separately, using their validated same-origin URL rather than
+`/v1/operations/{id}`. A valid additional operation ID does not change the job
+protocol selected by that Location. Each accepted/pending response selects the
+next delay from `Retry-After` (delta-seconds or HTTP date), with a 10-second
+fallback for absent/invalid hints and a safe diagnostic for invalid hints.
+There is no job exponential backoff. Jobs share the 600-second polling budget,
+GET retry bounds and local cancellation behavior, without remote cancellation.
+Job GETs must return HTTP 200 and a recognized JSON status: `NotStarted` and
+`InProgress` continue; `Completed` and `Deduped` return the actual terminal
+body/headers; `Failed` and `Cancelled` fail. Unknown/malformed status is a
+protocol error. Job terminal Locations are not general-LRO result handles.
+Collection Locations without an instance ID and other unsupported job routes
+remain raw. This job reconciliation is an approved extension, not Python raw
+API parity or a port of the full job-command subsystem.
 
 ARM 201/202 prefers `Azure-AsyncOperation` over Location and interprets terminal
 JSON status. Location-only polling continues for 201/202 and completes on 200.

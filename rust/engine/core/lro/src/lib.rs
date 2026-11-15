@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Fabric/ARM reconciliation of the actual initial response; never repeats a mutation.
+//! Fabric/ARM LRO and job reconciliation of the initial response; never repeats a mutation.
 #![forbid(unsafe_code)]
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
@@ -16,8 +16,10 @@ use url::Url;
 
 /// Fixed elapsed polling budget, with no attempt limit.
 pub const POLLING_BUDGET: Duration = Duration::from_secs(600);
-/// Initial client backoff. Each pending response doubles it without an interval cap.
+/// Fabric/ARM client backoff. Each pending response doubles it without an interval cap.
 pub const INITIAL_DELAY: Duration = Duration::from_secs(1);
+/// Job polling interval when Retry-After is absent or invalid.
+pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
 
 fn protocol(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Protocol, message)
@@ -48,6 +50,22 @@ fn state(response: &ApiResponse) -> Result<State, CoreError> {
             "Backend operation failed or was cancelled",
         )),
         _ => Err(protocol("Unknown operation status")),
+    }
+}
+fn job_state(response: &ApiResponse) -> Result<State, CoreError> {
+    let json = body(response)?;
+    let status = json
+        .get("status")
+        .and_then(Value::as_str)
+        .ok_or_else(|| protocol("Missing job instance status"))?;
+    match status {
+        "NotStarted" | "InProgress" => Ok(State::Pending),
+        "Completed" | "Deduped" => Ok(State::Success),
+        "Failed" | "Cancelled" => Err(CoreError::new(
+            ErrorKind::Service,
+            "Backend job failed or was cancelled",
+        )),
+        _ => Err(protocol("Unknown job instance status")),
     }
 }
 fn get(url: Url) -> ApiRequest {
@@ -93,14 +111,24 @@ async fn reconcile(
         context.remaining_at(clock.now())?;
         // The parser exposes safe diagnostics to callers; invalid server hints fall back
         // to the fixed client policy and never reveal header contents.
+        let job = matches!(handle.kind(), Strategy::FabricJob);
+        let fallback = if job {
+            JOB_POLLING_INTERVAL
+        } else {
+            Duration::ZERO
+        };
         let server = match retry_after(&previous, clock.wall_now()) {
-            Ok(delay) => delay.unwrap_or_default(),
+            Ok(delay) => delay.unwrap_or(fallback),
             Err(_) => {
-                clock.diagnostic("Invalid Retry-After header; using client backoff");
-                Duration::ZERO
+                clock.diagnostic(if job {
+                    "Invalid Retry-After header; using 10-second job polling interval"
+                } else {
+                    "Invalid Retry-After header; using client backoff"
+                });
+                fallback
             }
         };
-        let wait = delay.max(server);
+        let wait = if job { server } else { delay.max(server) };
         sleep_with_budget(clock, wait, context).await?;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
@@ -116,13 +144,24 @@ async fn reconcile(
                 _ => return Err(protocol("Unexpected ARM Location response status")),
             },
             Strategy::Fabric | Strategy::ArmStatus => state(&response)?,
+            Strategy::FabricJob => {
+                if response.status != 200 {
+                    return Err(protocol("Unexpected job instance response status"));
+                }
+                job_state(&response)?
+            }
         };
         match current {
             State::Pending => {
                 previous = response;
-                delay = delay.saturating_mul(2);
+                if !job {
+                    delay = delay.saturating_mul(2);
+                }
             }
             State::Success => {
+                if job {
+                    return Ok(response);
+                }
                 if !matches!(handle.kind(), Strategy::Fabric) {
                     let mut completed = initial;
                     completed.status = 200;
@@ -175,8 +214,10 @@ async fn reconcile(
 }
 /// Reconcile the actual initial response without ever replaying the initial request.
 ///
-/// Raw non-LRO responses are returned unchanged. Fabric terminal status is returned
-/// when no result is advertised. ARM completion preserves initial body/headers and
+/// Raw non-LRO responses are returned unchanged. Fabric job-instance Locations
+/// poll job status using Retry-After or ten seconds and return terminal job JSON.
+/// Fabric terminal status is returned when no result is advertised.
+/// ARM completion preserves initial body/headers and
 /// normalizes only its status to 200. A fresh fixed ten-minute budget starts here.
 /// Recovery errors describe local uncertainty, never backend rollback.
 pub async fn complete(

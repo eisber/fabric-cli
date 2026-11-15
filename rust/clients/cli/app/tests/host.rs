@@ -499,7 +499,7 @@ async fn raw_failures_empty_and_invalid_json_and_headers_match_source_contract()
     }
     let host = FakeHost::new(vec![response(204, " \n\t", &[])]);
     let (_, stdout, _) = run(&["api", "items"], &host).await;
-    assert_eq!(data(&stdout)[0]["text"], "(Empty)");
+    assert_eq!(data(&stdout)[0]["text"], "");
     assert!(data(&stdout)[0].get("headers").is_none());
     let host = FakeHost::new(vec![response(200, "not-json CANARY", &[])]);
     let (code, stdout, _) = run(&["api", "items"], &host).await;
@@ -788,7 +788,7 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
             assert_eq!(requests.len(), if asynchronous { 1 } else { 2 });
             assert_eq!(requests[0].method, "POST");
             if asynchronous {
-                assert_eq!(data(&stdout)[0]["text"], "(Empty)");
+                assert_eq!(data(&stdout)[0]["text"], "");
                 assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
             } else {
                 assert_eq!(requests[1].method, "GET");
@@ -796,6 +796,150 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body() {
+    for body in ["", " \t\r\n"] {
+        for asynchronous in [false, true] {
+            let location = "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job";
+            let terminal = r#"{"status":"Completed","id":"job"}"#;
+            let host = FakeHost::new(vec![
+                response(202, body, &[("Location", location), ("Retry-After", "3")]),
+                response(200, r#"{"status":"InProgress"}"#, &[("Retry-After", "2")]),
+                response(200, terminal, &[("x-terminal", "retained")]),
+            ]);
+            let mut args = vec![
+                "api",
+                "workspaces/workspace/items/item/jobs/execute/instances",
+                "--method",
+                "post",
+                "--input",
+                "{}",
+                "--headers",
+                "x-fixture=mutation-only",
+                "--show-headers",
+            ];
+            if asynchronous {
+                args.push("--async");
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 0, "{stdout}");
+            assert!(stderr.is_empty());
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), if asynchronous { 1 } else { 3 });
+            assert_eq!(requests[0].method, "POST");
+            assert_eq!(requests[0].body, b"{}");
+            if asynchronous {
+                assert_eq!(
+                    data(&stdout),
+                    json!([{
+                        "status_code": 202,
+                        "text": "",
+                        "headers": {"Location": location, "Retry-After": "3"}
+                    }])
+                );
+                assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+            } else {
+                assert_eq!(
+                    data(&stdout),
+                    json!([{
+                        "status_code": 200,
+                        "text": {"status": "Completed", "id": "job"},
+                        "headers": {"x-terminal": "retained"}
+                    }])
+                );
+                for request in &requests[1..] {
+                    assert_eq!(request.method, "GET");
+                    assert_eq!(request.url.as_str(), location);
+                    assert!(request.body.is_empty());
+                    assert!(!request.headers.contains_key("x-fixture"));
+                }
+                assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 2);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
+    let location = "/v1/workspaces/workspace/items/item/jobs/instances/job?secret=CANARY";
+    for terminal in [
+        r#"{"status":"Failed","failureReason":{"message":"BODY-CANARY"}}"#,
+        r#"{"status":"Cancelled"}"#,
+        r#"{"status":"Unknown"}"#,
+    ] {
+        let host = FakeHost::new(vec![
+            response(202, "", &[("location", location)]),
+            response(200, terminal, &[]),
+        ]);
+        let (code, stdout, stderr) = run(
+            &[
+                "api",
+                "workspaces/workspace/items/item/jobs/execute/instances",
+                "--method",
+                "post",
+                "--input",
+                "{}",
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 1, "{stdout}");
+        assert!(stderr.is_empty());
+        assert!(!stdout.contains("CANARY"));
+        assert_eq!(
+            data(&stdout),
+            json!([{
+                "operation_id": null,
+                "status_url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
+                "outcome_uncertain": true
+            }])
+        );
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[1].method, "GET");
+        assert_eq!(requests[1].url.query(), Some("secret=CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn job_terminal_query_does_not_disclose_unselected_payload() {
+    let host = FakeHost::new(vec![
+        response(
+            202,
+            "",
+            &[(
+                "location",
+                "/v1/workspaces/workspace/items/item/jobs/instances/job",
+            )],
+        ),
+        response(
+            200,
+            r#"{"status":"Completed","secret":"CANARY","values":[]}"#,
+            &[],
+        ),
+    ]);
+    let (code, stdout, stderr) = run(
+        &[
+            "api",
+            "workspaces/workspace/items/item/jobs/execute/instances",
+            "--method",
+            "post",
+            "--input",
+            "{}",
+            "--query",
+            "text.values",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stderr.is_empty());
+    assert_eq!(data(&stdout), json!([]));
+    assert!(!stdout.contains("CANARY"));
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]

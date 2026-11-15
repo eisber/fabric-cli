@@ -90,11 +90,28 @@ automatic pagination. Missing fields on a noncollection body retain `"None"`.
 An empty query bypasses projection. Querying is not a universal security-redaction
 boundary: selected data can itself contain sensitive information.
 
-Recognized Fabric/ARM operations poll **by default**. `--async` returns the actual
+Recognized Fabric/ARM operations and Fabric job instances poll **by default**.
+`--async` returns the actual
 initial response, without polling or starting background work. Polling has a
-fixed 600-second budget and a 1-second doubling fallback, honors server
-`Retry-After`, and has no tuning flags. Ctrl+C cancels local waiting, not the
+fixed 600-second budget. Fabric/ARM LROs retain their 1-second doubling fallback;
+job instances use each response's `Retry-After`, or 10 seconds when absent or
+invalid, without exponential backoff. There are no tuning flags. Ctrl+C cancels local waiting, not the
 backend operation; do not blindly repeat an uncertain mutation.
+
+Job polling recognizes a safe `Location` of the form
+`/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`.
+It waits through `NotStarted`/`InProgress`, returns the actual terminal job JSON
+for `Completed`/`Deduped`, and fails explicitly for `Failed`/`Cancelled` or unknown
+states. HTTP 200 on a status GET is not itself proof of job completion. Collection
+Locations without an instance ID remain raw; no job ID or polling URL is invented.
+See [Run On Demand Item Job](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/run-on-demand-item-job)
+and [Get Item Job Instance](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/get-item-job-instance).
+
+Empty/whitespace API response bodies now produce `text: ""`, not the Python
+`"(Empty)"` marker. An initial 202 means accepted, not completed. Do not repeat an
+accepted POST to collect headers; it may start another job. Inspect existing
+jobs in Fabric's monitoring hub or GET a known instance URL. For future intentional
+submissions, `--show-headers` exposes the headers the service returns.
 
 JSON is the sole data format. Raw initial HTTP errors remain inspectable
 response data; authentication, transport, malformed-response, and LRO failures
