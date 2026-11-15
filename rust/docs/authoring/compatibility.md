@@ -29,12 +29,10 @@ authority for implementation evidence.
 - `--help`, `--version`, and ordinary subcommand `--help` use stdout, exit zero,
   and do not load credentials or send HTTP. Use two ASCII hyphens.
 - Bare `fab-rs` shows a plain-text welcome screen on stdout, then exits without
-  entering a shell. It reads only local selection: present means selected but
-  unverified, absent means not selected for Rust (not necessarily signed out of
-  Azure CLI). Both exit zero with empty stderr. Unreadable/malformed selection or
-  unavailable configuration location is explicitly reported in the welcome
-  text, with a safe stderr diagnostic and exit one. There is no credential
-  acquisition, Azure CLI invocation, network access, or selection mutation.
+  entering a shell. The static text contains getting-started commands and exits
+  zero with empty stderr when stdout is writable, regardless of identity
+  selection or configuration availability. There is no configuration read,
+  credential acquisition, Azure CLI invocation, network access, or selection mutation.
   This replaces the previous automatic `auth status` execution and its JSON
   success/`Unauthorized` output; explicit `auth status` and other command JSON
   contracts are unchanged.

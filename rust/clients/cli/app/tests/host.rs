@@ -29,6 +29,8 @@ use std::{
 const TENANT: &str = "00000000-0000-0000-0000-000000000001";
 const PRINCIPAL: &str = "00000000-0000-0000-0000-000000000002";
 static FILE_ID: AtomicUsize = AtomicUsize::new(0);
+const WELCOME: &str = "Welcome to fab-rs.\n\n\n\
+                      Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth                      Authentication commands\n  fab-rs --help                   All commands\n";
 
 fn binding() -> Binding {
     Binding {
@@ -279,7 +281,7 @@ async fn bare_auth_matches_explicit_help_without_host_effects() {
 }
 
 #[tokio::test]
-async fn bare_root_welcomes_with_local_selection_without_acquiring_credentials() {
+async fn bare_root_welcomes_without_host_effects() {
     for selected in [false, true] {
         let host = FakeHost::new(vec![]);
         let selection = selected.then(binding);
@@ -287,22 +289,8 @@ async fn bare_root_welcomes_with_local_selection_without_acquiring_credentials()
         let (code, stdout, stderr) = run(&[], &host).await;
         assert_eq!(code, 0);
         assert!(stderr.is_empty());
-        assert!(stdout.starts_with("Welcome to fab-rs.\n"));
-        assert!(stdout.contains("fab-rs api workspaces"));
-        assert!(stdout.contains("fab-rs auth            Authentication commands"));
-        assert!(stdout.contains("fab-rs --help"));
-        if selected {
-            assert!(stdout.contains("Identity: Selected locally; session not verified."));
-            assert!(stdout.contains("Check access: fab-rs auth status"));
-            assert!(!stdout.contains("Get connected:"));
-        } else {
-            assert!(stdout.contains("Identity: No identity selected for fab-rs."));
-            assert!(stdout.contains("az login               Sign in using Azure CLI"));
-            assert!(stdout.contains("fab-rs auth login      Bind fab-rs to that identity"));
-        }
-        assert!(!stdout.contains(TENANT));
-        assert!(!stdout.contains(PRINCIPAL));
-        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(stdout, WELCOME);
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
         assert_eq!(*host.binding.lock().unwrap(), selection);
         assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
         assert!(host.transport.requests.lock().unwrap().is_empty());
@@ -310,7 +298,7 @@ async fn bare_root_welcomes_with_local_selection_without_acquiring_credentials()
 }
 
 #[tokio::test]
-async fn bare_root_reports_selection_errors_without_disclosure_or_modification() {
+async fn bare_root_ignores_selection_errors_without_modification() {
     let directory = TempDirectory::new();
     let path = directory.0.join("selection.json");
     let file = SelectionFile::new(path.clone());
@@ -319,14 +307,9 @@ async fn bare_root_reports_selection_errors_without_disclosure_or_modification()
     std::fs::write(&path, contents).unwrap();
     let host = fabric_cli::NativeHost::with_selection_path(path.clone());
     let (code, stdout, stderr) = run(&[], &host).await;
-    assert_eq!(code, 1);
-    assert!(stdout.starts_with("Welcome to fab-rs.\n"));
-    assert!(stdout.contains("Identity: Unable to read local selection."));
-    assert!(!stdout.contains("No identity selected"));
-    assert!(stderr.contains("Cannot read local selection."));
-    assert!(stderr.contains("fab-rs auth logout"));
-    assert!(!stdout.contains("SECRET-CANARY"));
-    assert!(!stderr.contains("SECRET-CANARY"));
+    assert_eq!(code, 0);
+    assert_eq!(stdout, WELCOME);
+    assert!(stderr.is_empty());
     assert_eq!(std::fs::read(path).unwrap(), contents);
     let (_, help, help_stderr) = run(&["--help"], &host).await;
     assert!(help.contains("Usage:"));
@@ -2088,34 +2071,20 @@ fn actual_bare_root_welcomes_without_azure_cli_and_preserves_selection() {
     let absent = invoke();
     assert!(absent.status.success());
     assert!(absent.stderr.is_empty());
-    assert!(
-        String::from_utf8(absent.stdout)
-            .unwrap()
-            .contains("Identity: No identity selected for fab-rs.")
-    );
+    assert_eq!(String::from_utf8(absent.stdout).unwrap(), WELCOME);
     assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
     SelectionFile::new(path.clone()).write(&binding()).unwrap();
     let contents = std::fs::read(&path).unwrap();
     let selected = invoke();
     assert!(selected.status.success());
     assert!(selected.stderr.is_empty());
-    assert!(
-        String::from_utf8(selected.stdout)
-            .unwrap()
-            .contains("Identity: Selected locally; session not verified.")
-    );
+    assert_eq!(String::from_utf8(selected.stdout).unwrap(), WELCOME);
     assert_eq!(std::fs::read(&path).unwrap(), contents);
     std::fs::write(&path, b"INVALID-SELECTION-SECRET-CANARY").unwrap();
     let malformed = invoke();
-    assert_eq!(malformed.status.code(), Some(1));
-    assert!(
-        String::from_utf8(malformed.stdout)
-            .unwrap()
-            .contains("Identity: Unable to read local selection.")
-    );
-    let stderr = String::from_utf8(malformed.stderr).unwrap();
-    assert!(stderr.contains("Cannot read local selection."));
-    assert!(!stderr.contains("SECRET-CANARY"));
+    assert!(malformed.status.success());
+    assert_eq!(String::from_utf8(malformed.stdout).unwrap(), WELCOME);
+    assert!(malformed.stderr.is_empty());
     assert_eq!(
         std::fs::read(path).unwrap(),
         b"INVALID-SELECTION-SECRET-CANARY"
@@ -2123,7 +2092,7 @@ fn actual_bare_root_welcomes_without_azure_cli_and_preserves_selection() {
 }
 
 #[test]
-fn actual_bare_root_reports_missing_configuration_environment() {
+fn actual_bare_root_welcomes_without_configuration_environment() {
     let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
         .env("PATH", "")
         .env_remove("HOME")
@@ -2131,17 +2100,9 @@ fn actual_bare_root_reports_missing_configuration_environment() {
         .env_remove("XDG_CONFIG_HOME")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    assert!(
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .contains("Identity: Unable to read local selection.")
-    );
-    assert!(
-        String::from_utf8(output.stderr)
-            .unwrap()
-            .contains("Cannot read local selection.")
-    );
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), WELCOME);
+    assert!(output.stderr.is_empty());
 }
 
 #[test]

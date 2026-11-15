@@ -256,39 +256,21 @@ fn write_failure(
     code
 }
 
-fn welcome(host: &dyn Host, stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
-    let (identity, code) = match host.selection() {
-        Ok(Some(_)) => (
-            "Identity: Selected locally; session not verified.\nCheck access: fab-rs auth status\n",
-            0,
-        ),
-        Ok(None) => (
-            "Identity: No identity selected for fab-rs.\n\nGet connected:\n  az login               Sign in using Azure CLI\n  fab-rs auth login      Bind fab-rs to that identity\n",
-            0,
-        ),
-        Err(_) => {
-            let _ = stderr.write_all(
-                b"Cannot read local selection. Repair its permissions/content or run fab-rs auth logout.\n",
-            );
-            ("Identity: Unable to read local selection.\n", 1)
-        }
-    };
-    let output = format!(
-        "Welcome to fab-rs.\nRaw Microsoft Fabric API access using your Azure CLI identity.\n\n\
-         {identity}\nGet started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth            Authentication commands\n  fab-rs --help          All commands\n"
-    );
+fn welcome(stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
+    let output = "Welcome to fab-rs.\n\n\n\
+                  Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth                      Authentication commands\n  fab-rs --help                   All commands\n";
     if stdout.write_all(output.as_bytes()).is_err() {
         let _ = stderr.write_all(b"Cannot write welcome output\n");
         return 1;
     }
-    code
+    0
 }
 
 /// Run the real parser/host/output with injected effects and streams.
 ///
 /// Supply the executable name as the first argument, as with `std::env::args_os`.
 /// Metadata returns before touching any host hook, selection, credential, or network.
-/// No arguments shows a welcome screen that reads only the local selection.
+/// No arguments shows a static welcome screen without touching host hooks.
 pub async fn run(
     args: impl IntoIterator<Item = OsString>,
     host: &dyn Host,
@@ -298,7 +280,7 @@ pub async fn run(
 ) -> u8 {
     let args: Vec<OsString> = args.into_iter().collect();
     if args.len() == 1 {
-        return welcome(host, stdout, stderr);
+        return welcome(stdout, stderr);
     }
     let name = command_name(&args);
     let matches = match parse_arguments(&args) {
