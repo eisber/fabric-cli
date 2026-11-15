@@ -194,6 +194,11 @@ pub(crate) fn validate(ast: &Ast) -> Result<bool, QueryError> {
                 }
             }
             Ast::Index { idx: i32::MIN, .. } => return Err(unsupported()),
+            Ast::Slice { step: 0, .. } => {
+                return Err(QueryError {
+                    kind: QueryErrorKind::Evaluation,
+                });
+            }
             Ast::Slice { step, .. } if step.unsigned_abs() > 1_000_000 => return Err(unsupported()),
             Ast::Condition {
                 predicate, then, ..

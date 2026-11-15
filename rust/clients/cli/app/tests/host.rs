@@ -370,6 +370,29 @@ async fn invalid_static_query_functions_cannot_reach_auth_or_mutating_http() {
 }
 
 #[tokio::test]
+async fn zero_slice_queries_fail_before_selection_provider_or_mutation() {
+    for query in ["[::0]", "map(&[::0], text.items)"] {
+        let host = FakeHost::new(vec![]);
+        *host.binding.lock().unwrap() = None;
+        let (code, stdout, stderr) = run(
+            &[
+                "api", "items", "--method", "post", "--input", "{}", "--query", query,
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 1, "{query}: {stdout}");
+        assert!(stdout.contains("InvalidInput"));
+        assert!(!stdout.contains("Unauthorized"));
+        assert!(stderr.is_empty());
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+        // Timestamp rendering only: no selection read, provider or transport setup.
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
 async fn unsupported_aliases_params_and_polling_knobs_fail_without_acquisition() {
     for option in [
         "-A",
@@ -531,6 +554,133 @@ async fn async_is_one_send_no_sleep_default_passes_actual_initial_to_polling() {
         assert!(requests[1].body.is_empty());
         assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 1);
         assert_eq!(data(&stdout)[0]["text"]["status"], "Succeeded");
+    }
+}
+
+#[tokio::test]
+async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
+    for asynchronous in [true, false] {
+        for (body, query, error_code) in [
+            (b"{BODY-CANARY".as_slice(), None, "InvalidJson"),
+            (b"\xffBODY-CANARY".as_slice(), None, "InvalidJson"),
+            (
+                br#"{"value":42,"secret":"BODY-CANARY"}"#.as_slice(),
+                Some("length(text.value)"),
+                "InvalidInput",
+            ),
+        ] {
+            let mut converted = response(
+                if asynchronous { 202 } else { 200 },
+                "",
+                &[("x-fixture", "HEADER-CANARY")],
+            );
+            converted.body = body.to_vec();
+            let initial_headers = [("location", "/v1/operations/op-1?secret=CANARY")];
+            let responses = if asynchronous {
+                converted.headers.extend(
+                    initial_headers
+                        .iter()
+                        .map(|(name, value)| (name.to_string(), value.to_string())),
+                );
+                vec![converted]
+            } else {
+                vec![
+                    response(202, "{}", &initial_headers),
+                    response(
+                        200,
+                        r#"{"status":"Succeeded"}"#,
+                        &[("location", "/v1/workspaces/result?secret=RESULT-CANARY")],
+                    ),
+                    converted,
+                ]
+            };
+            let host = FakeHost::new(responses);
+            let mut args = vec![
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--input",
+                "{}",
+                "--headers",
+                "x-fixture=REQUEST-CANARY",
+                "--show-headers",
+            ];
+            if asynchronous {
+                args.push("--async");
+            }
+            if let Some(query) = query {
+                args.extend(["--query", query]);
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 1, "{stdout}");
+            let envelope: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(envelope["status"], "Failure");
+            assert_eq!(envelope["result"]["error_code"], error_code);
+            assert_eq!(
+                data(&stdout),
+                json!([{
+                    "operation_id": "op-1",
+                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
+                    "outcome_uncertain": true
+                }]),
+            );
+            assert!(!stdout.contains("CANARY"));
+            assert!(!stdout.contains("synthetic-token"));
+            assert!(stderr.is_empty());
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), if asynchronous { 1 } else { 3 });
+            assert_eq!(requests[0].method, "POST");
+            assert!(requests[1..].iter().all(|request| request.method == "GET"));
+            if asynchronous {
+                assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn async_invalid_handles_remain_raw_and_conversion_only_retains_safe_evidence() {
+    for known_id in [false, true] {
+        for body in ["{}", "{BODY-CANARY"] {
+            let mut headers = vec![(
+                "location",
+                "https://evil.invalid/operations/UNSAFE-CANARY?secret=CANARY",
+            )];
+            if known_id {
+                headers.push(("x-ms-operation-id", "op-1"));
+            }
+            let host = FakeHost::new(vec![response(202, body, &headers)]);
+            let (code, stdout, stderr) =
+                run(&["api", "items", "--method", "post", "--async"], &host).await;
+            let envelope: Value = serde_json::from_str(&stdout).unwrap();
+            if body == "{}" {
+                assert_eq!(code, 0, "{stdout}");
+                assert_eq!(data(&stdout)[0]["status_code"], 202);
+            } else {
+                assert_eq!(code, 1, "{stdout}");
+                assert_eq!(envelope["result"]["error_code"], "InvalidJson");
+                if known_id {
+                    assert_eq!(
+                        data(&stdout),
+                        json!([{
+                            "operation_id": "op-1",
+                            "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
+                            "outcome_uncertain": true
+                        }]),
+                    );
+                } else {
+                    assert!(envelope["result"].get("data").is_none());
+                }
+            }
+            assert!(!stdout.contains("CANARY"));
+            assert!(!stdout.contains("synthetic-token"));
+            assert!(stderr.is_empty());
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "POST");
+            assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+        }
     }
 }
 

@@ -137,6 +137,9 @@ fn error_kinds_are_typed_and_do_not_disclose_query_or_input() {
     let data = json!(["not for diagnostics"]);
     for (expression, kind) in [
         ("[?", QueryErrorKind::Syntax),
+        ("[::0]", QueryErrorKind::Evaluation),
+        ("map(&[::0], rows)", QueryErrorKind::Evaluation),
+        ("`true` || rows[::0]", QueryErrorKind::Evaluation),
         ("length(`1`)", QueryErrorKind::InvalidType),
         ("length()", QueryErrorKind::InvalidArity),
         ("not_a_function(@)", QueryErrorKind::UnknownFunction),

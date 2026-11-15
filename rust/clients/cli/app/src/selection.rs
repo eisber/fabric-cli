@@ -3,10 +3,12 @@
 
 use fabric_cli_command_contracts::CommandError;
 use fabric_identity::Binding;
+#[cfg(not(windows))]
+use std::path::Path;
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
 

@@ -3,7 +3,7 @@
 # Explicit Azure CLI provider
 
 `fabric-identity` constructs `azure_identity::AzureCliCredential` directly with
-an injected `azure_identity::process::Executor`. Tenant/subscription overrides
+an injected `azure_identity::Executor`. Tenant/subscription overrides
 remain unset. There are no fallback credentials, native login, account commands,
 SDK facades, filesystem access, global runtime, or token persistence.
 

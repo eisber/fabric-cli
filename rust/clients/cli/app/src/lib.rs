@@ -337,6 +337,15 @@ async fn execute(
             let initial = client
                 .execute(prepared.request, prepared.audience, &context)
                 .await?;
+            // Capture only safe evidence; raw/async must not reject invalid operation handles.
+            let recovery = match fabric_core::operation_handle(
+                prepared.audience,
+                initial.status,
+                &initial.headers,
+            ) {
+                Ok(handle) => handle.map(|handle| handle.recovery()),
+                Err(error) => error.recovery,
+            };
             let response = if prepared.asynchronous {
                 initial
             } else {
@@ -354,6 +363,12 @@ async fn execute(
                 prepared.show_headers,
                 prepared.query.as_deref(),
             )
+            .map_err(|mut error| {
+                if error.recovery.is_none() {
+                    error.recovery = recovery.and_then(|value| serde_json::to_value(value).ok());
+                }
+                error
+            })
         }
         _ => Err(CommandError::new("InvalidInput", "A command is required")),
     }
