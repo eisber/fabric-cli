@@ -3,6 +3,7 @@
 
 //! Fabric/ARM LRO and job reconciliation of the initial response; never repeats a mutation.
 #![forbid(unsafe_code)]
+use async_trait::async_trait;
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
     HttpExecutor, MAX_RESPONSE_BYTES, OperationContext, OperationHandle as Handle,
@@ -22,6 +23,41 @@ pub const INITIAL_DELAY: Duration = Duration::from_secs(2);
 /// Job-style polling interval for jobs and ARM when Retry-After is absent or invalid.
 pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
 const POLL_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
+
+/// Safe status observed on an actual successful status GET, never raw service data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PollProgress {
+    status: &'static str,
+    job: bool,
+}
+impl PollProgress {
+    /// Canonical recognized status; excludes URLs, headers, body fields and errors.
+    pub fn status(self) -> &'static str {
+        self.status
+    }
+    /// Whether this observation uses the Fabric job-instance protocol.
+    pub fn is_job(self) -> bool {
+        self.job
+    }
+}
+
+/// Caller-owned observation boundary. The engine never writes console output.
+#[async_trait]
+pub trait PollObserver: Send + Sync {
+    /// Observe a recognized status before waiting again or returning its outcome.
+    ///
+    /// Observation shares the operation cancellation/deadline. Return only safe
+    /// local errors; observation failure stops local polling, not backend work.
+    async fn observe(&self, progress: PollProgress) -> Result<(), CoreError>;
+}
+
+struct NoProgress;
+#[async_trait]
+impl PollObserver for NoProgress {
+    async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
 
 /// Per-reconciliation timing overrides. Defaults impose no overall time limit.
 #[derive(Clone, Copy, Debug, Default)]
@@ -63,37 +99,43 @@ fn body(response: &ApiResponse) -> Result<Value, CoreError> {
 enum State {
     Pending,
     Success,
+    Failed,
+    Cancelled,
 }
-fn state(response: &ApiResponse) -> Result<State, CoreError> {
+fn state(response: &ApiResponse) -> Result<(State, &'static str), CoreError> {
     let json = body(response)?;
     let status = json
         .get("status")
         .and_then(Value::as_str)
         .ok_or_else(|| protocol("Missing operation status"))?;
     match status.to_ascii_lowercase().as_str() {
-        "succeeded" | "completed" => Ok(State::Success),
-        "notstarted" | "running" | "inprogress" | "accepted" | "creating" | "updating"
-        | "deleting" => Ok(State::Pending),
-        "failed" | "cancelled" | "canceled" => Err(CoreError::new(
-            ErrorKind::Service,
-            "Backend operation failed or was cancelled",
-        )),
+        "succeeded" => Ok((State::Success, "Succeeded")),
+        "completed" => Ok((State::Success, "Completed")),
+        "notstarted" => Ok((State::Pending, "NotStarted")),
+        "running" => Ok((State::Pending, "Running")),
+        "inprogress" => Ok((State::Pending, "InProgress")),
+        "accepted" => Ok((State::Pending, "Accepted")),
+        "creating" => Ok((State::Pending, "Creating")),
+        "updating" => Ok((State::Pending, "Updating")),
+        "deleting" => Ok((State::Pending, "Deleting")),
+        "failed" => Ok((State::Failed, "Failed")),
+        "cancelled" | "canceled" => Ok((State::Cancelled, "Cancelled")),
         _ => Err(protocol("Unknown operation status")),
     }
 }
-fn job_state(response: &ApiResponse) -> Result<State, CoreError> {
+fn job_state(response: &ApiResponse) -> Result<(State, &'static str), CoreError> {
     let json = body(response)?;
     let status = json
         .get("status")
         .and_then(Value::as_str)
         .ok_or_else(|| protocol("Missing job instance status"))?;
     match status {
-        "NotStarted" | "InProgress" => Ok(State::Pending),
-        "Completed" | "Deduped" => Ok(State::Success),
-        "Failed" | "Cancelled" => Err(CoreError::new(
-            ErrorKind::Service,
-            "Backend job failed or was cancelled",
-        )),
+        "NotStarted" => Ok((State::Pending, "NotStarted")),
+        "InProgress" => Ok((State::Pending, "InProgress")),
+        "Completed" => Ok((State::Success, "Completed")),
+        "Deduped" => Ok((State::Success, "Deduped")),
+        "Failed" => Ok((State::Failed, "Failed")),
+        "Cancelled" => Ok((State::Cancelled, "Cancelled")),
         _ => Err(protocol("Unknown job instance status")),
     }
 }
@@ -145,8 +187,9 @@ async fn reconcile(
     initial: ApiResponse,
     handle: &Handle,
     context: &OperationContext,
-    config: LroConfig,
+    settings: (LroConfig, &dyn PollObserver),
 ) -> Result<ApiResponse, CoreError> {
+    let (config, observer) = settings;
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
     loop {
@@ -188,10 +231,10 @@ async fn reconcile(
                 "Operation status request failed",
             ));
         }
-        let current = match handle.kind() {
+        let (current, status) = match handle.kind() {
             Strategy::ArmLocation => match response.status {
-                200 => State::Success,
-                201 | 202 => State::Pending,
+                200 => (State::Success, "Succeeded"),
+                201 | 202 => (State::Pending, "Running"),
                 _ => return Err(protocol("Unexpected ARM Location response status")),
             },
             Strategy::Fabric | Strategy::ArmStatus => state(&response)?,
@@ -202,7 +245,23 @@ async fn reconcile(
                 job_state(&response)?
             }
         };
+        bounded_with_clock(
+            clock,
+            context,
+            observer.observe(PollProgress { status, job }),
+        )
+        .await??;
         match current {
+            State::Failed | State::Cancelled => {
+                return Err(CoreError::new(
+                    ErrorKind::Service,
+                    if job {
+                        "Backend job failed or was cancelled"
+                    } else {
+                        "Backend operation failed or was cancelled"
+                    },
+                ));
+            }
             State::Pending => {
                 previous = response;
                 if !server_interval {
@@ -309,6 +368,32 @@ pub async fn complete_with_config(
     cancellation: CancellationToken,
     config: LroConfig,
 ) -> Result<ApiResponse, CoreError> {
+    complete_observed(
+        executor,
+        clock,
+        audience,
+        initial,
+        cancellation,
+        config,
+        &NoProgress,
+    )
+    .await
+}
+
+/// Reconcile with an injected observer for each recognized status GET response.
+///
+/// Includes pending and terminal statuses, but not initial/result responses,
+/// malformed or unknown statuses, failed HTTP attempts, or unsent polls.
+/// Existing unobserved entry points preserve their effect-free default.
+pub async fn complete_observed(
+    executor: &dyn HttpExecutor,
+    clock: &dyn Clock,
+    audience: Audience,
+    initial: ApiResponse,
+    cancellation: CancellationToken,
+    config: LroConfig,
+    observer: &dyn PollObserver,
+) -> Result<ApiResponse, CoreError> {
     let start = clock.now();
     let discovered = operation_handle(audience, initial.status, &initial.headers)?;
     validate_response(&initial).map_err(|error| {
@@ -336,7 +421,13 @@ pub async fn complete_with_config(
             .transpose()?,
     };
     reconcile(
-        executor, clock, audience, initial, &handle, &context, config,
+        executor,
+        clock,
+        audience,
+        initial,
+        &handle,
+        &context,
+        (config, observer),
     )
     .await
     .map_err(|error| handle.attach(error))

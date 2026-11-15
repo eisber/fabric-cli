@@ -41,6 +41,15 @@ and malformed/unknown JSON statuses fail with query-redacted job-URL recovery.
 No job result URL is fetched, no mutation is replayed, and local timeout or
 cancellation never cancels the remote job. Unsupported job routes remain raw.
 
+`complete_observed` accepts a caller-owned `PollObserver` in addition to timing
+configuration. Each recognized successful status GET supplies a `PollProgress`
+containing only a canonical status and protocol label, including failed/cancelled
+terminal statuses before their service error. Initial responses, result GETs,
+failed HTTP attempts and unknown/malformed statuses do not generate observations.
+The callback shares cancellation and the overall deadline; callback errors retain
+known recovery and stop local polling. No console I/O or runtime discovery occurs
+in the engine. Existing `complete`/`complete_with_config` callers remain unobserved.
+
 Status and result-error JSON use the shared bounded `fabric-core-json` decoder.
 Reserved serde marker names remain ordinary object keys, including in unrelated
 metadata; returned terminal responses retain their original bytes and headers.
@@ -78,7 +87,7 @@ Provenance: donor architecture and JSON numeric-formatting logic were inspected 
 approved public-protocol slice. No service facades, paging, resource packages,
 ambient identity, or private reference source are included.
 
-`tests/synthetic.rs` and `tests/result_delay.rs` exercise offline protocol and timing cases using scripted
+`tests/synthetic.rs`, `tests/result_delay.rs`, and `tests/progress.rs` exercise offline protocol, observation and timing cases using scripted
 responses and a fake clock. They are requirement tests, not claims that Python
 raw API previously performed automatic polling. These tests need integration
 execution under the pinned toolchain before correctness is established.

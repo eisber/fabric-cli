@@ -17,9 +17,11 @@ use clap::{
 };
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
-    Audience, CancellationToken, Clock, HttpExecutor, HttpTransport, OperationContext,
+    Audience, CancellationToken, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
+    OperationContext,
 };
 use fabric_identity::{AzureCliSession, Binding, BoundCredential, ProcessExecutor};
+use fabric_sdk_api::{PollObserver, PollProgress};
 use fabric_sdk_http::{HttpClient, SystemClock, bounded_with_clock};
 use serde_json::{Value, json};
 use std::{
@@ -29,6 +31,40 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
+use tokio::sync::{mpsc, oneshot};
+
+struct ProgressEvent {
+    progress: PollProgress,
+    written: oneshot::Sender<Result<(), CoreError>>,
+}
+
+struct ConsoleProgress(mpsc::Sender<ProgressEvent>);
+#[async_trait]
+impl PollObserver for ConsoleProgress {
+    async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
+        let (written, received) = oneshot::channel();
+        self.0
+            .send(ProgressEvent { progress, written })
+            .await
+            .map_err(|_| progress_error())?;
+        received.await.map_err(|_| progress_error())?
+    }
+}
+
+fn progress_error() -> CoreError {
+    CoreError::new(ErrorKind::Transport, "Cannot write polling progress")
+}
+
+fn write_progress(progress: PollProgress, stderr: &mut dyn Write) -> Result<(), CoreError> {
+    let label = if progress.is_job() {
+        "Job instance status"
+    } else {
+        "Operation status"
+    };
+    writeln!(stderr, "{label}: {}", progress.status())
+        .and_then(|()| stderr.flush())
+        .map_err(|_| progress_error())
+}
 
 /// Host-owned effects; fake implementations prove parser and output behavior offline.
 #[async_trait]
@@ -300,7 +336,22 @@ pub async fn run(
             );
         }
     };
-    let result = execute(&matches, host, cancellation).await;
+    let (sender, mut events) = mpsc::channel(1);
+    let observer = ConsoleProgress(sender);
+    let result = {
+        let execution = execute(&matches, host, cancellation, &observer);
+        tokio::pin!(execution);
+        loop {
+            tokio::select! {
+                Some(event) = events.recv() => {
+                    let result = write_progress(event.progress, stderr);
+                    // Cancellation can drop the observer while its event is queued.
+                    let _ = event.written.send(result);
+                }
+                result = &mut execution => break result,
+            }
+        }
+    };
     for diagnostic in host.take_diagnostics() {
         let _ = writeln!(stderr, "{diagnostic}");
     }
@@ -343,6 +394,7 @@ async fn execute(
     matches: &clap::ArgMatches,
     host: &dyn Host,
     cancellation: CancellationToken,
+    observer: &dyn PollObserver,
 ) -> Result<Value, CommandError> {
     match matches.subcommand() {
         Some(("auth", auth)) => match auth.subcommand_name() {
@@ -421,13 +473,14 @@ async fn execute(
                 initial
             } else {
                 fabric_cli_api::validate_response_body(&initial.body).map_err(attach_recovery)?;
-                fabric_sdk_api::complete_with_config(
+                fabric_sdk_api::complete_observed(
                     &client,
                     clock.as_ref(),
                     prepared.audience,
                     initial,
                     cancellation,
                     prepared.lro_config,
+                    observer,
                 )
                 .await?
             };
