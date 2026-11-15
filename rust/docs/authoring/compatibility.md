@@ -148,6 +148,14 @@ raw; configuration does not add protocol recognition.
 Fabric 202 with validated operation Location polls even without an operation ID.
 ID-only responses construct `/v1/operations/{id}`. Conflicting ID/URL fails
 explicitly.
+For a valid operation ID and a safe non-status Location, the Location supplies
+only the origin of the canonical `/v1/operations/{id}` status route. Terminal
+Location headers similarly select `/v1/operations/{id}/result` on their validated
+origin. Matching status/result routes retain their queries; resource-shaped
+origin hints do not contribute paths or queries to GETs. This URL-selection
+behavior follows Python main at `5b504195c63ef54c7382ca8e8a9d9759717f0ec5`,
+without adopting its arbitrary-host trust or changing the approved job/ARM
+protocols. Known contradictory operation IDs remain errors.
 Fabric operation URLs may also use an HTTPS host matching the complete
 single-label `wabi-<cluster>-redirect.analysis.windows.net` structure, with a
 nonempty ASCII alphanumeric/hyphen cluster and a valid DNS-label length.
@@ -160,7 +168,9 @@ Discovery and authenticated polling share this policy; only bodyless GETs
 without custom headers may use polling execution. Tokens are freshly acquired
 for the unchanged Fabric scope, not forwarded from the mutation.
 Origin-relative result Locations resolve against the validated status origin.
-`Succeeded`/`Completed` fetch a validated advertised result, otherwise return the
+The JSON `resourceLocation` extension still selects a validated advertised
+resource URL rather than serving as a canonical-route origin hint.
+`Succeeded`/`Completed` fetch the selected validated result, otherwise return the
 actual terminal response. Only documented `OperationHasNoResult` suppresses a
 result-fetch error; unrelated errors remain failures. No fabricated 200 copy of
 the original body for result-less Fabric completion.

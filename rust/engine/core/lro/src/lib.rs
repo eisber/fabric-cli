@@ -315,13 +315,14 @@ async fn reconcile(
                     return Ok(completed);
                 }
                 let json = body(&response)?;
-                let result = response
-                    .header("location")
-                    .or_else(|| json.get("resourceLocation").and_then(Value::as_str));
-                let Some(result) = result else {
+                let result_url = if let Some(location) = response.header("location") {
+                    handle.fabric_result_url(location)?
+                } else if let Some(resource) = json.get("resourceLocation").and_then(Value::as_str)
+                {
+                    resolve_operation_url(audience, resource, handle.url())?
+                } else {
                     return Ok(response);
                 };
-                let result_url = resolve_operation_url(audience, result, handle.url())?;
                 if &result_url == handle.url() {
                     return Err(protocol("Fabric result points to its status endpoint"));
                 }

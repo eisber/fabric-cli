@@ -117,6 +117,11 @@ fn unsafe_head_cannot_expose_an_unvalidated_url_or_erase_known_safe_id() {
         "https://user:synthetic@api.fabric.microsoft.com/v1/operations/op-1",
         "/v1/operations/%2e%2e/op-1",
         "/v1/operations/op-1#synthetic",
+        "https://wabi-us-redirect.analysis.windows.net.evil.invalid/v1/items/item?secret=synthetic",
+        "https://user:synthetic@wabi-us-redirect.analysis.windows.net/v1/items/item",
+        "https://wabi-us-redirect.analysis.windows.net:444/v1/items/item",
+        "https://wabi-us-redirect.analysis.windows.net/v1/items/%2e%2e/item",
+        "https://wabi-us-redirect.analysis.windows.net/v1/items/item#synthetic",
     ] {
         let capture = ResponseHeadCapture::new(Audience::Fabric);
         let fields = headers(&[("location", value), ("x-ms-operation-id", "known-safe")]);
@@ -295,6 +300,107 @@ fn regional_fabric_handles_and_relative_results_preserve_origin_and_redact_queri
         for audience in [Audience::Azure, Audience::Storage, Audience::PowerBi] {
             assert!(validate_operation_url(audience, status.as_str()).is_err());
         }
+    }
+}
+
+#[test]
+fn fabric_operation_ids_select_status_routes_from_safe_location_origins() {
+    for host in [
+        "api.fabric.microsoft.com",
+        "wabi-west-europe-redirect.analysis.windows.net",
+    ] {
+        for (path, query) in [
+            ("/v1/workspaces/workspace/items/item", None),
+            ("/v1/operations/op-1/result", None),
+            ("/v1/operations/op-1", Some("secret=CANARY")),
+        ] {
+            let location = format!("https://{host}{path}?secret=CANARY");
+            let fields = headers(&[("Location", &location), ("x-ms-operation-id", "op-1")]);
+            let handle = operation_handle(Audience::Fabric, 202, &fields)
+                .unwrap()
+                .unwrap();
+            assert_eq!(handle.kind(), OperationKind::Fabric);
+            assert_eq!(handle.operation_id(), Some("op-1"));
+            assert_eq!(handle.url().host_str(), Some(host));
+            assert_eq!(handle.url().path(), "/v1/operations/op-1");
+            assert_eq!(handle.url().query(), query);
+            validate_operation_url(Audience::Fabric, handle.url().as_str()).unwrap();
+            let capture = ResponseHeadCapture::new(Audience::Fabric);
+            capture.record(202, &fields).unwrap();
+            assert_eq!(
+                capture.recovery().unwrap().status_url,
+                format!("https://{host}/v1/operations/op-1")
+            );
+            assert!(!format!("{handle:?}{capture:?}").contains("CANARY"));
+        }
+    }
+    let error = operation_handle(
+        Audience::Fabric,
+        202,
+        &headers(&[
+            ("Location", "/v1/operations/other/result"),
+            ("x-ms-operation-id", "op-1"),
+        ]),
+    )
+    .unwrap_err();
+    assert!(error.message.contains("Conflicting"));
+}
+
+#[test]
+fn fabric_result_locations_select_canonical_routes_without_promoting_resource_urls() {
+    let handle = operation_handle(
+        Audience::Fabric,
+        202,
+        &headers(&[(
+            "Location",
+            "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1",
+        )]),
+    )
+    .unwrap()
+    .unwrap();
+    for (location, expected) in [
+        (
+            "/v1/workspaces/workspace/items/item?secret=CANARY",
+            "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1/result",
+        ),
+        (
+            "/v1/operations/op-1?secret=CANARY",
+            "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1/result",
+        ),
+        (
+            "/v1/operations/op-1/result?secret=CANARY",
+            "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1/result?secret=CANARY",
+        ),
+        (
+            "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/items/item?secret=CANARY",
+            "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1/result",
+        ),
+    ] {
+        let result = handle.fabric_result_url(location).unwrap();
+        assert_eq!(result.as_str(), expected);
+        validate_operation_url(Audience::Fabric, result.as_str()).unwrap();
+    }
+    assert!(
+        validate_operation_url(
+            Audience::Fabric,
+            "https://wabi-west-europe-redirect.analysis.windows.net/v1/items/item"
+        )
+        .is_err(),
+        "an origin hint is not permission to execute its resource path"
+    );
+    for location in [
+        "https://evil.invalid/v1/items/item?secret=CANARY",
+        "https://user:CANARY@wabi-west-europe-redirect.analysis.windows.net/v1/items/item",
+        "https://wabi-west-europe-redirect.analysis.windows.net:444/v1/items/item",
+        "/v1/items/%2e%2e/item?secret=CANARY",
+        "/v1/items/item#CANARY",
+        "/v1/operations/other/result?secret=CANARY",
+        "/v1/operations/other?secret=CANARY",
+        "/v1/operations/other/?secret=CANARY",
+    ] {
+        let error = handle.fabric_result_url(location).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        assert!(!error.message.contains("CANARY"));
     }
 }
 

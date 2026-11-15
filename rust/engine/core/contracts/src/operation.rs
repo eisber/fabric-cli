@@ -52,6 +52,27 @@ impl OperationHandle {
     pub fn kind(&self) -> OperationKind {
         self.kind
     }
+    /// Select this Fabric operation's canonical result route on a validated
+    /// advertised origin. Only a matching result route retains its query.
+    pub fn fabric_result_url(&self, value: &str) -> Result<Url, CoreError> {
+        let id = self
+            .operation_id()
+            .filter(|_| self.kind == OperationKind::Fabric)
+            .ok_or_else(|| protocol("Canonical result URL requires a Fabric operation"))?;
+        let mut url = resolve_location(Audience::Fabric, value, &self.url)?;
+        if fabric_id(&url).is_some_and(|advertised| advertised != id)
+            || fabric_route_id(&url).is_some_and(|advertised| advertised != id)
+        {
+            return Err(protocol("Conflicting Fabric result operation identifier"));
+        }
+        let path = format!("/v1/operations/{id}/result");
+        if url.path() != path {
+            url.set_path(&path);
+            url.set_query(None);
+        }
+        validate_operation_components(Audience::Fabric, &url)?;
+        Ok(url)
+    }
     /// Safe recovery evidence, excluding query values.
     pub fn recovery(&self) -> RecoveryInfo {
         let mut url = self.url.clone();
@@ -85,6 +106,11 @@ pub fn resolve_operation_url(
     value: &str,
     base: &Url,
 ) -> Result<Url, CoreError> {
+    let url = resolve_location(audience, value, base)?;
+    validate_operation_components(audience, &url)?;
+    Ok(url)
+}
+fn resolve_location(audience: Audience, value: &str, base: &Url) -> Result<Url, CoreError> {
     validate_operation_components(audience, base)?;
     if value.len() > 16 * 1024 {
         return Err(protocol("Unsafe operation URL: length limit exceeded"));
@@ -106,14 +132,23 @@ pub fn resolve_operation_url(
         ));
     }
     .map_err(|_| protocol("Malformed operation URL"))?;
-    validate_operation_components(audience, &url)?;
+    validate_location_components(audience, &url)?;
     Ok(url)
 }
 fn validate_operation_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
+    if audience == Audience::Fabric
+        && fabric_regional_host(url.host_str().unwrap_or_default())
+        && !(fabric_operation_route(url) || fabric_job(url))
+    {
+        return Err(protocol(
+            "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
+        ));
+    }
+    validate_location_components(audience, url)
+}
+fn validate_location_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
     let host = url.host_str().unwrap_or_default();
-    let regional = audience == Audience::Fabric
-        && fabric_regional_host(host)
-        && (fabric_operation_route(url) || fabric_job(url));
+    let regional = audience == Audience::Fabric && fabric_regional_host(host);
     let result = if regional {
         validate_url_for_host(url, host)
     } else {
@@ -136,10 +171,12 @@ fn fabric_regional_host(host: &str) -> bool {
             .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_alphanumeric()))
 }
 fn fabric_operation_route(url: &Url) -> bool {
-    let Some(tail) = url.path().strip_prefix("/v1/operations/") else {
-        return false;
-    };
-    valid_id(tail) || tail.strip_suffix("/result").is_some_and(valid_id)
+    fabric_route_id(url).is_some()
+}
+fn fabric_route_id(url: &Url) -> Option<&str> {
+    let tail = url.path().strip_prefix("/v1/operations/")?;
+    let id = tail.strip_suffix("/result").unwrap_or(tail);
+    valid_id(id).then_some(id)
 }
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -164,9 +201,16 @@ fn fabric_job(url: &Url) -> bool {
     )
 }
 fn id_handle(id: &str) -> OperationHandle {
+    fabric_status_handle(
+        Url::parse(Audience::Fabric.base_url()).expect("fixed audience URL"),
+        id,
+    )
+}
+fn fabric_status_handle(mut url: Url, id: &str) -> OperationHandle {
+    url.set_path(&format!("/v1/operations/{id}"));
+    url.set_query(None);
     OperationHandle {
-        url: Url::parse(&format!("{}/operations/{id}", Audience::Fabric.base_url()))
-            .expect("fixed URL and safe ID"),
+        url,
         operation_id: Some(id.to_owned()),
         kind: OperationKind::Fabric,
     }
@@ -203,8 +247,10 @@ fn discover(audience: Audience, head: &ApiResponse) -> Result<Option<OperationHa
                 return Err(protocol("Malformed Fabric operation identifier"));
             }
             if let Some(location) = head.header("location") {
-                let url = validate_operation_url(audience, location)?;
+                let base = Url::parse(audience.base_url()).expect("fixed audience URL");
+                let url = resolve_location(audience, location, &base)?;
                 if fabric_job(&url) {
+                    validate_operation_components(audience, &url)?;
                     return Ok(Some(OperationHandle {
                         url,
                         operation_id: None,
@@ -212,16 +258,22 @@ fn discover(audience: Audience, head: &ApiResponse) -> Result<Option<OperationHa
                     }));
                 }
                 if url.path().contains("/jobs/instances/") {
+                    validate_operation_components(audience, &url)?;
                     return Ok(None);
                 }
                 let Some(location_id) = fabric_id(&url) else {
-                    if id.is_none() {
-                        return Ok(None);
+                    if let Some(id) = id {
+                        if fabric_route_id(&url).is_some_and(|advertised| advertised != id) {
+                            return Err(protocol("Conflicting Fabric operation handles"));
+                        }
+                        let handle = fabric_status_handle(url, id);
+                        validate_operation_components(audience, handle.url())?;
+                        return Ok(Some(handle));
                     }
-                    return Err(protocol(
-                        "Fabric operation ID conflicts with unrecognized Location",
-                    ));
+                    validate_operation_components(audience, &url)?;
+                    return Ok(None);
                 };
+                validate_operation_components(audience, &url)?;
                 let handle = OperationHandle {
                     url,
                     operation_id: Some(location_id.clone()),

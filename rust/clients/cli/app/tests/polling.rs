@@ -475,6 +475,97 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
 }
 
 #[tokio::test]
+async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_completion() {
+    const STATUS: &str =
+        "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1";
+    const RESULT: &str =
+        "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1/result";
+    let (code, stdout, stderr, calls) = run_script(
+        &[
+            "api",
+            "workspaces/workspace/items/item/jobs/execute/instances",
+            "--method",
+            "post",
+            "--input",
+            "{}",
+            "--headers",
+            "x-secret=MUTATION-CANARY",
+            "--show-headers",
+        ],
+        vec![
+            response(
+                202,
+                json!({}),
+                &[
+                    ("x-ms-operation-id", "op-1"),
+                    (
+                        "Location",
+                        "https://wabi-west-europe-redirect.analysis.windows.net/v1/workspaces/workspace/items/item?secret=QUERY-CANARY",
+                    ),
+                ],
+            ),
+            response(200, json!({"status":"Running","percentageComplete":12.5}), &[]),
+            response(
+                200,
+                json!({"status":"Succeeded","percentageComplete":100}),
+                &[("Location", "/v1/workspaces/workspace/items/item?secret=RESULT-CANARY")],
+            ),
+            response(200, json!({"value":"completed result"}), &[("x-result", "ok")]),
+        ],
+        false,
+        false,
+        "Operation status: Running (12.5%)\n",
+        &[
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
+            STATUS,
+            STATUS,
+            RESULT,
+        ],
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 4, "one POST, two status GETs and one result GET");
+    assert_eq!(
+        stderr,
+        "Operation status: Running (12.5%)\nOperation status: Succeeded (100%)\n"
+    );
+    let envelope: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        envelope["result"]["data"][0]["text"],
+        json!({"value":"completed result"})
+    );
+    assert_eq!(envelope["result"]["data"][0]["headers"]["x-result"], "ok");
+    assert!(!stdout.contains("CANARY"));
+    assert!(!stderr.contains("CANARY"));
+}
+
+#[tokio::test]
+async fn unsafe_fabric_origin_hints_do_not_authorize_status_gets() {
+    for location in [
+        "https://evil.invalid/v1/items/item?secret=CANARY",
+        "https://user:CANARY@wabi-west-europe-redirect.analysis.windows.net/v1/items/item",
+        "/v1/items/%2e%2e/item?secret=CANARY",
+    ] {
+        let (code, stdout, stderr, calls) = run(
+            &["api", "items", "--method", "post"],
+            vec![response(
+                202,
+                json!({}),
+                &[("Location", location), ("x-ms-operation-id", "op-1")],
+            )],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(code, 1);
+        assert_eq!(calls, 1, "no status GET and no mutation replay");
+        assert!(stdout.contains("Protocol"));
+        assert!(!stdout.contains("CANARY"));
+        assert!(stderr.is_empty());
+    }
+}
+
+#[tokio::test]
 async fn regional_job_reports_terminal_success_or_failure_without_replaying_post() {
     const REGIONAL_JOB: &str = "https://wabi-west-europe-redirect.analysis.windows.net/v1/workspaces/workspace/items/item/jobs/instances/job?secret=QUERY-CANARY";
     for terminal in ["Completed", "Failed"] {

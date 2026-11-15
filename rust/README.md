@@ -138,6 +138,11 @@ Fabric operation/job Locations may use the public API host or regional
 operation status/result and exact job-instance routes may use this regional
 exception; arbitrary hosts and raw user-supplied regional endpoints remain
 rejected. Origin-relative result Locations retain the operation's validated host.
+With a valid `x-ms-operation-id`, a safe non-status `Location` supplies only the
+origin for `/v1/operations/{id}`. Result-header Locations likewise select that
+operation's `/result` route, not an arbitrary advertised resource path.
+Queries are retained on matching status/result routes, not copied from origin
+hints. Conflicting operation IDs and unsafe origins/components still fail.
 Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 
