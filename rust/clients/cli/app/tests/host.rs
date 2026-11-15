@@ -1111,7 +1111,14 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
             }
             let (code, stdout, stderr) = run(&args, &host).await;
             assert_eq!(code, 0, "{stdout}");
-            assert!(stderr.is_empty());
+            assert_eq!(
+                stderr,
+                if asynchronous {
+                    ""
+                } else {
+                    "Operation status: Succeeded\n"
+                }
+            );
             let requests = host.transport.requests.lock().unwrap();
             assert_eq!(requests.len(), if asynchronous { 1 } else { 2 });
             assert_eq!(requests[0].method, "POST");
@@ -1153,7 +1160,14 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
             }
             let (code, stdout, stderr) = run(&args, &host).await;
             assert_eq!(code, 0, "{stdout}");
-            assert!(stderr.is_empty());
+            assert_eq!(
+                stderr,
+                if asynchronous {
+                    ""
+                } else {
+                    "Job instance status: InProgress\nJob instance status: Completed\n"
+                }
+            );
             let requests = host.transport.requests.lock().unwrap();
             assert_eq!(requests.len(), if asynchronous { 1 } else { 3 });
             assert_eq!(requests[0].method, "POST");
@@ -1214,7 +1228,16 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
         )
         .await;
         assert_eq!(code, 1, "{stdout}");
-        assert!(stderr.is_empty());
+        assert_eq!(
+            stderr,
+            match terminal {
+                r#"{"status":"Failed","failureReason":{"message":"BODY-CANARY"}}"# => {
+                    "Job instance status: Failed\n"
+                }
+                r#"{"status":"Cancelled"}"# => "Job instance status: Cancelled\n",
+                _ => "",
+            }
+        );
         assert!(!stdout.contains("CANARY"));
         assert_eq!(
             data(&stdout),
@@ -1264,7 +1287,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
     )
     .await;
     assert_eq!(code, 0, "{stdout}");
-    assert!(stderr.is_empty());
+    assert_eq!(stderr, "Job instance status: Completed\n");
     assert_eq!(data(&stdout), json!([]));
     assert!(!stdout.contains("CANARY"));
     assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
@@ -1340,7 +1363,14 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
             );
             assert!(!stdout.contains("CANARY"));
             assert!(!stdout.contains("synthetic-token"));
-            assert!(stderr.is_empty());
+            assert_eq!(
+                stderr,
+                if asynchronous {
+                    ""
+                } else {
+                    "Operation status: Succeeded\n"
+                }
+            );
             let requests = host.transport.requests.lock().unwrap();
             assert_eq!(requests.len(), if asynchronous { 1 } else { 3 });
             assert_eq!(requests[0].method, "POST");
@@ -2239,7 +2269,14 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
             .unwrap();
         let result: Value = serde_json::from_str(marker).unwrap();
         assert_eq!(result["exit"], 0);
-        assert_eq!(result["stderr"], "");
+        assert_eq!(
+            result["stderr"],
+            if scenario == "async" {
+                ""
+            } else {
+                "Operation status: Succeeded\n"
+            }
+        );
         let data = data(result["stdout"].as_str().unwrap());
         assert_eq!(
             data[0]["status_code"],
