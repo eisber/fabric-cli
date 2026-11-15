@@ -741,8 +741,8 @@ async fn api_query_selects_present_value_even_when_empty_null_or_noncollection()
         ),
         (
             r#"{"text":"Sales","status_code":"body","headers":{"x-fixture":"body"}}"#,
-            "headers.\"x-fixture\"",
-            json!(["body"]),
+            "headers",
+            json!([{"x-fixture":"body"}]),
         ),
     ] {
         let host = FakeHost::new(vec![response(
