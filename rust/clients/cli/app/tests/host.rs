@@ -671,15 +671,15 @@ async fn raw_failures_empty_and_invalid_json_and_headers_match_source_contract()
 }
 
 #[tokio::test]
-async fn api_query_runs_on_body_preserves_scalars_and_keeps_lists_flat() {
+async fn api_query_runs_on_response_object_preserves_scalars_and_keeps_lists_flat() {
     for (query, expected) in [
-        ("items", json!([{"id":1},{"id":2}])),
-        ("flag", json!(["False"])),
-        ("zero", json!(["0"])),
-        ("missing", json!(["None"])),
-        ("text.items", json!(["None"])),
-        ("status_code", json!(["None"])),
-        ("headers.\"x-fixture\" ", json!(["None"])),
+        ("text.items", json!([{"id":1},{"id":2}])),
+        ("text.flag", json!(["False"])),
+        ("text.zero", json!(["0"])),
+        ("text.missing", json!(["None"])),
+        ("items", json!(["None"])),
+        ("status_code", json!(["200"])),
+        ("headers.\"x-fixture\" ", json!(["yes"])),
     ] {
         let host = FakeHost::new(vec![response(
             200,
@@ -691,54 +691,88 @@ async fn api_query_runs_on_body_preserves_scalars_and_keeps_lists_flat() {
         assert_eq!(code, 0);
         assert_eq!(data(&stdout), expected, "{query}");
     }
-    let host = FakeHost::new(vec![response(
-        200,
-        r#"{"items":[],"empty":"","object":{}}"#,
-        &[],
-    )]);
-    let (code, stdout, _) = run(&["api", "items", "--query", ""], &host).await;
-    assert_eq!(code, 0);
-    assert_eq!(data(&stdout)[0]["status_code"], 200);
-    assert_eq!(
-        data(&stdout)[0]["text"],
-        json!({"items":[],"empty":"","object":{}})
-    );
+    for query in ["", ".", "@"] {
+        let host = FakeHost::new(vec![response(
+            200,
+            r#"{"items":[],"empty":"","object":{}}"#,
+            &[],
+        )]);
+        let (code, stdout, _) = run(&["api", "items", "--query", query], &host).await;
+        assert_eq!(code, 0);
+        assert_eq!(
+            data(&stdout),
+            json!([{"status_code":200,"text":{"items":[],"empty":"","object":{}}}]),
+            "{query}"
+        );
+    }
 }
 
 #[tokio::test]
-async fn bare_field_query_selects_workspace_rows_without_pagination_or_disclosure() {
-    for (body, expected) in [
+async fn explicit_query_selects_body_fields_and_rows_without_pagination_or_disclosure() {
+    for (body, query, expected) in [
         (
             r#"{"value":[{"id":"a","displayName":"Sales"},{"id":"b","displayName":"Engineering"},{"id":"c","secret":"BODY-SECRET-CANARY"}],"continuationToken":"BODY-SECRET-CANARY"}"#,
+            "text.value[].displayName",
             json!(["Sales", "Engineering"]),
         ),
         (
             r#"[{"displayName":"Sales"},{"displayName":"Engineering"},{"displayName":null}]"#,
+            "text[].displayName",
             json!(["Sales", "Engineering"]),
         ),
-        (r#"{"displayName":"Sales"}"#, json!(["Sales"])),
-        (r#"{"displayName":false}"#, json!(["False"])),
-        (r#"{"displayName":0}"#, json!(["0"])),
-        (r#"{"displayName":""}"#, json!([""])),
-        (r#"{"displayName":{}}"#, json!([{}])),
+        (
+            r#"{"displayName":"Sales"}"#,
+            "text.displayName",
+            json!(["Sales"]),
+        ),
+        (
+            r#"{"displayName":false}"#,
+            "text.displayName",
+            json!(["False"]),
+        ),
+        (r#"{"displayName":0}"#, "text.displayName", json!(["0"])),
+        (r#"{"displayName":""}"#, "text.displayName", json!([""])),
+        (r#"{"displayName":{}}"#, "text.displayName", json!([{}])),
         (
             r#"{"displayName":{"label":"Sales"}}"#,
+            "text.displayName",
             json!([{"label":"Sales"}]),
         ),
         (
             r#"{"displayName":["Sales","Engineering"]}"#,
+            "text.displayName",
             json!(["Sales", "Engineering"]),
         ),
-        (r#"{"displayName":[]}"#, json!([])),
-        (r#"{"value":[],"secret":"BODY-SECRET-CANARY"}"#, json!([])),
-        (r#"{"value":[{"secret":"BODY-SECRET-CANARY"}]}"#, json!([])),
-        (r#"{"secret":"BODY-SECRET-CANARY"}"#, json!(["None"])),
-        (r#"{"displayName":null}"#, json!(["None"])),
-        (r#""BODY-SECRET-CANARY""#, json!(["None"])),
-        ("null", json!(["None"])),
-        ("42", json!(["None"])),
-        ("[]", json!([])),
-        ("", json!(["None"])),
+        (r#"{"displayName":[]}"#, "text.displayName", json!([])),
+        (
+            r#"{"value":[],"secret":"BODY-SECRET-CANARY"}"#,
+            "text.value[].displayName",
+            json!([]),
+        ),
+        (
+            r#"{"value":[{"secret":"BODY-SECRET-CANARY"}]}"#,
+            "text.value[].displayName",
+            json!([]),
+        ),
+        (
+            r#"{"secret":"BODY-SECRET-CANARY"}"#,
+            "text.displayName",
+            json!(["None"]),
+        ),
+        (
+            r#"{"displayName":null}"#,
+            "text.displayName",
+            json!(["None"]),
+        ),
+        (
+            r#""BODY-SECRET-CANARY""#,
+            "text.displayName",
+            json!(["None"]),
+        ),
+        ("null", "text.displayName", json!(["None"])),
+        ("42", "text.displayName", json!(["None"])),
+        ("[]", "text[].displayName", json!([])),
+        ("", "text.displayName", json!(["None"])),
     ] {
         for show_headers in [false, true] {
             let host = FakeHost::new(vec![response(
@@ -746,7 +780,7 @@ async fn bare_field_query_selects_workspace_rows_without_pagination_or_disclosur
                 body,
                 &[("x-fixture", "HEADER-SECRET-CANARY")],
             )]);
-            let mut args = vec!["api", "workspaces", "--query", "displayName"];
+            let mut args = vec!["api", "workspaces", "--query", query];
             if show_headers {
                 args.push("--show-headers");
             }
@@ -763,18 +797,19 @@ async fn bare_field_query_selects_workspace_rows_without_pagination_or_disclosur
 }
 
 #[tokio::test]
-async fn api_query_filters_and_projects_value_rows_without_wrapper_paths() {
+async fn api_query_uses_explicit_wrapper_paths_without_implicit_unwrapping() {
     for (query, expected) in [
-        (" displayName ", json!(["Sales"])),
-        ("[].displayName", json!(["Sales"])),
-        ("[?displayName=='Sales']", json!([{"displayName":"Sales"}])),
-        ("[?displayName=='missing']", json!([])),
-        ("length(@)", json!(["1"])),
-        ("text.value[].displayName", json!(["None"])),
-        ("text.displayName", json!(["None"])),
-        ("status_code", json!([])),
-        ("headers", json!([])),
-        ("text", json!([])),
+        (" displayName ", json!(["None"])),
+        ("[].displayName", json!(["None"])),
+        ("[?displayName=='Sales']", json!(["None"])),
+        (
+            "text.value[?displayName=='Sales']",
+            json!([{"displayName":"Sales"}]),
+        ),
+        ("text.value[?displayName=='missing']", json!([])),
+        ("length(text.value)", json!(["1"])),
+        ("text.value[].displayName", json!(["Sales"])),
+        ("result.data", json!(["None"])),
     ] {
         let host = FakeHost::new(vec![response(
             200,
@@ -798,19 +833,19 @@ async fn api_query_filters_and_projects_value_rows_without_wrapper_paths() {
 }
 
 #[tokio::test]
-async fn workspace_filter_uses_value_or_body_without_pagination() {
+async fn workspace_filter_uses_explicit_response_body_paths_without_pagination() {
     for (body, query) in [
         (
             r#"{"value":[{"id":"a","displayName":"rustcli"},{"id":"b","displayName":"other","secret":"BODY-SECRET-CANARY"}],"continuationToken":"BODY-SECRET-CANARY"}"#,
-            "[?displayName=='rustcli']",
+            "text.value[?displayName=='rustcli']",
         ),
         (
             r#"[{"id":"a","displayName":"rustcli"},{"id":"b","displayName":"other","secret":"BODY-SECRET-CANARY"}]"#,
-            "[?displayName=='rustcli']",
+            "text[?displayName=='rustcli']",
         ),
         (
             r#"{"items":[{"id":"a","displayName":"rustcli"},{"id":"b","displayName":"other","secret":"BODY-SECRET-CANARY"}]}"#,
-            "items[?displayName=='rustcli']",
+            "text.items[?displayName=='rustcli']",
         ),
     ] {
         let host = FakeHost::new(vec![response(
@@ -833,76 +868,77 @@ async fn workspace_filter_uses_value_or_body_without_pagination() {
 }
 
 #[tokio::test]
-async fn api_query_selects_present_value_even_when_empty_null_or_noncollection() {
+async fn api_query_preserves_explicit_empty_null_and_scalar_body_projections() {
     for (body, query, expected) in [
         (
             r#"{"value":[],"secret":"BODY-SECRET-CANARY"}"#,
-            ".",
+            "text.value",
             json!([]),
         ),
         (
             r#"{"value":{},"secret":"BODY-SECRET-CANARY"}"#,
-            ".",
+            "text.value",
             json!([{}]),
         ),
         (
             r#"{"value":"","secret":"BODY-SECRET-CANARY"}"#,
-            ".",
+            "text.value",
             json!([""]),
         ),
         (
             r#"{"value":null,"secret":"BODY-SECRET-CANARY"}"#,
-            "type(@)",
-            json!(["null"]),
+            "text.value",
+            json!(["None"]),
         ),
         (
             r#"{"value":false,"secret":"BODY-SECRET-CANARY"}"#,
-            "to_string(@)",
-            json!(["false"]),
+            "text.value",
+            json!(["False"]),
         ),
         (
             r#"{"value":0,"secret":"BODY-SECRET-CANARY"}"#,
-            "to_string(@)",
+            "text.value",
             json!(["0"]),
         ),
         (
             r#"{"value":"Sales","secret":"BODY-SECRET-CANARY"}"#,
-            ".",
+            "text.value",
             json!(["Sales"]),
         ),
         (
             r#"{"value":{"displayName":"Sales"},"displayName":"BODY-SECRET-CANARY"}"#,
-            "displayName",
+            "text.value.displayName",
             json!(["Sales"]),
         ),
         (
             r#"{"value":{"value":"Sales"},"secret":"BODY-SECRET-CANARY"}"#,
-            "value",
+            "text.value.value",
             json!(["Sales"]),
         ),
         (
             r#"{"displayName":"Sales"}"#,
-            "displayName",
+            "text.displayName",
             json!(["Sales"]),
         ),
-        (r#""Sales""#, ".", json!(["Sales"])),
-        ("", ".", json!([""])),
-        ("null", "type(@)", json!(["null"])),
-        ("false", "to_string(@)", json!(["false"])),
-        ("0", "to_string(@)", json!(["0"])),
+        (r#"{"displayName":"Sales"}"#, "text.value", json!(["None"])),
+        (r#""Sales""#, "text", json!(["Sales"])),
+        ("", "text", json!([""])),
+        ("null", "text", json!(["None"])),
+        ("false", "text", json!(["False"])),
+        ("0", "text", json!(["0"])),
         (
             r#"{"text":"Sales","status_code":"body","headers":{"x-fixture":"body"}}"#,
-            "text",
+            "text.text",
             json!(["Sales"]),
         ),
         (
             r#"{"text":"Sales","status_code":"body","headers":{"x-fixture":"body"}}"#,
-            "status_code",
+            "text.status_code",
             json!(["body"]),
         ),
         (
             r#"{"text":"Sales","status_code":"body","headers":{"x-fixture":"body"}}"#,
-            "headers",
+            "text.headers",
             json!([{"x-fixture":"body"}]),
         ),
     ] {
@@ -924,10 +960,10 @@ async fn api_query_selects_present_value_even_when_empty_null_or_noncollection()
 #[tokio::test]
 async fn empty_api_query_results_do_not_disclose_unselected_response_data() {
     for (query, expected) in [
-        ("items", json!([])),
-        ("empty", json!([""])),
-        ("object", json!([{}])),
-        ("keys[?keyName == 'primary'].keyName", json!([])),
+        ("text.items", json!([])),
+        ("text.empty", json!([""])),
+        ("text.object", json!([{}])),
+        ("text.keys[?keyName == 'primary'].keyName", json!([])),
     ] {
         for show_headers in [false, true] {
             let host = FakeHost::new(vec![response(
@@ -1222,7 +1258,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
             "--input",
             "{}",
             "--query",
-            "values",
+            "text.values",
         ],
         &host,
     )
@@ -1242,7 +1278,7 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
             (b"\xffBODY-CANARY".as_slice(), None, "InvalidJson"),
             (
                 br#"{"value":42,"secret":"BODY-CANARY"}"#.as_slice(),
-                Some("length(@)"),
+                Some("length(text.value)"),
                 "InvalidInput",
             ),
         ] {
@@ -1649,13 +1685,13 @@ async fn arbitrary_integer_request_and_response_bytes_match_independent_python_n
         }
     }
     for (query, expected) in [
-        ("positive", "18446744073709551617"),
-        ("negative", "-9223372036854775809"),
+        ("text.positive", "18446744073709551617"),
+        ("text.negative", "-9223372036854775809"),
         (
-            "huge",
+            "text.huge",
             "123456789012345678901234567890123456789012345678901234567890",
         ),
-        ("to_string(@)", source),
+        ("to_string(text)", source),
     ] {
         let host = FakeHost::new(vec![response(200, source, &[])]);
         let (code, stdout, _) = run(&["api", "items", "--query", query], &host).await;
@@ -1667,7 +1703,7 @@ async fn arbitrary_integer_request_and_response_bytes_match_independent_python_n
         "[18446744073709551617,-9223372036854775809]",
         &[],
     )]);
-    let (code, stdout, _) = run(&["api", "items", "--query", "."], &host).await;
+    let (code, stdout, _) = run(&["api", "items", "--query", "text"], &host).await;
     assert_eq!(code, 0);
     assert!(stdout.contains("18446744073709551617"));
     assert!(stdout.contains("-9223372036854775809"));
@@ -1700,9 +1736,9 @@ async fn integer_negative_zero_matches_python_in_actual_api_input_output_and_que
         assert_eq!(text["f"].get(), "-0.0");
     }
     for (query, expected) in [
-        ("n", "0"),
-        ("f", "-0.0"),
-        ("to_string(@)", r#"{"n":0,"f":-0.0}"#),
+        ("text.n", "0"),
+        ("text.f", "-0.0"),
+        ("to_string(text)", r#"{"n":0,"f":-0.0}"#),
     ] {
         let host = FakeHost::new(vec![response(200, source, &[])]);
         let (code, stdout, stderr) = run(&["api", "items", "--query", query], &host).await;
@@ -1807,12 +1843,12 @@ async fn reserved_keys_survive_actual_api_input_response_and_projection() {
                 serde_json::from_str(first_raw_data(&stdout).get()).unwrap();
             assert_reserved_object(payload["text"], nested, marker);
         }
-        for query in [".", "to_string(@)"] {
+        for query in ["text", "to_string(text)"] {
             let host = FakeHost::new(vec![response(200, source, &[])]);
             let (code, stdout, _) = run(&["api", "items", "--query", query], &host).await;
             assert_eq!(code, 0, "{stdout}");
             let projected = first_raw_data(&stdout);
-            if query == "." {
+            if query == "text" {
                 assert_reserved_object(projected, nested, marker);
             } else {
                 assert_eq!(

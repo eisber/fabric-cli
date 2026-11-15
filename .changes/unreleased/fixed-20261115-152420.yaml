@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 kind: fixed
-body: Fix bare fab-rs authentication status, Azure CLI binding summaries, and bare-field API row queries while preserving explicit wrapper projections.
+body: Improve bare fab-rs authentication guidance and Azure CLI binding summaries.
 time: 2026-11-15T15:24:20.057451+02:00
 custom:
     Author: ayeshurun
