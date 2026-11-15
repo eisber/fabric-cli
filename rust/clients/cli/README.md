@@ -19,8 +19,12 @@ fab-rs auth logout
 ```
 
 `api` switches are long-only: `--method`, `--audience`, `--input`, `--headers`,
-`--query`, `--show-headers`, `--async`, `--polling-config`. Methods are get/post/delete/put/patch;
-audiences are fabric/storage/azure/powerbi. There are no aliases, `--params`,
+`--query`, `--show-headers`, `--async`, `--polling-config`. Methods are lowercase
+get/post/delete/put/patch; uppercase `POST` is rejected with an `InvalidInput`
+diagnostic listing supported values and explaining to use `post` instead.
+Invalid methods fail before configuration, authentication, or HTTP effects,
+without echoing request arguments. Audiences are fabric/storage/azure/powerbi.
+There are no aliases, `--params`,
 underscore spellings, or individual timing flags. Quote endpoint query strings
 and URL-encode their values yourself; valid encoded values are not encoded again.
 Every nonempty `--query` filters the decoded body's top-level `value` when that

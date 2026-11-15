@@ -11,7 +11,10 @@ pub use selection::SelectionFile;
 
 use async_trait::async_trait;
 use azure_core::credentials::{TokenCredential, TokenRequestOptions};
-use clap::{Arg, ArgAction, Command, error::ErrorKind as ParseErrorKind};
+use clap::{
+    Arg, ArgAction, Command,
+    error::{ContextKind, ContextValue, ErrorKind as ParseErrorKind},
+};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
     Audience, CancellationToken, Clock, HttpExecutor, HttpTransport, OperationContext,
@@ -276,15 +279,22 @@ pub async fn run(
                 1
             };
         }
-        Err(_) => {
+        Err(error) => {
             // Clap diagnostics can echo raw input containing header credentials. Do not copy them.
+            let message = if name == "api"
+                && error.kind() == ParseErrorKind::InvalidValue
+                && matches!(
+                    error.get(ContextKind::InvalidArg),
+                    Some(ContextValue::String(arg)) if arg == "--method <method>"
+                ) {
+                "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST."
+            } else {
+                "Invalid command arguments. Run fab-rs --help."
+            };
             return write_failure(
                 host,
                 name,
-                CommandError::new(
-                    "InvalidInput",
-                    "Invalid command arguments. Run fab-rs --help.",
-                ),
+                CommandError::new("InvalidInput", message),
                 stdout,
                 stderr,
             );

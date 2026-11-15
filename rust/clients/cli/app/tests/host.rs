@@ -365,6 +365,112 @@ async fn genuine_argument_errors_remain_sanitized_failures_without_auth_effects(
 }
 
 #[tokio::test]
+async fn invalid_methods_explain_lowercase_values_without_disclosure_or_auth_effects() {
+    for method in [
+        "POST",
+        "GET",
+        "PoSt",
+        "head",
+        "OPTIONS",
+        "",
+        "METHOD-CANARY",
+    ] {
+        for inline in [false, true] {
+            let host = FakeHost::new(vec![]);
+            let inline_method = format!("--method={method}");
+            let mut args = vec!["api", "workspaces/ENDPOINT-CANARY/jobs/execute/instances"];
+            if inline {
+                args.push(&inline_method);
+            } else {
+                args.extend(["--method", method]);
+            }
+            args.extend([
+                "--headers",
+                "authorization=HEADER-CANARY",
+                "--input",
+                r#"{"token":"BODY-CANARY"}"#,
+                "--query",
+                "QUERY-CANARY",
+            ]);
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 1, "{method:?}, inline={inline}");
+            assert_eq!(
+                serde_json::from_str::<Value>(&stdout).unwrap(),
+                json!({
+                    "timestamp": "2000-01-01T00:00:00Z",
+                    "status": "Failure",
+                    "command": "api",
+                    "result": {
+                        "error_code": "InvalidInput",
+                        "message": "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST."
+                    }
+                })
+            );
+            assert!(!stdout.contains("CANARY"));
+            assert!(stderr.is_empty());
+            // Failure timestamps are the only permitted host effect.
+            assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+            assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+            assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+            assert!(host.transport.requests.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn lowercase_methods_still_reach_identity_validation_without_sending_requests() {
+    for method in ["get", "post", "delete", "put", "patch"] {
+        let host = FakeHost::new(vec![]);
+        *host.binding.lock().unwrap() = None;
+        let (code, stdout, stderr) = run(
+            &[
+                "api",
+                "workspaces/items/jobs/execute/instances",
+                "--method",
+                method,
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 4, "{method}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], "Unauthorized");
+        assert_eq!(
+            envelope["result"]["message"],
+            "No Rust identity selected. Run fab-rs auth login."
+        );
+        assert!(stderr.is_empty());
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 2);
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn unrelated_parser_errors_do_not_receive_method_diagnostics() {
+    for args in [
+        vec!["api", "items", "--method", "post", "--audience", "POST"],
+        vec!["api", "items", "--UNKNOWN-CANARY", "--method", "POST"],
+        vec!["auth", "login", "--method", "POST"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1);
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+        assert_eq!(
+            envelope["result"]["message"],
+            "Invalid command arguments. Run fab-rs --help."
+        );
+        assert!(!stdout.contains("CANARY"));
+        assert!(stderr.is_empty());
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn independent_python_envelope_bytes_and_unauthorized_exit_four() {
     let host = FakeHost::new(vec![response(200, r#"{"ok":true,"label":"café"}"#, &[])]);
     let (code, stdout, stderr) = run(&["api", "workspaces"], &host).await;
