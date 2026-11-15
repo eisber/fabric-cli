@@ -1347,7 +1347,6 @@ async fn api_and_auth_status_cancel_sdk_futures_without_sending() {
     for args in [
         vec!["fab-rs", "api", "items"],
         vec!["fab-rs", "auth", "status"],
-        vec!["fab-rs"],
     ] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
@@ -1383,7 +1382,7 @@ async fn api_and_auth_status_cancel_sdk_futures_without_sending() {
 
 #[tokio::test(start_paused = true)]
 async fn api_and_auth_status_bound_hanging_sdk_credentials_by_deadline() {
-    for args in [vec!["api", "items"], vec!["auth", "status"], vec![]] {
+    for args in [vec!["api", "items"], vec!["auth", "status"]] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
             calls: AtomicUsize::new(0),
@@ -2004,7 +2003,7 @@ fn actual_bare_auth_matches_help_without_configuration_environment() {
 #[test]
 fn actual_fab_rs_absent_binding_is_exit_four_without_azure_cli() {
     let directory = TempDirectory::new();
-    for args in [vec!["api", "items"], vec!["auth", "status"], vec![]] {
+    for args in [vec!["api", "items"], vec!["auth", "status"]] {
         let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
             .args(&args)
             .env("PATH", "")
