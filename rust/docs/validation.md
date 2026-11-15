@@ -2,12 +2,19 @@
 
 # Native validation and availability evidence
 
-`rust-ci.yml` runs for PRs, pushes to `main`, `merge_group`, and manual dispatch.
-There is **no workflow-level path filter**. The stable required check is
-**Rust validation**. A small Git diff selector can deliberately skip native jobs
-for unrelated changes; failed selection, an unknown base, failed/cancelled native
-jobs, or a missing selected result cannot pass the gate. Configure branch
-protection to require that exact gate, not individual matrix labels.
+Automatic PR and `main` push runs of `rust-ci.yml` are filtered to `rust/**`.
+The Python `fab:build` workflow is filtered to `src/**` and `tests/**`.
+Workflow-only or dependency files outside those directories do not trigger
+either build. Filters consider the event's full diff, not only the latest commit.
+
+GitHub does not support path filters on `merge_group`, so merge-queue runs retain
+a lightweight diff selector and **Rust validation** aggregate, skipping native
+jobs when no `rust/` files changed. Failed selection, an unknown base,
+failed/cancelled native jobs, or a missing selected result cannot pass the gate.
+Manual CI and unsigned-preview dispatch remain available for explicit checks.
+Do not require the path-filtered Rust check unconditionally on unrelated PRs:
+GitHub can leave skipped workflow checks pending. Where applicable, use the
+aggregate check rather than individual matrix labels.
 
 `rust-native.yml` is shared by CI and manual preview. Each native job runs
 fmt/check/clippy/workspace tests/doc tests/public docs, executable metadata,

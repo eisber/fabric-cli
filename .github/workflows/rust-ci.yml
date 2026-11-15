@@ -3,8 +3,12 @@ name: Rust CI
 
 on:
   pull_request:
+    paths:
+      - 'rust/**'
   push:
     branches: [main]
+    paths:
+      - 'rust/**'
   merge_group:
   workflow_dispatch:
 
@@ -27,7 +31,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - id: paths
-        name: Detect Rust changes (no workflow-level path filter)
+        name: Detect changes under rust/
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           EVENT: ${{ github.event_name }}
@@ -43,11 +47,7 @@ jobs:
               paths = subprocess.check_output(
                   ["git", "diff", "--no-renames", "--name-only", "-z", base, "HEAD"], text=True
               ).split("\0")
-              changed = any(
-                  p.startswith(("rust/", ".github/workflows/rust-"))
-                  or p in ("LICENSE", "AGENTS.md")
-                  for p in paths
-              )
+              changed = any(p.startswith("rust/") for p in paths)
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"rust={str(changed).lower()}\n")
 
