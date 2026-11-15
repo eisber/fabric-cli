@@ -116,8 +116,12 @@ cannot shorten a server `Retry-After`. `timeout` bounds the entire reconciliatio
 phase (waits, status GETs, retries, and result retrieval), not the initial request.
 Omitting a key or setting it to `null` uses the corresponding default. Unknown
 keys, invalid types, and nonpositive/out-of-range durations fail before sending.
-There is no `max_attempts` option. `--async` validates this configuration but does
-not poll or apply its timing settings. This replaces the earlier
+Use `poll_interval`, not `polling_interval`; values must be JSON numbers, not
+quoted strings. Invalid values identify the affected field.
+There is no `max_attempts` option. `--async` cannot be combined with
+`--polling-config`, even an empty object: async mode returns only the initial
+response and does not support polling. This conflict fails before input loading,
+identity acquisition, or sending a request. This replaces the earlier
 `--lro-config` spelling; no alias is retained. Power BI/Storage responses still
 return raw: timing configuration does not add support for new polling protocols.
 

@@ -2288,23 +2288,70 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
 mod polling_configuration {
     use super::*;
 
+    const ASYNC_CONFIG_ERROR: &str = "--async cannot be combined with --polling-config: async mode returns only the initial response and does not support polling";
+
     #[tokio::test]
     async fn invalid_config_is_rejected_before_identity_or_mutation() {
-        for config in [
-            "invalid",
-            "[]",
-            "null",
-            r#"{"poll_interval":0}"#,
-            r#"{"poll_interval":-1}"#,
-            r#"{"poll_interval":true}"#,
-            r#"{"timeout":"10"}"#,
-            r#"{"timeout":0}"#,
-            r#"{"timeout":-1}"#,
-            r#"{"timeout":1e100}"#,
-            r#"{"poll_interval":1e-100}"#,
-            r#"{"max_attempts":60}"#,
-            r#"{"max_wait_seconds":600}"#,
-            r#"{"$serde_json::private::Number":"CANARY"}"#,
+        for (config, expected) in [
+            ("invalid", "Invalid polling configuration JSON"),
+            ("[]", "Polling configuration must be a JSON object"),
+            ("null", "Polling configuration must be a JSON object"),
+            (
+                r#"{"poll_interval":0}"#,
+                "Invalid poll_interval: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"poll_interval":-1}"#,
+                "Invalid poll_interval: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"poll_interval":"-1"}"#,
+                "Invalid poll_interval: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"poll_interval":true}"#,
+                "Invalid poll_interval: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"timeout":"10"}"#,
+                "Invalid timeout: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"timeout":0}"#,
+                "Invalid timeout: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"timeout":-1}"#,
+                "Invalid timeout: expected a positive JSON number of seconds",
+            ),
+            (
+                r#"{"timeout":1e100}"#,
+                "Invalid timeout: duration exceeds supported range",
+            ),
+            (
+                r#"{"poll_interval":1e-100}"#,
+                "Invalid poll_interval: must be positive and within clock range",
+            ),
+            (
+                r#"{"timeout":1e-100}"#,
+                "Invalid timeout: must be positive and within clock range",
+            ),
+            (
+                r#"{"polling_interval":"-1"}"#,
+                "Unknown polling configuration option 'polling_interval'; use 'poll_interval'",
+            ),
+            (
+                r#"{"max_attempts":60}"#,
+                "Unknown polling configuration option; supported keys are poll_interval and timeout",
+            ),
+            (
+                r#"{"max_wait_seconds":600}"#,
+                "Unknown polling configuration option; supported keys are poll_interval and timeout",
+            ),
+            (
+                r#"{"$serde_json::private::Number":"CANARY"}"#,
+                "Unknown polling configuration option; supported keys are poll_interval and timeout",
+            ),
         ] {
             for asynchronous in [false, true] {
                 let host = FakeHost::new(vec![]);
@@ -2322,6 +2369,15 @@ mod polling_configuration {
                 let (code, stdout, stderr) = run(&args, &host).await;
                 assert_eq!(code, 1, "{config}: {stdout}");
                 assert!(stdout.contains("InvalidInput"));
+                let envelope: Value = serde_json::from_str(&stdout).unwrap();
+                assert_eq!(
+                    envelope["result"]["message"],
+                    if asynchronous {
+                        ASYNC_CONFIG_ERROR
+                    } else {
+                        expected
+                    }
+                );
                 assert!(!stdout.contains("CANARY"));
                 assert!(stderr.is_empty());
                 assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
@@ -2332,10 +2388,49 @@ mod polling_configuration {
     }
 
     #[tokio::test]
-    async fn config_wiring_controls_waits_and_async_remains_initial_only() {
+    async fn async_rejects_valid_or_empty_config_before_input_identity_or_mutation() {
+        for config in [
+            "{}",
+            r#"{"poll_interval":null,"timeout":null}"#,
+            r#"{"poll_interval":5}"#,
+            r#"{"timeout":10}"#,
+        ] {
+            let host = FakeHost::new(vec![]);
+            let (code, stdout, stderr) = run(
+                &[
+                    "api",
+                    "items",
+                    "--method",
+                    "post",
+                    "--async",
+                    "--polling-config",
+                    config,
+                    "--input",
+                    "MISSING-INPUT-CANARY",
+                ],
+                &host,
+            )
+            .await;
+            assert_eq!(code, 1, "{stdout}");
+            let envelope: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+            assert_eq!(envelope["result"]["message"], ASYNC_CONFIG_ERROR);
+            assert!(!stdout.contains("CANARY"));
+            assert!(stderr.is_empty());
+            assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+            assert!(host.transport.requests.lock().unwrap().is_empty());
+            assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn config_wiring_controls_waits_with_optional_timeout() {
         let location = "/v1/workspaces/workspace/items/item/jobs/instances/job";
         for (audience, job) in [("fabric", false), ("fabric", true), ("azure", false)] {
-            for asynchronous in [false, true] {
+            for config in [
+                r#"{"poll_interval":0.5}"#,
+                r#"{"poll_interval":0.5,"timeout":1}"#,
+            ] {
                 let headers = if job {
                     vec![("location", location)]
                 } else if audience == "azure" {
@@ -2356,7 +2451,7 @@ mod polling_configuration {
                     ),
                 ]);
                 let start = host.clock.now();
-                let mut args = vec![
+                let args = [
                     "api",
                     "items",
                     "--method",
@@ -2366,42 +2461,79 @@ mod polling_configuration {
                     "--input",
                     "{}",
                     "--polling-config",
-                    r#"{"poll_interval":0.5,"timeout":1}"#,
+                    config,
                 ];
-                if asynchronous {
-                    args.push("--async");
-                }
                 let (code, stdout, stderr) = run(&args, &host).await;
                 assert_eq!(code, 0, "{stdout}");
-                assert!(stderr.is_empty());
                 assert_eq!(
-                    host.clock.now().duration_since(start),
-                    if asynchronous {
-                        Duration::ZERO
+                    stderr,
+                    if job {
+                        "Job instance status: Completed\n"
                     } else {
-                        Duration::from_millis(500)
+                        "Operation status: Succeeded\n"
                     }
                 );
                 assert_eq!(
-                    host.transport.requests.lock().unwrap().len(),
-                    if asynchronous { 1 } else { 2 }
+                    host.clock.now().duration_since(start),
+                    Duration::from_millis(500)
                 );
-                assert_eq!(
-                    data(&stdout)[0]["status_code"],
-                    if asynchronous { 202 } else { 200 }
-                );
+                let requests = host.transport.requests.lock().unwrap();
+                assert_eq!(requests.len(), 2);
+                assert_eq!(requests[0].method, "POST");
+                assert_eq!(requests[1].method, "GET");
+                assert_eq!(data(&stdout)[0]["status_code"], 200);
             }
         }
     }
 
     #[tokio::test]
-    async fn timeout_stops_local_wait_and_omitted_timeout_has_no_ten_minute_cap() {
-        for config in [
-            r#"{"timeout":0.5}"#,
-            "{}",
-            r#"{"timeout":null,"poll_interval":null}"#,
+    async fn async_without_config_remains_initial_only_and_silent() {
+        for headers in [
+            vec![("x-ms-operation-id", "op-1")],
+            vec![(
+                "location",
+                "/v1/workspaces/workspace/items/item/jobs/instances/job",
+            )],
+            vec![("azure-asyncoperation", "/status")],
         ] {
-            let timed = config.contains("0.5");
+            let audience = if headers[0].0 == "azure-asyncoperation" {
+                "azure"
+            } else {
+                "fabric"
+            };
+            let host = FakeHost::new(vec![response(202, "", &headers)]);
+            let (code, stdout, stderr) = run(
+                &[
+                    "api",
+                    "items",
+                    "--method",
+                    "post",
+                    "--audience",
+                    audience,
+                    "--async",
+                ],
+                &host,
+            )
+            .await;
+            assert_eq!(code, 0, "{stdout}");
+            assert!(stderr.is_empty());
+            assert_eq!(data(&stdout)[0]["status_code"], 202);
+            assert_eq!(data(&stdout)[0]["text"], "");
+            assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "POST");
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_stops_local_wait_and_omitted_timeout_has_no_ten_minute_cap() {
+        for (config, timed) in [
+            (r#"{"timeout":0.5}"#, true),
+            (r#"{"timeout":701}"#, false),
+            ("{}", false),
+            (r#"{"timeout":null,"poll_interval":null}"#, false),
+        ] {
             let host = FakeHost::new(vec![
                 response(
                     202,
@@ -2424,7 +2556,14 @@ mod polling_configuration {
             )
             .await;
             assert_eq!(code, if timed { 1 } else { 0 }, "{stdout}");
-            assert!(stderr.is_empty());
+            assert_eq!(
+                stderr,
+                if timed {
+                    ""
+                } else {
+                    "Operation status: Succeeded\n"
+                }
+            );
             let requests = host.transport.requests.lock().unwrap();
             assert_eq!(requests.len(), if timed { 1 } else { 2 });
             assert_eq!(requests[0].method, "POST");
@@ -2452,6 +2591,8 @@ mod polling_configuration {
         assert!(help.contains("poll_interval"));
         assert!(help.contains("seconds"));
         assert!(help.contains("no default"));
+        assert!(help.contains("both keys are optional"));
+        assert!(help.contains("Cannot be combined with --async"));
         assert!(!help.contains("600 seconds"));
     }
 }

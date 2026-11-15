@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 kind: breaking
-body: Add optional fab-rs --polling-config with poll_interval and timeout in seconds, replacing --lro-config. Fabric non-job fallback polling uses 2, 7, then 20 seconds; ARM and jobs use Retry-After or 10 seconds. Overall waiting has no default timeout, while individual poll/result requests remain bounded and server not-before hints are preserved. Power BI and Storage responses remain raw.
+body: Add optional fab-rs --polling-config with poll_interval and timeout in seconds, replacing --lro-config. Both keys are optional; invalid values identify the field and polling_interval suggests the supported poll_interval spelling. Async mode rejects polling configuration before input loading or host effects because it does not poll. Fabric non-job fallback polling uses 2, 7, then 20 seconds; ARM and jobs use Retry-After or 10 seconds. Overall waiting has no default timeout, while individual poll/result requests remain bounded and server not-before hints are preserved. Power BI and Storage responses remain raw.
 time: 2026-11-15T22:52:52.27517+02:00
 custom:
     Author: ayeshurun

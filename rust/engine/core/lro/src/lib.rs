@@ -71,11 +71,13 @@ impl LroConfig {
         poll_interval: Option<Duration>,
         timeout: Option<Duration>,
     ) -> Result<Self, CoreError> {
-        for duration in [poll_interval, timeout].into_iter().flatten() {
-            if duration.is_zero() || Instant::now().checked_add(duration).is_none() {
+        for (name, duration) in [("poll_interval", poll_interval), ("timeout", timeout)] {
+            if let Some(duration) = duration
+                && (duration.is_zero() || Instant::now().checked_add(duration).is_none())
+            {
                 return Err(CoreError::new(
                     ErrorKind::InvalidInput,
-                    "LRO durations must be positive and within clock range",
+                    format!("Invalid {name}: must be positive and within clock range"),
                 ));
             }
         }

@@ -37,7 +37,7 @@ pub fn command() -> Command {
             Arg::new("polling-config")
                 .long("polling-config")
                 .value_name("JSON")
-                .help("Polling JSON: poll_interval is a positive number of seconds; timeout is the maximum polling duration in seconds (optional, no default). Backend work may continue after timeout"),
+                .help("Optional polling JSON: poll_interval and timeout are positive numbers of seconds; both keys are optional and timeout has no default. Cannot be combined with --async. Backend work may continue after timeout"),
         )
         .arg(
             Arg::new("method")
@@ -75,13 +75,19 @@ pub fn command() -> Command {
             Arg::new("async")
                 .long("async")
                 .action(ArgAction::SetTrue)
-                .help("Send once and return the initial response; do not poll"),
+                .help("Send once and return the initial response without polling; cannot be combined with --polling-config"),
         )
 }
 
 /// Validate request bytes, headers, query, and origin before reading auth/config.
 pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     let value = |name| matches.get_one::<String>(name).map(String::as_str);
+    let asynchronous = matches.get_flag("async");
+    if asynchronous && value("polling-config").is_some() {
+        return Err(invalid(
+            "--async cannot be combined with --polling-config: async mode returns only the initial response and does not support polling",
+        ));
+    }
     let lro_config = parse_polling_config(value("polling-config"))?;
     let audience = match value("audience") {
         Some("fabric") => Audience::Fabric,
@@ -120,7 +126,7 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
         request,
         query,
         show_headers: matches.get_flag("show-headers"),
-        asynchronous: matches.get_flag("async"),
+        asynchronous,
         lro_config,
     })
 }
@@ -137,6 +143,11 @@ fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig,
     let object = json
         .as_object()
         .ok_or_else(|| invalid("Polling configuration must be a JSON object"))?;
+    if object.contains_key("polling_interval") {
+        return Err(invalid(
+            "Unknown polling configuration option 'polling_interval'; use 'poll_interval'",
+        ));
+    }
     if object
         .keys()
         .any(|key| key != "poll_interval" && key != "timeout")
@@ -153,11 +164,17 @@ fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig,
             .as_f64()
             .filter(|value| value.is_finite() && *value > 0.0)
             .ok_or_else(|| {
-                invalid("Polling configuration durations must be positive numbers in seconds")
+                CommandError::new(
+                    "InvalidInput",
+                    format!("Invalid {key}: expected a positive JSON number of seconds"),
+                )
             })?;
-        Duration::try_from_secs_f64(seconds)
-            .map(Some)
-            .map_err(|_| invalid("Polling configuration duration exceeds supported range"))
+        Duration::try_from_secs_f64(seconds).map(Some).map_err(|_| {
+            CommandError::new(
+                "InvalidInput",
+                format!("Invalid {key}: duration exceeds supported range"),
+            )
+        })
     };
     fabric_sdk_api::LroConfig::new(duration("poll_interval")?, duration("timeout")?)
         .map_err(Into::into)

@@ -61,6 +61,11 @@ numbers in seconds. A fixed `poll_interval` never shortens server hints; `timeou
 bounds the full reconciliation phase, including retries and result retrieval.
 Omitted/null timeout means no overall limit; individual status/result requests
 still have a 240-second bound. Invalid config fails before host effects.
+Use `poll_interval`, not `polling_interval`, and numeric values rather than quoted
+strings. Errors identify invalid fields. Both keys can be omitted or set to null.
+`--async` cannot be combined with `--polling-config`, including `{}`: async mode
+returns only the initial response and does not support polling. This fails before
+input loading, identity acquisition, or sending a request.
 `max_attempts` and the former `--lro-config` spelling are not supported.
 This differs deliberately from Python raw API's
 return-immediately default. Ctrl+C cancels local work, not the service-side operation.

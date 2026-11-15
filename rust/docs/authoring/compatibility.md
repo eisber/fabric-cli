@@ -138,7 +138,11 @@ overrides a server not-before constraint. `timeout` is a total monotonic
 reconciliation budget, starting after the initial response, including waits,
 GET retries, and final-result retrieval. It has **no default**; omitted/null
 means indefinite overall waiting, still cancellable and with bounded individual
-requests. `--async` validates config but remains initial-response-only.
+requests. `--async` cannot be combined with `--polling-config`, including an empty
+object, because async mode is initial-response-only and does not support polling.
+The conflict fails before input loading or host effects, even if configuration
+is invalid. Invalid duration errors name the field; the known `polling_interval`
+typo suggests the supported `poll_interval` key without accepting an alias.
 The former `--lro-config` spelling is no longer accepted. Power BI/Storage stay
 raw; configuration does not add protocol recognition.
 
