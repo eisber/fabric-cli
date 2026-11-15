@@ -1,0 +1,6 @@
+kind: added
+body: Add the standalone experimental fab-rs raw API and Azure CLI identity-binding CLI alongside Python fab, with offline tests and native validation workflows.
+time: 2026-11-15T09:04:26.726092+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

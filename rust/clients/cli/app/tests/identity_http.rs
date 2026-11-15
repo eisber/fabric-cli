@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
-use azure_identity::process::Executor;
+use azure_identity::Executor;
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, CoreError, ErrorKind, HttpExecutor,
     HttpTransport, OperationContext,

@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
-use azure_identity::{AzureCliCredential, AzureCliCredentialOptions, process::Executor};
+use azure_identity::{AzureCliCredential, AzureCliCredentialOptions, Executor};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use fabric_core::{Clock, CoreError, ErrorKind, OperationContext};
 use process_wrap::tokio::{KillOnDrop, TokioChildWrapper, TokioCommandWrap};
