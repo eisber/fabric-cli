@@ -346,9 +346,18 @@ async fn execute(
                 Ok(handle) => handle.map(|handle| handle.recovery()),
                 Err(error) => error.recovery,
             };
+            let attach_recovery = |mut error: CommandError| {
+                if error.recovery.is_none() {
+                    error.recovery = recovery
+                        .as_ref()
+                        .and_then(|value| serde_json::to_value(value).ok());
+                }
+                error
+            };
             let response = if prepared.asynchronous {
                 initial
             } else {
+                fabric_cli_api::validate_response_body(&initial.body).map_err(attach_recovery)?;
                 fabric_sdk_api::complete(
                     &client,
                     clock.as_ref(),
@@ -363,12 +372,7 @@ async fn execute(
                 prepared.show_headers,
                 prepared.query.as_deref(),
             )
-            .map_err(|mut error| {
-                if error.recovery.is_none() {
-                    error.recovery = recovery.and_then(|value| serde_json::to_value(value).ok());
-                }
-                error
-            })
+            .map_err(attach_recovery)
         }
         _ => Err(CommandError::new("InvalidInput", "A command is required")),
     }

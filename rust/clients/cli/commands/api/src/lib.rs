@@ -264,6 +264,26 @@ fn multipart(
     Ok(body)
 }
 
+/// Validate initial response JSON before reconciliation can replace its body.
+/// Empty bodies use the same pinned Python whitespace policy as final output.
+pub fn validate_response_body(body: &[u8]) -> Result<(), CommandError> {
+    response_body(body).map(|_| ())
+}
+
+fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
+    if text
+        .chars()
+        .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
+    {
+        Ok(Value::String("(Empty)".into()))
+    } else {
+        fabric_core_json::decode(bytes)
+            .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))
+    }
+}
+
 /// Shape the actual response like pinned Python raw API, including falsey-query fallback.
 pub fn response_data(
     response: ApiResponse,
@@ -279,18 +299,7 @@ pub fn response_data(
                 .map_err(|_| invalid("Invalid response headers"))?,
         );
     }
-    let response_text = std::str::from_utf8(&response.body)
-        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
-    let body = if response_text
-        .chars()
-        .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-    {
-        Value::String("(Empty)".into())
-    } else {
-        fabric_core_json::decode(&response.body)
-            .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?
-    };
-    payload.insert("text".into(), body);
+    payload.insert("text".into(), response_body(&response.body)?);
     let payload = Value::Object(payload);
     if let Some(query) = query.filter(|query| !query.is_empty()) {
         let projected = fabric_cli_query::search(&payload, query)

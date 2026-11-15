@@ -58,7 +58,9 @@ authority for implementation evidence.
   `result.data` response objects with `status_code` and `text`. Four-space
   indentation and trailing newline; optional `headers` only with
   `--show-headers`. Empty/whitespace bodies become `"(Empty)"`; nonempty invalid
-  JSON is an error, not a text fallback. Diagnostics do not contaminate stdout.
+  JSON is an error, not a text fallback. Initial response JSON is validated before
+  default polling can replace it; invalid accepted bodies retain safe recovery
+  information and do not trigger a status GET. Diagnostics do not contaminate stdout.
 - Initial raw HTTP 4xx/5xx remain inspectable response data. This is not a
   universal fail-on-HTTP-status client. Credential, transport, malformed-body,
   and automatic-LRO failures are structured command errors with nonzero exits.

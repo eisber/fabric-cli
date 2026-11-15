@@ -558,6 +558,80 @@ async fn async_is_one_send_no_sleep_default_passes_actual_initial_to_polling() {
 }
 
 #[tokio::test]
+async fn malformed_initial_json_fails_before_polling_with_safe_recovery() {
+    for asynchronous in [false, true] {
+        for body in [b"initial".as_slice(), b"\xffBODY-CANARY".as_slice()] {
+            let mut initial = response(
+                202,
+                "",
+                &[
+                    ("x-ms-operation-id", "op-1"),
+                    ("x-fixture", "HEADER-CANARY"),
+                ],
+            );
+            initial.body = body.to_vec();
+            let host = FakeHost::new(vec![
+                initial,
+                response(200, r#"{"status":"Succeeded"}"#, &[]),
+            ]);
+            let mut args = vec!["api", "items", "--method", "post", "--show-headers"];
+            if asynchronous {
+                args.push("--async");
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 1, "{stdout}");
+            let envelope: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(envelope["status"], "Failure");
+            assert_eq!(envelope["result"]["error_code"], "InvalidJson");
+            assert_eq!(
+                data(&stdout),
+                json!([{
+                    "operation_id": "op-1",
+                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
+                    "outcome_uncertain": true
+                }]),
+            );
+            assert!(!stdout.contains("CANARY"));
+            assert!(!stdout.contains("synthetic-token"));
+            assert!(stderr.is_empty());
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "POST");
+            assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
+    for body in ["", " \t\r\n", "\u{1c}\u{1f}", "\u{2003}"] {
+        for asynchronous in [false, true] {
+            let host = FakeHost::new(vec![
+                response(202, body, &[("x-ms-operation-id", "op-1")]),
+                response(200, r#"{"status":"Succeeded"}"#, &[]),
+            ]);
+            let mut args = vec!["api", "items", "--method", "post"];
+            if asynchronous {
+                args.push("--async");
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 0, "{stdout}");
+            assert!(stderr.is_empty());
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), if asynchronous { 1 } else { 2 });
+            assert_eq!(requests[0].method, "POST");
+            if asynchronous {
+                assert_eq!(data(&stdout)[0]["text"], "(Empty)");
+                assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 0);
+            } else {
+                assert_eq!(requests[1].method, "GET");
+                assert_eq!(data(&stdout)[0]["text"]["status"], "Succeeded");
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
     for asynchronous in [true, false] {
         for (body, query, error_code) in [
