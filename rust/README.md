@@ -153,9 +153,7 @@ target-qualified bundle and sidecars using the
 promise of zero OS dependencies. Azure CLI remains an authentication prerequisite.
 
 Official builds must originate in the trusted internal build system, not be
-promoted from arbitrary PR artifacts. The [complete public-safe ADO
-implementation handoff](docs/authoring/official-release-handoff.md)
-is a specification, not validated YAML or a compliance certification.
+promoted from arbitrary PR artifacts.
 
 ## Development and validation
 

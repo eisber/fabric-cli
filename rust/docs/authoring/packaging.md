@@ -153,4 +153,3 @@ publication are separately implemented in ADO. Windows starts with ZIP and Linux
 with tar.gz; official macOS format depends on verified signing/notarization and
 offline Gatekeeper policy. An ordinary archive/bare executable is not assumed
 staplable. No arbitrary PR preview may be promoted as an official build.
-Use the [complete implementation handoff](official-release-handoff.md).
