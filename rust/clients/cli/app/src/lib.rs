@@ -170,6 +170,13 @@ pub fn parser() -> Command {
 }
 
 fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
+    if args.len() == 1 {
+        return parser().try_get_matches_from(
+            args.iter()
+                .cloned()
+                .chain([OsString::from("auth"), OsString::from("status")]),
+        );
+    }
     if args.len() == 2 && args[1] == "auth" {
         return parser()
             .try_get_matches_from(args.iter().cloned().chain([OsString::from("--help")]));
@@ -182,6 +189,7 @@ fn command_name(args: &[OsString]) -> &'static str {
         args.get(1).and_then(|v| v.to_str()),
         args.get(2).and_then(|v| v.to_str()),
     ) {
+        (None, _) if args.len() == 1 => "auth status",
         (Some("api"), _) => "api",
         (Some("auth"), Some("login")) => "auth login",
         (Some("auth"), Some("status")) => "auth status",
@@ -285,6 +293,18 @@ fn selected(host: &dyn Host) -> Result<Binding, CommandError> {
     })
 }
 
+fn auth_data(binding: &Binding) -> Value {
+    json!({
+        "selected": true,
+        "logged_in": true,
+        "authentication_mode": "Azure CLI",
+        "tenant_id": binding.tenant,
+        "principal_id": binding.principal,
+        "mfa_evidence": "not_checked",
+        "service_access_verified": false,
+    })
+}
+
 async fn execute(
     matches: &clap::ArgMatches,
     host: &dyn Host,
@@ -300,11 +320,11 @@ async fn execute(
                 let context = OperationContext::new(Duration::from_secs(240), cancellation);
                 let binding = host.login(&context).await?;
                 host.save_selection(&binding)?;
-                Ok(json!({"selected": true}))
+                Ok(auth_data(&binding))
             }
             Some("status") => {
                 let binding = selected(host)?;
-                let credential = host.credential(binding)?;
+                let credential = host.credential(binding.clone())?;
                 let clock = host.clock();
                 let context = OperationContext {
                     deadline: clock.now() + Duration::from_secs(240),
@@ -325,7 +345,7 @@ async fn execute(
                         "Credential acquisition failed; run fab-rs auth login to validate the selected session",
                     )
                 })?;
-                Ok(json!({"selected": true}))
+                Ok(auth_data(&binding))
             }
             _ => Err(CommandError::new(
                 "InvalidInput",

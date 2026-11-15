@@ -20,6 +20,9 @@ cargo run --locked -p fabric-cli -- --version
 ```
 
 Help/version and subcommand help do not require authentication or Azure CLI.
+Bare `fab-rs` runs `auth status`: it validates the existing Rust selection and
+reports the current binding, or returns login guidance with exit 4 when none is
+selected. It does not select an identity or start a REPL.
 Bare `fab-rs auth` lists the available authentication subcommands, just like
 `fab-rs auth --help`, without reading configuration or changing identity selection.
 Authentication and API calls require Azure CLI, installed separately:
@@ -38,6 +41,14 @@ subscription, account, or credential-mode overrides. Rust logout clears only
 Rust's non-secret selection. API requires that selection even if Azure CLI is
 already signed in. Identity drift fails closed; select the intended identity in
 Azure CLI and run Rust login again.
+
+Successful login/status output retains `selected` and adds `logged_in`,
+`authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id`. These are
+the validated binding's object IDs, not an account name inferred from token
+claims. Like the `feature/rust` auth summary, it explicitly reports
+`mfa_evidence: "not_checked"` and `service_access_verified: false`: acquiring
+a credential is not proof of MFA or Fabric service access. No access token is
+printed; the donor's Windows broker/account/token metadata is not adopted.
 
 Login errors distinguish recognized missing/PATH-unavailable Azure CLI
 diagnostics (install Azure CLI 2.54+ or fix PATH) from Azure CLI's explicit
@@ -64,7 +75,20 @@ Quote endpoints and URL-encode query values yourself. For example:
 fab-rs api 'workspaces?continuationToken=TOKEN'
 fab-rs api workspaces/.../items --method post --input request.json --async --show-headers
 fab-rs api operations/OPERATION_ID --async --show-headers
+fab-rs api workspaces --query displayName
+fab-rs api workspaces --query 'text.value[].displayName'
 ```
+
+`--query` normally evaluates the HTTP wrapper (`status_code`, `text`, optional
+`headers`). A bare ASCII field name such as `displayName` instead selects that
+field from a body array or Fabric's top-level `value` array, otherwise from the
+body itself. Rows with missing/null fields are omitted; empty projections remain
+empty. The wrapper names `text`, `status_code`, and `headers` are reserved.
+Complex expressions still require explicit wrapper paths, such as
+`text.value[?type == 'Workspace'].displayName`; there is no recursive search or
+automatic pagination. Missing fields on a noncollection body retain `"None"`.
+An empty query bypasses projection. Querying is not a universal security-redaction
+boundary: selected data can itself contain sensitive information.
 
 Recognized Fabric/ARM operations poll **by default**. `--async` returns the actual
 initial response, without polling or starting background work. Polling has a

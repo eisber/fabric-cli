@@ -281,7 +281,6 @@ async fn bare_auth_matches_explicit_help_without_host_effects() {
 #[tokio::test]
 async fn genuine_argument_errors_remain_sanitized_failures_without_auth_effects() {
     for args in [
-        vec![],
         vec!["UNKNOWN-INPUT-CANARY"],
         vec!["auth", "UNKNOWN-INPUT-CANARY"],
         vec!["auth", "--UNKNOWN-INPUT-CANARY"],
@@ -541,6 +540,93 @@ async fn api_query_runs_on_full_payload_preserves_scalars_and_keeps_lists_flat()
         data(&stdout)[0]["text"],
         json!({"items":[],"empty":"","object":{}})
     );
+}
+
+#[tokio::test]
+async fn bare_field_query_selects_workspace_rows_without_pagination_or_disclosure() {
+    for (body, expected) in [
+        (
+            r#"{"value":[{"id":"a","displayName":"Sales"},{"id":"b","displayName":"Engineering"},{"id":"c","secret":"BODY-SECRET-CANARY"}],"continuationToken":"BODY-SECRET-CANARY"}"#,
+            json!(["Sales", "Engineering"]),
+        ),
+        (
+            r#"[{"displayName":"Sales"},{"displayName":"Engineering"},{"displayName":null}]"#,
+            json!(["Sales", "Engineering"]),
+        ),
+        (r#"{"displayName":"Sales"}"#, json!(["Sales"])),
+        (r#"{"displayName":false}"#, json!(["False"])),
+        (r#"{"displayName":0}"#, json!(["0"])),
+        (r#"{"displayName":""}"#, json!([""])),
+        (r#"{"displayName":{}}"#, json!([{}])),
+        (
+            r#"{"displayName":{"label":"Sales"}}"#,
+            json!([{"label":"Sales"}]),
+        ),
+        (
+            r#"{"displayName":["Sales","Engineering"]}"#,
+            json!(["Sales", "Engineering"]),
+        ),
+        (r#"{"displayName":[]}"#, json!([])),
+        (r#"{"value":[],"secret":"BODY-SECRET-CANARY"}"#, json!([])),
+        (r#"{"value":[{"secret":"BODY-SECRET-CANARY"}]}"#, json!([])),
+        (r#"{"secret":"BODY-SECRET-CANARY"}"#, json!(["None"])),
+        (r#"{"displayName":null}"#, json!(["None"])),
+        (r#""BODY-SECRET-CANARY""#, json!(["None"])),
+        ("null", json!(["None"])),
+        ("42", json!(["None"])),
+        ("[]", json!([])),
+        ("", json!(["None"])),
+    ] {
+        for show_headers in [false, true] {
+            let host = FakeHost::new(vec![response(
+                200,
+                body,
+                &[("x-fixture", "HEADER-SECRET-CANARY")],
+            )]);
+            let mut args = vec!["api", "workspaces", "--query", "displayName"];
+            if show_headers {
+                args.push("--show-headers");
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 0, "{body}: {stdout} {stderr}");
+            assert_eq!(data(&stdout), expected, "{body}");
+            assert!(stderr.is_empty());
+            for canary in ["BODY-SECRET-CANARY", "HEADER-SECRET-CANARY"] {
+                assert!(!stdout.contains(canary), "{body}: {stdout}");
+            }
+            assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn bare_field_shortcut_is_not_general_query_traversal() {
+    for (query, expected) in [
+        (" displayName ", json!(["Sales"])),
+        ("[].displayName", json!(["None"])),
+        ("text.value[].displayName", json!(["Sales"])),
+        ("text.displayName", json!(["Wrapper body"])),
+        ("status_code", json!(["200"])),
+        ("headers", json!([{"x-fixture":"yes"}])),
+        (
+            "text",
+            json!([{"displayName":"Wrapper body","value":[{"displayName":"Sales"}]}]),
+        ),
+    ] {
+        let host = FakeHost::new(vec![response(
+            200,
+            r#"{"displayName":"Wrapper body","value":[{"displayName":"Sales"}]}"#,
+            &[("x-fixture", "yes")],
+        )]);
+        let (code, stdout, stderr) = run(
+            &["api", "workspaces", "--show-headers", "--query", query],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0, "{query}: {stdout} {stderr}");
+        assert_eq!(data(&stdout), expected, "{query}");
+        assert!(stderr.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -854,8 +940,61 @@ async fn login_status_logout_selection_required_and_no_network() {
 }
 
 #[tokio::test]
+async fn root_without_arguments_matches_status_and_reports_only_binding_metadata() {
+    let host = FakeHost::new(vec![]);
+    let explicit = run(&["auth", "status"], &host).await;
+    let bare = run(&[], &host).await;
+    assert_eq!(bare, explicit);
+    assert_eq!(bare.0, 0);
+    assert_eq!(
+        data(&bare.1),
+        json!([{
+            "selected": true,
+            "logged_in": true,
+            "authentication_mode": "Azure CLI",
+            "tenant_id": TENANT,
+            "principal_id": PRINCIPAL,
+            "mfa_evidence": "not_checked",
+            "service_access_verified": false,
+        }])
+    );
+    assert!(!bare.1.contains("synthetic-token"));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 2);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+
+    *host.binding.lock().unwrap() = None;
+    let bare = run(&[], &host).await;
+    let explicit = run(&["auth", "status"], &host).await;
+    assert_eq!(bare, explicit);
+    assert_eq!(bare.0, 4);
+    assert!(
+        bare.1
+            .contains("No Rust identity selected. Run fab-rs auth login.")
+    );
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 2);
+    assert!(host.binding.lock().unwrap().is_none());
+}
+
+#[tokio::test]
+async fn login_reports_the_validated_binding_without_claiming_service_access() {
+    let host = FakeHost::new(vec![]);
+    *host.binding.lock().unwrap() = None;
+    let login = run(&["auth", "login"], &host).await;
+    let status = run(&["auth", "status"], &host).await;
+    assert_eq!(login.0, 0);
+    assert_eq!(status.0, 0);
+    assert_eq!(data(&login.1), data(&status.1));
+    assert_eq!(data(&login.1)[0]["tenant_id"], TENANT);
+    assert_eq!(data(&login.1)[0]["principal_id"], PRINCIPAL);
+    assert_eq!(data(&login.1)[0]["service_access_verified"], false);
+    assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+    assert!(!login.1.contains("synthetic-token"));
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn sdk_auth_failure_is_sanitized_unauthorized_and_never_sends() {
-    for args in [vec!["api", "items"], vec!["auth", "status"]] {
+    for args in [vec!["api", "items"], vec!["auth", "status"], vec![]] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
             calls: AtomicUsize::new(0),
@@ -881,6 +1020,7 @@ async fn api_and_auth_status_cancel_sdk_futures_without_sending() {
     for args in [
         vec!["fab-rs", "api", "items"],
         vec!["fab-rs", "auth", "status"],
+        vec!["fab-rs"],
     ] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
@@ -916,7 +1056,7 @@ async fn api_and_auth_status_cancel_sdk_futures_without_sending() {
 
 #[tokio::test(start_paused = true)]
 async fn api_and_auth_status_bound_hanging_sdk_credentials_by_deadline() {
-    for args in [vec!["api", "items"], vec!["auth", "status"]] {
+    for args in [vec!["api", "items"], vec!["auth", "status"], vec![]] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
             calls: AtomicUsize::new(0),
@@ -1463,18 +1603,29 @@ fn actual_bare_auth_matches_help_without_configuration_environment() {
 #[test]
 fn actual_fab_rs_absent_binding_is_exit_four_without_azure_cli() {
     let directory = TempDirectory::new();
-    let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
-        .args(["api", "items"])
-        .env("PATH", "")
-        .env("HOME", &directory.0)
-        .env("APPDATA", &directory.0)
-        .env("XDG_CONFIG_HOME", &directory.0)
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(4));
-    let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(envelope["result"]["error_code"], "Unauthorized");
-    assert!(output.stderr.is_empty());
+    for args in [vec!["api", "items"], vec!["auth", "status"], vec![]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+            .args(&args)
+            .env("PATH", "")
+            .env("HOME", &directory.0)
+            .env("APPDATA", &directory.0)
+            .env("XDG_CONFIG_HOME", &directory.0)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(4), "{args:?}");
+        let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], "Unauthorized");
+        if args.is_empty() {
+            assert_eq!(envelope["command"], "auth status");
+            assert!(
+                envelope["result"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("fab-rs auth login")
+            );
+        }
+        assert!(output.stderr.is_empty());
+    }
 }
 
 #[test]

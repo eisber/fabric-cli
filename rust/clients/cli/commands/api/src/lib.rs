@@ -54,9 +54,9 @@ pub fn command() -> Command {
                 .help("Safe key=value pairs separated by commas"),
         )
         .arg(
-            Arg::new("query")
-                .long("query")
-                .help("Local JMESPath response filter"),
+            Arg::new("query").long("query").help(
+                "Local JMESPath wrapper filter; bare fields select body or Fabric value rows",
+            ),
         )
         .arg(
             Arg::new("show-headers")
@@ -284,7 +284,11 @@ fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
     }
 }
 
-/// Shape the actual response and preserve any nonempty query's result.
+/// Shape the response, preserving wrapper queries and bare-field body/row selection.
+///
+/// Bare ASCII identifiers other than `text`, `status_code`, and `headers` select
+/// from body arrays or a Fabric `value` array, otherwise from the body itself.
+/// Other expressions retain the HTTP wrapper input. Empty results never fall back.
 pub fn response_data(
     response: ApiResponse,
     show_headers: bool,
@@ -302,8 +306,33 @@ pub fn response_data(
     payload.insert("text".into(), response_body(&response.body)?);
     let payload = Value::Object(payload);
     if let Some(query) = query.filter(|query| !query.is_empty()) {
+        let field = query.trim();
+        if bare_body_field(field) {
+            let body = &payload["text"];
+            let rows = body
+                .get("value")
+                .filter(|value| value.is_array())
+                .or_else(|| body.is_array().then_some(body));
+            return if let Some(rows) = rows {
+                fabric_cli_query::search(rows, &format!("[].{field}"))
+            } else {
+                fabric_cli_query::search(body, field)
+            }
+            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
+        }
         return fabric_cli_query::search(&payload, query)
             .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
     }
     Ok(payload)
+}
+
+fn bare_body_field(field: &str) -> bool {
+    !matches!(field, "text" | "status_code" | "headers")
+        && field
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        && field
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }

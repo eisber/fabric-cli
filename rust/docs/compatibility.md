@@ -28,6 +28,16 @@ authority for implementation evidence.
   by Rust.
 - `--help`, `--version`, and ordinary subcommand `--help` use stdout, exit zero,
   and do not load credentials or send HTTP. Use two ASCII hyphens.
+- Bare `fab-rs` runs exactly `auth status`, including its command name, validation,
+  sanitized errors, cancellation/deadline and exit codes. Unlike its previous
+  `InvalidInput` exit one, it succeeds with a valid binding or returns
+  `Unauthorized` exit four without one. It does not log in or change selection.
+- Login/status successes retain `selected: true` and report `logged_in: true`,
+  `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id` from the
+  validated binding. `mfa_evidence: "not_checked"` and
+  `service_access_verified: false` distinguish credential validation from MFA
+  or service authorization. No account name, token, or donor broker capabilities
+  are inferred; the existing JSON envelope and logout response are unchanged.
 - Bare `fab-rs auth` shows the same human-readable help as `fab-rs auth --help`,
   with stdout text, empty stderr, and exit zero. It needs no Azure CLI or
   configuration and does not change selection. This replaces its previous JSON
@@ -42,10 +52,24 @@ authority for implementation evidence.
 - Use `--show-headers`, **not** Python's `--show_headers`; no underscore alias.
 - No `--params`. Put URL-encoded query parameters in the quoted endpoint.
   Already-encoded values must not be double-encoded. `--query` instead applies
-  JMESPath locally to the full response object. Unlike Python, a nonempty query
+  JMESPath locally to the full response object, except the bare-field shortcut
+  below. Unlike Python, a nonempty query
   that yields an empty collection or string does not fall back to the full
   response, avoiding unintended disclosure. An explicitly empty query still
   bypasses projection.
+- A bare ASCII identifier (`[A-Za-z_][A-Za-z0-9_]*`, ignoring surrounding
+  whitespace), except reserved `text`, `status_code`, and `headers`, selects
+  from the JSON body. If the body has a top-level array-valued `value`, it selects
+  `[].FIELD` from that array; otherwise an array body is projected the same way.
+  Missing/null row fields are omitted; scalar/list/object values and empty
+  projections use the existing output rules. A noncollection body's missing/null
+  field returns `"None"`. This intentionally changes formerly missing bare
+  wrapper-field queries such as `displayName`; explicit `text.*`, all complex
+  expressions, wrapper fields and empty queries keep their existing semantics.
+  There is no evaluation retry, recursive traversal, or service pagination.
+  Use `text.value[].displayName` for explicit equivalent workspace projection.
+  An empty/missing projection never reveals the unselected full response.
+  `--query` is not a universal security-redaction boundary.
 - JSON inline/file input and non-JSON-file multipart input retain the source
   behavior. Missing input files fail explicitly (a donor safety constraint),
   rather than silently sending a bodyless request. Headers split at the first
