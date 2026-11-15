@@ -92,6 +92,9 @@ is a specification, not validated YAML or a compliance certification.
 
 ## Development and validation
 
+Start with the [Rust contributor guide](CONTRIBUTING.md) for local setup,
+debug and release builds, running `fab-rs`, and source-level debugging.
+
 The workspace has explicit retained package leaves under `engine/` and
 `clients/cli/`. Engine libraries accept injected credentials/HTTP/time and must
 not depend on CLI packages or select ambient identities. The composition root
