@@ -34,6 +34,7 @@ fn all_audiences_methods_and_encoded_query_preserved() {
 fn unsafe_urls_and_controls_fail_closed() {
     for endpoint in [
         "https://evil.invalid/x",
+        "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1",
         "//evil.invalid/x",
         "http://api.fabric.microsoft.com/x",
         "https://user:password@api.fabric.microsoft.com/v1/x",

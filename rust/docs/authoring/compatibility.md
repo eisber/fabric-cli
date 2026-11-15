@@ -82,10 +82,11 @@ authority for implementation evidence.
   behavior. Missing input files fail explicitly (a donor safety constraint),
   rather than silently sending a bodyless request. Headers split at the first
   `=`; authorization/host/hop-by-hop overrides are forbidden.
-- Credentials bind to the selected audience/origin; unsafe origins, URL
-  credentials/fragments, traversal, redirects, header injection, and cross-origin
-  token forwarding are rejected. Validate input and finite allocation bounds
-  before credential acquisition.
+- Raw requests bind credentials to the selected audience/origin. Unsafe origins,
+  URL credentials/fragments, traversal, redirects, and header injection are
+  rejected before credential acquisition. Fabric polling has the narrow
+  service-advertised regional exception described below, not a general
+  cross-origin token-forwarding policy.
 - Audience `fabric`: base `https://api.fabric.microsoft.com/v1`, scope
   `https://api.fabric.microsoft.com/.default`.
 - Audience `storage`: base `https://onelake.dfs.fabric.microsoft.com`, scope
@@ -147,6 +148,18 @@ raw; configuration does not add protocol recognition.
 Fabric 202 with validated operation Location polls even without an operation ID.
 ID-only responses construct `/v1/operations/{id}`. Conflicting ID/URL fails
 explicitly.
+Fabric operation URLs may also use an HTTPS host matching the complete
+single-label `wabi-<cluster>-redirect.analysis.windows.net` structure, with a
+nonempty ASCII alphanumeric/hyphen cluster and a valid DNS-label length.
+This exception is restricted to recognized `/v1/operations/{id}` status and
+`/v1/operations/{id}/result` routes and exact job-instance routes. It does not
+allow arbitrary `analysis.windows.net` hosts, nested subdomains, suffix lookalikes,
+trailing-dot hosts, credentials/fragments, unsafe paths, non-443 ports, or
+redirects. Raw user endpoints and other audiences retain fixed-origin validation.
+Discovery and authenticated polling share this policy; only bodyless GETs
+without custom headers may use polling execution. Tokens are freshly acquired
+for the unchanged Fabric scope, not forwarded from the mutation.
+Origin-relative result Locations resolve against the validated status origin.
 `Succeeded`/`Completed` fetch a validated advertised result, otherwise return the
 actual terminal response. Only documented `OperationHasNoResult` suppresses a
 result-fetch error; unrelated errors remain failures. No fabricated 200 copy of
@@ -154,7 +167,7 @@ the original body for result-less Fabric completion.
 
 Fabric job-instance Locations of the exact form
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
-are reconciled separately, using their validated same-origin URL rather than
+are reconciled separately, using their validated Fabric service URL rather than
 `/v1/operations/{id}`. A valid additional operation ID does not change the job
 protocol selected by that Location. Each accepted/pending response selects the
 next delay from `Retry-After` (delta-seconds or HTTP date), with a 10-second
@@ -176,10 +189,23 @@ applicable; `--async` never normalizes the initial response.
 
 Ordinary responses, accepted responses without a recognized handle, Storage,
 and Power BI remain raw; acceptance is not proof of completion. Polling/result
-URLs get the same origin checks, without forwarding original mutation bodies
-or sensitive custom headers. Cancelled/Canceled are failures; malformed/unknown
+URLs get the shared operation-origin checks, without forwarding original mutation
+bodies or custom headers. Cancelled/Canceled are failures; malformed/unknown
 states are protocol errors. Mutations are sent once; uncertain sends are not
 replayed. Safe GET retries remain inside the operation deadline.
+
+Recognized pending and terminal status GETs emit live, flushed stderr progress
+through an injected observer; engine libraries never write to the console.
+`Operation status: Running (50%)` and `Job instance status: InProgress` are
+example lines. Only canonical recognized status and finite numeric
+`percentageComplete` metadata in the inclusive 0-100 range reach the observer.
+Zero and fractions are retained; missing/null metadata produces status-only
+progress, and invalid supplied metadata produces a safe static warning.
+No body text, error text, headers, URL queries, or arbitrary percentage strings
+are printed as progress. Stdout remains one final JSON envelope. Async/raw,
+initial/result responses, failed HTTP attempts, and unknown/malformed statuses
+emit no progress. Default-enabled status/percentage reporting intentionally
+differs from Python's debug-gated shared polling logs.
 
 Timeout, local Ctrl+C, terminal failure, and uncertain transport outcomes preserve
 known safe operation ID/status URL and uncertainty in structured recovery data.

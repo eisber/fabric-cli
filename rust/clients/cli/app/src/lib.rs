@@ -61,7 +61,12 @@ fn write_progress(progress: PollProgress, stderr: &mut dyn Write) -> Result<(), 
     } else {
         "Operation status"
     };
-    writeln!(stderr, "{label}: {}", progress.status())
+    let result = if let Some(percentage) = progress.percentage_complete() {
+        writeln!(stderr, "{label}: {} ({percentage}%)", progress.status())
+    } else {
+        writeln!(stderr, "{label}: {}", progress.status())
+    };
+    result
         .and_then(|()| stderr.flush())
         .map_err(|_| progress_error())
 }

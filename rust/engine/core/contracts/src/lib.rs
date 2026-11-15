@@ -16,7 +16,8 @@ use url::Url;
 
 mod operation;
 pub use operation::{
-    OperationHandle, OperationKind, ResponseHeadCapture, operation_handle, validate_operation_url,
+    OperationHandle, OperationKind, ResponseHeadCapture, operation_handle, resolve_operation_url,
+    validate_operation_url,
 };
 
 /// Maximum encoded request allocation.
@@ -253,8 +254,11 @@ pub trait HttpExecutor: Send + Sync {
 /// Reject unsafe origins, credentials, fragments, and URL traversal before authentication.
 pub fn validate_url(audience: Audience, url: &Url) -> Result<(), CoreError> {
     let base = Url::parse(audience.base_url()).expect("fixed audience URL");
+    validate_url_for_host(url, base.host_str().expect("fixed audience host"))
+}
+pub(crate) fn validate_url_for_host(url: &Url, host: &str) -> Result<(), CoreError> {
     if url.scheme() != "https"
-        || url.host_str() != base.host_str()
+        || url.host_str() != Some(host)
         || url.port_or_known_default() != Some(443)
         || !url.username().is_empty()
         || url.password().is_some()

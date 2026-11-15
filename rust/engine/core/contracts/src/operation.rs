@@ -4,7 +4,7 @@
 //! Shared safe response-head evidence, independent of HTTP/LRO implementations.
 use crate::{
     ApiResponse, Audience, CoreError, ErrorKind, RecoveryInfo, validate_path,
-    validate_response_headers, validate_url,
+    validate_response_headers, validate_url, validate_url_for_host,
 };
 use std::{collections::BTreeMap, sync::Mutex};
 use url::Url;
@@ -21,7 +21,7 @@ pub enum OperationKind {
     /// ARM Location HTTP status semantics.
     ArmLocation,
 }
-/// Validated same-origin operation handle. No bearer/custom request headers.
+/// Validated service operation handle. No bearer/custom request headers.
 #[derive(Clone)]
 pub struct OperationHandle {
     /// Full validated status URL, including any query needed for polling.
@@ -74,6 +74,18 @@ fn protocol(message: &str) -> CoreError {
 
 /// Validate a status/result URL before normalization can hide unsafe paths.
 pub fn validate_operation_url(audience: Audience, value: &str) -> Result<Url, CoreError> {
+    let base = Url::parse(audience.base_url()).expect("fixed audience URL");
+    resolve_operation_url(audience, value, &base)
+}
+
+/// Validate an advertised status/result URL, resolving origin-relative URLs
+/// against a previously validated service URL rather than the public API origin.
+pub fn resolve_operation_url(
+    audience: Audience,
+    value: &str,
+    base: &Url,
+) -> Result<Url, CoreError> {
+    validate_operation_components(audience, base)?;
     if value.len() > 16 * 1024 {
         return Err(protocol("Unsafe operation URL: length limit exceeded"));
     }
@@ -87,17 +99,47 @@ pub fn validate_operation_url(audience: Audience, value: &str) -> Result<Url, Co
     let url = if value.starts_with("https://") {
         Url::parse(value)
     } else if value.starts_with('/') && !value.starts_with("//") {
-        Url::parse(audience.base_url()).and_then(|base| base.join(value))
+        base.join(value)
     } else {
         return Err(protocol(
             "Operation URL must be absolute HTTPS or origin-relative",
         ));
     }
     .map_err(|_| protocol("Malformed operation URL"))?;
-    validate_url(audience, &url).map_err(|_| {
-        protocol("Unsafe operation URL: selected HTTPS origin or normalized components rejected")
-    })?;
+    validate_operation_components(audience, &url)?;
     Ok(url)
+}
+fn validate_operation_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
+    let host = url.host_str().unwrap_or_default();
+    let regional = audience == Audience::Fabric
+        && fabric_regional_host(host)
+        && (fabric_operation_route(url) || fabric_job(url));
+    let result = if regional {
+        validate_url_for_host(url, host)
+    } else {
+        validate_url(audience, url)
+    };
+    result.map_err(|_| {
+        protocol("Unsafe operation URL: selected HTTPS origin or normalized components rejected")
+    })
+}
+fn fabric_regional_host(host: &str) -> bool {
+    let Some(cluster) = host
+        .strip_suffix("-redirect.analysis.windows.net")
+        .and_then(|label| label.strip_prefix("wabi-"))
+    else {
+        return false;
+    };
+    "wabi-".len() + cluster.len() + "-redirect".len() <= 63
+        && cluster
+            .split('-')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+}
+fn fabric_operation_route(url: &Url) -> bool {
+    let Some(tail) = url.path().strip_prefix("/v1/operations/") else {
+        return false;
+    };
+    valid_id(tail) || tail.strip_suffix("/result").is_some_and(valid_id)
 }
 fn valid_id(id: &str) -> bool {
     !id.is_empty()

@@ -187,6 +187,44 @@ async fn fabric_observes_status_not_initial_result_or_unknown_body_fields() {
         ["Running", "Succeeded"]
     );
     assert!(events.iter().all(|p| !p.is_job()));
+    assert_eq!(events[0].percentage_complete(), Some(50.0));
+    assert_eq!(events[1].percentage_complete(), None);
+}
+
+#[tokio::test]
+async fn percentages_are_optional_bounded_numbers_not_raw_service_text() {
+    let oversized = "1".repeat(400);
+    for (value, expected) in [
+        ("0", Some(0.0)),
+        ("12.5", Some(12.5)),
+        ("100", Some(100.0)),
+        ("null", None),
+        ("-1", None),
+        ("100.1", None),
+        (r#""PERCENT-CANARY\nINJECTION""#, None),
+        (r#""50""#, None),
+        ("true", None),
+        ("{}", None),
+        (r#"{"$serde_json::private::Number":"50"}"#, None),
+        (oversized.as_str(), None),
+    ] {
+        let recorder = Recorder::default();
+        let status_body = format!(r#"{{"status":"Completed","percentageComplete":{value}}}"#);
+        let (result, count) = observe(
+            response(202, "", &[("location", JOB)]),
+            vec![response(200, &status_body, &[])],
+            &recorder,
+            CancellationToken::new(),
+            LroConfig::default(),
+        )
+        .await;
+        assert!(result.is_ok(), "{value}");
+        assert_eq!(count, 1);
+        let events = recorder.0.lock().unwrap();
+        assert_eq!(events[0].status(), "Completed");
+        assert_eq!(events[0].percentage_complete(), expected, "{value}");
+        assert!(!format!("{events:?}").contains("CANARY"));
+    }
 }
 
 #[tokio::test]

@@ -58,7 +58,7 @@ impl Write for Writer {
     }
 }
 
-struct TestClock(Mutex<Instant>);
+struct TestClock(Mutex<Instant>, Mutex<Vec<&'static str>>);
 #[async_trait]
 impl Clock for TestClock {
     fn now(&self) -> Instant {
@@ -66,6 +66,9 @@ impl Clock for TestClock {
     }
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH
+    }
+    fn diagnostic(&self, message: &'static str) {
+        self.1.lock().unwrap().push(message);
     }
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         *self.0.lock().unwrap() += delay;
@@ -94,6 +97,8 @@ struct Transport {
     replies: Mutex<VecDeque<ApiResponse>>,
     calls: Mutex<usize>,
     streams: Arc<Streams>,
+    before_third_request: String,
+    urls: Vec<String>,
 }
 #[async_trait]
 impl HttpTransport for Transport {
@@ -108,11 +113,15 @@ impl HttpTransport for Transport {
         } else {
             assert_eq!(request.method, "GET");
             assert!(request.body.is_empty());
+            assert_eq!(request.headers.len(), 1, "fresh authorization only");
+        }
+        if !self.urls.is_empty() {
+            assert_eq!(request.url.as_str(), self.urls[*calls]);
         }
         if *calls == 2 {
             assert_eq!(
                 &*self.streams.stderr.lock().unwrap(),
-                b"Job instance status: InProgress\n"
+                self.before_third_request.as_bytes()
             );
             assert_eq!(*self.streams.flushes.lock().unwrap(), 1);
             assert!(
@@ -155,6 +164,9 @@ impl Host for FakeHost {
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError> {
         Ok(self.transport.clone())
     }
+    fn take_diagnostics(&self) -> Vec<&'static str> {
+        std::mem::take(&mut *self.clock.1.lock().unwrap())
+    }
 }
 
 fn response(status: u16, body: Value, headers: &[(&str, &str)]) -> ApiResponse {
@@ -174,13 +186,37 @@ async fn run(
     fail_stderr: bool,
     cancel_on_progress: bool,
 ) -> (u8, String, String, usize) {
+    run_script(
+        args,
+        replies,
+        fail_stderr,
+        cancel_on_progress,
+        "Job instance status: InProgress\n",
+        &[],
+    )
+    .await
+}
+
+async fn run_script(
+    args: &[&str],
+    replies: Vec<ApiResponse>,
+    fail_stderr: bool,
+    cancel_on_progress: bool,
+    before_third_request: &str,
+    urls: &[&str],
+) -> (u8, String, String, usize) {
     let streams = Arc::new(Streams::default());
     let host = FakeHost {
-        clock: Arc::new(TestClock(Mutex::new(Instant::now()))),
+        clock: Arc::new(TestClock(
+            Mutex::new(Instant::now()),
+            Mutex::new(Vec::new()),
+        )),
         transport: Arc::new(Transport {
             replies: Mutex::new(replies.into()),
             calls: Mutex::new(0),
             streams: streams.clone(),
+            before_third_request: before_third_request.into(),
+            urls: urls.iter().map(|url| (*url).into()).collect(),
         }),
     };
     let cancellation = CancellationToken::new();
@@ -253,7 +289,7 @@ async fn statuses_are_flushed_before_next_poll_and_stdout_is_one_projected_envel
     assert_eq!(calls, 3);
     assert_eq!(
         stderr,
-        "Job instance status: InProgress\nJob instance status: Completed\n"
+        "Job instance status: InProgress\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(envelope["status"], "Success");
@@ -265,7 +301,11 @@ async fn statuses_are_flushed_before_next_poll_and_stdout_is_one_projected_envel
 
 #[tokio::test]
 async fn async_raw_help_and_version_never_report_poll_progress() {
-    for location in [JOB, "/v1/operations/op-1#FRAGMENT-CANARY"] {
+    for location in [
+        JOB,
+        "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1",
+        "/v1/operations/op-1#FRAGMENT-CANARY",
+    ] {
         let (code, stdout, stderr, calls) = run(
             &["api", "items", "--method", "post", "--async"],
             vec![accepted(location)],
@@ -377,4 +417,161 @@ async fn local_cancellation_and_deadline_do_not_report_future_polls() {
     assert_eq!(calls, 1);
     assert!(stdout.contains("Timeout"));
     assert!(stderr.is_empty());
+}
+
+#[tokio::test]
+async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_result() {
+    const STATUS: &str = "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1?secret=QUERY-CANARY";
+    const RESULT: &str = "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1/result?secret=QUERY-CANARY";
+    let (code, stdout, stderr, calls) = run_script(
+        &[
+            "api",
+            "workspaces/workspace/items/item/jobs/execute/instances",
+            "--method",
+            "post",
+            "--input",
+            "{}",
+            "--headers",
+            "x-secret=MUTATION-CANARY",
+            "--show-headers",
+        ],
+        vec![
+            accepted(STATUS),
+            response(200, json!({"status":"Running","percentageComplete":0}), &[]),
+            response(200, json!({"status":"Running","percentageComplete":12.5}), &[]),
+            response(
+                200,
+                json!({"status":"Succeeded","percentageComplete":100}),
+                &[("location", "/v1/operations/op-1/result?secret=QUERY-CANARY")],
+            ),
+            response(200, json!({"value":"completed result"}), &[("x-result", "ok")]),
+        ],
+        false,
+        false,
+        "Operation status: Running (0%)\n",
+        &[
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
+            STATUS,
+            STATUS,
+            STATUS,
+            RESULT,
+        ],
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 5, "one POST, three status GETs and one result GET");
+    assert_eq!(
+        stderr,
+        "Operation status: Running (0%)\nOperation status: Running (12.5%)\nOperation status: Succeeded (100%)\n"
+    );
+    let envelope: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        envelope["result"]["data"][0]["text"],
+        json!({"value":"completed result"})
+    );
+    assert_eq!(envelope["result"]["data"][0]["headers"]["x-result"], "ok");
+    assert!(!stdout.contains("CANARY"));
+    assert!(!stderr.contains("CANARY"));
+}
+
+#[tokio::test]
+async fn regional_job_reports_terminal_success_or_failure_without_replaying_post() {
+    const REGIONAL_JOB: &str = "https://wabi-west-europe-redirect.analysis.windows.net/v1/workspaces/workspace/items/item/jobs/instances/job?secret=QUERY-CANARY";
+    for terminal in ["Completed", "Failed"] {
+        let (code, stdout, stderr, calls) = run_script(
+            &["api", "items", "--method", "post"],
+            vec![
+                accepted(REGIONAL_JOB),
+                response(
+                    200,
+                    json!({"status":"InProgress","percentageComplete":25}),
+                    &[],
+                ),
+                response(200, json!({"status":terminal}), &[]),
+            ],
+            false,
+            false,
+            "Job instance status: InProgress (25%)\n",
+            &[
+                "https://api.fabric.microsoft.com/v1/items",
+                REGIONAL_JOB,
+                REGIONAL_JOB,
+            ],
+        )
+        .await;
+        assert_eq!(calls, 3);
+        assert_eq!(code, u8::from(terminal == "Failed"), "{stdout}");
+        assert_eq!(
+            stderr,
+            format!("Job instance status: InProgress (25%)\nJob instance status: {terminal}\n")
+        );
+        assert!(!stdout.contains("QUERY-CANARY"));
+        if terminal == "Failed" {
+            assert!(stdout.contains("outcome_uncertain"));
+        } else {
+            assert_eq!(
+                serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],
+                "Completed"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_percentages_keep_safe_status_progress_and_report_a_static_warning() {
+    for percentage in [
+        json!("PERCENT-CANARY\nINJECTION"),
+        json!(-1),
+        json!(101),
+        json!({}),
+    ] {
+        let (code, stdout, stderr, calls) = run(
+            &["api", "items", "--method", "post", "--query", "text.status"],
+            vec![
+                accepted(JOB),
+                response(
+                    200,
+                    json!({"status":"Completed","percentageComplete":percentage}),
+                    &[],
+                ),
+            ],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(calls, 2);
+        assert_eq!(
+            stderr,
+            "Job instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+        );
+        assert!(!stdout.contains("CANARY"));
+        assert!(!stderr.contains("CANARY"));
+    }
+    let (code, stdout, stderr, calls) = run(
+        &["api", "items", "--method", "post", "--query", "text.status"],
+        vec![
+            accepted(JOB),
+            response(
+                200,
+                json!({"status":"InProgress","percentageComplete":-1}),
+                &[],
+            ),
+            response(
+                200,
+                json!({"status":"InProgress","percentageComplete":101}),
+                &[],
+            ),
+            response(200, json!({"status":"Completed"}), &[]),
+        ],
+        false,
+        false,
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 4);
+    assert_eq!(
+        stderr,
+        "Job instance status: InProgress\nJob instance status: InProgress\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+    );
 }

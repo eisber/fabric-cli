@@ -280,3 +280,72 @@ async fn unlimited_wait_is_still_cancellable_without_starting_a_deadline_timer()
     .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Cancelled);
 }
+
+#[tokio::test]
+async fn regional_permission_is_only_for_safe_fabric_polling_before_credentials() {
+    let credential = Arc::new(Credential {
+        calls: Mutex::new(0),
+    });
+    let transport = Arc::new(Transport {
+        calls: Mutex::new(Vec::new()),
+        replies: Mutex::new(VecDeque::from([reply(200)])),
+    });
+    let clock = Arc::new(TestClock {
+        start: Instant::now(),
+        elapsed: Mutex::new(Duration::ZERO),
+    });
+    let client = HttpClient::new(credential.clone(), transport.clone(), clock.clone());
+    let ctx = context(clock.as_ref(), 240);
+    let mut regional = request("GET");
+    regional.url = "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1?secret=CANARY"
+        .parse()
+        .unwrap();
+    assert!(
+        client
+            .execute(regional.clone(), Audience::Fabric, &ctx)
+            .await
+            .is_err()
+    );
+    for audience in [Audience::Azure, Audience::Storage, Audience::PowerBi] {
+        assert!(
+            client
+                .execute_poll(regional.clone(), audience, &ctx)
+                .await
+                .is_err()
+        );
+    }
+    for field in ["method", "body", "headers", "path", "host"] {
+        let mut invalid = regional.clone();
+        match field {
+            "method" => invalid.method = "POST".into(),
+            "body" => invalid.body = b"{}".to_vec(),
+            "headers" => {
+                invalid.headers.insert("x-secret".into(), "CANARY".into());
+            }
+            "path" => invalid.url.set_path("/v1/items"),
+            "host" => invalid.url.set_host(Some("evil.invalid")).unwrap(),
+            _ => unreachable!(),
+        }
+        let error = client
+            .execute_poll(invalid, Audience::Fabric, &ctx)
+            .await
+            .unwrap_err();
+        assert!(!error.message.contains("CANARY"));
+    }
+    assert_eq!(*credential.calls.lock().unwrap(), 0);
+    assert!(transport.calls.lock().unwrap().is_empty());
+    client
+        .execute_poll(regional.clone(), Audience::Fabric, &ctx)
+        .await
+        .unwrap();
+    assert_eq!(*credential.calls.lock().unwrap(), 1);
+    let sent = transport.calls.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].url, regional.url);
+    assert_eq!(
+        sent[0].headers.len(),
+        1,
+        "only newly acquired authorization"
+    );
+    assert!(sent[0].body.is_empty());
+}

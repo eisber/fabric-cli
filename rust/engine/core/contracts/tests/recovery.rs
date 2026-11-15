@@ -248,3 +248,85 @@ fn job_handles_require_exact_instance_routes_and_safe_origins() {
         assert!(!error.message.contains("CANARY"));
     }
 }
+
+#[test]
+fn regional_fabric_handles_and_relative_results_preserve_origin_and_redact_queries() {
+    for host in [
+        "wabi-us-central-b-primary-redirect.analysis.windows.net",
+        "wabi-west-europe-redirect.analysis.windows.net",
+    ] {
+        for (path, kind) in [
+            ("/v1/operations/op-1", OperationKind::Fabric),
+            (
+                "/v1/workspaces/workspace/items/item/jobs/instances/job",
+                OperationKind::FabricJob,
+            ),
+        ] {
+            let location = format!("https://{host}{path}?secret=CANARY");
+            let fields = headers(&[("Location", &location)]);
+            let handle = operation_handle(Audience::Fabric, 202, &fields)
+                .unwrap()
+                .unwrap();
+            assert_eq!(handle.kind(), kind);
+            assert_eq!(handle.url().as_str(), location);
+            let capture = ResponseHeadCapture::new(Audience::Fabric);
+            capture.record(202, &fields).unwrap();
+            assert_eq!(
+                capture.recovery().unwrap().status_url,
+                format!("https://{host}{path}")
+            );
+            assert!(!format!("{handle:?}{capture:?}").contains("CANARY"));
+        }
+        let status = validate_operation_url(
+            Audience::Fabric,
+            &format!("https://{host}/v1/operations/op-1"),
+        )
+        .unwrap();
+        let result = resolve_operation_url(
+            Audience::Fabric,
+            "/v1/operations/op-1/result?secret=CANARY",
+            &status,
+        )
+        .unwrap();
+        assert_eq!(result.host_str(), Some(host));
+        assert_eq!(result.query(), Some("secret=CANARY"));
+        assert_eq!(result.path(), "/v1/operations/op-1/result");
+        assert!(validate_url(Audience::Fabric, &status).is_err());
+        for audience in [Audience::Azure, Audience::Storage, Audience::PowerBi] {
+            assert!(validate_operation_url(audience, status.as_str()).is_err());
+        }
+    }
+}
+
+#[test]
+fn regional_operation_policy_rejects_host_lookalikes_and_unrecognized_routes() {
+    for host in [
+        "analysis.windows.net",
+        "unrelated.analysis.windows.net",
+        "wabi--redirect.analysis.windows.net",
+        "wabi-us--central-redirect.analysis.windows.net",
+        "wabi-us-redirect.analysis.windows.net.evil.invalid",
+        "nested.wabi-us-redirect.analysis.windows.net",
+        "wabi-us-redirect.analysis.windows.net.",
+        "wabi-us-redirect.analysis.windows.net:444",
+        "user:CANARY@wabi-us-redirect.analysis.windows.net",
+    ] {
+        let location = format!("https://{host}/v1/operations/op-1?secret=CANARY");
+        let error = validate_operation_url(Audience::Fabric, &location).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        assert!(!error.message.contains("CANARY"));
+    }
+    for path in [
+        "/v1/items",
+        "/v1/operations/",
+        "/v1/operations/op-1/cancel",
+        "/v1/workspaces/workspace/items/item/jobs/instances",
+        "/v1/workspaces/workspace/items/item/jobs/instances/job/cancel",
+        "/v1/operations/%2e%2e/op-1",
+        "/v1/operations/op%2f1",
+        "/v1/operations/op-1#CANARY",
+    ] {
+        let location = format!("https://wabi-us-redirect.analysis.windows.net{path}");
+        assert!(validate_operation_url(Audience::Fabric, &location).is_err());
+    }
+}

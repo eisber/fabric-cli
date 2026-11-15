@@ -8,8 +8,8 @@ use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions}
 use chrono::Datelike;
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
-    MAX_REQUEST_BYTES, OperationContext, ResponseHeadCapture, validate_headers, validate_response,
-    validate_url,
+    MAX_REQUEST_BYTES, OperationContext, ResponseHeadCapture, validate_headers,
+    validate_operation_url, validate_response, validate_url,
 };
 use std::{
     future::Future,
@@ -196,7 +196,17 @@ impl HttpClient {
         context: &OperationContext,
         retry_get: bool,
     ) -> Result<ApiResponse, CoreError> {
-        validate_url(audience, &request.url)?;
+        if retry_get {
+            if request.method != "GET" || !request.body.is_empty() || !request.headers.is_empty() {
+                return Err(CoreError::new(
+                    ErrorKind::InvalidInput,
+                    "Polling requests must be bodyless GETs without custom headers",
+                ));
+            }
+            validate_operation_url(audience, request.url.as_str())?;
+        } else {
+            validate_url(audience, &request.url)?;
+        }
         validate_headers(&request.headers)?;
         if request.body.len() > MAX_REQUEST_BYTES
             || !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&request.method.as_str())

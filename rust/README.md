@@ -133,6 +133,23 @@ Locations without an instance ID remain raw; no job ID or polling URL is invente
 See [Run On Demand Item Job](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/run-on-demand-item-job)
 and [Get Item Job Instance](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/get-item-job-instance).
 
+Fabric operation/job Locations may use the public API host or regional
+`wabi-<cluster>-redirect.analysis.windows.net` hosts. Only validated HTTPS
+operation status/result and exact job-instance routes may use this regional
+exception; arbitrary hosts and raw user-supplied regional endpoints remain
+rejected. Origin-relative result Locations retain the operation's validated host.
+Polling uses fresh bodyless GETs with the Fabric credential scope, without
+forwarding the original request's custom headers. HTTP redirects are not followed.
+
+Every recognized pending or terminal polling status is printed and flushed to
+**stderr** immediately, for example `Operation status: Running (50%)` or
+`Job instance status: InProgress`. Numeric `percentageComplete` values from
+0 through 100, including zero and fractions, are shown when supplied. Invalid
+percentage metadata is omitted with a safe warning; missing/null values leave
+status-only output. These updates are enabled by default, unlike Python's
+debug-gated shared polling logs. Stdout remains a single final JSON response.
+`--async`, ordinary raw responses, and help/version do not emit progress.
+
 Empty/whitespace API response bodies now produce `text: ""`, not the Python
 `"(Empty)"` marker. An initial 202 means accepted, not completed. Do not repeat an
 accepted POST to collect headers; it may start another job. Inspect existing

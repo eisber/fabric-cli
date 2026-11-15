@@ -7,8 +7,7 @@ use async_trait::async_trait;
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
     HttpExecutor, MAX_RESPONSE_BYTES, OperationContext, OperationHandle as Handle,
-    OperationKind as Strategy, operation_handle, validate_operation_url as checked_url,
-    validate_response,
+    OperationKind as Strategy, operation_handle, resolve_operation_url, validate_response,
 };
 use fabric_sdk_http::{bounded_with_clock, retry_after, sleep_with_budget};
 use serde_json::Value;
@@ -25,10 +24,11 @@ pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
 const POLL_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// Safe status observed on an actual successful status GET, never raw service data.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PollProgress {
     status: &'static str,
     job: bool,
+    percentage: Option<f64>,
 }
 impl PollProgress {
     /// Canonical recognized status; excludes URLs, headers, body fields and errors.
@@ -38,6 +38,11 @@ impl PollProgress {
     /// Whether this observation uses the Fabric job-instance protocol.
     pub fn is_job(self) -> bool {
         self.job
+    }
+    /// Finite service-supplied numeric percentage from zero through one hundred.
+    /// Missing, null, or invalid metadata is never exposed as raw service text.
+    pub fn percentage_complete(self) -> Option<f64> {
+        self.percentage
     }
 }
 
@@ -104,8 +109,7 @@ enum State {
     Failed,
     Cancelled,
 }
-fn state(response: &ApiResponse) -> Result<(State, &'static str), CoreError> {
-    let json = body(response)?;
+fn state(json: &Value) -> Result<(State, &'static str), CoreError> {
     let status = json
         .get("status")
         .and_then(Value::as_str)
@@ -125,8 +129,7 @@ fn state(response: &ApiResponse) -> Result<(State, &'static str), CoreError> {
         _ => Err(protocol("Unknown operation status")),
     }
 }
-fn job_state(response: &ApiResponse) -> Result<(State, &'static str), CoreError> {
-    let json = body(response)?;
+fn job_state(json: &Value) -> Result<(State, &'static str), CoreError> {
     let status = json
         .get("status")
         .and_then(Value::as_str)
@@ -140,6 +143,20 @@ fn job_state(response: &ApiResponse) -> Result<(State, &'static str), CoreError>
         "Cancelled" => Ok((State::Cancelled, "Cancelled")),
         _ => Err(protocol("Unknown job instance status")),
     }
+}
+fn percentage(json: &Value, clock: &dyn Clock, warned: &mut bool) -> Option<f64> {
+    let value = json.get("percentageComplete")?;
+    if value.is_null() {
+        return None;
+    }
+    let percentage = value
+        .as_f64()
+        .filter(|value| value.is_finite() && (0.0..=100.0).contains(value));
+    if percentage.is_none() && !*warned {
+        clock.diagnostic("Invalid percentageComplete; omitting polling percentage");
+        *warned = true;
+    }
+    percentage
 }
 fn get(url: Url) -> ApiRequest {
     ApiRequest {
@@ -194,6 +211,7 @@ async fn reconcile(
     let (config, observer) = settings;
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
+    let mut warned_percentage = false;
     loop {
         context.remaining_at(clock.now())?;
         // The parser exposes safe diagnostics to callers; invalid server hints fall back
@@ -233,24 +251,37 @@ async fn reconcile(
                 "Operation status request failed",
             ));
         }
-        let (current, status) = match handle.kind() {
+        let (current, status, percentage) = match handle.kind() {
             Strategy::ArmLocation => match response.status {
-                200 => (State::Success, "Succeeded"),
-                201 | 202 => (State::Pending, "Running"),
+                200 => (State::Success, "Succeeded", None),
+                201 | 202 => (State::Pending, "Running", None),
                 _ => return Err(protocol("Unexpected ARM Location response status")),
             },
-            Strategy::Fabric | Strategy::ArmStatus => state(&response)?,
-            Strategy::FabricJob => {
-                if response.status != 200 {
+            kind => {
+                if kind == Strategy::FabricJob && response.status != 200 {
                     return Err(protocol("Unexpected job instance response status"));
                 }
-                job_state(&response)?
+                let json = body(&response)?;
+                let (current, status) = if job {
+                    job_state(&json)?
+                } else {
+                    state(&json)?
+                };
+                (
+                    current,
+                    status,
+                    percentage(&json, clock, &mut warned_percentage),
+                )
             }
         };
         bounded_with_clock(
             clock,
             context,
-            observer.observe(PollProgress { status, job }),
+            observer.observe(PollProgress {
+                status,
+                job,
+                percentage,
+            }),
         )
         .await??;
         match current {
@@ -290,7 +321,7 @@ async fn reconcile(
                 let Some(result) = result else {
                     return Ok(response);
                 };
-                let result_url = checked_url(audience, result)?;
+                let result_url = resolve_operation_url(audience, result, handle.url())?;
                 if &result_url == handle.url() {
                     return Err(protocol("Fabric result points to its status endpoint"));
                 }
