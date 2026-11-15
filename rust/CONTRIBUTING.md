@@ -95,9 +95,9 @@ An explicit target places binaries under `target/<target>/debug/` or
 `target/<target>/release/`; Cargo metadata reports the actual target directory.
 
 Only authentication commands and raw `api` are implemented. For authenticated
-use, read the [run instructions](README.md#run) and
-[compatibility contract](docs/compatibility.md). Azure CLI 2.54 or later is the
-sole credential source. Rust authentication binds to an existing Azure CLI
+use, read the [run instructions](README.md#run) and the
+[compatibility contract](docs/authoring/compatibility.md). Azure CLI 2.54 or later
+is the sole credential source. Rust authentication binds to an existing Azure CLI
 identity; it does not sign you in to Azure or change Azure CLI state.
 
 ## Debug locally
@@ -163,8 +163,8 @@ credentials and HTTP responses, not ambient Azure CLI or live services.
 See the [CLI composition guide](clients/cli/README.md) for entry points and tests.
 
 A release binary is not a distributable bundle. Follow the
-[packaging instructions](docs/packaging.md) to record host evidence, build with
-an explicit matching target, package the binary, and verify the archive.
+[packaging instructions](docs/authoring/packaging.md) to record host evidence,
+build with an explicit matching target, package the binary, and verify the archive.
 Packaging requires a clean checkout, restored dependencies, Python 3.11 or
 later, and platform inspection tools (`readelf` on Linux or `otool` on macOS).
 The packaging script does not compile, sign, or publish.
@@ -172,5 +172,5 @@ The packaging script does not compile, sign, or publish.
 Build and verify each bundle on its matching OS and architecture; selecting
 another `--target` does not make cross-platform packaging or testing work
 automatically. Preview bundles are unsigned and unofficial. Read the
-[validation evidence](docs/validation.md) for the supported build targets and
-the limits of current OS compatibility evidence.
+[validation evidence](docs/authoring/validation.md) for the supported build
+targets and the limits of current OS compatibility evidence.

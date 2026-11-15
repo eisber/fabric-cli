@@ -310,7 +310,7 @@ class GateTests(unittest.TestCase):
         selector = self.snippets()[0]
         for event, base, paths, expected in (
             ("pull_request", "a" * 40, "README.md\0src/example.py\0", "false"),
-            ("pull_request", "a" * 40, "rust/docs/compatibility.md\0", "true"),
+            ("pull_request", "a" * 40, "rust/docs/authoring/compatibility.md\0", "true"),
             ("pull_request", "a" * 40, "rust/docs/Unicode-α.md\0", "true"),
             ("merge_group", "b" * 40, ".github/workflows/rust-native.yml\0", "false"),
             ("merge_group", "b" * 40, "rust/engine/core/contracts/src/lib.rs\0", "true"),
