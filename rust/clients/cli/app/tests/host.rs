@@ -1591,10 +1591,12 @@ fn actual_bare_auth_matches_help_without_configuration_environment() {
     assert!(bare.status.success());
     assert!(explicit.status.success());
     assert_eq!(bare.stdout, explicit.stdout);
+    let executable = PathBuf::from(env!("CARGO_BIN_EXE_fab-rs"));
+    let executable_name = executable.file_name().unwrap().to_str().unwrap();
+    let help = String::from_utf8(bare.stdout).unwrap();
     assert!(
-        String::from_utf8(bare.stdout)
-            .unwrap()
-            .contains("fab-rs auth <COMMAND>")
+        help.contains(&format!("{executable_name} auth <COMMAND>")),
+        "{help}"
     );
     assert!(bare.stderr.is_empty());
     assert!(explicit.stderr.is_empty());
