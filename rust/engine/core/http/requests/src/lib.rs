@@ -7,7 +7,9 @@ pub use fabric_core::validate_url;
 use fabric_core::{
     ApiRequest, Audience, CoreError, ErrorKind, MAX_REQUEST_BYTES, validate_headers, validate_path,
 };
-pub use fabric_sdk_operations::{LroConfig, complete, complete_with_config};
+pub use fabric_sdk_operations::{
+    LroConfig, PollObserver, PollProgress, complete, complete_observed, complete_with_config,
+};
 use std::collections::BTreeMap;
 use url::Url;
 

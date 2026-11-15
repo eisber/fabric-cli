@@ -65,6 +65,16 @@ still have a 240-second bound. Invalid config fails before host effects.
 This differs deliberately from Python raw API's
 return-immediately default. Ctrl+C cancels local work, not the service-side operation.
 
+Each recognized status GET prints and flushes a readable status line to stderr
+while the command runs, including terminal states:
+`Job instance status: InProgress` or `Operation status: Succeeded`.
+Stdout remains one final machine-readable JSON envelope. Lines contain only
+canonical recognized statuses, not URLs, queries, headers, arbitrary body fields,
+backend errors, or percentages. Unknown/malformed statuses fail without echoing
+their contents. `--async`, raw responses, help and version emit no poll progress.
+An unwritable progress stream stops local polling with a safe failure and known
+operation recovery; it does not cancel backend work.
+
 ## Selection and output
 
 Selection is independent of Python auth and Azure CLI caches:
@@ -117,6 +127,9 @@ process executor; no ordinary test invokes ambient `az` or a live Fabric API.
 `app/tests/identity_http.rs` composes that adapter with the real HTTP executor
 and an injected pending SDK process to cover cancellation and deadline drops.
 These cross-domain composition tests stay at the CLI layer, not inside identity.
+`app/tests/polling.rs` checks that status lines are flushed before the next GET,
+with clean projected stdout, initial-only async behavior, disclosure canaries,
+terminal failures, local cancellation/deadlines, and progress-stream failures.
 
 The independent Python envelope fixtures and compatibility notes are in
 `app/tests/fixtures/`. References are pinned upstream
