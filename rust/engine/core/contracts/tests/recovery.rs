@@ -15,6 +15,55 @@ fn headers(values: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 #[test]
+fn operation_url_rejection_categories_do_not_disclose_inputs() {
+    let oversized = format!("/v1/operations/{}?secret=CANARY", "x".repeat(16 * 1024));
+    for (value, expected) in [
+        (
+            oversized.as_str(),
+            "Unsafe operation URL: length limit exceeded",
+        ),
+        (
+            "/v1/operations/op?secret=CANARY with spaces",
+            "Unsafe operation URL: control or space characters rejected",
+        ),
+        (
+            "/v1/operations/op?secret=CANARY\n",
+            "Unsafe operation URL: control or space characters rejected",
+        ),
+        (
+            "/v1/operations/%2e%2e/op?secret=CANARY",
+            "Unsafe operation URL: unsafe path rejected",
+        ),
+        (
+            "/v1/operations/op%2fCANARY",
+            "Unsafe operation URL: unsafe path rejected",
+        ),
+        (
+            "https://CANARY.invalid/v1/operations/op?secret=CANARY",
+            "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
+        ),
+        (
+            "https://api.fabric.microsoft.com:8443/v1/operations/op?secret=CANARY",
+            "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
+        ),
+        (
+            "https://user:CANARY@api.fabric.microsoft.com/v1/operations/op",
+            "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
+        ),
+        (
+            "/v1/operations/op#CANARY",
+            "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
+        ),
+    ] {
+        let error = validate_operation_url(Audience::Fabric, value).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        assert_eq!(error.message, expected);
+        assert!(!error.to_string().contains("CANARY"));
+        assert!(error.recovery.is_none());
+    }
+}
+
+#[test]
 fn fabric_and_arm_safe_head_capture_redacts_queries() {
     for (audience, status, fields, expected) in [
         (

@@ -60,6 +60,13 @@ cross-origin status/result URLs are rejected. Raw initial HTTP errors remain
 response data. Initial requests, including GET, execute once; only status/result
 GETs may retry under the remaining operation budget.
 
+Unsafe operation URL errors identify only the rejecting validation stage:
+length, control/space characters, unsafe path, or selected HTTPS origin/normalized
+components. They never include the rejected URL or response headers. The last
+category covers origin, credentials, fragments, normalized length and path checks;
+it does not identify which component failed. These diagnostics do not change URL
+acceptance or establish the cause of an earlier unclassified rejection.
+
 The engine accepts the Azure SDK's
 `Arc<dyn azure_core::credentials::TokenCredential>` directly; it does not define
 another credential/token trait. HTTP, monotonic/wall-clock, sleep, and cancellation
