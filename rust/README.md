@@ -97,12 +97,25 @@ inspect the wrapper. An empty query still bypasses projection. Querying is not a
 universal security-redaction boundary: selected data can itself be sensitive.
 
 Recognized Fabric/ARM operations and Fabric job instances poll **by default**.
-`--async` returns the actual
-initial response, without polling or starting background work. Polling has a
-fixed 600-second budget. Fabric/ARM LROs retain their 1-second doubling fallback;
+`--async` returns the actual initial response, without polling or starting background
+work. Fabric/ARM LROs use a 2-, 7-, then 20-second client schedule (20 seconds
+thereafter), never earlier than a valid `Retry-After`;
 job instances use each response's `Retry-After`, or 10 seconds when absent or
-invalid, without exponential backoff. There are no tuning flags. Ctrl+C cancels local waiting, not the
-backend operation; do not blindly repeat an uncertain mutation.
+invalid, without exponential backoff. There is no overall polling timeout by
+default: a backend that never completes can keep the command waiting indefinitely.
+Individual poll/result requests, including their retries, remain bounded to 240
+seconds. Ctrl+C cancels local waiting, not the backend operation; do not blindly
+repeat an uncertain mutation.
+
+Use `--lro-config '{"poll_interval":5,"timeout":900}'` to override polling for a
+single command. Both optional values are positive numbers in **seconds**, including
+fractions. `poll_interval` replaces the client schedule for either protocol, but
+cannot shorten a server `Retry-After`. `timeout` bounds the entire reconciliation
+phase (waits, status GETs, retries, and result retrieval), not the initial request.
+Omitting a key or setting it to `null` uses the corresponding default. Unknown
+keys, invalid types, and nonpositive/out-of-range durations fail before sending.
+There is no `max_attempts` option. `--async` validates this configuration but does
+not poll or apply its timing settings.
 
 Job polling recognizes a safe `Location` of the form
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`.

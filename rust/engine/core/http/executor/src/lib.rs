@@ -29,7 +29,14 @@ impl Clock for SystemClock {
     }
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         let remaining = context.remaining()?;
-        bounded(context, tokio::time::sleep(delay.min(remaining))).await?;
+        let delay = delay.min(remaining);
+        if Instant::now().checked_add(delay).is_none() {
+            return Err(CoreError::new(
+                ErrorKind::Protocol,
+                "Polling delay exceeds clock range",
+            ));
+        }
+        bounded(context, tokio::time::sleep(delay)).await?;
         context.remaining()?;
         Ok(())
     }
@@ -64,7 +71,13 @@ async fn race<T>(
     tokio::select! {
         biased;
         () = context.cancellation.cancelled() => Err(CoreError::new(ErrorKind::Cancelled, "Operation cancelled locally; backend work may continue")),
-        () = tokio::time::sleep(remaining) => Err(CoreError::new(ErrorKind::Timeout, "Operation deadline reached; backend work may continue")),
+        () = async {
+            if context.deadline.is_some() {
+                tokio::time::sleep(remaining).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => Err(CoreError::new(ErrorKind::Timeout, "Operation deadline reached; backend work may continue")),
         value = action => Ok(value),
     }
 }
@@ -116,6 +129,12 @@ pub async fn sleep_with_budget(
 ) -> Result<(), CoreError> {
     let before = clock.now();
     let remaining = context.remaining_at(before)?;
+    if before.checked_add(delay.min(remaining)).is_none() {
+        return Err(CoreError::new(
+            ErrorKind::Protocol,
+            "Polling delay exceeds clock range",
+        ));
+    }
     bounded_with_clock(clock, context, clock.sleep(delay.min(remaining), context)).await??;
     let after = clock.now();
     context.remaining_at(after)?;

@@ -114,14 +114,26 @@ Rust automatically waits for recognized Fabric/ARM operations and Fabric job
 instances.
 `--async` is an approved escape hatch: one initial request, unchanged response,
 no sleeps, status/result fetches, or background process.
-No `--wait`, `--wait=false`, `--no-wait`, `--lro-config`, or timing flags.
+No `--wait`, `--wait=false`, `--no-wait`, or individual timing flags.
 
-Fixed Fabric/ARM policy: 600-second monotonic polling budget, initial fallback 1 second,
-factor 2, no separate attempt limit or interval cap. Valid server delta-seconds
+Fabric/ARM client schedule: 2, 7, then 20 seconds repeatedly. Valid server delta-seconds
 or HTTP-date `Retry-After` is a not-before constraint, never permission to poll
 earlier; invalid values use fallback with safe diagnostics. Delays, credential
 acquisition, retries, status requests, and final-result retrieval all share the
-remaining budget. Initial request timeout is separately 240 seconds.
+remaining budget when one is configured. Initial request timeout is separately
+240 seconds; each status/result request and its retries also has a 240-second
+bound, shortened by any remaining overall budget.
+
+`--lro-config` accepts an inline JSON object with optional `poll_interval` and
+`timeout` keys: positive finite numbers in seconds, including fractions, within
+the duration/clock range. Omitted/null keys use defaults; unknown keys or invalid
+values fail locally before sending a mutation. No `max_attempts` is exposed.
+`poll_interval` replaces the client schedule for either protocol, but never
+overrides a server not-before constraint. `timeout` is a total monotonic
+reconciliation budget, starting after the initial response, including waits,
+GET retries, and final-result retrieval. It has **no default**; omitted/null
+means indefinite overall waiting, still cancellable and with bounded individual
+requests. `--async` validates config but remains initial-response-only.
 
 Fabric 202 with validated operation Location polls even without an operation ID.
 ID-only responses construct `/v1/operations/{id}`. Conflicting ID/URL fails
@@ -138,7 +150,7 @@ are reconciled separately, using their validated same-origin URL rather than
 protocol selected by that Location. Each accepted/pending response selects the
 next delay from `Retry-After` (delta-seconds or HTTP date), with a 10-second
 fallback for absent/invalid hints and a safe diagnostic for invalid hints.
-There is no job exponential backoff. Jobs share the 600-second polling budget,
+There is no job exponential backoff. Jobs share the optional overall polling budget,
 GET retry bounds and local cancellation behavior, without remote cancellation.
 Job GETs must return HTTP 200 and a recognized JSON status: `NotStarted` and
 `InProgress` continue; `Completed` and `Deduped` return the actual terminal

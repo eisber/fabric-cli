@@ -389,7 +389,7 @@ async fn deadline_bounds_acquisition_and_expired_context_never_starts_process() 
     );
     assert!(process.dropped.load(Ordering::SeqCst));
     let ctx = OperationContext {
-        deadline: Instant::now() - Duration::from_secs(1),
+        deadline: Some(Instant::now() - Duration::from_secs(1)),
         cancellation: CancellationToken::new(),
     };
     assert_eq!(

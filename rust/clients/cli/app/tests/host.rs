@@ -465,7 +465,6 @@ async fn unsupported_aliases_params_and_polling_knobs_fail_without_acquisition()
         "--show_headers",
         "--wait",
         "--no-wait",
-        "--lro-config",
     ] {
         let host = FakeHost::new(vec![]);
         let (code, stdout, _) = run(&["api", "workspaces", option], &host).await;
@@ -1989,5 +1988,157 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
             data[0]["status_code"],
             if scenario == "async" { 202 } else { 200 }
         );
+    }
+}
+
+mod polling_configuration {
+    use super::*;
+
+    #[tokio::test]
+    async fn invalid_config_is_rejected_before_identity_or_mutation() {
+        for config in [
+            "invalid",
+            "[]",
+            "null",
+            r#"{"poll_interval":0}"#,
+            r#"{"poll_interval":-1}"#,
+            r#"{"poll_interval":true}"#,
+            r#"{"timeout":"10"}"#,
+            r#"{"timeout":0}"#,
+            r#"{"timeout":-1}"#,
+            r#"{"timeout":1e100}"#,
+            r#"{"poll_interval":1e-100}"#,
+            r#"{"max_attempts":60}"#,
+            r#"{"max_wait_seconds":600}"#,
+            r#"{"$serde_json::private::Number":"CANARY"}"#,
+        ] {
+            for asynchronous in [false, true] {
+                let host = FakeHost::new(vec![]);
+                let mut args = vec!["api", "items", "--method", "post", "--lro-config", config];
+                if asynchronous {
+                    args.push("--async");
+                }
+                let (code, stdout, stderr) = run(&args, &host).await;
+                assert_eq!(code, 1, "{config}: {stdout}");
+                assert!(stdout.contains("InvalidInput"));
+                assert!(!stdout.contains("CANARY"));
+                assert!(stderr.is_empty());
+                assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+                assert!(host.transport.requests.lock().unwrap().is_empty());
+                assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn config_wiring_controls_waits_and_async_remains_initial_only() {
+        let location = "/v1/workspaces/workspace/items/item/jobs/instances/job";
+        for job in [false, true] {
+            for asynchronous in [false, true] {
+                let headers = if job {
+                    vec![("location", location)]
+                } else {
+                    vec![("x-ms-operation-id", "op-1")]
+                };
+                let host = FakeHost::new(vec![
+                    response(202, "", &headers),
+                    response(
+                        200,
+                        if job {
+                            r#"{"status":"Completed"}"#
+                        } else {
+                            r#"{"status":"Succeeded"}"#
+                        },
+                        &[],
+                    ),
+                ]);
+                let start = host.clock.now();
+                let mut args = vec![
+                    "api",
+                    "items",
+                    "--method",
+                    "post",
+                    "--input",
+                    "{}",
+                    "--lro-config",
+                    r#"{"poll_interval":0.5,"timeout":1}"#,
+                ];
+                if asynchronous {
+                    args.push("--async");
+                }
+                let (code, stdout, stderr) = run(&args, &host).await;
+                assert_eq!(code, 0, "{stdout}");
+                assert!(stderr.is_empty());
+                assert_eq!(
+                    host.clock.now().duration_since(start),
+                    if asynchronous {
+                        Duration::ZERO
+                    } else {
+                        Duration::from_millis(500)
+                    }
+                );
+                assert_eq!(
+                    host.transport.requests.lock().unwrap().len(),
+                    if asynchronous { 1 } else { 2 }
+                );
+                assert_eq!(
+                    data(&stdout)[0]["status_code"],
+                    if asynchronous { 202 } else { 200 }
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_stops_local_wait_and_omitted_timeout_has_no_ten_minute_cap() {
+        for config in [
+            r#"{"timeout":0.5}"#,
+            "{}",
+            r#"{"timeout":null,"poll_interval":null}"#,
+        ] {
+            let timed = config.contains("0.5");
+            let host = FakeHost::new(vec![
+                response(
+                    202,
+                    "",
+                    &[("x-ms-operation-id", "op-1"), ("retry-after", "700")],
+                ),
+                response(200, r#"{"status":"Succeeded"}"#, &[]),
+            ]);
+            let start = host.clock.now();
+            let (code, stdout, stderr) = run(
+                &["api", "items", "--method", "post", "--lro-config", config],
+                &host,
+            )
+            .await;
+            assert_eq!(code, if timed { 1 } else { 0 }, "{stdout}");
+            assert!(stderr.is_empty());
+            let requests = host.transport.requests.lock().unwrap();
+            assert_eq!(requests.len(), if timed { 1 } else { 2 });
+            assert_eq!(requests[0].method, "POST");
+            if timed {
+                assert!(stdout.contains("Timeout"));
+                assert_eq!(data(&stdout)[0]["operation_id"], "op-1");
+                assert_eq!(
+                    host.clock.now().duration_since(start),
+                    Duration::from_millis(500)
+                );
+            } else {
+                assert_eq!(
+                    host.clock.now().duration_since(start),
+                    Duration::from_secs(700)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn help_documents_seconds_and_optional_timeout() {
+        let help = fabric_cli_api::command().render_long_help().to_string();
+        assert!(help.contains("--lro-config"));
+        assert!(help.contains("poll_interval"));
+        assert!(help.contains("seconds"));
+        assert!(help.contains("no default"));
+        assert!(!help.contains("600 seconds"));
     }
 }

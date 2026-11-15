@@ -8,7 +8,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{ApiRequest, ApiResponse, Audience, MAX_REQUEST_BYTES};
 use serde_json::{Map, Value};
-use std::{collections::BTreeMap, io::Read, path::Path};
+use std::{collections::BTreeMap, io::Read, path::Path, time::Duration};
 
 /// Prepared API command; all local input validation has completed.
 pub struct PreparedApi {
@@ -22,15 +22,23 @@ pub struct PreparedApi {
     pub show_headers: bool,
     /// Return the actual initial response, without polling or background work.
     pub asynchronous: bool,
+    /// Optional polling interval and overall timeout.
+    pub lro_config: fabric_sdk_api::LroConfig,
 }
 
-/// Long-only approved API parser. No params, underscore aliases, or timing switches.
+/// Long-only approved API parser, with explicit per-command polling configuration.
 pub fn command() -> Command {
     Command::new("api")
-        .about("Send a raw API request; recognized operations poll by default (up to 600 seconds)")
+        .about("Send a raw API request; recognized operations poll by default until completion or local cancellation")
         .disable_help_flag(true)
         .arg(Arg::new("help").long("help").action(ArgAction::Help))
         .arg(Arg::new("endpoint").required(true))
+        .arg(
+            Arg::new("lro-config")
+                .long("lro-config")
+                .value_name("JSON")
+                .help("Polling JSON: poll_interval is a positive number of seconds; timeout is the maximum polling duration in seconds (optional, no default). Backend work may continue after timeout"),
+        )
         .arg(
             Arg::new("method")
                 .long("method")
@@ -74,6 +82,7 @@ pub fn command() -> Command {
 /// Validate request bytes, headers, query, and origin before reading auth/config.
 pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     let value = |name| matches.get_one::<String>(name).map(String::as_str);
+    let lro_config = parse_lro_config(value("lro-config"))?;
     let audience = match value("audience") {
         Some("fabric") => Audience::Fabric,
         Some("storage") => Audience::Storage,
@@ -112,7 +121,46 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
         query,
         show_headers: matches.get_flag("show-headers"),
         asynchronous: matches.get_flag("async"),
+        lro_config,
     })
+}
+
+fn parse_lro_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig, CommandError> {
+    let Some(text) = text else {
+        return Ok(fabric_sdk_api::LroConfig::default());
+    };
+    if text.len() > 16 * 1024 {
+        return Err(invalid("LRO configuration exceeds allocation bound"));
+    }
+    let json = fabric_core_json::decode(text.as_bytes())
+        .map_err(|_| invalid("Invalid LRO configuration JSON"))?;
+    let object = json
+        .as_object()
+        .ok_or_else(|| invalid("LRO configuration must be a JSON object"))?;
+    if object
+        .keys()
+        .any(|key| key != "poll_interval" && key != "timeout")
+    {
+        return Err(invalid(
+            "Unknown LRO configuration option; supported keys are poll_interval and timeout",
+        ));
+    }
+    let duration = |key: &str| -> Result<Option<Duration>, CommandError> {
+        let Some(value) = object.get(key).filter(|value| !value.is_null()) else {
+            return Ok(None);
+        };
+        let seconds = value
+            .as_f64()
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .ok_or_else(|| {
+                invalid("LRO configuration durations must be positive numbers in seconds")
+            })?;
+        Duration::try_from_secs_f64(seconds)
+            .map(Some)
+            .map_err(|_| invalid("LRO configuration duration exceeds supported range"))
+    };
+    fabric_sdk_api::LroConfig::new(duration("poll_interval")?, duration("timeout")?)
+        .map_err(Into::into)
 }
 
 fn invalid(message: &'static str) -> CommandError {

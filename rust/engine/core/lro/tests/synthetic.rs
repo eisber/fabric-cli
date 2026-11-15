@@ -5,7 +5,7 @@
 #![forbid(unsafe_code)]
 use async_trait::async_trait;
 use fabric_core::*;
-use fabric_sdk_operations::complete;
+use fabric_sdk_operations::{LroConfig, complete, complete_with_config};
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::Mutex,
@@ -155,7 +155,7 @@ async fn fabric_id_and_location_only_handles_poll_actual_initial() {
         .unwrap();
         assert_eq!(result.body, success().body);
         assert_eq!(http.calls.lock().unwrap().len(), 1);
-        assert_eq!(*clock.sleeps.lock().unwrap(), vec![Duration::from_secs(1)]);
+        assert_eq!(*clock.sleeps.lock().unwrap(), vec![Duration::from_secs(2)]);
     }
 }
 #[tokio::test]
@@ -183,7 +183,7 @@ async fn fabric_terminal_status_preserves_ordinary_reserved_marker_objects() {
     }
 }
 #[tokio::test]
-async fn fixed_exponential_delays_have_no_sixty_second_cap() {
+async fn non_job_default_schedule_stays_at_twenty_seconds() {
     let mut replies = vec![response(200, r#"{"status":"Running"}"#, &[]); 7];
     replies.push(success());
     let http = Script::new(replies);
@@ -199,8 +199,196 @@ async fn fixed_exponential_delays_have_no_sixty_second_cap() {
     .unwrap();
     assert_eq!(
         *clock.sleeps.lock().unwrap(),
-        [1, 2, 4, 8, 16, 32, 64, 128].map(Duration::from_secs)
+        [2, 7, 20, 20, 20, 20, 20, 20].map(Duration::from_secs)
     );
+}
+
+#[tokio::test]
+async fn configured_intervals_do_not_shorten_server_hints_for_any_protocol() {
+    for audience in [Audience::Fabric, Audience::Azure] {
+        for job in [false, true] {
+            if job && audience == Audience::Azure {
+                continue;
+            }
+            let location = if job {
+                "/v1/workspaces/workspace/items/item/jobs/instances/job"
+            } else if audience == Audience::Azure {
+                "/status"
+            } else {
+                "/v1/operations/op-1"
+            };
+            let handle_header = if audience == Audience::Azure {
+                "azure-asyncoperation"
+            } else {
+                "location"
+            };
+            let pending = if job {
+                r#"{"status":"InProgress"}"#
+            } else {
+                r#"{"status":"Running"}"#
+            };
+            let terminal = if job {
+                r#"{"status":"Completed"}"#
+            } else {
+                r#"{"status":"Succeeded"}"#
+            };
+            let http = Script::new(vec![
+                response(200, pending, &[("retry-after", "12")]),
+                response(200, pending, &[("retry-after", "invalid")]),
+                response(200, terminal, &[]),
+            ]);
+            let clock = FakeClock::new();
+            complete_with_config(
+                &http,
+                &clock,
+                audience,
+                response(202, "", &[(handle_header, location), ("retry-after", "2")]),
+                CancellationToken::new(),
+                LroConfig::new(Some(Duration::from_secs(5)), None).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                *clock.sleeps.lock().unwrap(),
+                [5, 12, 5].map(Duration::from_secs)
+            );
+            assert_eq!(clock.warnings.lock().unwrap().len(), 1);
+        }
+    }
+}
+
+struct InspectingPoll<'a> {
+    clock: &'a FakeClock,
+    replies: Mutex<VecDeque<(Duration, ApiResponse)>>,
+    budgets: Mutex<Vec<Duration>>,
+}
+#[async_trait]
+impl HttpExecutor for InspectingPoll<'_> {
+    async fn execute(
+        &self,
+        request: ApiRequest,
+        _: Audience,
+        context: &OperationContext,
+    ) -> Result<ApiResponse, CoreError> {
+        assert_eq!(request.method, "GET");
+        assert!(request.body.is_empty());
+        assert!(request.headers.is_empty());
+        self.budgets
+            .lock()
+            .unwrap()
+            .push(context.remaining_at(self.clock.now())?);
+        let (elapsed, response) = self.replies.lock().unwrap().pop_front().unwrap();
+        *self.clock.elapsed.lock().unwrap() += elapsed;
+        Ok(response)
+    }
+}
+
+#[tokio::test]
+async fn no_default_timeout_but_each_poll_and_result_request_is_bounded() {
+    for elapsed in [239, 241] {
+        let clock = FakeClock::new();
+        let http = InspectingPoll {
+            clock: &clock,
+            budgets: Mutex::new(vec![]),
+            replies: Mutex::new(VecDeque::from([
+                (
+                    Duration::ZERO,
+                    response(200, r#"{"status":"Running"}"#, &[]),
+                ),
+                (
+                    Duration::ZERO,
+                    response(
+                        200,
+                        r#"{"status":"Succeeded"}"#,
+                        &[
+                            ("location", "/v1/operations/op-1/result"),
+                            ("retry-after", "700"),
+                        ],
+                    ),
+                ),
+                (
+                    Duration::from_secs(elapsed),
+                    response(200, r#"{"done":true}"#, &[]),
+                ),
+            ])),
+        };
+        let result = complete(
+            &http,
+            &clock,
+            Audience::Fabric,
+            response(
+                202,
+                "",
+                &[("x-ms-operation-id", "op-1"), ("retry-after", "700")],
+            ),
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(*clock.elapsed.lock().unwrap() > Duration::from_secs(600));
+        assert_eq!(*http.budgets.lock().unwrap(), [Duration::from_secs(240); 3]);
+        if elapsed == 239 {
+            assert_eq!(result.unwrap().body, br#"{"done":true}"#);
+        } else {
+            let error = result.unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Timeout);
+            assert!(error.recovery.is_some());
+        }
+    }
+}
+
+#[tokio::test]
+async fn configured_timeout_spans_polls_and_skips_get_at_deadline() {
+    let clock = FakeClock::new();
+    let http = InspectingPoll {
+        clock: &clock,
+        budgets: Mutex::new(vec![]),
+        replies: Mutex::new(VecDeque::from([(
+            Duration::from_secs(3),
+            response(200, r#"{"status":"Running"}"#, &[]),
+        )])),
+    };
+    let error = complete_with_config(
+        &http,
+        &clock,
+        Audience::Fabric,
+        accepted(),
+        CancellationToken::new(),
+        LroConfig::new(None, Some(Duration::from_secs(10))).unwrap(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Timeout);
+    assert_eq!(*http.budgets.lock().unwrap(), [Duration::from_secs(8)]);
+    assert_eq!(
+        *clock.sleeps.lock().unwrap(),
+        [2, 5].map(Duration::from_secs)
+    );
+    assert_eq!(*clock.elapsed.lock().unwrap(), Duration::from_secs(10));
+    assert!(error.recovery.is_some());
+}
+
+#[tokio::test]
+async fn unrepresentable_server_delay_fails_safely_without_polling_or_timer_overflow() {
+    let http = Script::new(vec![]);
+    let error = complete(
+        &http,
+        &FakeClock::new(),
+        Audience::Fabric,
+        response(
+            202,
+            "",
+            &[
+                ("x-ms-operation-id", "op-1"),
+                ("retry-after", "999999999999999999999999999999999"),
+            ],
+        ),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Protocol);
+    assert!(error.recovery.is_some());
+    assert!(http.calls.lock().unwrap().is_empty());
 }
 #[tokio::test]
 async fn retry_after_delta_date_invalid_and_budget_are_not_before() {
@@ -236,17 +424,18 @@ async fn retry_after_delta_date_invalid_and_budget_are_not_before() {
     .await
     .unwrap();
     assert_eq!(clock.warnings.lock().unwrap().len(), 1);
-    assert_eq!(*clock.sleeps.lock().unwrap(), vec![Duration::from_secs(1)]);
+    assert_eq!(*clock.sleeps.lock().unwrap(), vec![Duration::from_secs(2)]);
     let clock = FakeClock::new();
     let http = Script::new(vec![]);
     let mut initial = accepted();
     initial.headers.insert("Retry-After".into(), "601".into());
-    let error = complete(
+    let error = complete_with_config(
         &http,
         &clock,
         Audience::Fabric,
         initial,
         CancellationToken::new(),
+        LroConfig::new(None, Some(Duration::from_secs(600))).unwrap(),
     )
     .await
     .unwrap_err();
@@ -584,12 +773,13 @@ async fn job_budget_and_local_cancellation_preserve_query_redacted_recovery() {
         }
         let http = Script::new(vec![]);
         let clock = FakeClock::new();
-        let error = complete(
+        let error = complete_with_config(
             &http,
             &clock,
             Audience::Fabric,
             response(202, "", &[("location", location), ("retry-after", "601")]),
             cancellation,
+            LroConfig::new(None, Some(Duration::from_secs(600))).unwrap(),
         )
         .await
         .unwrap_err();

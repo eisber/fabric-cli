@@ -19,9 +19,9 @@ fab-rs auth logout
 ```
 
 `api` switches are long-only: `--method`, `--audience`, `--input`, `--headers`,
-`--query`, `--show-headers`, `--async`. Methods are get/post/delete/put/patch;
+`--query`, `--show-headers`, `--async`, `--lro-config`. Methods are get/post/delete/put/patch;
 audiences are fabric/storage/azure/powerbi. There are no aliases, `--params`,
-underscore spellings, or polling timing options. Quote endpoint query strings
+underscore spellings, or individual timing flags. Quote endpoint query strings
 and URL-encode their values yourself; valid encoded values are not encoded again.
 Every nonempty `--query` filters the decoded body's top-level `value` when that
 key exists, otherwise the body itself; it does not alter the outgoing URL.
@@ -47,10 +47,16 @@ consumes the actual initial response; `--async` skips completion, returns that
 response once, and starts no background work. Poll/result GETs do not carry the
 original mutation body or custom request headers.
 
-Only recognized Fabric/ARM operations poll. The engine's fixed polling budget
-is 600 seconds with one-second initial exponential backoff; Storage/Power BI
-remain raw. This differs deliberately from Python raw API's return-immediately
-default. Ctrl+C cancels local work, not the service-side operation.
+Recognized Fabric/ARM LROs and Fabric job instances poll; Storage/Power BI remain
+raw. Non-job fallback intervals are 2, 7, then 20 seconds repeatedly, respecting
+server not-before hints. Jobs use `Retry-After` or a 10-second fallback.
+`--lro-config '{"poll_interval":5,"timeout":900}'` accepts two optional positive
+numbers in seconds. A fixed `poll_interval` never shortens server hints; `timeout`
+bounds the full reconciliation phase, including retries and result retrieval.
+Omitted/null timeout means no overall limit; individual status/result requests
+still have a 240-second bound. Invalid config fails before host effects.
+`max_attempts` is not supported. This differs deliberately from Python raw API's
+return-immediately default. Ctrl+C cancels local work, not the service-side operation.
 
 ## Selection and output
 

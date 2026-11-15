@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use fabric_core::*;
-use fabric_sdk_operations::complete;
+use fabric_sdk_operations::{LroConfig, complete, complete_with_config};
 use std::{
     collections::VecDeque,
     sync::Mutex,
@@ -121,11 +121,11 @@ fn terminal(hint: &str, json_location: bool) -> ApiResponse {
 async fn terminal_delta_date_past_zero_and_invalid_hint_never_fetch_early() {
     for json_location in [false, true] {
         for (hint, result_second, warnings) in [
-            ("7", 8, 0),
+            ("7", 9, 0),
             ("Thu, 01 Jan 1970 00:00:08 GMT", 8, 0),
-            ("Thu, 01 Jan 1970 00:00:00 GMT", 1, 0),
-            ("0", 1, 0),
-            ("invalid synthetic hint", 2, 1),
+            ("Thu, 01 Jan 1970 00:00:00 GMT", 2, 0),
+            ("0", 2, 0),
+            ("invalid synthetic hint", 4, 1),
         ] {
             let clock = TestClock::new(false);
             let script = Script {
@@ -148,7 +148,7 @@ async fn terminal_delta_date_past_zero_and_invalid_hint_never_fetch_early() {
             assert_eq!(result.body, b"result");
             let calls = script.calls.lock().unwrap();
             assert_eq!(calls.len(), 2);
-            assert_eq!(calls[0].0, Duration::from_secs(1));
+            assert_eq!(calls[0].0, Duration::from_secs(2));
             assert_eq!(calls[1].0, Duration::from_secs(result_second));
             assert_eq!(calls[1].1, "/v1/operations/op-1/result");
             assert_eq!(clock.warnings.lock().unwrap().len(), warnings);
@@ -171,12 +171,13 @@ async fn terminal_not_before_at_or_past_budget_never_sends_result_get() {
             calls: Mutex::new(vec![]),
             replies: Mutex::new(VecDeque::from([terminal(hint, false)])),
         };
-        let error = complete(
+        let error = complete_with_config(
             &script,
             &clock,
             Audience::Fabric,
             initial(),
             CancellationToken::new(),
+            LroConfig::new(None, Some(Duration::from_secs(600))).unwrap(),
         )
         .await
         .unwrap_err();
@@ -185,7 +186,7 @@ async fn terminal_not_before_at_or_past_budget_never_sends_result_get() {
         assert_eq!(*clock.elapsed.lock().unwrap(), Duration::from_secs(600));
         assert_eq!(
             *clock.sleeps.lock().unwrap(),
-            [1, 599].map(Duration::from_secs)
+            [2, 598].map(Duration::from_secs)
         );
         assert_eq!(
             error.recovery.unwrap().operation_id.as_deref(),
@@ -215,7 +216,7 @@ async fn cancellation_during_terminal_not_before_wait_preserves_handle_and_skips
     assert_eq!(script.calls.lock().unwrap().len(), 1);
     assert_eq!(
         *clock.sleeps.lock().unwrap(),
-        [1, 7].map(Duration::from_secs)
+        [2, 7].map(Duration::from_secs)
     );
     assert!(error.recovery.unwrap().outcome_uncertain);
 }
@@ -246,6 +247,6 @@ async fn unsafe_result_is_validated_before_the_terminal_wait() {
     .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Protocol);
     assert_eq!(script.calls.lock().unwrap().len(), 1);
-    assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(1)]);
+    assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(2)]);
     assert!(!format!("{error:?}").contains("synthetic"));
 }

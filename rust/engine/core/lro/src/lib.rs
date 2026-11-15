@@ -11,15 +11,44 @@ use fabric_core::{
 };
 use fabric_sdk_http::{bounded_with_clock, retry_after, sleep_with_budget};
 use serde_json::Value;
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 use url::Url;
 
-/// Fixed elapsed polling budget, with no attempt limit.
-pub const POLLING_BUDGET: Duration = Duration::from_secs(600);
-/// Fabric/ARM client backoff. Each pending response doubles it without an interval cap.
-pub const INITIAL_DELAY: Duration = Duration::from_secs(1);
+/// First Fabric/ARM polling delay; subsequent fallbacks are seven then twenty seconds.
+pub const INITIAL_DELAY: Duration = Duration::from_secs(2);
 /// Job polling interval when Retry-After is absent or invalid.
 pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
+const POLL_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
+
+/// Per-reconciliation timing overrides. Defaults impose no overall time limit.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LroConfig {
+    poll_interval: Option<Duration>,
+    timeout: Option<Duration>,
+}
+impl LroConfig {
+    /// Validate optional positive polling interval and total timeout durations.
+    pub fn new(
+        poll_interval: Option<Duration>,
+        timeout: Option<Duration>,
+    ) -> Result<Self, CoreError> {
+        for duration in [poll_interval, timeout].into_iter().flatten() {
+            if duration.is_zero() || Instant::now().checked_add(duration).is_none() {
+                return Err(CoreError::new(
+                    ErrorKind::InvalidInput,
+                    "LRO durations must be positive and within clock range",
+                ));
+            }
+        }
+        Ok(Self {
+            poll_interval,
+            timeout,
+        })
+    }
+}
 
 fn protocol(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Protocol, message)
@@ -83,11 +112,23 @@ async fn fetch(
     url: Url,
     context: &OperationContext,
 ) -> Result<ApiResponse, CoreError> {
-    context.remaining_at(clock.now())?;
+    let now = clock.now();
+    context.remaining_at(now)?;
+    let deadline = now
+        .checked_add(POLL_REQUEST_TIMEOUT)
+        .ok_or_else(|| protocol("Polling request deadline exceeds clock range"))?;
+    let request_context = OperationContext {
+        deadline: Some(
+            context
+                .deadline
+                .map_or(deadline, |overall| overall.min(deadline)),
+        ),
+        cancellation: context.cancellation.clone(),
+    };
     let response = bounded_with_clock(
         clock,
-        context,
-        executor.execute_poll(get(url), audience, context),
+        &request_context,
+        executor.execute_poll(get(url), audience, &request_context),
     )
     .await??;
     context.remaining_at(clock.now())?;
@@ -104,6 +145,7 @@ async fn reconcile(
     initial: ApiResponse,
     handle: &Handle,
     context: &OperationContext,
+    config: LroConfig,
 ) -> Result<ApiResponse, CoreError> {
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
@@ -112,23 +154,27 @@ async fn reconcile(
         // The parser exposes safe diagnostics to callers; invalid server hints fall back
         // to the fixed client policy and never reveal header contents.
         let job = matches!(handle.kind(), Strategy::FabricJob);
-        let fallback = if job {
-            JOB_POLLING_INTERVAL
-        } else {
-            Duration::ZERO
-        };
+        let fallback =
+            config
+                .poll_interval
+                .unwrap_or(if job { JOB_POLLING_INTERVAL } else { delay });
         let server = match retry_after(&previous, clock.wall_now()) {
-            Ok(delay) => delay.unwrap_or(fallback),
+            Ok(delay) => delay,
             Err(_) => {
-                clock.diagnostic(if job {
+                clock.diagnostic(if config.poll_interval.is_some() {
+                    "Invalid Retry-After header; using configured polling interval"
+                } else if job {
                     "Invalid Retry-After header; using 10-second job polling interval"
                 } else {
-                    "Invalid Retry-After header; using client backoff"
+                    "Invalid Retry-After header; using client polling schedule"
                 });
-                fallback
+                None
             }
         };
-        let wait = if job { server } else { delay.max(server) };
+        let wait = match (config.poll_interval, job, server) {
+            (None, true, Some(server)) => server,
+            _ => fallback.max(server.unwrap_or_default()),
+        };
         sleep_with_budget(clock, wait, context).await?;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
@@ -155,7 +201,11 @@ async fn reconcile(
             State::Pending => {
                 previous = response;
                 if !job {
-                    delay = delay.saturating_mul(2);
+                    delay = if delay == INITIAL_DELAY {
+                        Duration::from_secs(7)
+                    } else {
+                        Duration::from_secs(20)
+                    };
                 }
             }
             State::Success => {
@@ -184,7 +234,9 @@ async fn reconcile(
                 let result_delay = match retry_after(&response, clock.wall_now()) {
                     Ok(delay) => delay.unwrap_or_default(),
                     Err(_) => {
-                        clock.diagnostic("Invalid Retry-After header; using client backoff");
+                        clock.diagnostic(
+                            "Invalid Retry-After header; using client polling schedule",
+                        );
                         INITIAL_DELAY
                     }
                 };
@@ -218,7 +270,8 @@ async fn reconcile(
 /// poll job status using Retry-After or ten seconds and return terminal job JSON.
 /// Fabric terminal status is returned when no result is advertised.
 /// ARM completion preserves initial body/headers and
-/// normalizes only its status to 200. A fresh fixed ten-minute budget starts here.
+/// normalizes only its status to 200. Waiting has no overall deadline by default;
+/// individual status/result requests are bounded to 240 seconds.
 /// Recovery errors describe local uncertainty, never backend rollback.
 pub async fn complete(
     executor: &dyn HttpExecutor,
@@ -226,6 +279,30 @@ pub async fn complete(
     audience: Audience,
     initial: ApiResponse,
     cancellation: CancellationToken,
+) -> Result<ApiResponse, CoreError> {
+    complete_with_config(
+        executor,
+        clock,
+        audience,
+        initial,
+        cancellation,
+        LroConfig::default(),
+    )
+    .await
+}
+
+/// Reconcile with optional fixed client interval and total polling timeout.
+///
+/// Valid Retry-After hints cannot be shortened by an interval override.
+/// The total timeout starts here and bounds all waits, GET retries and result
+/// retrieval. Omitting it allows indefinite waiting, with local cancellation.
+pub async fn complete_with_config(
+    executor: &dyn HttpExecutor,
+    clock: &dyn Clock,
+    audience: Audience,
+    initial: ApiResponse,
+    cancellation: CancellationToken,
+    config: LroConfig,
 ) -> Result<ApiResponse, CoreError> {
     let start = clock.now();
     let discovered = operation_handle(audience, initial.status, &initial.headers)?;
@@ -241,9 +318,21 @@ pub async fn complete(
     };
     let context = OperationContext {
         cancellation,
-        deadline: start + POLLING_BUDGET,
+        deadline: config
+            .timeout
+            .map(|timeout| {
+                start.checked_add(timeout).ok_or_else(|| {
+                    handle.attach(CoreError::new(
+                        ErrorKind::InvalidInput,
+                        "LRO timeout exceeds clock range",
+                    ))
+                })
+            })
+            .transpose()?,
     };
-    reconcile(executor, clock, audience, initial, &handle, &context)
-        .await
-        .map_err(|error| handle.attach(error))
+    reconcile(
+        executor, clock, audience, initial, &handle, &context, config,
+    )
+    .await
+    .map_err(|error| handle.attach(error))
 }

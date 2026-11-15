@@ -115,7 +115,7 @@ async fn real_http_executor_deadline_drops_sdk_work_and_expired_context_starts_n
     );
     assert!(process.dropped.load(Ordering::SeqCst));
     let expired = OperationContext {
-        deadline: Instant::now() - Duration::from_secs(1),
+        deadline: Some(Instant::now() - Duration::from_secs(1)),
         cancellation: CancellationToken::new(),
     };
     assert_eq!(

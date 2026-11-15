@@ -116,22 +116,22 @@ impl std::error::Error for CoreError {}
 pub struct OperationContext {
     /// Local cancellation signal.
     pub cancellation: CancellationToken,
-    /// Monotonic action deadline.
-    pub deadline: Instant,
+    /// Optional monotonic deadline; None allows cancellable waiting without a time limit.
+    pub deadline: Option<Instant>,
 }
 impl OperationContext {
     /// Start a real-clock bounded action.
     pub fn new(timeout: Duration, cancellation: CancellationToken) -> Self {
         Self {
             cancellation,
-            deadline: Instant::now() + timeout,
+            deadline: Some(Instant::now() + timeout),
         }
     }
-    /// Remaining real-clock budget, also checking cancellation.
+    /// Remaining real-clock budget, also checking cancellation; MAX when unbounded.
     pub fn remaining(&self) -> Result<Duration, CoreError> {
         self.remaining_at(Instant::now())
     }
-    /// Remaining budget using an injected clock.
+    /// Remaining budget using an injected clock; MAX when unbounded.
     pub fn remaining_at(&self, now: Instant) -> Result<Duration, CoreError> {
         if self.cancellation.is_cancelled() {
             return Err(CoreError::new(
@@ -139,7 +139,10 @@ impl OperationContext {
                 "Operation cancelled locally; backend work may continue",
             ));
         }
-        self.deadline
+        let Some(deadline) = self.deadline else {
+            return Ok(Duration::MAX);
+        };
+        deadline
             .checked_duration_since(now)
             .filter(|d| !d.is_zero())
             .ok_or_else(|| {

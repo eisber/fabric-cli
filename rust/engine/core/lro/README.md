@@ -6,16 +6,21 @@
 has no mutation request to replay. All status/result requests are bodyless GETs
 without caller headers; authentication is supplied by the injected executor.
 
-The fixed Fabric/ARM policy is 600 monotonic seconds, starting at reconciliation, with
-1-second initial delay, doubling pending-response backoff, no attempt limit,
-and no separate interval cap. Valid `Retry-After` seconds or HTTP dates are
+Fabric/ARM fallback delays are 2, 7, then 20 seconds repeatedly. There is no
+attempt limit. Valid `Retry-After` seconds or HTTP dates are
 not-before constraints. Invalid values invoke the caller's safe diagnostic
-hook and fall back to backoff. A successful Fabric status's `Retry-After` also
-delays its result GET (invalid terminal hints fall back to one second). A hint
-at or beyond the remaining deadline times out without sending that GET.
+hook and fall back to the client schedule. A successful Fabric status's `Retry-After`
+also delays its result GET (invalid terminal hints fall back to two seconds).
+A hint at or beyond a configured remaining deadline times out without that GET.
 Sleep, credentials, HTTP retries, and final
 result retrieval share the deadline and cancellation token. Local cancellation
-does not cancel backend work.
+does not cancel backend work. `complete` has no overall deadline by default;
+`complete_with_config` accepts validated optional `LroConfig` durations:
+`poll_interval` replaces the client schedule but cannot shorten a server hint,
+and `timeout` sets a monotonic total reconciliation budget. Individual status/result
+GETs, including credentials and retries, are bounded to 240 seconds or the
+remaining total budget, whichever is smaller. No overall deadline means
+indefinite cancellable waiting, not unbounded HTTP requests.
 
 Fabric accepts validated operation Location or ID-only handles. Conflicts fail
 closed. Successful status without an advertised
@@ -28,7 +33,7 @@ Fabric job-instance Locations use a separate JSON status protocol. Only exact
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
 routes are recognized, after the same URL safety checks. Job polling uses each
 response's `Retry-After`, or 10 seconds when absent/invalid (invalid hints emit a
-safe diagnostic), without doubling. It shares the 600-second budget and safe GET
+safe diagnostic), without doubling. It shares the optional overall budget and safe GET
 executor. `NotStarted`/`InProgress` remain pending; `Completed`/`Deduped` return
 the actual terminal job response. `Failed`/`Cancelled`, unexpected HTTP statuses,
 and malformed/unknown JSON statuses fail with query-redacted job-URL recovery.

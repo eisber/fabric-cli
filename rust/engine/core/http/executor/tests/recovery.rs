@@ -139,7 +139,7 @@ async fn executor_retains_accepted_head_after_error_cancel_stall_or_expiry_witho
             );
             let context = OperationContext {
                 cancellation: CancellationToken::new(),
-                deadline: clock.now() + Duration::from_secs(1),
+                deadline: Some(clock.now() + Duration::from_secs(1)),
             };
             let error = client
                 .execute(request(method), Audience::Fabric, &context)
@@ -213,7 +213,7 @@ async fn sdk_acquisition_future_is_dropped_on_cancellation_and_deadline() {
         });
         let context = OperationContext {
             cancellation: CancellationToken::new(),
-            deadline: clock.now() + Duration::from_secs(1),
+            deadline: Some(clock.now() + Duration::from_secs(1)),
         };
         let dropped = Arc::new(AtomicBool::new(false));
         let credential = Arc::new(DropCredential {
@@ -256,7 +256,7 @@ async fn sdk_errors_are_sanitized_unauthorized_not_provider_diagnostics() {
     );
     let context = OperationContext {
         cancellation: CancellationToken::new(),
-        deadline: clock.now() + Duration::from_secs(1),
+        deadline: Some(clock.now() + Duration::from_secs(1)),
     };
     let error = client
         .execute(request("POST"), Audience::Fabric, &context)
@@ -309,7 +309,7 @@ async fn raw_initial_execution_does_not_apply_reconciliation_handle_policy() {
         );
         let context = OperationContext {
             cancellation: CancellationToken::new(),
-            deadline: clock.now() + Duration::from_secs(240),
+            deadline: Some(clock.now() + Duration::from_secs(240)),
         };
         let initial = client
             .execute(request("POST"), Audience::Fabric, &context)
@@ -355,7 +355,7 @@ async fn duplicate_retry_after_preserves_unique_id_and_never_retries_mutation() 
         );
         let context = OperationContext {
             cancellation: CancellationToken::new(),
-            deadline: clock.now() + Duration::from_secs(240),
+            deadline: Some(clock.now() + Duration::from_secs(240)),
         };
         let error = client
             .execute(request(method), Audience::Fabric, &context)
@@ -414,7 +414,7 @@ async fn rejected_metadata_never_chooses_duplicate_ids_or_salvages_location() {
         );
         let context = OperationContext {
             cancellation: CancellationToken::new(),
-            deadline: clock.now() + Duration::from_secs(240),
+            deadline: Some(clock.now() + Duration::from_secs(240)),
         };
         let error = client
             .execute(request("POST"), Audience::Fabric, &context)
@@ -477,7 +477,7 @@ async fn rejected_raw_head_preserves_recovery_through_executor_without_mutation_
         );
         let context = OperationContext {
             cancellation: CancellationToken::new(),
-            deadline: clock.now() + Duration::from_secs(240),
+            deadline: Some(clock.now() + Duration::from_secs(240)),
         };
         let error = client
             .execute(request(method), Audience::Fabric, &context)

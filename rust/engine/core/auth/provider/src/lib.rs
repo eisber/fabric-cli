@@ -219,7 +219,13 @@ async fn bounded<T>(
     tokio::select! {
         biased;
         () = context.cancellation.cancelled() => Err(CoreError::new(ErrorKind::Cancelled, "Credential acquisition cancelled locally")),
-        () = tokio::time::sleep(remaining) => Err(CoreError::new(ErrorKind::Timeout, "Credential acquisition deadline reached")),
+        () = async {
+            if context.deadline.is_some() {
+                tokio::time::sleep(remaining).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => Err(CoreError::new(ErrorKind::Timeout, "Credential acquisition deadline reached")),
         result = future => { context.remaining()?; Ok(result) }
     }
 }

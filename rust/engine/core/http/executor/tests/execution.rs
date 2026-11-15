@@ -100,7 +100,7 @@ fn reply(status: u16) -> Result<ApiResponse, CoreError> {
 fn context(clock: &dyn Clock, seconds: u64) -> OperationContext {
     OperationContext {
         cancellation: CancellationToken::new(),
-        deadline: clock.now() + Duration::from_secs(seconds),
+        deadline: Some(clock.now() + Duration::from_secs(seconds)),
     }
 }
 fn request(method: &str) -> ApiRequest {
@@ -252,7 +252,7 @@ async fn token_acquisition_uses_only_remaining_injected_budget() {
     });
     let ctx = OperationContext {
         cancellation: CancellationToken::new(),
-        deadline: clock.start + Duration::from_secs(600),
+        deadline: Some(clock.start + Duration::from_secs(600)),
     };
     let client = HttpClient::new(Arc::new(PendingCredential), transport.clone(), clock);
     let before = tokio::time::Instant::now();
@@ -263,4 +263,20 @@ async fn token_acquisition_uses_only_remaining_injected_budget() {
     assert_eq!(error.kind, ErrorKind::Timeout);
     assert!(tokio::time::Instant::now().duration_since(before) < Duration::from_secs(2));
     assert!(transport.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn unlimited_wait_is_still_cancellable_without_starting_a_deadline_timer() {
+    let cancellation = CancellationToken::new();
+    let context = OperationContext {
+        cancellation: cancellation.clone(),
+        deadline: None,
+    };
+    let error = fabric_sdk_http::bounded(&context, async {
+        cancellation.cancel();
+        std::future::pending::<()>().await;
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Cancelled);
 }

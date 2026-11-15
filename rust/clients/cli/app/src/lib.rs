@@ -327,7 +327,7 @@ async fn execute(
                 let credential = host.credential(binding.clone())?;
                 let clock = host.clock();
                 let context = OperationContext {
-                    deadline: clock.now() + Duration::from_secs(240),
+                    deadline: Some(clock.now() + Duration::from_secs(240)),
                     cancellation,
                 };
                 bounded_with_clock(
@@ -360,7 +360,7 @@ async fn execute(
             let client =
                 HttpClient::new(host.credential(binding)?, host.transport()?, clock.clone());
             let context = OperationContext {
-                deadline: clock.now() + Duration::from_secs(240),
+                deadline: Some(clock.now() + Duration::from_secs(240)),
                 cancellation: cancellation.clone(),
             };
             let initial = client
@@ -387,12 +387,13 @@ async fn execute(
                 initial
             } else {
                 fabric_cli_api::validate_response_body(&initial.body).map_err(attach_recovery)?;
-                fabric_sdk_api::complete(
+                fabric_sdk_api::complete_with_config(
                     &client,
                     clock.as_ref(),
                     prepared.audience,
                     initial,
                     cancellation,
+                    prepared.lro_config,
                 )
                 .await?
             };
