@@ -19,7 +19,7 @@ fab-rs auth logout
 ```
 
 `api` switches are long-only: `--method`, `--audience`, `--input`, `--headers`,
-`--query`, `--show-headers`, `--async`, `--lro-config`. Methods are get/post/delete/put/patch;
+`--query`, `--show-headers`, `--async`, `--polling-config`. Methods are get/post/delete/put/patch;
 audiences are fabric/storage/azure/powerbi. There are no aliases, `--params`,
 underscore spellings, or individual timing flags. Quote endpoint query strings
 and URL-encode their values yourself; valid encoded values are not encoded again.
@@ -48,14 +48,16 @@ response once, and starts no background work. Poll/result GETs do not carry the
 original mutation body or custom request headers.
 
 Recognized Fabric/ARM LROs and Fabric job instances poll; Storage/Power BI remain
-raw. Non-job fallback intervals are 2, 7, then 20 seconds repeatedly, respecting
-server not-before hints. Jobs use `Retry-After` or a 10-second fallback.
-`--lro-config '{"poll_interval":5,"timeout":900}'` accepts two optional positive
+raw. Fabric non-job fallback intervals are 2, 7, then 20 seconds repeatedly,
+respecting server not-before hints. ARM and jobs use each response's `Retry-After`
+or a 10-second fallback, without the staged schedule.
+`--polling-config '{"poll_interval":5,"timeout":900}'` accepts two optional positive
 numbers in seconds. A fixed `poll_interval` never shortens server hints; `timeout`
 bounds the full reconciliation phase, including retries and result retrieval.
 Omitted/null timeout means no overall limit; individual status/result requests
 still have a 240-second bound. Invalid config fails before host effects.
-`max_attempts` is not supported. This differs deliberately from Python raw API's
+`max_attempts` and the former `--lro-config` spelling are not supported.
+This differs deliberately from Python raw API's
 return-immediately default. Ctrl+C cancels local work, not the service-side operation.
 
 ## Selection and output

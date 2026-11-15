@@ -465,6 +465,7 @@ async fn unsupported_aliases_params_and_polling_knobs_fail_without_acquisition()
         "--show_headers",
         "--wait",
         "--no-wait",
+        "--lro-config",
     ] {
         let host = FakeHost::new(vec![]);
         let (code, stdout, _) = run(&["api", "workspaces", option], &host).await;
@@ -2014,7 +2015,14 @@ mod polling_configuration {
         ] {
             for asynchronous in [false, true] {
                 let host = FakeHost::new(vec![]);
-                let mut args = vec!["api", "items", "--method", "post", "--lro-config", config];
+                let mut args = vec![
+                    "api",
+                    "items",
+                    "--method",
+                    "post",
+                    "--polling-config",
+                    config,
+                ];
                 if asynchronous {
                     args.push("--async");
                 }
@@ -2033,10 +2041,12 @@ mod polling_configuration {
     #[tokio::test]
     async fn config_wiring_controls_waits_and_async_remains_initial_only() {
         let location = "/v1/workspaces/workspace/items/item/jobs/instances/job";
-        for job in [false, true] {
+        for (audience, job) in [("fabric", false), ("fabric", true), ("azure", false)] {
             for asynchronous in [false, true] {
                 let headers = if job {
                     vec![("location", location)]
+                } else if audience == "azure" {
+                    vec![("azure-asyncoperation", "/status")]
                 } else {
                     vec![("x-ms-operation-id", "op-1")]
                 };
@@ -2058,9 +2068,11 @@ mod polling_configuration {
                     "items",
                     "--method",
                     "post",
+                    "--audience",
+                    audience,
                     "--input",
                     "{}",
-                    "--lro-config",
+                    "--polling-config",
                     r#"{"poll_interval":0.5,"timeout":1}"#,
                 ];
                 if asynchronous {
@@ -2107,7 +2119,14 @@ mod polling_configuration {
             ]);
             let start = host.clock.now();
             let (code, stdout, stderr) = run(
-                &["api", "items", "--method", "post", "--lro-config", config],
+                &[
+                    "api",
+                    "items",
+                    "--method",
+                    "post",
+                    "--polling-config",
+                    config,
+                ],
                 &host,
             )
             .await;
@@ -2135,7 +2154,8 @@ mod polling_configuration {
     #[test]
     fn help_documents_seconds_and_optional_timeout() {
         let help = fabric_cli_api::command().render_long_help().to_string();
-        assert!(help.contains("--lro-config"));
+        assert!(help.contains("--polling-config"));
+        assert!(!help.contains("--lro-config"));
         assert!(help.contains("poll_interval"));
         assert!(help.contains("seconds"));
         assert!(help.contains("no default"));

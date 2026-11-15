@@ -116,7 +116,9 @@ instances.
 no sleeps, status/result fetches, or background process.
 No `--wait`, `--wait=false`, `--no-wait`, or individual timing flags.
 
-Fabric/ARM client schedule: 2, 7, then 20 seconds repeatedly. Valid server delta-seconds
+Fabric non-job client schedule: 2, 7, then 20 seconds repeatedly. ARM and jobs
+use each response's `Retry-After`, or 10 seconds when absent/invalid, without
+staged backoff. Valid server delta-seconds
 or HTTP-date `Retry-After` is a not-before constraint, never permission to poll
 earlier; invalid values use fallback with safe diagnostics. Delays, credential
 acquisition, retries, status requests, and final-result retrieval all share the
@@ -124,7 +126,7 @@ remaining budget when one is configured. Initial request timeout is separately
 240 seconds; each status/result request and its retries also has a 240-second
 bound, shortened by any remaining overall budget.
 
-`--lro-config` accepts an inline JSON object with optional `poll_interval` and
+`--polling-config` accepts an inline JSON object with optional `poll_interval` and
 `timeout` keys: positive finite numbers in seconds, including fractions, within
 the duration/clock range. Omitted/null keys use defaults; unknown keys or invalid
 values fail locally before sending a mutation. No `max_attempts` is exposed.
@@ -134,6 +136,8 @@ reconciliation budget, starting after the initial response, including waits,
 GET retries, and final-result retrieval. It has **no default**; omitted/null
 means indefinite overall waiting, still cancellable and with bounded individual
 requests. `--async` validates config but remains initial-response-only.
+The former `--lro-config` spelling is no longer accepted. Power BI/Storage stay
+raw; configuration does not add protocol recognition.
 
 Fabric 202 with validated operation Location polls even without an operation ID.
 ID-only responses construct `/v1/operations/{id}`. Conflicting ID/URL fails

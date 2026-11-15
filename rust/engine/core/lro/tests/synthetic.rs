@@ -183,7 +183,7 @@ async fn fabric_terminal_status_preserves_ordinary_reserved_marker_objects() {
     }
 }
 #[tokio::test]
-async fn non_job_default_schedule_stays_at_twenty_seconds() {
+async fn fabric_non_job_default_schedule_stays_at_twenty_seconds() {
     let mut replies = vec![response(200, r#"{"status":"Running"}"#, &[]); 7];
     replies.push(success());
     let http = Script::new(replies);
@@ -560,9 +560,10 @@ async fn arm_prefers_asyncoperation_and_preserves_initial_body_headers() {
         ],
     );
     let http = Script::new(vec![success()]);
+    let clock = FakeClock::new();
     let result = complete(
         &http,
-        &FakeClock::new(),
+        &clock,
         Audience::Azure,
         initial.clone(),
         CancellationToken::new(),
@@ -573,6 +574,7 @@ async fn arm_prefers_asyncoperation_and_preserves_initial_body_headers() {
     assert_eq!(result.body, initial.body);
     assert_eq!(result.headers, initial.headers);
     assert_eq!(http.calls.lock().unwrap()[0].url.path(), "/operations/one");
+    assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(10)]);
 }
 #[tokio::test]
 async fn arm_location_pending_then_200_does_not_require_status_json() {
@@ -586,9 +588,10 @@ async fn arm_location_pending_then_200_does_not_require_status_json() {
         response(202, "", &[]),
         response(200, "done", &[]),
     ]);
+    let clock = FakeClock::new();
     let result = complete(
         &http,
-        &FakeClock::new(),
+        &clock,
         Audience::Azure,
         initial,
         CancellationToken::new(),
@@ -597,7 +600,60 @@ async fn arm_location_pending_then_200_does_not_require_status_json() {
     .unwrap();
     assert_eq!(result.status, 200);
     assert_eq!(result.body, b"original");
+    assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(10); 3]);
 }
+
+#[tokio::test]
+async fn arm_status_and_location_use_each_hint_or_ten_seconds_without_staged_backoff() {
+    for status_protocol in [false, true] {
+        let header = if status_protocol {
+            "azure-asyncoperation"
+        } else {
+            "location"
+        };
+        let initial = response(
+            202,
+            "original",
+            &[(header, "/status"), ("retry-after", "7")],
+        );
+        let pending_status = if status_protocol { 200 } else { 202 };
+        let http = Script::new(vec![
+            response(
+                pending_status,
+                r#"{"status":"Running"}"#,
+                &[("retry-after", "3")],
+            ),
+            response(pending_status, r#"{"status":"Running"}"#, &[]),
+            response(
+                pending_status,
+                r#"{"status":"Running"}"#,
+                &[("retry-after", "invalid")],
+            ),
+            response(pending_status, r#"{"status":"Running"}"#, &[]),
+            success(),
+        ]);
+        let clock = FakeClock::new();
+        let result = complete(
+            &http,
+            &clock,
+            Audience::Azure,
+            initial.clone(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            *clock.sleeps.lock().unwrap(),
+            [7, 3, 10, 10, 10].map(Duration::from_secs)
+        );
+        assert_eq!(clock.warnings.lock().unwrap().len(), 1);
+        assert_eq!(http.calls.lock().unwrap().len(), 5);
+        assert_eq!(result.status, 200);
+        assert_eq!(result.body, initial.body);
+        assert_eq!(result.headers, initial.headers);
+    }
+}
+
 #[tokio::test]
 async fn raw_and_job_responses_do_not_invent_protocols() {
     for (audience, initial) in [
@@ -619,18 +675,25 @@ async fn raw_and_job_responses_do_not_invent_protocols() {
         (Audience::Fabric, response(500, "raw failure", &[])),
     ] {
         let http = Script::new(vec![]);
-        let result = complete(
+        let clock = FakeClock::new();
+        let result = complete_with_config(
             &http,
-            &FakeClock::new(),
+            &clock,
             audience,
             initial.clone(),
             CancellationToken::new(),
+            LroConfig::new(
+                Some(Duration::from_millis(500)),
+                Some(Duration::from_secs(1)),
+            )
+            .unwrap(),
         )
         .await
         .unwrap();
         assert_eq!(result.status, initial.status);
         assert_eq!(result.body, initial.body);
         assert!(http.calls.lock().unwrap().is_empty());
+        assert!(clock.sleeps.lock().unwrap().is_empty());
     }
 }
 #[tokio::test]

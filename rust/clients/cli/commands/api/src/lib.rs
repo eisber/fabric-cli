@@ -34,8 +34,8 @@ pub fn command() -> Command {
         .arg(Arg::new("help").long("help").action(ArgAction::Help))
         .arg(Arg::new("endpoint").required(true))
         .arg(
-            Arg::new("lro-config")
-                .long("lro-config")
+            Arg::new("polling-config")
+                .long("polling-config")
                 .value_name("JSON")
                 .help("Polling JSON: poll_interval is a positive number of seconds; timeout is the maximum polling duration in seconds (optional, no default). Backend work may continue after timeout"),
         )
@@ -82,7 +82,7 @@ pub fn command() -> Command {
 /// Validate request bytes, headers, query, and origin before reading auth/config.
 pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     let value = |name| matches.get_one::<String>(name).map(String::as_str);
-    let lro_config = parse_lro_config(value("lro-config"))?;
+    let lro_config = parse_polling_config(value("polling-config"))?;
     let audience = match value("audience") {
         Some("fabric") => Audience::Fabric,
         Some("storage") => Audience::Storage,
@@ -125,24 +125,24 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     })
 }
 
-fn parse_lro_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig, CommandError> {
+fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig, CommandError> {
     let Some(text) = text else {
         return Ok(fabric_sdk_api::LroConfig::default());
     };
     if text.len() > 16 * 1024 {
-        return Err(invalid("LRO configuration exceeds allocation bound"));
+        return Err(invalid("Polling configuration exceeds allocation bound"));
     }
     let json = fabric_core_json::decode(text.as_bytes())
-        .map_err(|_| invalid("Invalid LRO configuration JSON"))?;
+        .map_err(|_| invalid("Invalid polling configuration JSON"))?;
     let object = json
         .as_object()
-        .ok_or_else(|| invalid("LRO configuration must be a JSON object"))?;
+        .ok_or_else(|| invalid("Polling configuration must be a JSON object"))?;
     if object
         .keys()
         .any(|key| key != "poll_interval" && key != "timeout")
     {
         return Err(invalid(
-            "Unknown LRO configuration option; supported keys are poll_interval and timeout",
+            "Unknown polling configuration option; supported keys are poll_interval and timeout",
         ));
     }
     let duration = |key: &str| -> Result<Option<Duration>, CommandError> {
@@ -153,11 +153,11 @@ fn parse_lro_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig, Com
             .as_f64()
             .filter(|value| value.is_finite() && *value > 0.0)
             .ok_or_else(|| {
-                invalid("LRO configuration durations must be positive numbers in seconds")
+                invalid("Polling configuration durations must be positive numbers in seconds")
             })?;
         Duration::try_from_secs_f64(seconds)
             .map(Some)
-            .map_err(|_| invalid("LRO configuration duration exceeds supported range"))
+            .map_err(|_| invalid("Polling configuration duration exceeds supported range"))
     };
     fabric_sdk_api::LroConfig::new(duration("poll_interval")?, duration("timeout")?)
         .map_err(Into::into)

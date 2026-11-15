@@ -17,9 +17,9 @@ use std::{
 };
 use url::Url;
 
-/// First Fabric/ARM polling delay; subsequent fallbacks are seven then twenty seconds.
+/// First Fabric non-job polling delay; subsequent fallbacks are seven then twenty seconds.
 pub const INITIAL_DELAY: Duration = Duration::from_secs(2);
-/// Job polling interval when Retry-After is absent or invalid.
+/// Job-style polling interval for jobs and ARM when Retry-After is absent or invalid.
 pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
 const POLL_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
 
@@ -154,10 +154,13 @@ async fn reconcile(
         // The parser exposes safe diagnostics to callers; invalid server hints fall back
         // to the fixed client policy and never reveal header contents.
         let job = matches!(handle.kind(), Strategy::FabricJob);
-        let fallback =
-            config
-                .poll_interval
-                .unwrap_or(if job { JOB_POLLING_INTERVAL } else { delay });
+        let server_interval =
+            job || matches!(handle.kind(), Strategy::ArmLocation | Strategy::ArmStatus);
+        let fallback = config.poll_interval.unwrap_or(if server_interval {
+            JOB_POLLING_INTERVAL
+        } else {
+            delay
+        });
         let server = match retry_after(&previous, clock.wall_now()) {
             Ok(delay) => delay,
             Err(_) => {
@@ -165,13 +168,15 @@ async fn reconcile(
                     "Invalid Retry-After header; using configured polling interval"
                 } else if job {
                     "Invalid Retry-After header; using 10-second job polling interval"
+                } else if server_interval {
+                    "Invalid Retry-After header; using 10-second ARM polling interval"
                 } else {
                     "Invalid Retry-After header; using client polling schedule"
                 });
                 None
             }
         };
-        let wait = match (config.poll_interval, job, server) {
+        let wait = match (config.poll_interval, server_interval, server) {
             (None, true, Some(server)) => server,
             _ => fallback.max(server.unwrap_or_default()),
         };
@@ -200,7 +205,7 @@ async fn reconcile(
         match current {
             State::Pending => {
                 previous = response;
-                if !job {
+                if !server_interval {
                     delay = if delay == INITIAL_DELAY {
                         Duration::from_secs(7)
                     } else {
@@ -266,8 +271,8 @@ async fn reconcile(
 }
 /// Reconcile the actual initial response without ever replaying the initial request.
 ///
-/// Raw non-LRO responses are returned unchanged. Fabric job-instance Locations
-/// poll job status using Retry-After or ten seconds and return terminal job JSON.
+/// Raw non-LRO responses are returned unchanged. ARM and Fabric job-instance Locations
+/// poll using Retry-After or ten seconds; jobs return terminal job JSON.
 /// Fabric terminal status is returned when no result is advertised.
 /// ARM completion preserves initial body/headers and
 /// normalizes only its status to 200. Waiting has no overall deadline by default;

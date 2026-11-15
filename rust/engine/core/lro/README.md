@@ -6,8 +6,9 @@
 has no mutation request to replay. All status/result requests are bodyless GETs
 without caller headers; authentication is supplied by the injected executor.
 
-Fabric/ARM fallback delays are 2, 7, then 20 seconds repeatedly. There is no
-attempt limit. Valid `Retry-After` seconds or HTTP dates are
+Fabric non-job fallback delays are 2, 7, then 20 seconds repeatedly. ARM defaults
+to each response's `Retry-After`, or 10 seconds when absent/invalid, like jobs.
+There is no attempt limit. Valid `Retry-After` seconds or HTTP dates are
 not-before constraints. Invalid values invoke the caller's safe diagnostic
 hook and fall back to the client schedule. A successful Fabric status's `Retry-After`
 also delays its result GET (invalid terminal hints fall back to two seconds).
