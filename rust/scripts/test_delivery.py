@@ -312,7 +312,11 @@ class GateTests(unittest.TestCase):
             ("pull_request", "a" * 40, "README.md\0src/example.py\0", "false"),
             ("pull_request", "a" * 40, "rust/docs/compatibility.md\0", "true"),
             ("pull_request", "a" * 40, "rust/docs/Unicode-α.md\0", "true"),
-            ("merge_group", "b" * 40, ".github/workflows/rust-native.yml\0", "true"),
+            ("merge_group", "b" * 40, ".github/workflows/rust-native.yml\0", "false"),
+            ("merge_group", "b" * 40, "rust/engine/core/contracts/src/lib.rs\0", "true"),
+            ("pull_request", "a" * 40, "LICENSE\0AGENTS.md\0", "false"),
+            ("pull_request", "a" * 40, "rust-other/example.rs\0", "false"),
+            ("pull_request", "a" * 40, "tests/test_api.py\0rust/Cargo.lock\0", "true"),
             ("push", "0" * 40, "", "true"),
             ("workflow_dispatch", "", "", "true"),
         ):
