@@ -449,7 +449,7 @@ async fn raw_failures_empty_and_invalid_json_and_headers_match_source_contract()
 }
 
 #[tokio::test]
-async fn python_query_runs_on_full_payload_preserves_falsey_and_keeps_lists_flat() {
+async fn api_query_runs_on_full_payload_preserves_scalars_and_keeps_lists_flat() {
     for (query, expected) in [
         ("text.items", json!([{"id":1},{"id":2}])),
         ("status_code", json!(["200"])),
@@ -468,15 +468,6 @@ async fn python_query_runs_on_full_payload_preserves_falsey_and_keeps_lists_flat
         assert_eq!(code, 0);
         assert_eq!(data(&stdout), expected, "{query}");
     }
-    for query in ["text.items", "text.empty", "text.object"] {
-        let host = FakeHost::new(vec![response(
-            200,
-            r#"{"items":[],"empty":"","object":{}}"#,
-            &[],
-        )]);
-        let (_, stdout, _) = run(&["api", "items", "--query", query], &host).await;
-        assert_eq!(data(&stdout)[0]["status_code"], 200);
-    }
     let host = FakeHost::new(vec![response(
         200,
         r#"{"items":[],"empty":"","object":{}}"#,
@@ -489,6 +480,35 @@ async fn python_query_runs_on_full_payload_preserves_falsey_and_keeps_lists_flat
         data(&stdout)[0]["text"],
         json!({"items":[],"empty":"","object":{}})
     );
+}
+
+#[tokio::test]
+async fn empty_api_query_results_do_not_disclose_unselected_response_data() {
+    for (query, expected) in [
+        ("text.items", json!([])),
+        ("text.empty", json!([""])),
+        ("text.object", json!([{}])),
+        ("text.keys[?keyName == 'primary'].keyName", json!([])),
+    ] {
+        for show_headers in [false, true] {
+            let host = FakeHost::new(vec![response(
+                200,
+                r#"{"items":[],"empty":"","object":{},"keys":[{"keyName":"key1","value":"BODY-SECRET-CANARY"}]}"#,
+                &[("x-fixture", "HEADER-SECRET-CANARY")],
+            )]);
+            let mut args = vec!["api", "items", "--query", query];
+            if show_headers {
+                args.push("--show-headers");
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 0, "{query}: {stdout} {stderr}");
+            assert_eq!(data(&stdout), expected, "{query}");
+            for canary in ["BODY-SECRET-CANARY", "HEADER-SECRET-CANARY"] {
+                assert!(!stdout.contains(canary), "{query}: {stdout}");
+                assert!(!stderr.contains(canary), "{query}: {stderr}");
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -876,7 +896,7 @@ async fn invalid_retry_after_is_a_safe_stderr_warning_not_json_progress_or_heade
 }
 
 #[test]
-fn python_output_result_lists_stay_flat_and_falsey_nonlists_omit_data() {
+fn output_result_lists_stay_flat_and_non_api_falsey_nonlists_omit_data() {
     for (input, expected) in [
         (
             json!([{"id":1},{"id":2}]),
@@ -888,7 +908,7 @@ fn python_output_result_lists_stay_flat_and_falsey_nonlists_omit_data() {
         (json!(0), json!({})),
         (json!(""), json!({})),
     ] {
-        let output = fabric_cli_output::success("2000-01-01T00:00:00Z", "api", input);
+        let output = fabric_cli_output::success("2000-01-01T00:00:00Z", "auth status", input);
         assert_eq!(
             serde_json::from_str::<Value>(&output).unwrap()["result"],
             expected

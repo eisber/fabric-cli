@@ -5,7 +5,7 @@
 #![forbid(unsafe_code)]
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use fabric_cli_command_contracts::{CommandError, python_truthy};
+use fabric_cli_command_contracts::CommandError;
 use fabric_core::{ApiRequest, ApiResponse, Audience, MAX_REQUEST_BYTES};
 use serde_json::{Map, Value};
 use std::{collections::BTreeMap, io::Read, path::Path};
@@ -284,7 +284,7 @@ fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
     }
 }
 
-/// Shape the actual response like pinned Python raw API, including falsey-query fallback.
+/// Shape the actual response and preserve any nonempty query's result.
 pub fn response_data(
     response: ApiResponse,
     show_headers: bool,
@@ -302,11 +302,8 @@ pub fn response_data(
     payload.insert("text".into(), response_body(&response.body)?);
     let payload = Value::Object(payload);
     if let Some(query) = query.filter(|query| !query.is_empty()) {
-        let projected = fabric_cli_query::search(&payload, query)
-            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"))?;
-        if python_truthy(&projected) {
-            return Ok(projected);
-        }
+        return fabric_cli_query::search(&payload, query)
+            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
     }
     Ok(payload)
 }

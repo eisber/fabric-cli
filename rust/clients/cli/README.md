@@ -62,11 +62,12 @@ Refresh rejects tenant/principal drift; subscription-only changes are allowed.
 Data uses the Python envelope, ordered keys, four-space JSON, ASCII escaping,
 and a trailing newline. Headers appear only with `--show-headers`. Empty and
 whitespace bodies become `"(Empty)"`; invalid nonempty JSON is a failure.
-JMESPath falsey collection/string projections preserve the original payload;
-Python scalar string conversion is retained. Projected lists remain lists,
-not an extra nested array. An explicitly empty `--query ''` bypasses projection,
-matching Python's CLI truthiness check. The query library's separate empty-
-expression API still returns a bounded path inventory.
+Nonempty JMESPath queries preserve empty results rather than returning the
+original payload, a security-driven difference from Python. Projected lists
+remain lists; empty objects and strings appear as elements in `result.data`.
+Python scalar string conversion is retained. An explicitly empty `--query ''`
+bypasses projection, matching Python's CLI truthiness check. The query library's
+separate empty-expression API still returns a bounded path inventory.
 
 JSON input files containing `null` send no body. All nonmultipart requests,
 including bodyless requests, default to `Content-Type: application/json`;

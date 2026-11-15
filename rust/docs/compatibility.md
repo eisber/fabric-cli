@@ -36,7 +36,10 @@ authority for implementation evidence.
 - Use `--show-headers`, **not** Python's `--show_headers`; no underscore alias.
 - No `--params`. Put URL-encoded query parameters in the quoted endpoint.
   Already-encoded values must not be double-encoded. `--query` instead applies
-  JMESPath locally to the returned body; source falsey-query behavior is retained.
+  JMESPath locally to the full response object. Unlike Python, a nonempty query
+  that yields an empty collection or string does not fall back to the full
+  response, avoiding unintended disclosure. An explicitly empty query still
+  bypasses projection.
 - JSON inline/file input and non-JSON-file multipart input retain the source
   behavior. Missing input files fail explicitly (a donor safety constraint),
   rather than silently sending a bodyless request. Headers split at the first

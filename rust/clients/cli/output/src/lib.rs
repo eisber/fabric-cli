@@ -8,12 +8,14 @@ use fabric_cli_command_contracts::{CommandError, python_truthy};
 use fabric_core_json::{Format, Indent};
 use serde_json::{Map, Value};
 
-/// Ordered Python success envelope, preserving lists and omitting falsey nonlists.
+/// Ordered success envelope, preserving empty API query objects and strings.
 pub fn success(timestamp: &str, command: &str, data: Value) -> String {
     let mut result = Map::new();
     if data.is_array() {
         result.insert("data".into(), data);
-    } else if python_truthy(&data) {
+    } else if python_truthy(&data)
+        || (command == "api" && matches!(&data, Value::Object(_) | Value::String(_)))
+    {
         result.insert("data".into(), Value::Array(vec![data]));
     }
     envelope(timestamp, command, "Success", result)
