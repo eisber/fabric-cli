@@ -947,6 +947,44 @@ async fn arbitrary_integer_request_and_response_bytes_match_independent_python_n
     assert_eq!(data(&stdout).as_array().unwrap().len(), 2);
 }
 
+#[tokio::test]
+async fn integer_negative_zero_matches_python_in_actual_api_input_output_and_query() {
+    let source = r#"{"n":-0,"f":-0.0}"#;
+    let directory = TempDirectory::new();
+    let file = directory.0.join("zero.json");
+    std::fs::write(&file, source).unwrap();
+    for input in [source, file.to_str().unwrap()] {
+        let host = FakeHost::new(vec![response(200, source, &[])]);
+        let (code, stdout, stderr) = run(
+            &["api", "items", "--method", "post", "--input", input],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert!(stderr.is_empty(), "{stderr}");
+        assert_eq!(
+            host.transport.requests.lock().unwrap()[0].body,
+            br#"{"n": 0, "f": -0.0}"#
+        );
+        let payload: RawJsonObject<'_> =
+            serde_json::from_str(first_raw_data(&stdout).get()).unwrap();
+        let text: RawJsonObject<'_> = serde_json::from_str(payload["text"].get()).unwrap();
+        assert_eq!(text["n"].get(), "0");
+        assert_eq!(text["f"].get(), "-0.0");
+    }
+    for (query, expected) in [
+        ("text.n", "0"),
+        ("text.f", "-0.0"),
+        ("to_string(text)", r#"{"n":0,"f":-0.0}"#),
+    ] {
+        let host = FakeHost::new(vec![response(200, source, &[])]);
+        let (code, stdout, stderr) = run(&["api", "items", "--query", query], &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert!(stderr.is_empty(), "{stderr}");
+        assert_eq!(data(&stdout), json!([expected]), "{query}");
+    }
+}
+
 type RawJsonObject<'a> = std::collections::BTreeMap<String, &'a serde_json::value::RawValue>;
 
 // Inspect output independently of ValueVisitor and of the shared decoder under

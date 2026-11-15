@@ -29,6 +29,7 @@ impl std::error::Error for DecodeError {}
 /// Decode JSON without rounding integers through a machine-sized or floating-point type.
 ///
 /// Decimal integer digits are retained by serde's `arbitrary_precision` feature.
+/// Integer negative zero is normalized to zero, as in Python.
 /// Float tokens are normalized to Python's finite binary64 domain; overflow is
 /// rejected rather than being mistaken for an arbitrary-size integer.
 /// Object keys, including serde's private marker names, are always ordinary keys.
@@ -77,7 +78,9 @@ fn decode_raw(raw: &RawValue, depth: usize) -> Result<Value, DecodeError> {
             // Only genuine numeric syntax reaches Number's synthetic-map
             // protocol. Decimal integers never pass through floating point.
             let mut number: Number = serde_json::from_str(text).map_err(|_| DecodeError)?;
-            if text.contains(['.', 'e', 'E']) {
+            if text == "-0" {
+                number = Number::from(0);
+            } else if text.contains(['.', 'e', 'E']) {
                 let float = number.as_f64().ok_or(DecodeError)?;
                 number = Number::from_f64(float).ok_or(DecodeError)?;
             }
@@ -219,7 +222,7 @@ fn string(value: &str, ensure_ascii: bool, output: &mut String) {
 fn number(value: &Number, output: &mut String) {
     let text = value.to_string();
     if !text.contains(['.', 'e', 'E']) {
-        output.push_str(&text);
+        output.push_str(if text == "-0" { "0" } else { &text });
         return;
     }
     // arbitrary_precision retains float lexemes too. Normalize finite floats

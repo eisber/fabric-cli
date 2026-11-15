@@ -43,7 +43,8 @@ pub(crate) fn encode_json(value: &Value) -> String {
 // Keep Python's shortest-roundtrip/exponent policy for scalar str(float) here.
 pub(crate) fn format_number(value: &serde_json::Number) -> String {
     if !value.is_f64() {
-        return value.to_string();
+        let text = value.to_string();
+        return if text == "-0" { "0".to_owned() } else { text };
     }
     // arbitrary_precision retains source float lexemes too. Python parses them
     // as binary64; only integer lexemes should bypass finite-float normalization.

@@ -305,6 +305,19 @@ fn arbitrary_precision_float_lexemes_still_follow_python_binary64_strings() {
 }
 
 #[test]
+fn python_integer_negative_zero_scalar_and_compact_strings_are_zero() {
+    let data: Value = serde_json::from_str(r#"{"n":-0,"f":-0.0}"#).unwrap();
+    for (query, expected) in [
+        ("n", "0"),
+        ("f", "-0.0"),
+        ("to_string(n)", "0"),
+        ("to_string(@)", r#"{"n":0,"f":-0.0}"#),
+    ] {
+        assert_eq!(search(&data, query).unwrap(), json!(expected), "{query}");
+    }
+}
+
+#[test]
 fn genuine_private_number_keys_in_json_literals_are_never_numeric_markers() {
     for raw in [
         r#"{"$serde_json::private::Number":"123"}"#,

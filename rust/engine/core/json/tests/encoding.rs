@@ -23,6 +23,15 @@ fn python_float_layout_thresholds_and_negative_zero() {
 }
 
 #[test]
+fn python_integer_negative_zero_normalizes_without_changing_float_sign() {
+    let source = r#"{"n":-0,"f":-0.0,"rows":[-0,-0e0]}"#;
+    let expected = r#"{"n": 0, "f": -0.0, "rows": [0, -0.0]}"#;
+    assert_eq!(decode(b"-0").unwrap(), json!(0));
+    assert_eq!(json_dumps(&decode(source.as_bytes()).unwrap()), expected);
+    assert_eq!(json_dumps(&serde_json::from_str(source).unwrap()), expected);
+}
+
+#[test]
 fn arbitrary_size_python_integers_never_round_through_f64() {
     // Independent Python json.loads/json.dumps decimal integer expectations.
     let source = r#"{"u64":18446744073709551615,"above":18446744073709551617,"i64":-9223372036854775808,"below":-9223372036854775809,"huge":123456789012345678901234567890123456789012345678901234567890,"negative":-123456789012345678901234567890123456789012345678901234567890}"#;
