@@ -159,6 +159,30 @@ async fn fabric_id_and_location_only_handles_poll_actual_initial() {
     }
 }
 #[tokio::test]
+async fn fabric_terminal_status_preserves_ordinary_reserved_marker_objects() {
+    for body in [
+        r#"{"status":"Succeeded","metadata":{"$serde_json::private::Number":"not a number"}}"#,
+        r#"{"$serde_json::private::Number":"not a number","status":"Completed"}"#,
+        r#"{"status":"Succeeded","metadata":[{"$serde_json::private::Number":"not a number"}]}"#,
+    ] {
+        let terminal = response(200, body, &[("x-test-terminal", "retained")]);
+        let http = Script::new(vec![terminal.clone()]);
+        let result = complete(
+            &http,
+            &FakeClock::new(),
+            Audience::Fabric,
+            accepted(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.body, terminal.body);
+        assert_eq!(result.headers, terminal.headers);
+        assert_eq!(result.status, terminal.status);
+        assert_eq!(http.calls.lock().unwrap().len(), 1);
+    }
+}
+#[tokio::test]
 async fn fixed_exponential_delays_have_no_sixty_second_cap() {
     let mut replies = vec![response(200, r#"{"status":"Running"}"#, &[]); 7];
     replies.push(success());
@@ -242,6 +266,11 @@ async fn fabric_result_and_only_documented_no_result_condition() {
     for (status, body, expected_ok) in [
         (200, r#"{"answer":42}"#, true),
         (400, r#"{"errorCode":"OperationHasNoResult"}"#, true),
+        (
+            400,
+            r#"{"error":{"code":"OperationHasNoResult"},"metadata":{"$serde_json::private::Number":"not a number"}}"#,
+            true,
+        ),
         (400, r#"{"errorCode":"Unrelated"}"#, false),
     ] {
         let terminal = response(

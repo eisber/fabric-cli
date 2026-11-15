@@ -27,7 +27,7 @@ fn body(response: &ApiResponse) -> Result<Value, CoreError> {
     if response.body.len() > MAX_RESPONSE_BYTES {
         return Err(protocol("Operation response exceeds allocation bound"));
     }
-    serde_json::from_slice(&response.body).map_err(|_| protocol("Malformed operation JSON"))
+    fabric_core_json::decode(&response.body).map_err(|_| protocol("Malformed operation JSON"))
 }
 enum State {
     Pending,

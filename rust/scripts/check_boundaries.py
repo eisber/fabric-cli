@@ -28,7 +28,7 @@ EDGES = {
     "fabric-identity": {"fabric-core"},
     "fabric-sdk-http": {"fabric-core"},
     "fabric-sdk-transport": {"fabric-core", "fabric-sdk-http"},
-    "fabric-sdk-operations": {"fabric-core", "fabric-sdk-http"},
+    "fabric-sdk-operations": {"fabric-core", "fabric-core-json", "fabric-sdk-http"},
     "fabric-sdk-api": {
         "fabric-core", "fabric-core-json", "fabric-sdk-http", "fabric-sdk-operations",
     },

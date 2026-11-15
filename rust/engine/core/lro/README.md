@@ -24,6 +24,10 @@ terminal status response. ARM prioritizes Azure-AsyncOperation over Location;
 on completion it returns the initial body/headers with status normalized to 200,
 matching the retained Python shape. Other audiences are raw.
 
+Status and result-error JSON use the shared bounded `fabric-core-json` decoder.
+Reserved serde marker names remain ordinary object keys, including in unrelated
+metadata; returned terminal responses retain their original bytes and headers.
+
 Known operation recovery errors contain a safe operation ID/status URL (query
 omitted) and uncertainty, never arbitrary backend diagnostics. Redirects and
 cross-origin status/result URLs are rejected. Raw initial HTTP errors remain
