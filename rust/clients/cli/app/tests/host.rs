@@ -492,6 +492,7 @@ async fn every_approved_method_and_audience_preserves_endpoint_query_and_header_
             let requests = host.transport.requests.lock().unwrap();
             assert_eq!(requests.len(), 1);
             assert_eq!(requests[0].method, method.to_uppercase());
+            assert!(requests[0].body.is_empty());
             assert_eq!(requests[0].url.query(), Some("token=a%2Fb%3D%3D&n=2"));
             assert_eq!(requests[0].headers["x-fixture"], "a=b");
         }
@@ -530,6 +531,69 @@ async fn input_and_query_validation_precede_selection_and_credentials() {
         assert!(host.transport.requests.lock().unwrap().is_empty());
         // Only timestamp rendering may call clock(); selection/provider/transport never run.
         assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn delete_rejects_all_supplied_inputs_before_loading_identity_or_sending() {
+    let directory = TempDirectory::new();
+    let json_file = directory.0.join("INPUT-CANARY.json");
+    let null_file = directory.0.join("NULL-CANARY.json");
+    let upload = directory.0.join("UPLOAD-CANARY.txt");
+    let missing_file = directory.0.join("MISSING-CANARY.json");
+    std::fs::write(&json_file, br#"{"description":"BODY-CANARY"}"#).unwrap();
+    std::fs::write(&null_file, b"null").unwrap();
+    std::fs::write(&upload, b"FILE-CANARY").unwrap();
+    for input in [
+        r#"{"description":"BODY-CANARY"}"#,
+        json_file.to_str().unwrap(),
+        null_file.to_str().unwrap(),
+        upload.to_str().unwrap(),
+        missing_file.to_str().unwrap(),
+        "{INVALID-CANARY}",
+        "",
+        " ",
+    ] {
+        for audience in ["fabric", "storage", "azure", "powerbi"] {
+            for asynchronous in [false, true] {
+                let host = FakeHost::new(vec![]);
+                if asynchronous {
+                    *host.binding.lock().unwrap() = None;
+                }
+                let mut args = vec![
+                    "api",
+                    "workspaces/ENDPOINT-CANARY/items/ITEM-CANARY",
+                    "--method",
+                    "delete",
+                    "--input",
+                    input,
+                    "--audience",
+                    audience,
+                ];
+                if asynchronous {
+                    args.push("--async");
+                }
+                let (code, stdout, stderr) = run(&args, &host).await;
+                assert_eq!(code, 1, "{input:?}, {audience}, async={asynchronous}");
+                assert_eq!(
+                    serde_json::from_str::<Value>(&stdout).unwrap(),
+                    json!({
+                        "timestamp": "2000-01-01T00:00:00Z",
+                        "status": "Failure",
+                        "command": "api",
+                        "result": {
+                            "error_code": "InvalidInput",
+                            "message": "--input cannot be combined with --method delete"
+                        }
+                    })
+                );
+                assert!(!stdout.contains("CANARY"));
+                assert!(stderr.is_empty());
+                assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+                assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+                assert!(host.transport.requests.lock().unwrap().is_empty());
+            }
+        }
     }
 }
 
@@ -1631,6 +1695,9 @@ fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_conten
     std::fs::write(&null_file, b"null").unwrap();
     for method in ["get", "post", "put", "patch", "delete"] {
         for input in [None, Some(null_file.to_str().unwrap())] {
+            if method == "delete" && input.is_some() {
+                continue;
+            }
             for custom in [false, true] {
                 let mut args = vec!["api", "items", "--method", method];
                 if let Some(input) = input {

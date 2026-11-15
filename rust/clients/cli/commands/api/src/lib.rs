@@ -54,7 +54,7 @@ pub fn command() -> Command {
         .arg(
             Arg::new("input")
                 .long("input")
-                .help("Inline JSON object, JSON file, or multipart file"),
+                .help("Inline JSON object, JSON file, or multipart file; cannot be used with --method delete"),
         )
         .arg(
             Arg::new("headers")
@@ -87,6 +87,9 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
         return Err(invalid(
             "--async cannot be combined with --polling-config: async mode returns only the initial response and does not support polling",
         ));
+    }
+    if value("method") == Some("delete") && value("input").is_some() {
+        return Err(invalid("--input cannot be combined with --method delete"));
     }
     let lro_config = parse_polling_config(value("polling-config"))?;
     let audience = match value("audience") {

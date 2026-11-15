@@ -80,6 +80,11 @@ fab-rs api workspaces --query 'text.value[].displayName'
 fab-rs api workspaces --query "text.value[?displayName=='rustcli']"
 ```
 
+`--input` cannot be combined with `--method delete`. Any supplied input,
+including an empty value or a file containing JSON `null`, fails with
+`InvalidInput` (exit 1) before input loading, authentication, or HTTP requests.
+DELETE without `--input` remains supported; other methods are unchanged.
+
 `--query` evaluates the response object placed inside `result.data`, matching
 Python's raw `api` command: `status_code`, decoded `text`, and optional `headers`.
 Do not include a `result.data` prefix. Use `text.value` for Fabric workspace

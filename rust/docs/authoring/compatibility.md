@@ -79,7 +79,13 @@ authority for implementation evidence.
   An empty/missing projection never reveals the unselected full response.
   `--query` is not a universal security-redaction boundary.
 - JSON inline/file input and non-JSON-file multipart input retain the source
-  behavior. Missing input files fail explicitly (a donor safety constraint),
+  behavior for non-DELETE methods. `--method delete` rejects any supplied
+  `--input` with structured `InvalidInput` and exit 1, before input loading,
+  authentication, or HTTP requests. This CLI-specific restriction intentionally
+  replaces the previous acceptance of DELETE inputs, including empty values and
+  files containing JSON `null`; it is not a universal HTTP restriction.
+  DELETE without `--input` remains supported.
+  Missing input files fail explicitly (a donor safety constraint),
   rather than silently sending a bodyless request. Headers split at the first
   `=`; authorization/host/hop-by-hop overrides are forbidden.
 - Raw requests bind credentials to the selected audience/origin. Unsafe origins,
