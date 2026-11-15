@@ -296,7 +296,12 @@ fn assert_lifecycle(scenario: &str) {
             output.stderr
         );
     } else {
-        assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+        let expected: &[u8] = match scenario {
+            "poll" => b"Operation status: Succeeded\n",
+            "failed" => b"Operation status: Failed\n",
+            _ => b"",
+        };
+        assert_eq!(output.stderr, expected);
     }
     match scenario {
         "unauthorized" => {
