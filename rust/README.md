@@ -76,19 +76,25 @@ fab-rs api 'workspaces?continuationToken=TOKEN'
 fab-rs api workspaces/.../items --method post --input request.json --async --show-headers
 fab-rs api operations/OPERATION_ID --async --show-headers
 fab-rs api workspaces --query displayName
-fab-rs api workspaces --query 'text.value[].displayName'
+fab-rs api workspaces --query '[].displayName'
+fab-rs api workspaces --query "[?displayName=='rustcli']"
 ```
 
-`--query` normally evaluates the HTTP wrapper (`status_code`, `text`, optional
-`headers`). A bare ASCII field name such as `displayName` instead selects that
-field from a body array or Fabric's top-level `value` array, otherwise from the
-body itself. Rows with missing/null fields are omitted; empty projections remain
-empty. The wrapper names `text`, `status_code`, and `headers` are reserved.
-Complex expressions still require explicit wrapper paths, such as
-`text.value[?type == 'Workspace'].displayName`; there is no recursive search or
-automatic pagination. Missing fields on a noncollection body retain `"None"`.
-An empty query bypasses projection. Querying is not a universal security-redaction
-boundary: selected data can itself contain sensitive information.
+Every nonempty `--query` evaluates the decoded body's top-level `value` when that
+key exists, otherwise the body itself (`text.value` or `text` in the unqueried
+response). A present `value` is selected even when null, empty, scalar, or an
+object; there is no truthiness fallback or recursive unwrapping. On an array,
+a bare ASCII field such as `displayName` is shorthand for `[].displayName`.
+Missing/null row fields are omitted; empty projections remain empty. Missing
+fields on a noncollection input retain `"None"`. Filters require `==`, not `=`;
+quote the whole expression for your shell. No automatic pagination is performed.
+
+This intentionally replaces wrapper-based queries, including Python's pinned raw
+`api` behavior. Migrate `text.value[].displayName` to `[].displayName`, or
+`text.items` to `items` for a body without `value`. Use `@` (or `.`) for the
+selected input. Queries cannot access HTTP status/headers; omit `--query` to
+inspect the wrapper. An empty query still bypasses projection. Querying is not a
+universal security-redaction boundary: selected data can itself be sensitive.
 
 Recognized Fabric/ARM operations and Fabric job instances poll **by default**.
 `--async` returns the actual

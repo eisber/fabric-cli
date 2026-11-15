@@ -13,7 +13,7 @@ fab-rs --version
 fab-rs auth login
 fab-rs auth status
 fab-rs api 'workspaces?continuationToken=ENCODED_VALUE'
-fab-rs api workspaces --method get --query 'text.value'
+fab-rs api workspaces --method get --query "[?displayName=='rustcli']"
 fab-rs api items --method post --input request.json --async --show-headers
 fab-rs auth logout
 ```
@@ -23,7 +23,13 @@ fab-rs auth logout
 audiences are fabric/storage/azure/powerbi. There are no aliases, `--params`,
 underscore spellings, or polling timing options. Quote endpoint query strings
 and URL-encode their values yourself; valid encoded values are not encoded again.
-`--query` filters the full response object locally, not the outgoing URL.
+Every nonempty `--query` filters the decoded body's top-level `value` when that
+key exists, otherwise the body itself; it does not alter the outgoing URL.
+Null/empty/scalar `value` inputs never fall back to the body. A bare field on an
+array still projects rows, so `displayName` is shorthand for `[].displayName`.
+This intentionally replaces wrapper queries: remove `text.value`/`text` prefixes
+as appropriate, and use `@` or `.` for the chosen input. Omit `--query` to inspect
+HTTP status/headers. No recursive unwrapping or pagination is performed.
 
 ## Host boundary
 

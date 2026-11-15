@@ -55,7 +55,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("query").long("query").help(
-                "Local JMESPath wrapper filter; bare fields select body or Fabric value rows",
+                "Local JMESPath on body.value when present, otherwise body; bare fields select array rows",
             ),
         )
         .arg(
@@ -284,16 +284,26 @@ fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
     }
 }
 
-/// Shape the response, preserving wrapper queries and bare-field body/row selection.
+/// Shape the response, querying the body's `value` when present, otherwise the body.
 ///
-/// Bare ASCII identifiers other than `text`, `status_code`, and `headers` select
-/// from body arrays or a Fabric `value` array, otherwise from the body itself.
-/// Other expressions retain the HTTP wrapper input. Empty results never fall back.
+/// A present `value` is selected even when null or empty. Bare ASCII identifiers
+/// project array rows. Empty queries retain the wrapper; empty results never fall back.
 pub fn response_data(
     response: ApiResponse,
     show_headers: bool,
     query: Option<&str>,
 ) -> Result<Value, CommandError> {
+    let body = response_body(&response.body)?;
+    if let Some(query) = query.filter(|query| !query.is_empty()) {
+        let input = body.get("value").unwrap_or(&body);
+        let field = query.trim();
+        return if input.is_array() && bare_field(field) {
+            fabric_cli_query::search(input, &format!("[].{field}"))
+        } else {
+            fabric_cli_query::search(input, query)
+        }
+        .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
+    }
     let mut payload = Map::new();
     payload.insert("status_code".into(), Value::from(response.status));
     if show_headers {
@@ -303,35 +313,15 @@ pub fn response_data(
                 .map_err(|_| invalid("Invalid response headers"))?,
         );
     }
-    payload.insert("text".into(), response_body(&response.body)?);
-    let payload = Value::Object(payload);
-    if let Some(query) = query.filter(|query| !query.is_empty()) {
-        let field = query.trim();
-        if bare_body_field(field) {
-            let body = &payload["text"];
-            let rows = body
-                .get("value")
-                .filter(|value| value.is_array())
-                .or_else(|| body.is_array().then_some(body));
-            return if let Some(rows) = rows {
-                fabric_cli_query::search(rows, &format!("[].{field}"))
-            } else {
-                fabric_cli_query::search(body, field)
-            }
-            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
-        }
-        return fabric_cli_query::search(&payload, query)
-            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
-    }
-    Ok(payload)
+    payload.insert("text".into(), body);
+    Ok(Value::Object(payload))
 }
 
-fn bare_body_field(field: &str) -> bool {
-    !matches!(field, "text" | "status_code" | "headers")
-        && field
-            .as_bytes()
-            .first()
-            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+fn bare_field(field: &str) -> bool {
+    field
+        .as_bytes()
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
         && field
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')

@@ -52,22 +52,29 @@ authority for implementation evidence.
 - Use `--show-headers`, **not** Python's `--show_headers`; no underscore alias.
 - No `--params`. Put URL-encoded query parameters in the quoted endpoint.
   Already-encoded values must not be double-encoded. `--query` instead applies
-  JMESPath locally to the full response object, except the bare-field shortcut
-  below. Unlike Python, a nonempty query
+  JMESPath locally to the decoded body's top-level `value` when that key exists,
+  otherwise the body itself (`text.value` or `text` in the unqueried wrapper).
+  Selection depends on key presence, not type or truthiness: null, empty arrays,
+  empty objects/strings, false and zero do not fall back to the body. Unlike
+  Python's pinned raw API, which queries the HTTP wrapper, a nonempty Rust query
   that yields an empty collection or string does not fall back to the full
   response, avoiding unintended disclosure. An explicitly empty query still
   bypasses projection.
 - A bare ASCII identifier (`[A-Za-z_][A-Za-z0-9_]*`, ignoring surrounding
-  whitespace), except reserved `text`, `status_code`, and `headers`, selects
-  from the JSON body. If the body has a top-level array-valued `value`, it selects
-  `[].FIELD` from that array; otherwise an array body is projected the same way.
+  whitespace) selects `[].FIELD` when the chosen input is an array, otherwise
+  `FIELD` from that input. There are no reserved wrapper field names.
   Missing/null row fields are omitted; scalar/list/object values and empty
   projections use the existing output rules. A noncollection body's missing/null
-  field returns `"None"`. This intentionally changes formerly missing bare
-  wrapper-field queries such as `displayName`; explicit `text.*`, all complex
-  expressions, wrapper fields and empty queries keep their existing semantics.
-  There is no evaluation retry, recursive traversal, or service pagination.
-  Use `text.value[].displayName` for explicit equivalent workspace projection.
+  field returns `"None"`. All complex expressions use the same chosen input:
+  `fab-rs api workspaces --query "[?displayName=='rustcli']"` returns matching
+  workspace rows. JMESPath equality uses `==`, not `=`. There is no evaluation
+  retry, recursive traversal, or service pagination.
+  This intentionally changes old wrapper queries: migrate
+  `text.value[].displayName` to `[].displayName`, `text.items` to `items` for a
+  body without `value`, and `to_string(text)` to `to_string(@)`. Query `@` or `.`
+  to select the whole chosen input. HTTP status/headers are not query inputs;
+  omit `--query` to inspect them. Body fields named `text`, `status_code`, or
+  `headers` are ordinary queryable data, not wrapper metadata.
   An empty/missing projection never reveals the unselected full response.
   `--query` is not a universal security-redaction boundary.
 - JSON inline/file input and non-JSON-file multipart input retain the source

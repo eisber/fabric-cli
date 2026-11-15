@@ -1,0 +1,7 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+kind: breaking
+body: Evaluate all nonempty fab-rs API queries on body.value when present, otherwise the body; retain bare-field array projections and empty-result nondisclosure. Migrate old HTTP-wrapper expressions.
+time: 2026-11-15T22:48:38.015057+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun
