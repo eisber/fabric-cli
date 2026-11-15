@@ -160,12 +160,21 @@ pub fn parser() -> Command {
         .subcommand_required(true)
         .arg(help_arg())
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
-        .subcommand(Command::new("auth").about("Bind to the current Azure CLI identity (run az login separately)")
+        .subcommand(Command::new("auth").about("Bind fab-rs to an existing Azure CLI identity.")
+            .after_help("fab-rs does not sign in to or sign out of Azure CLI; run az login separately.")
             .disable_help_flag(true).disable_help_subcommand(true).arg(help_arg()).subcommand_required(true)
             .subcommand(auth_leaf("login").about("Validate and bind the current Azure CLI tenant/principal"))
             .subcommand(auth_leaf("status").about("Validate the selected Azure CLI identity"))
             .subcommand(auth_leaf("logout").about("Clear Rust selection only; leave Azure CLI signed in")))
         .subcommand(fabric_cli_api::command())
+}
+
+fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
+    if args.len() == 2 && args[1] == "auth" {
+        return parser()
+            .try_get_matches_from(args.iter().cloned().chain([OsString::from("--help")]));
+    }
+    parser().try_get_matches_from(args)
 }
 
 fn command_name(args: &[OsString]) -> &'static str {
@@ -221,7 +230,7 @@ pub async fn run(
 ) -> u8 {
     let args: Vec<OsString> = args.into_iter().collect();
     let name = command_name(&args);
-    let matches = match parser().try_get_matches_from(args) {
+    let matches = match parse_arguments(&args) {
         Ok(matches) => matches,
         Err(error)
             if matches!(

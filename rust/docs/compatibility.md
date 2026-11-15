@@ -28,6 +28,12 @@ authority for implementation evidence.
   by Rust.
 - `--help`, `--version`, and ordinary subcommand `--help` use stdout, exit zero,
   and do not load credentials or send HTTP. Use two ASCII hyphens.
+- Bare `fab-rs auth` shows the same human-readable help as `fab-rs auth --help`,
+  with stdout text, empty stderr, and exit zero. It needs no Azure CLI or
+  configuration and does not change selection. This replaces its previous JSON
+  `InvalidInput` failure and exit one; scripts relying on that failure must adapt.
+  Unknown commands, subcommands, or flags and missing required API arguments
+  remain sanitized JSON failures on stdout with exit one.
 
 ## Request and output
 

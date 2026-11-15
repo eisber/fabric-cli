@@ -20,6 +20,8 @@ cargo run --locked -p fabric-cli -- --version
 ```
 
 Help/version and subcommand help do not require authentication or Azure CLI.
+Bare `fab-rs auth` lists the available authentication subcommands, just like
+`fab-rs auth --help`, without reading configuration or changing identity selection.
 Authentication and API calls require Azure CLI, installed separately:
 
 ```sh

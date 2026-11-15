@@ -235,6 +235,7 @@ async fn root_and_subhelp_are_completely_effect_free() {
         vec!["--help"],
         vec!["--version"],
         vec!["api", "--help"],
+        vec!["auth"],
         vec!["auth", "--help"],
         vec!["auth", "login", "--help"],
         vec!["auth", "status", "--help"],
@@ -246,6 +247,66 @@ async fn root_and_subhelp_are_completely_effect_free() {
         assert!(stdout.contains("fab-rs"));
         assert!(stderr.is_empty());
         assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn bare_auth_matches_explicit_help_without_host_effects() {
+    let host = FakeHost::new(vec![]);
+    *host.binding.lock().unwrap() = None;
+    let bare = run(&["auth"], &host).await;
+    let explicit = run(&["auth", "--help"], &host).await;
+    assert_eq!(bare, explicit);
+    assert_eq!(bare.0, 0);
+    assert!(bare.2.is_empty());
+    for text in [
+        "Bind fab-rs to an existing Azure CLI identity.",
+        "Usage: fab-rs auth <COMMAND>",
+        "  login",
+        "  status",
+        "  logout",
+        "Validate and bind the current Azure CLI tenant/principal",
+        "Validate the selected Azure CLI identity",
+        "Clear Rust selection only; leave Azure CLI signed in",
+        "fab-rs does not sign in to or sign out of Azure CLI; run az login separately.",
+    ] {
+        assert!(bare.1.contains(text), "missing help text: {text}");
+    }
+    assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
+    assert!(host.binding.lock().unwrap().is_none());
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn genuine_argument_errors_remain_sanitized_failures_without_auth_effects() {
+    for args in [
+        vec![],
+        vec!["UNKNOWN-INPUT-CANARY"],
+        vec!["auth", "UNKNOWN-INPUT-CANARY"],
+        vec!["auth", "--UNKNOWN-INPUT-CANARY"],
+        vec!["auth", "login", "--tenant", "UNKNOWN-INPUT-CANARY"],
+        vec!["auth", "logout", "UNKNOWN-INPUT-CANARY"],
+        vec!["api"],
+        vec!["api", "--method", "get"],
+        vec!["api", "items", "--method"],
+        vec!["api", "items", "--UNKNOWN-INPUT-CANARY"],
+        vec!["api", "items", "--method", "UNKNOWN-INPUT-CANARY"],
+        vec!["api", "items", "--audience", "UNKNOWN-INPUT-CANARY"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["status"], "Failure");
+        assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+        assert!(!stdout.contains("UNKNOWN-INPUT-CANARY"));
+        assert!(stderr.is_empty());
+        // Failure timestamps are the only permitted host effect.
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
     }
 }
 
@@ -1354,6 +1415,8 @@ fn actual_fab_rs_metadata_runs_with_empty_path_and_no_configuration() {
         vec!["--help"],
         vec!["--version"],
         vec!["api", "--help"],
+        vec!["auth"],
+        vec!["auth", "--help"],
         vec!["auth", "login", "--help"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
@@ -1369,6 +1432,32 @@ fn actual_fab_rs_metadata_runs_with_empty_path_and_no_configuration() {
         assert!(output.stderr.is_empty());
         assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
     }
+}
+
+#[test]
+fn actual_bare_auth_matches_help_without_configuration_environment() {
+    let invoke = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+            .args(args)
+            .env("PATH", "")
+            .env_remove("HOME")
+            .env_remove("APPDATA")
+            .env_remove("XDG_CONFIG_HOME")
+            .output()
+            .unwrap()
+    };
+    let bare = invoke(&["auth"]);
+    let explicit = invoke(&["auth", "--help"]);
+    assert!(bare.status.success());
+    assert!(explicit.status.success());
+    assert_eq!(bare.stdout, explicit.stdout);
+    assert!(
+        String::from_utf8(bare.stdout)
+            .unwrap()
+            .contains("fab-rs auth <COMMAND>")
+    );
+    assert!(bare.stderr.is_empty());
+    assert!(explicit.stderr.is_empty());
 }
 
 #[test]
