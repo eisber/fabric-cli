@@ -12,6 +12,9 @@ use std::{ffi::OsString, io::Write};
 /// The executable supplies its native host. Tests can supply offline effects
 /// without adding an environment-controlled authentication bypass to `fab-rs`.
 pub fn run_process(args: Vec<OsString>, host: &dyn Host) -> u8 {
+    if args.len() == 1 {
+        return crate::welcome(host, &mut std::io::stdout(), &mut std::io::stderr());
+    }
     if let Err(error) = crate::parse_arguments(&args)
         && matches!(
             error.kind(),

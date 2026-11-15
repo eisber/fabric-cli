@@ -205,7 +205,7 @@ fn response(status: u16, body: &str, headers: &[(&str, &str)]) -> ApiResponse {
     }
 }
 
-async fn run(args: &[&str], host: &FakeHost) -> (u8, String, String) {
+async fn run(args: &[&str], host: &dyn Host) -> (u8, String, String) {
     let args = std::iter::once("fab-rs")
         .chain(args.iter().copied())
         .map(OsString::from);
@@ -276,6 +276,61 @@ async fn bare_auth_matches_explicit_help_without_host_effects() {
     assert!(host.binding.lock().unwrap().is_none());
     assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
     assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn bare_root_welcomes_with_local_selection_without_acquiring_credentials() {
+    for selected in [false, true] {
+        let host = FakeHost::new(vec![]);
+        let selection = selected.then(binding);
+        *host.binding.lock().unwrap() = selection.clone();
+        let (code, stdout, stderr) = run(&[], &host).await;
+        assert_eq!(code, 0);
+        assert!(stderr.is_empty());
+        assert!(stdout.starts_with("Welcome to fab-rs.\n"));
+        assert!(stdout.contains("fab-rs api workspaces"));
+        assert!(stdout.contains("fab-rs auth            Authentication commands"));
+        assert!(stdout.contains("fab-rs --help"));
+        if selected {
+            assert!(stdout.contains("Identity: Selected locally; session not verified."));
+            assert!(stdout.contains("Check access: fab-rs auth status"));
+            assert!(!stdout.contains("Get connected:"));
+        } else {
+            assert!(stdout.contains("Identity: No identity selected for fab-rs."));
+            assert!(stdout.contains("az login               Sign in using Azure CLI"));
+            assert!(stdout.contains("fab-rs auth login      Bind fab-rs to that identity"));
+        }
+        assert!(!stdout.contains(TENANT));
+        assert!(!stdout.contains(PRINCIPAL));
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(*host.binding.lock().unwrap(), selection);
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn bare_root_reports_selection_errors_without_disclosure_or_modification() {
+    let directory = TempDirectory::new();
+    let path = directory.0.join("selection.json");
+    let file = SelectionFile::new(path.clone());
+    file.write(&binding()).unwrap();
+    let contents = b"INVALID-SELECTION-SECRET-CANARY";
+    std::fs::write(&path, contents).unwrap();
+    let host = fabric_cli::NativeHost::with_selection_path(path.clone());
+    let (code, stdout, stderr) = run(&[], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.starts_with("Welcome to fab-rs.\n"));
+    assert!(stdout.contains("Identity: Unable to read local selection."));
+    assert!(!stdout.contains("No identity selected"));
+    assert!(stderr.contains("Cannot read local selection."));
+    assert!(stderr.contains("fab-rs auth logout"));
+    assert!(!stdout.contains("SECRET-CANARY"));
+    assert!(!stderr.contains("SECRET-CANARY"));
+    assert_eq!(std::fs::read(path).unwrap(), contents);
+    let (_, help, help_stderr) = run(&["--help"], &host).await;
+    assert!(help.contains("Usage:"));
+    assert!(help_stderr.is_empty());
 }
 
 #[tokio::test]
@@ -1215,14 +1270,12 @@ async fn login_status_logout_selection_required_and_no_network() {
 }
 
 #[tokio::test]
-async fn root_without_arguments_matches_status_and_reports_only_binding_metadata() {
+async fn explicit_status_reports_only_validated_binding_metadata() {
     let host = FakeHost::new(vec![]);
-    let explicit = run(&["auth", "status"], &host).await;
-    let bare = run(&[], &host).await;
-    assert_eq!(bare, explicit);
-    assert_eq!(bare.0, 0);
+    let status = run(&["auth", "status"], &host).await;
+    assert_eq!(status.0, 0);
     assert_eq!(
-        data(&bare.1),
+        data(&status.1),
         json!([{
             "selected": true,
             "logged_in": true,
@@ -1233,20 +1286,19 @@ async fn root_without_arguments_matches_status_and_reports_only_binding_metadata
             "service_access_verified": false,
         }])
     );
-    assert!(!bare.1.contains("synthetic-token"));
-    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 2);
+    assert!(!status.1.contains("synthetic-token"));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 1);
     assert!(host.transport.requests.lock().unwrap().is_empty());
 
     *host.binding.lock().unwrap() = None;
-    let bare = run(&[], &host).await;
-    let explicit = run(&["auth", "status"], &host).await;
-    assert_eq!(bare, explicit);
-    assert_eq!(bare.0, 4);
+    let status = run(&["auth", "status"], &host).await;
+    assert_eq!(status.0, 4);
     assert!(
-        bare.1
+        status
+            .1
             .contains("No Rust identity selected. Run fab-rs auth login.")
     );
-    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 1);
     assert!(host.binding.lock().unwrap().is_none());
 }
 
@@ -1269,7 +1321,7 @@ async fn login_reports_the_validated_binding_without_claiming_service_access() {
 
 #[tokio::test]
 async fn sdk_auth_failure_is_sanitized_unauthorized_and_never_sends() {
-    for args in [vec!["api", "items"], vec!["auth", "status"], vec![]] {
+    for args in [vec!["api", "items"], vec!["auth", "status"]] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
             calls: AtomicUsize::new(0),
@@ -1850,6 +1902,78 @@ fn actual_fab_rs_metadata_runs_with_empty_path_and_no_configuration() {
 }
 
 #[test]
+fn actual_bare_root_welcomes_without_azure_cli_and_preserves_selection() {
+    let directory = TempDirectory::new();
+    let path = directory.0.join("fab-rs").join("selection.json");
+    let invoke = || {
+        Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+            .env("PATH", "")
+            .env("HOME", &directory.0)
+            .env("APPDATA", &directory.0)
+            .env("XDG_CONFIG_HOME", &directory.0)
+            .output()
+            .unwrap()
+    };
+    let absent = invoke();
+    assert!(absent.status.success());
+    assert!(absent.stderr.is_empty());
+    assert!(
+        String::from_utf8(absent.stdout)
+            .unwrap()
+            .contains("Identity: No identity selected for fab-rs.")
+    );
+    assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
+    SelectionFile::new(path.clone()).write(&binding()).unwrap();
+    let contents = std::fs::read(&path).unwrap();
+    let selected = invoke();
+    assert!(selected.status.success());
+    assert!(selected.stderr.is_empty());
+    assert!(
+        String::from_utf8(selected.stdout)
+            .unwrap()
+            .contains("Identity: Selected locally; session not verified.")
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), contents);
+    std::fs::write(&path, b"INVALID-SELECTION-SECRET-CANARY").unwrap();
+    let malformed = invoke();
+    assert_eq!(malformed.status.code(), Some(1));
+    assert!(
+        String::from_utf8(malformed.stdout)
+            .unwrap()
+            .contains("Identity: Unable to read local selection.")
+    );
+    let stderr = String::from_utf8(malformed.stderr).unwrap();
+    assert!(stderr.contains("Cannot read local selection."));
+    assert!(!stderr.contains("SECRET-CANARY"));
+    assert_eq!(
+        std::fs::read(path).unwrap(),
+        b"INVALID-SELECTION-SECRET-CANARY"
+    );
+}
+
+#[test]
+fn actual_bare_root_reports_missing_configuration_environment() {
+    let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+        .env("PATH", "")
+        .env_remove("HOME")
+        .env_remove("APPDATA")
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Identity: Unable to read local selection.")
+    );
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("Cannot read local selection.")
+    );
+}
+
+#[test]
 fn actual_bare_auth_matches_help_without_configuration_environment() {
     let invoke = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_fab-rs"))
@@ -1892,15 +2016,6 @@ fn actual_fab_rs_absent_binding_is_exit_four_without_azure_cli() {
         assert_eq!(output.status.code(), Some(4), "{args:?}");
         let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(envelope["result"]["error_code"], "Unauthorized");
-        if args.is_empty() {
-            assert_eq!(envelope["command"], "auth status");
-            assert!(
-                envelope["result"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("fab-rs auth login")
-            );
-        }
         assert!(output.stderr.is_empty());
     }
 }

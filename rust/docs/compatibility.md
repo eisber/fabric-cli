@@ -28,10 +28,16 @@ authority for implementation evidence.
   by Rust.
 - `--help`, `--version`, and ordinary subcommand `--help` use stdout, exit zero,
   and do not load credentials or send HTTP. Use two ASCII hyphens.
-- Bare `fab-rs` runs exactly `auth status`, including its command name, validation,
-  sanitized errors, cancellation/deadline and exit codes. Unlike its previous
-  `InvalidInput` exit one, it succeeds with a valid binding or returns
-  `Unauthorized` exit four without one. It does not log in or change selection.
+- Bare `fab-rs` shows a plain-text welcome screen on stdout, then exits without
+  entering a shell. It reads only local selection: present means selected but
+  unverified, absent means not selected for Rust (not necessarily signed out of
+  Azure CLI). Both exit zero with empty stderr. Unreadable/malformed selection or
+  unavailable configuration location is explicitly reported in the welcome
+  text, with a safe stderr diagnostic and exit one. There is no credential
+  acquisition, Azure CLI invocation, network access, or selection mutation.
+  This replaces the previous automatic `auth status` execution and its JSON
+  success/`Unauthorized` output; explicit `auth status` and other command JSON
+  contracts are unchanged.
 - Login/status successes retain `selected: true` and report `logged_in: true`,
   `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id` from the
   validated binding. `mfa_evidence: "not_checked"` and

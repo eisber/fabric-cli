@@ -19,10 +19,12 @@ cargo run --locked -p fabric-cli -- --help
 cargo run --locked -p fabric-cli -- --version
 ```
 
+Bare `fab-rs` shows a text welcome screen and reads only its local identity
+selection. A selected identity is not a verified Azure session; use
+`fab-rs auth status` to check access. No selection shows sign-in/binding guidance.
+Unreadable selection produces a safe stderr diagnostic and exit one.
+
 Help/version and subcommand help do not require authentication or Azure CLI.
-Bare `fab-rs` runs `auth status`: it validates the existing Rust selection and
-reports the current binding, or returns login guidance with exit 4 when none is
-selected. It does not select an identity or start a REPL.
 Bare `fab-rs auth` lists the available authentication subcommands, just like
 `fab-rs auth --help`, without reading configuration or changing identity selection.
 Authentication and API calls require Azure CLI, installed separately:

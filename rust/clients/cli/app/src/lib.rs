@@ -170,13 +170,6 @@ pub fn parser() -> Command {
 }
 
 fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
-    if args.len() == 1 {
-        return parser().try_get_matches_from(
-            args.iter()
-                .cloned()
-                .chain([OsString::from("auth"), OsString::from("status")]),
-        );
-    }
     if args.len() == 2 && args[1] == "auth" {
         return parser()
             .try_get_matches_from(args.iter().cloned().chain([OsString::from("--help")]));
@@ -189,7 +182,6 @@ fn command_name(args: &[OsString]) -> &'static str {
         args.get(1).and_then(|v| v.to_str()),
         args.get(2).and_then(|v| v.to_str()),
     ) {
-        (None, _) if args.len() == 1 => "auth status",
         (Some("api"), _) => "api",
         (Some("auth"), Some("login")) => "auth login",
         (Some("auth"), Some("status")) => "auth status",
@@ -225,10 +217,39 @@ fn write_failure(
     code
 }
 
+fn welcome(host: &dyn Host, stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
+    let (identity, code) = match host.selection() {
+        Ok(Some(_)) => (
+            "Identity: Selected locally; session not verified.\nCheck access: fab-rs auth status\n",
+            0,
+        ),
+        Ok(None) => (
+            "Identity: No identity selected for fab-rs.\n\nGet connected:\n  az login               Sign in using Azure CLI\n  fab-rs auth login      Bind fab-rs to that identity\n",
+            0,
+        ),
+        Err(_) => {
+            let _ = stderr.write_all(
+                b"Cannot read local selection. Repair its permissions/content or run fab-rs auth logout.\n",
+            );
+            ("Identity: Unable to read local selection.\n", 1)
+        }
+    };
+    let output = format!(
+        "Welcome to fab-rs.\nRaw Microsoft Fabric API access using your Azure CLI identity.\n\n\
+         {identity}\nGet started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth            Authentication commands\n  fab-rs --help          All commands\n"
+    );
+    if stdout.write_all(output.as_bytes()).is_err() {
+        let _ = stderr.write_all(b"Cannot write welcome output\n");
+        return 1;
+    }
+    code
+}
+
 /// Run the real parser/host/output with injected effects and streams.
 ///
 /// Supply the executable name as the first argument, as with `std::env::args_os`.
 /// Metadata returns before touching any host hook, selection, credential, or network.
+/// No arguments shows a welcome screen that reads only the local selection.
 pub async fn run(
     args: impl IntoIterator<Item = OsString>,
     host: &dyn Host,
@@ -237,6 +258,9 @@ pub async fn run(
     stderr: &mut dyn Write,
 ) -> u8 {
     let args: Vec<OsString> = args.into_iter().collect();
+    if args.len() == 1 {
+        return welcome(host, stdout, stderr);
+    }
     let name = command_name(&args);
     let matches = match parse_arguments(&args) {
         Ok(matches) => matches,
