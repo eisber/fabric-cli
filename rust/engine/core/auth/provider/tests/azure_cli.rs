@@ -10,7 +10,7 @@ use azure_core::credentials::{TokenCredential, TokenRequestOptions};
 use azure_identity::Executor;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use fabric_core::{Audience, CancellationToken, Clock, CoreError, ErrorKind, OperationContext};
-use fabric_identity::{AzureCliSession, Binding, BoundCredential};
+use fabric_identity::{AzureCliSession, BoundCredential};
 use serde_json::json;
 use std::{
     collections::VecDeque,
@@ -141,15 +141,10 @@ async fn sdk_uses_current_context_and_single_flight_per_scope_with_expiry_refres
     );
     let binding = session.login(&context()).await.unwrap();
     let credential = BoundCredential::new(session, binding).unwrap();
+    let scopes = [Audience::Fabric.scope()];
     let (first, second) = tokio::join!(
-        credential.get_token(
-            &[Audience::Fabric.scope()],
-            Some(TokenRequestOptions::default())
-        ),
-        credential.get_token(
-            &[Audience::Fabric.scope()],
-            Some(TokenRequestOptions::default())
-        ),
+        credential.get_token(&scopes, Some(TokenRequestOptions::default())),
+        credential.get_token(&scopes, Some(TokenRequestOptions::default())),
     );
     assert_eq!(first.unwrap().token, second.unwrap().token);
     assert_eq!(process.commands.lock().unwrap().len(), 2);
