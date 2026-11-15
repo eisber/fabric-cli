@@ -139,10 +139,13 @@ See [Run On Demand Item Job](https://learn.microsoft.com/en-us/rest/api/fabric/c
 and [Get Item Job Instance](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/get-item-job-instance).
 
 Fabric operation/job Locations may use the public API host or regional
-`wabi-<cluster>-redirect.analysis.windows.net` hosts. Only validated HTTPS
-operation status/result and exact job-instance routes may use this regional
-exception; arbitrary hosts and raw user-supplied regional endpoints remain
+`wabi-<cluster>-redirect.analysis.windows.net` hosts, or the exact MSIT host
+`msitapi.fabric.microsoft.com`. Only validated HTTPS operation status/result
+and exact job-instance routes may use these additional hosts; arbitrary hosts
+and raw user-supplied endpoints on these hosts remain
 rejected. Origin-relative result Locations retain the operation's validated host.
+`home-cluster-uri` is not a polling target. Job polling honors `Retry-After`,
+including the initial wait before the first status/progress update.
 With a valid `x-ms-operation-id`, a safe non-status `Location` supplies only the
 origin for `/v1/operations/{id}`. Result-header Locations likewise select that
 operation's `/result` route, not an arbitrary advertised resource path.

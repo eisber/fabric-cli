@@ -137,7 +137,7 @@ fn resolve_location(audience: Audience, value: &str, base: &Url) -> Result<Url, 
 }
 fn validate_operation_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
     if audience == Audience::Fabric
-        && fabric_regional_host(url.host_str().unwrap_or_default())
+        && fabric_polling_host(url.host_str().unwrap_or_default())
         && !(fabric_operation_route(url) || fabric_job(url))
     {
         return Err(protocol(
@@ -148,8 +148,8 @@ fn validate_operation_components(audience: Audience, url: &Url) -> Result<(), Co
 }
 fn validate_location_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
     let host = url.host_str().unwrap_or_default();
-    let regional = audience == Audience::Fabric && fabric_regional_host(host);
-    let result = if regional {
+    let additional_host = audience == Audience::Fabric && fabric_polling_host(host);
+    let result = if additional_host {
         validate_url_for_host(url, host)
     } else {
         validate_url(audience, url)
@@ -157,6 +157,9 @@ fn validate_location_components(audience: Audience, url: &Url) -> Result<(), Cor
     result.map_err(|_| {
         protocol("Unsafe operation URL: selected HTTPS origin or normalized components rejected")
     })
+}
+fn fabric_polling_host(host: &str) -> bool {
+    host == "msitapi.fabric.microsoft.com" || fabric_regional_host(host)
 }
 fn fabric_regional_host(host: &str) -> bool {
     let Some(cluster) = host

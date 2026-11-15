@@ -566,6 +566,61 @@ async fn unsafe_fabric_origin_hints_do_not_authorize_status_gets() {
 }
 
 #[tokio::test]
+async fn msit_job_polls_its_location_and_reports_progress_without_following_home_cluster() {
+    const MSIT_JOB: &str = "https://msitapi.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job";
+    let mut initial = response(
+        202,
+        json!({}),
+        &[
+            ("location", MSIT_JOB),
+            ("x-ms-job-id", "job"),
+            ("retry-after", "60"),
+            ("content-type", "application/octet-stream"),
+            (
+                "home-cluster-uri",
+                "https://df-msit-scus-redirect.analysis.windows.net/",
+            ),
+        ],
+    );
+    initial.body.clear();
+    let (code, stdout, stderr, calls) = run_script(
+        &[
+            "api",
+            "workspaces/workspace/items/item/jobs/execute/instances",
+            "--method",
+            "post",
+            "--input",
+            "{}",
+            "--show-headers",
+        ],
+        vec![
+            initial,
+            response(200, json!({"status":"InProgress"}), &[("retry-after", "60")]),
+            response(200, json!({"status":"Completed"}), &[]),
+        ],
+        false,
+        false,
+        "Job instance status: InProgress\n",
+        &[
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
+            MSIT_JOB,
+            MSIT_JOB,
+        ],
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 3, "one POST and two job GETs");
+    assert_eq!(
+        stderr,
+        "Job instance status: InProgress\nJob instance status: Completed\n"
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],
+        "Completed"
+    );
+}
+
+#[tokio::test]
 async fn regional_job_reports_terminal_success_or_failure_without_replaying_post() {
     const REGIONAL_JOB: &str = "https://wabi-west-europe-redirect.analysis.windows.net/v1/workspaces/workspace/items/item/jobs/instances/job?secret=QUERY-CANARY";
     for terminal in ["Completed", "Failed"] {

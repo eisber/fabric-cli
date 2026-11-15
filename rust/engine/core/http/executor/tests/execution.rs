@@ -283,6 +283,16 @@ async fn unlimited_wait_is_still_cancellable_without_starting_a_deadline_timer()
 
 #[tokio::test]
 async fn regional_permission_is_only_for_safe_fabric_polling_before_credentials() {
+    for url in [
+        "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1?secret=CANARY",
+        "https://msitapi.fabric.microsoft.com/v1/operations/op-1?secret=CANARY",
+        "https://msitapi.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
+    ] {
+        assert_safe_polling_permission(url).await;
+    }
+}
+
+async fn assert_safe_polling_permission(url: &str) {
     let credential = Arc::new(Credential {
         calls: Mutex::new(0),
     });
@@ -297,9 +307,7 @@ async fn regional_permission_is_only_for_safe_fabric_polling_before_credentials(
     let client = HttpClient::new(credential.clone(), transport.clone(), clock.clone());
     let ctx = context(clock.as_ref(), 240);
     let mut regional = request("GET");
-    regional.url = "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1?secret=CANARY"
-        .parse()
-        .unwrap();
+    regional.url = url.parse().unwrap();
     assert!(
         client
             .execute(regional.clone(), Audience::Fabric, &ctx)

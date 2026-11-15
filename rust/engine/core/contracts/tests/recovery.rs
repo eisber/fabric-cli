@@ -259,6 +259,7 @@ fn regional_fabric_handles_and_relative_results_preserve_origin_and_redact_queri
     for host in [
         "wabi-us-central-b-primary-redirect.analysis.windows.net",
         "wabi-west-europe-redirect.analysis.windows.net",
+        "msitapi.fabric.microsoft.com",
     ] {
         for (path, kind) in [
             ("/v1/operations/op-1", OperationKind::Fabric),
@@ -308,6 +309,7 @@ fn fabric_operation_ids_select_status_routes_from_safe_location_origins() {
     for host in [
         "api.fabric.microsoft.com",
         "wabi-west-europe-redirect.analysis.windows.net",
+        "msitapi.fabric.microsoft.com",
     ] {
         for (path, query) in [
             ("/v1/workspaces/workspace/items/item", None),
@@ -416,6 +418,12 @@ fn regional_operation_policy_rejects_host_lookalikes_and_unrecognized_routes() {
         "wabi-us-redirect.analysis.windows.net.",
         "wabi-us-redirect.analysis.windows.net:444",
         "user:CANARY@wabi-us-redirect.analysis.windows.net",
+        "msitapi.fabric.microsoft.com.evil.invalid",
+        "nested.msitapi.fabric.microsoft.com",
+        "msitapi.fabric.microsoft.com.",
+        "msitapi.fabric.microsoft.com:444",
+        "user:CANARY@msitapi.fabric.microsoft.com",
+        "df-msit-scus-redirect.analysis.windows.net",
     ] {
         let location = format!("https://{host}/v1/operations/op-1?secret=CANARY");
         let error = validate_operation_url(Audience::Fabric, &location).unwrap_err();
@@ -433,6 +441,8 @@ fn regional_operation_policy_rejects_host_lookalikes_and_unrecognized_routes() {
         "/v1/operations/op-1#CANARY",
     ] {
         let location = format!("https://wabi-us-redirect.analysis.windows.net{path}");
+        assert!(validate_operation_url(Audience::Fabric, &location).is_err());
+        let location = format!("https://msitapi.fabric.microsoft.com{path}");
         assert!(validate_operation_url(Audience::Fabric, &location).is_err());
     }
 }

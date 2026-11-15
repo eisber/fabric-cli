@@ -91,7 +91,7 @@ authority for implementation evidence.
 - Raw requests bind credentials to the selected audience/origin. Unsafe origins,
   URL credentials/fragments, traversal, redirects, and header injection are
   rejected before credential acquisition. Fabric polling has the narrow
-  service-advertised regional exception described below, not a general
+  service-advertised operation-host exception described below, not a general
   cross-origin token-forwarding policy.
 - Audience `fabric`: base `https://api.fabric.microsoft.com/v1`, scope
   `https://api.fabric.microsoft.com/.default`.
@@ -165,6 +165,9 @@ protocols. Known contradictory operation IDs remain errors.
 Fabric operation URLs may also use an HTTPS host matching the complete
 single-label `wabi-<cluster>-redirect.analysis.windows.net` structure, with a
 nonempty ASCII alphanumeric/hyphen cluster and a valid DNS-label length.
+The exact Fabric MSIT host `msitapi.fabric.microsoft.com` is also allowed for
+these operation/job polling routes, not arbitrary Fabric subdomains. The
+`home-cluster-uri` header does not select a polling origin.
 This exception is restricted to recognized `/v1/operations/{id}` status and
 `/v1/operations/{id}/result` routes and exact job-instance routes. It does not
 allow arbitrary `analysis.windows.net` hosts, nested subdomains, suffix lookalikes,
