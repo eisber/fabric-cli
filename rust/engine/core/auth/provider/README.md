@@ -12,6 +12,25 @@ SDK facades, filesystem access, global runtime, or token persistence.
 principal object IDs; token claims are consistency metadata, not local
 cryptographic proof. The host persists selection.
 
+Login distinguishes exact known missing-executable shell diagnostics from Azure
+CLI's `ERROR: Please run 'az login' to setup account.` diagnostic (exit 1,
+empty stdout). Both remain `Unauthorized` (CLI exit 4). Missing-executable
+guidance covers installation **or PATH availability**, not proof that Azure CLI
+is absent from disk. Signed-out guidance reports what Azure CLI says, not an
+inference from every credential failure.
+
+The pinned `azure_identity` 1.0.0 SDK exposes only coarse `Credential` errors,
+wraps raw stderr, and incorrectly permits any exit 127 to mean `az not found`.
+An injected executor adapter recognizes exact English diagnostics from the
+existing SDK invocation and carries a typed, safe cause through the SDK error
+chain. It adds no subprocess/preflight, token parsing, or Azure CLI state changes.
+Unknown/localized shell output, shell-spawn failures, permission errors,
+expired/revoked credentials, scope denial, unsupported/malformed token output,
+and invalid identity metadata receive generic login guidance. No raw provider
+output is exposed. New shell/CLI diagnostic formats deliberately fall back to
+generic guidance rather than broad matching. Bound-credential errors retain
+their existing generic identity/binding guidance.
+
 `BoundCredential::new(session, binding)` implements the Azure SDK
 `azure_core::credentials::TokenCredential`, accepting exactly one supported scope
 and forwarding SDK request options without overrides. It owns per-scope mutex slots for single-flight

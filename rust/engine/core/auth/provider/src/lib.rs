@@ -31,6 +31,93 @@ use tokio::{
 
 const MAX_PROVIDER_BYTES: usize = 256 * 1024;
 const LOGIN_REQUIRED: &str = "Azure CLI identity unavailable or changed. Install Azure CLI 2.54+ and run az login, then fab-rs auth login";
+const CLI_UNAVAILABLE: &str = "Azure CLI executable is unavailable. Install Azure CLI 2.54+ or make az available on PATH, then run az login and fab-rs auth login";
+const CLI_SIGNED_OUT: &str =
+    "Azure CLI reports no signed-in account. Run az login, then fab-rs auth login";
+const LOGIN_FAILED: &str = "Could not validate the current Azure CLI identity. Check Azure CLI 2.54+ and its current account/session, then retry fab-rs auth login";
+
+#[derive(Debug)]
+enum LoginDiagnostic {
+    Unavailable,
+    SignedOut,
+}
+
+impl fmt::Display for LoginDiagnostic {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Unavailable => CLI_UNAVAILABLE,
+            Self::SignedOut => CLI_SIGNED_OUT,
+        })
+    }
+}
+
+impl std::error::Error for LoginDiagnostic {}
+
+#[derive(Debug)]
+struct DiagnosticExecutor(Arc<dyn Executor>);
+
+fn process_diagnostic(program: &OsStr, output: &Output) -> Option<LoginDiagnostic> {
+    if output.status.success() || !output.stdout.is_empty() {
+        return None;
+    }
+    // Exact known diagnostics only: exit 127 alone is not proof of a missing az.
+    let stderr = std::str::from_utf8(&output.stderr)
+        .ok()?
+        .trim_end_matches(['\r', '\n']);
+    if output.status.code() == Some(1) && stderr == "ERROR: Please run 'az login' to setup account."
+    {
+        return Some(LoginDiagnostic::SignedOut);
+    }
+    if program == OsStr::new("/bin/sh")
+        && output.status.code() == Some(127)
+        && [
+            "/bin/sh: 1: az: not found",
+            "/bin/sh: az: not found",
+            "/bin/sh: az: command not found",
+            "/bin/sh: line 1: az: command not found",
+            "/bin/sh: az: No such file or directory",
+        ]
+        .contains(&stderr)
+    {
+        return Some(LoginDiagnostic::Unavailable);
+    }
+    if program == OsStr::new("cmd")
+        && matches!(output.status.code(), Some(1 | 9009))
+        && stderr
+            == "'az' is not recognized as an internal or external command,\r\noperable program or batch file."
+    {
+        return Some(LoginDiagnostic::Unavailable);
+    }
+    None
+}
+
+#[async_trait]
+impl Executor for DiagnosticExecutor {
+    async fn run(&self, program: &OsStr, args: &[&OsStr]) -> io::Result<Output> {
+        let output = self.0.run(program, args).await?;
+        if let Some(diagnostic) = process_diagnostic(program, &output) {
+            return Err(io::Error::other(diagnostic));
+        }
+        Ok(output)
+    }
+}
+
+fn login_error(error: azure_core::Error) -> CoreError {
+    let mut cause: &(dyn std::error::Error + 'static) = &error;
+    loop {
+        if let Some(error) = cause.downcast_ref::<io::Error>()
+            && let Some(diagnostic) = error
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<LoginDiagnostic>())
+        {
+            return CoreError::new(ErrorKind::Unauthorized, diagnostic.to_string());
+        }
+        let Some(source) = cause.source() else {
+            return CoreError::new(ErrorKind::Unauthorized, LOGIN_FAILED);
+        };
+        cause = source;
+    }
+}
 
 fn unauthorized() -> CoreError {
     CoreError::new(ErrorKind::Unauthorized, LOGIN_REQUIRED)
@@ -224,7 +311,7 @@ impl AzureCliSession {
     /// Compose an explicitly injected SDK process executor and wall clock.
     pub fn new(executor: Arc<dyn Executor>, clock: Arc<dyn Clock>) -> Result<Self, CoreError> {
         let credential = AzureCliCredential::new(Some(AzureCliCredentialOptions {
-            executor: Some(executor),
+            executor: Some(Arc::new(DiagnosticExecutor(executor))),
             ..Default::default()
         }))
         .map_err(|_| unauthorized())?;
@@ -235,17 +322,21 @@ impl AzureCliSession {
         &self,
         scope: &str,
         options: Option<TokenRequestOptions<'_>>,
-    ) -> azure_core::Result<(Binding, AccessToken)> {
+    ) -> Result<(Binding, AccessToken), CoreError> {
         // Restrict the SDK's shell-bound scope to the fixed product audiences.
-        validate_scope(scope).map_err(|_| sdk_unauthorized())?;
+        validate_scope(scope)?;
         let value = self
             .credential
             .get_token(&[scope], options)
             .await
-            .map_err(|_| sdk_unauthorized())?;
-        let binding = Binding::from_token(value.token.secret()).map_err(|_| sdk_unauthorized())?;
-        if token_expiry(&value)? <= self.clock.wall_now() {
-            return Err(sdk_unauthorized());
+            .map_err(login_error)?;
+        let binding = Binding::from_token(value.token.secret())
+            .map_err(|_| CoreError::new(ErrorKind::Unauthorized, LOGIN_FAILED))?;
+        if token_expiry(&value)
+            .map_err(|_| CoreError::new(ErrorKind::Unauthorized, LOGIN_FAILED))?
+            <= self.clock.wall_now()
+        {
+            return Err(CoreError::new(ErrorKind::Unauthorized, LOGIN_FAILED));
         }
         Ok((binding, value))
     }
@@ -261,7 +352,6 @@ impl AzureCliSession {
         )
         .await?
         .map(|(binding, _)| binding)
-        .map_err(|_| unauthorized())
     }
 }
 
@@ -342,10 +432,10 @@ impl TokenCredential for BoundCredential {
         }
         let (binding, token) = match self.session.acquire(scope, options).await {
             Ok(value) => value,
-            Err(error) => {
+            Err(_) => {
                 self.invalidated.store(true, Ordering::Release);
                 *cached = None;
-                return Err(error);
+                return Err(sdk_unauthorized());
             }
         };
         if binding != self.binding {

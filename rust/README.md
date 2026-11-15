@@ -37,6 +37,14 @@ Rust's non-secret selection. API requires that selection even if Azure CLI is
 already signed in. Identity drift fails closed; select the intended identity in
 Azure CLI and run Rust login again.
 
+Login errors distinguish recognized missing/PATH-unavailable Azure CLI
+diagnostics (install Azure CLI 2.54+ or fix PATH) from Azure CLI's explicit
+no-signed-in-account diagnostic (run `az login`). Other credential failures
+remain generic: they do not prove that Azure CLI is absent or signed out.
+All remain `Unauthorized`, exit 4; raw credential diagnostics are never shown.
+See the [provider contract](engine/core/auth/provider/README.md) for recognition
+limits, including unknown/localized diagnostics.
+
 ```text
 fab-rs api <endpoint>
   [--method get|post|delete|put|patch]

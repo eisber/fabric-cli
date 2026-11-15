@@ -170,7 +170,7 @@ async fn sdk_uses_current_context_and_single_flight_per_scope_with_expiry_refres
 }
 
 #[tokio::test]
-async fn missing_az_and_malformed_signed_out_output_are_safe_unauthorized() {
+async fn process_spawn_failure_and_malformed_output_do_not_claim_signed_out() {
     for outputs in [
         vec![],
         vec!["not-json TOKEN-CANARY".into()],
@@ -180,44 +180,126 @@ async fn missing_az_and_malformed_signed_out_output_are_safe_unauthorized() {
         let error = session.login(&context()).await.unwrap_err();
         assert_eq!(error.kind, ErrorKind::Unauthorized);
         assert!(!error.to_string().contains("TOKEN-CANARY"));
-        assert!(error.to_string().contains("az login"));
+        assert!(error.to_string().contains("Could not validate"));
+        assert!(!error.to_string().contains("no signed-in account"));
+        assert!(!error.to_string().contains("executable is unavailable"));
     }
 }
 
 #[derive(Debug)]
-struct SignedOutProcess;
+struct FailureProcess {
+    code: i32,
+    stdout: &'static str,
+    stderr: &'static str,
+}
 
 #[async_trait]
-impl Executor for SignedOutProcess {
+impl Executor for FailureProcess {
     async fn run(&self, _: &OsStr, _: &[&OsStr]) -> io::Result<Output> {
         #[cfg(unix)]
         let status = {
             use std::os::unix::process::ExitStatusExt;
-            ExitStatus::from_raw(256)
+            ExitStatus::from_raw(self.code << 8)
         };
         #[cfg(windows)]
         let status = {
             use std::os::windows::process::ExitStatusExt;
-            ExitStatus::from_raw(1)
+            ExitStatus::from_raw(self.code as u32)
         };
         Ok(Output {
             status,
-            stdout: Vec::new(),
-            stderr: b"Please run az login. STDERR-CANARY".to_vec(),
+            stdout: self.stdout.as_bytes().to_vec(),
+            stderr: self.stderr.as_bytes().to_vec(),
         })
     }
 }
 
-#[tokio::test]
-async fn nonzero_signed_out_process_output_is_sanitized() {
+async fn failed_login(code: i32, stdout: &'static str, stderr: &'static str) -> CoreError {
     let session = AzureCliSession::new(
-        Arc::new(SignedOutProcess),
+        Arc::new(FailureProcess {
+            code,
+            stdout,
+            stderr,
+        }),
         Arc::new(FakeClock(AtomicU64::new(1000))),
     )
     .unwrap();
     let error = session.login(&context()).await.unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unauthorized);
-    assert!(!error.to_string().contains("STDERR-CANARY"));
+    assert!(!format!("{error:?}").contains("CANARY"));
+    error
+}
+
+#[tokio::test]
+async fn recognized_missing_executable_is_distinct_from_signed_out() {
+    #[cfg(unix)]
+    let missing_cases = [
+        (127, "/bin/sh: az: command not found\n"),
+        (127, "/bin/sh: 1: az: not found\n"),
+        (127, "/bin/sh: az: not found\n"),
+        (127, "/bin/sh: line 1: az: command not found\n"),
+        (127, "/bin/sh: az: No such file or directory\n"),
+    ];
+    #[cfg(windows)]
+    let missing_cases = [
+        (
+            1,
+            "'az' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n",
+        ),
+        (
+            9009,
+            "'az' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n",
+        ),
+    ];
+    for (code, stderr) in missing_cases {
+        let missing = failed_login(code, "", stderr).await;
+        assert!(
+            missing
+                .message
+                .contains("Azure CLI executable is unavailable")
+        );
+        assert!(missing.message.contains("Install Azure CLI 2.54+"));
+        assert!(missing.message.contains("PATH"));
+        assert!(!missing.message.contains("no signed-in account"));
+    }
+
+    let signed_out =
+        failed_login(1, "", "ERROR: Please run 'az login' to setup account.\r\n").await;
+    assert_eq!(
+        signed_out.message,
+        "Azure CLI reports no signed-in account. Run az login, then fab-rs auth login"
+    );
+}
+
+#[tokio::test]
+async fn uncertain_failures_stay_generic_without_leaking_provider_output() {
+    for (code, stdout, stderr) in [
+        (
+            1,
+            "",
+            "ERROR: AADSTS700082: expired refresh token TOKEN-CANARY",
+        ),
+        (1, "", "ERROR: scope denied STDERR-CANARY"),
+        (127, "", "internal CLI process failure STDERR-CANARY"),
+        (126, "", "/bin/sh: az: Permission denied STDERR-CANARY"),
+        (1, "", "Please run az login. STDERR-CANARY"),
+        (
+            1,
+            "",
+            "ERROR: Please run 'az login' to setup account. STDERR-CANARY",
+        ),
+        (
+            1,
+            "TOKEN-CANARY",
+            "ERROR: Please run 'az login' to setup account.",
+        ),
+        (127, "TOKEN-CANARY", "/bin/sh: az: command not found"),
+    ] {
+        let error = failed_login(code, stdout, stderr).await;
+        assert!(error.message.contains("Could not validate"));
+        assert!(!error.message.contains("no signed-in account"));
+        assert!(!error.message.contains("executable is unavailable"));
+    }
 }
 
 #[tokio::test]
