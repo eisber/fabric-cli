@@ -74,11 +74,16 @@ fn protocol(message: &str) -> CoreError {
 
 /// Validate a status/result URL before normalization can hide unsafe paths.
 pub fn validate_operation_url(audience: Audience, value: &str) -> Result<Url, CoreError> {
-    if value.len() > 16 * 1024 || value.chars().any(|c| c.is_control() || c == ' ') {
-        return Err(protocol("Unsafe operation URL"));
+    if value.len() > 16 * 1024 {
+        return Err(protocol("Unsafe operation URL: length limit exceeded"));
+    }
+    if value.chars().any(|c| c.is_control() || c == ' ') {
+        return Err(protocol(
+            "Unsafe operation URL: control or space characters rejected",
+        ));
     }
     validate_path(value.split(['?', '#']).next().unwrap_or_default())
-        .map_err(|_| protocol("Unsafe operation URL"))?;
+        .map_err(|_| protocol("Unsafe operation URL: unsafe path rejected"))?;
     let url = if value.starts_with("https://") {
         Url::parse(value)
     } else if value.starts_with('/') && !value.starts_with("//") {
@@ -89,7 +94,9 @@ pub fn validate_operation_url(audience: Audience, value: &str) -> Result<Url, Co
         ));
     }
     .map_err(|_| protocol("Malformed operation URL"))?;
-    validate_url(audience, &url).map_err(|_| protocol("Unsafe operation URL"))?;
+    validate_url(audience, &url).map_err(|_| {
+        protocol("Unsafe operation URL: selected HTTPS origin or normalized components rejected")
+    })?;
     Ok(url)
 }
 fn valid_id(id: &str) -> bool {
