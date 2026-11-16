@@ -40,10 +40,11 @@ const COMMANDS = [
     args: ['test', '--offline', '--locked', '-p', item.package, '--no-default-features',
       ...(item.features ? ['--features', item.features] : []), '--test', item.target],
     required: registeredTests(item.source),
+    exhaustive: true,
   })),
   {args: ['test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
     '--features', 'headless', '--bin', 'fab-cli-v2', 'v2_update_notebook_host::tests::'],
-  required: HOST_TESTS},
+  required: HOST_TESTS, exhaustive: true},
   {args: ['test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
     '--features', 'headless', '--test', 'v2_get_binary', '--test', 'v2_exists_binary',
     '--test', 'v2_search_binary']},
@@ -64,7 +65,7 @@ function testResults(stdout, stderr, command) {
   for (const name of command.required || []) {
     assert.ok(stdout.includes(`test ${name} ... ok`), `Missing registered test: ${name}`);
   }
-  if (command.required) {
+  if (command.exhaustive) {
     assert.equal(results.length, 1);
     assert.equal(results[0].passed, command.required.length, 'Every registered selected test must run');
   }

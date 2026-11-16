@@ -41,6 +41,8 @@ test('UPDATE commands select real registered SDK/parser/host/process tests and s
   assert.deepEqual(update.COMMANDS[0].args, notebook.COMMANDS[0]);
   assert.deepEqual(update.COMMANDS.slice(6, 13).map(command => command.args), notebook.COMMANDS.slice(1));
   assert.deepEqual(update.COMMANDS.slice(13), ocv.COMMANDS.slice(3, 8));
+  assert.ok(update.COMMANDS.slice(1, 5).every(command => command.exhaustive === true));
+  assert.ok(update.COMMANDS.slice(5).every(command => !command.exhaustive));
   assert.deepEqual(update.UPDATE_TARGETS.map(item => item.target), ['update', 'v2_update', 'update_v2']);
   assert.ok(update.COMMANDS[1].required.includes(
     'approval_and_dispatch_share_exact_raw_patch_and_selected_endpoint_once'));
@@ -78,6 +80,21 @@ test('actual binary host proof requires every registered case with explicit name
   assert.throws(() => update.testResults(stdout.replace('0 ignored', '1 ignored'), stderr, command));
   assert.throws(() => update.testResults(stdout, stderr.replace('v2_main.rs', 'main.rs'), command));
   assert.throws(() => update.testResults(stdout + stdout, stderr, command));
+});
+
+test('inherited HTTP mandatory names remain a subset of its nonempty minimum-count suite', () => {
+  const command = update.COMMANDS[13];
+  assert.equal(command.minimum, 50);
+  assert.equal(command.required.length, 2);
+  const stdout = command.required.map(name => `test ${name} ... ok\n`).join('') +
+    'test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n';
+  const stderr = 'Running unittests src/lib.rs (target/debug/deps/fabric_sdk_http.exe)\n';
+  assert.equal(update.testResults(stdout, stderr, command)[0].passed, 50);
+  for (const wrong of [stdout.replace('50 passed', '49 passed'),
+    stdout.replace(command.required[0], 'other'), stdout.replace('0 ignored', '1 ignored'),
+    stdout.replace('0 filtered', '1 filtered')]) {
+    assert.throws(() => update.testResults(wrong, stderr, command));
+  }
 });
 
 test('UPDATE runner refuses unallocated local native execution and retains failure evidence', () => {
