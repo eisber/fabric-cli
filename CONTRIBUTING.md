@@ -13,6 +13,41 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
 or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
+## Fork integration smoke recovery
+
+In the `eisber/fabric-cli` fork, the exact-revision recovery workflow is separate
+from the integration branch's existing push and pull-request smoke workflow.
+GitHub must first register `.github/workflows/integration-smoke-recovery.yml` on
+the default `main` branch. A proposal branch or an integration-only change is not
+an activated manual workflow.
+
+After that infrastructure change is merged, a separately authorized operator
+can select **Exact-revision integration smoke recovery** on `main` and provide
+`source_sha` and `base_sha` as full lowercase 40-hex commit IDs. The source must
+equal the live head of `dev/marcozo/fab-cli-v2-integration-20261104`; the base must
+be its first merge parent. The checkout must retain recovery anchor
+`1c3c819c3c4162af13d23b4dd3aa475b06b16526`. A moved head, rewritten history,
+non-merge commit, wrong checkout, or invalid input fails closed.
+
+The trusted `main` driver and the integration source use separate checkouts.
+The driver reuses the source's smoke helpers for exactly two cold Windows debug
+builds: `fab-cli-v2` with `headless`, then `fab-rs` without default features,
+built offline using the same target directory. Both executables must pass the
+existing help, exact-version, sanitized-error, credential-isolation and
+source-inventory guards. No impact-selected suite, optional candidate checks,
+full native matrix or live Fabric resources are added.
+
+The uploaded receipts distinguish the real `workflow_dispatch` event and
+driver/workflow revision from the requested, provider-resolved and checked-out
+integration revision. A green check attached to the driver revision alone is not
+integration proof: inspect `preflight.json`, `execution/receipt.json`, source
+inventories, executable hashes and command exits. Qualification is provisional
+two-profile smoke, not original push-event proof or permission to advance the
+merge queue. This proposal does not dispatch, merge or enable auto-merge.
+
+Run the fast recovery contracts without compiling Rust:
+`node --test .github/scripts/integration-smoke-recovery.test.cjs`.
+
 ## Ways to Contribute
 
 We welcome several types of contributions:

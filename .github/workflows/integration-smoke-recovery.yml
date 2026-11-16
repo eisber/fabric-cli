@@ -1,0 +1,87 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Exact-revision integration smoke recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/integration-smoke-recovery.yml
+      - .github/scripts/integration-smoke-recovery*.cjs
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-hex current integration branch head to smoke
+        required: true
+        type: string
+      base_sha:
+        description: Full 40-hex first parent of that integration merge
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-smoke-recovery-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    name: Recovery guard contracts (no native compilation)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test .github/scripts/integration-smoke-recovery.test.cjs
+
+  smoke:
+    name: Exact-revision integration smoke (Windows, manual)
+    needs: contracts
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Check out the registered default-branch driver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: driver
+          persist-credentials: false
+      - name: Validate manual provenance and resolve the fixed integration head
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_ARTIFACTS: ${{ runner.temp }}/integration-smoke-recovery-receipts
+        run: node driver/.github/scripts/integration-smoke-recovery.cjs preflight
+      - name: Check out only the validated integration revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: eisber/fabric-cli
+          ref: ${{ steps.pin.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exercise the existing bounded two-profile minimum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_ARTIFACTS: ${{ runner.temp }}/integration-smoke-recovery-receipts
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-recovery-target
+        run: node driver/.github/scripts/integration-smoke-recovery.cjs run
+      - name: Retain manual provenance, exact source inventory and executable results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-smoke-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/integration-smoke-recovery-receipts
+          if-no-files-found: error
+          retention-days: 7
