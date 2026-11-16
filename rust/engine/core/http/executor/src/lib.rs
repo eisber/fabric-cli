@@ -362,7 +362,7 @@ impl HttpClient {
                 .insert("authorization".into(), format!("Bearer {bearer}"));
             let id = self
                 .next_request
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
                     Some(id.saturating_add(1))
                 })
                 .expect("request counter always advances or saturates");
