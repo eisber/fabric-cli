@@ -52,10 +52,13 @@ consumes the actual initial response; `--async` skips completion, returns that
 response once, and starts no background work. Poll/result GETs do not carry the
 original mutation body or custom request headers.
 
-Recognized Fabric/ARM LROs and Fabric job instances poll; Storage/Power BI remain
-raw. Fabric non-job fallback intervals are 2, 7, then 20 seconds repeatedly,
-respecting server not-before hints. ARM and jobs use each response's `Retry-After`
+Recognized Fabric/Azure/Storage LROs and Fabric job instances poll; Power BI remains
+raw. Fabric operation/job fallback intervals are 2, 7, then 20 seconds repeatedly,
+respecting server not-before hints. Azure/Storage use each response's `Retry-After`
 or a 10-second fallback, without the staged schedule.
+Storage uses Azure's 201/202 `Azure-AsyncOperation`/`Location` protocols while
+retaining its fixed OneLake origin and Storage token scope. Responses without a
+recognized handle remain raw.
 `--polling-config '{"poll_interval":5,"timeout":900}'` accepts two optional positive
 numbers in seconds. A fixed `poll_interval` never shortens server hints; `timeout`
 bounds the full reconciliation phase, including retries and result retrieval.

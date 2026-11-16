@@ -120,13 +120,13 @@ authority for implementation evidence.
 ## Default polling is an extension
 
 Python raw `api` returns before shared LRO processing and has no `--wait` flag.
-Rust automatically waits for recognized Fabric/ARM operations and Fabric job
+Rust automatically waits for recognized Fabric/Azure/Storage operations and Fabric job
 instances.
 `--async` is an approved escape hatch: one initial request, unchanged response,
 no sleeps, status/result fetches, or background process.
 No `--wait`, `--wait=false`, `--no-wait`, or individual timing flags.
 
-Fabric non-job client schedule: 2, 7, then 20 seconds repeatedly. ARM and jobs
+Fabric operation/job client schedule: 2, 7, then 20 seconds repeatedly. Azure/Storage operations
 use each response's `Retry-After`, or 10 seconds when absent/invalid, without
 staged backoff. Valid server delta-seconds
 or HTTP-date `Retry-After` is a not-before constraint, never permission to poll
@@ -150,7 +150,7 @@ object, because async mode is initial-response-only and does not support polling
 The conflict fails before input loading or host effects, even if configuration
 is invalid. Invalid duration errors name the field; the known `polling_interval`
 typo suggests the supported `poll_interval` key without accepting an alias.
-The former `--lro-config` spelling is no longer accepted. Power BI/Storage stay
+The former `--lro-config` spelling is no longer accepted. Power BI stays
 raw; configuration does not add protocol recognition.
 
 Fabric 202 with validated operation Location polls even without an operation ID.
@@ -191,10 +191,11 @@ Fabric job-instance Locations of the exact form
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
 are reconciled separately, using their validated Fabric service URL rather than
 `/v1/operations/{id}`. A valid additional operation ID does not change the job
-protocol selected by that Location. Each accepted/pending response selects the
-next delay from `Retry-After` (delta-seconds or HTTP date), with a 10-second
-fallback for absent/invalid hints and a safe diagnostic for invalid hints.
-There is no job exponential backoff. Jobs share the optional overall polling budget,
+protocol selected by that Location. Jobs use the same 2-, 7-, then repeated
+20-second client schedule as Fabric operations, respecting `Retry-After`
+(delta-seconds or HTTP date) as a minimum and diagnosing invalid hints safely.
+This shared schedule is a user-approved difference from Python's job polling.
+Jobs share the optional overall polling budget,
 GET retry bounds and local cancellation behavior, without remote cancellation.
 Job GETs must return HTTP 200 and a recognized JSON status: `NotStarted` and
 `InProgress` continue; `Completed` and `Deduped` return the actual terminal
@@ -214,7 +215,15 @@ component and path checks still apply to the resulting polling URL.
 ARM preserves the shared Python normalized completion status/shape where
 applicable; `--async` never normalizes the initial response.
 
-Ordinary responses, accepted responses without a recognized handle, Storage,
+Storage is a user-approved extension of these Azure polling semantics, not a
+claim that Python Storage/raw API performs automatic LRO reconciliation.
+HTTP 201/202 recognizes `Azure-AsyncOperation` before `Location`, with identical
+status handling, timing, cancellation, timeout, progress, and normalized completion.
+Header suffix resolution uses the fixed OneLake endpoint rather than ARM;
+GETs retain the Storage audience and `https://storage.azure.com/.default` scope.
+It does not add blob-copy or other header protocols.
+
+Ordinary responses, accepted responses without a recognized handle,
 and Power BI remain raw; acceptance is not proof of completion. Polling/result
 URLs get the shared operation-origin checks, without forwarding original mutation
 bodies or custom headers. Cancelled/Canceled are failures; malformed/unknown

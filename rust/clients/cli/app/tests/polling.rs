@@ -129,14 +129,19 @@ impl Clock for TestClock {
 }
 
 #[derive(Debug)]
-struct Credential;
+struct Credential {
+    expected_scope: Option<&'static str>,
+}
 #[async_trait]
 impl TokenCredential for Credential {
     async fn get_token(
         &self,
-        _: &[&str],
+        scopes: &[&str],
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
+        if let Some(expected) = self.expected_scope {
+            assert_eq!(scopes, &[expected]);
+        }
         Ok(AccessToken::new(
             "TOKEN-CANARY",
             azure_core::time::OffsetDateTime::from_unix_timestamp(4102444800).unwrap(),
@@ -196,6 +201,7 @@ struct FakeHost {
     transport: Arc<Transport>,
     color: bool,
     terminal: bool,
+    expected_scope: Option<&'static str>,
 }
 #[async_trait]
 impl Host for FakeHost {
@@ -218,7 +224,9 @@ impl Host for FakeHost {
         unreachable!()
     }
     fn credential(&self, _: Binding) -> Result<Arc<dyn TokenCredential>, CommandError> {
-        Ok(Arc::new(Credential))
+        Ok(Arc::new(Credential {
+            expected_scope: self.expected_scope,
+        }))
     }
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError> {
         Ok(self.transport.clone())
@@ -295,6 +303,7 @@ struct RunOptions<'a> {
     fail_after_flushes: Option<usize>,
     fail_once_after_bytes: Option<usize>,
     cancel_after_flushes: Option<usize>,
+    expected_scope: Option<&'static str>,
 }
 
 async fn run_options(
@@ -324,6 +333,7 @@ async fn run_options(
         }),
         color: options.color,
         terminal: options.terminal,
+        expected_scope: options.expected_scope,
     };
     let cancellation = CancellationToken::new();
     let mut stdout = Writer {
@@ -454,7 +464,7 @@ async fn terminal_cancellation_timeout_and_http_failure_clear_the_waiting_line()
                 "--method",
                 "post",
                 "--polling-config",
-                r#"{"timeout":3}"#,
+                r#"{"timeout":3,"poll_interval":1}"#,
             ],
             vec![
                 response(
@@ -746,16 +756,16 @@ async fn heartbeats_continue_while_a_status_request_has_not_responded() {
     .await;
     assert_eq!(code, 0, "{stdout}");
     assert_eq!(calls, 2);
-    assert_eq!(start.elapsed(), Duration::from_secs(26));
+    assert_eq!(start.elapsed(), Duration::from_secs(27));
     assert_eq!(
         stderr,
         concat!(
             "Job accepted (HTTP 202). Polling for completion...\n",
             "Checking job status...\n",
-            "Waiting for job status response; 5s since this check started (6s elapsed)...\n",
-            "Waiting for job status response; 10s since this check started (11s elapsed)...\n",
-            "Waiting for job status response; 15s since this check started (16s elapsed)...\n",
-            "Waiting for job status response; 20s since this check started (21s elapsed)...\n",
+            "Waiting for job status response; 5s since this check started (7s elapsed)...\n",
+            "Waiting for job status response; 10s since this check started (12s elapsed)...\n",
+            "Waiting for job status response; 15s since this check started (17s elapsed)...\n",
+            "Waiting for job status response; 20s since this check started (22s elapsed)...\n",
             "Job instance status: Completed\n",
             "Job completed.\n",
         )
@@ -833,7 +843,7 @@ async fn heartbeat_output_failure_and_cancellation_stop_waits_and_inflight_reque
             assert_eq!(calls, if inflight { 2 } else { 1 });
             assert_eq!(
                 start.elapsed(),
-                Duration::from_secs(if inflight { 6 } else { 5 })
+                Duration::from_secs(if inflight { 7 } else { 5 })
             );
             let envelope: Value = serde_json::from_str(&stdout).unwrap();
             assert_eq!(
@@ -1043,6 +1053,61 @@ async fn start_is_flushed_before_a_long_retry_after_for_operations_and_jobs() {
             serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],
             terminal
         );
+    }
+}
+
+#[tokio::test]
+async fn storage_uses_azure_polling_protocols_and_progress_unless_async() {
+    for header in ["azure-asyncoperation", "location"] {
+        for asynchronous in [false, true] {
+            let mut args = vec![
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--audience",
+                "storage",
+                "--show-headers",
+            ];
+            if asynchronous {
+                args.push("--async");
+            }
+            let initial = response(
+                202,
+                json!({"original":"resource"}),
+                &[(header, "/status?secret=QUERY-CANARY")],
+            );
+            let (code, stdout, stderr, calls) = run_options(
+                &args,
+                vec![initial, response(200, json!({"status":"Succeeded"}), &[])],
+                false,
+                false,
+                RunOptions {
+                    urls: &[
+                        "https://onelake.dfs.fabric.microsoft.com/items",
+                        "https://onelake.dfs.fabric.microsoft.com/status?secret=QUERY-CANARY",
+                    ],
+                    expected_scope: Some("https://storage.azure.com/.default"),
+                    ..Default::default()
+                },
+            )
+            .await;
+            assert_eq!(code, 0, "{stdout}");
+            assert_eq!(calls, if asynchronous { 1 } else { 2 });
+            let output: Value = serde_json::from_str(&stdout).unwrap();
+            let result = &output["result"]["data"][0];
+            assert_eq!(result["status_code"], if asynchronous { 202 } else { 200 });
+            assert_eq!(result["text"], json!({"original":"resource"}));
+            if asynchronous {
+                assert!(stderr.is_empty());
+            } else {
+                assert_eq!(
+                    stderr,
+                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+                );
+            }
+            assert!(!stderr.contains("CANARY"));
+        }
     }
 }
 

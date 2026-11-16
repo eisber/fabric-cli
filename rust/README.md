@@ -103,11 +103,11 @@ from Python's falsey-result fallback. An empty query bypasses projection. No
 automatic pagination is performed. Querying is not a universal security-redaction
 boundary: selected data can itself be sensitive.
 
-Recognized Fabric/ARM operations and Fabric job instances poll **by default**.
+Recognized Fabric, Azure, and Storage operations and Fabric job instances poll **by default**.
 `--async` returns the actual initial response, without polling or starting background
-work. Fabric non-job LROs use a 2-, 7-, then 20-second client schedule (20 seconds
+work. Fabric LROs and job instances use a 2-, 7-, then 20-second client schedule (20 seconds
 thereafter), never earlier than a valid `Retry-After`;
-ARM operations and job instances use each response's `Retry-After`, or 10 seconds when absent or
+Azure/Storage operations use each response's `Retry-After`, or 10 seconds when absent or
 invalid, without exponential backoff. There is no overall polling timeout by
 default: a backend that never completes can keep the command waiting indefinitely.
 Individual poll/result requests, including their retries, remain bounded to 240
@@ -127,8 +127,16 @@ There is no `max_attempts` option. `--async` cannot be combined with
 `--polling-config`, even an empty object: async mode returns only the initial
 response and does not support polling. This conflict fails before input loading,
 identity acquisition, or sending a request. This replaces the earlier
-`--lro-config` spelling; no alias is retained. Power BI/Storage responses still
+`--lro-config` spelling; no alias is retained. Power BI responses still
 return raw: timing configuration does not add support for new polling protocols.
+
+Storage (OneLake) uses the same polling protocols as Azure: HTTP 201/202 with
+`Azure-AsyncOperation` takes precedence over `Location`. Status JSON drives
+`Azure-AsyncOperation`; Location-only polling continues on 201/202 and completes
+on 200. Polling stays on the selected audience's fixed origin and token scope:
+Storage uses `onelake.dfs.fabric.microsoft.com` and the Storage scope, not ARM.
+Completion preserves the initial body/headers and normalizes its status to 200.
+Without either header the response stays raw; `--async` skips polling.
 
 Job polling recognizes a safe `Location` of the form
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`.
@@ -171,10 +179,9 @@ or final result. For example:
 
 ```text
 Job accepted (HTTP 202). Polling for completion...
-Waiting for job completion; next status check in 5s (5s elapsed)...
 Checking job status...
 Job instance status: InProgress
-Waiting for job completion; next status check in 5s; Last reported status: InProgress (15s elapsed)...
+Waiting for job completion; next status check in 2s; Last reported status: InProgress (7s elapsed)...
 Checking job status...
 Job instance status: Completed
 Job completed.

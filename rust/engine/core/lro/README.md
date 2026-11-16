@@ -6,8 +6,8 @@
 has no mutation request to replay. All status/result requests are bodyless GETs
 without caller headers; authentication is supplied by the injected executor.
 
-Fabric non-job fallback delays are 2, 7, then 20 seconds repeatedly. ARM defaults
-to each response's `Retry-After`, or 10 seconds when absent/invalid, like jobs.
+Fabric operation/job fallback delays are 2, 7, then 20 seconds repeatedly. Azure/Storage default
+to each response's `Retry-After`, or 10 seconds when absent/invalid.
 There is no attempt limit. Valid `Retry-After` seconds or HTTP dates are
 not-before constraints. Invalid values invoke the caller's safe diagnostic
 hook and fall back to the client schedule. A successful Fabric status's `Retry-After`
@@ -26,11 +26,15 @@ indefinite cancellable waiting, not unbounded HTTP requests.
 Fabric accepts validated operation Location or ID-only handles. Conflicts fail
 closed. Successful status without an advertised
 result, and the documented `OperationHasNoResult` result error, return the actual
-terminal status response. ARM prioritizes Azure-AsyncOperation over Location;
+terminal status response. Azure/Storage 201/202 prioritizes Azure-AsyncOperation over Location;
 on completion it returns the initial body/headers with status normalized to 200,
 matching the retained Python shape. As in Python, an advertised header containing
 the Azure endpoint contributes its suffix to the fixed Azure polling origin;
-origin-relative headers also work. Other audiences are raw.
+origin-relative headers also work. Storage uses the identical status-JSON and
+Location HTTP-status protocols, with its own fixed OneLake origin and Storage
+token scope. Its advertised headers use the same fixed-endpoint suffix resolution
+as Azure, never switching to ARM or an advertised host. Responses without a
+recognized handle and Power BI responses are raw.
 
 Failed status or result responses expose a bounded service error identifier when
 available, without forwarding service error messages. Codes must be nonempty,
@@ -40,9 +44,10 @@ failure remains `Service`.
 
 Fabric job-instance Locations use a separate JSON status protocol. Only exact
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
-routes are recognized, after the same URL safety checks. Job polling uses each
-response's `Retry-After`, or 10 seconds when absent/invalid (invalid hints emit a
-safe diagnostic), without doubling. It shares the optional overall budget and safe GET
+routes are recognized, after the same URL safety checks. Job polling uses the
+same 2-, 7-, then repeated 20-second schedule as Fabric operations, never earlier
+than a valid `Retry-After` (invalid hints emit a safe diagnostic).
+It shares the optional overall budget and safe GET
 executor. `NotStarted`/`InProgress` remain pending; `Completed`/`Deduped` return
 the actual terminal job response. `Failed`/`Cancelled`, unexpected HTTP statuses,
 and malformed/unknown JSON statuses fail with query-redacted job-URL recovery.

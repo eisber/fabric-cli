@@ -331,7 +331,7 @@ async fn schedule_reports_server_and_configured_delays_without_adding_callback_t
             202,
             vec![("location", JOB), ("retry-after", "25")],
             None,
-            vec![25, 10],
+            vec![25, 7],
         ),
         (
             OperationKind::Fabric,
@@ -360,6 +360,14 @@ async fn schedule_reports_server_and_configured_delays_without_adding_callback_t
                 ),
                 ("retry-after", "25"),
             ],
+            None,
+            vec![25, 10],
+        ),
+        (
+            OperationKind::ArmStatus,
+            Audience::Storage,
+            201,
+            vec![("azure-asyncoperation", "/status"), ("retry-after", "25")],
             None,
             vec![25, 10],
         ),

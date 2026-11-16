@@ -183,41 +183,51 @@ async fn fabric_terminal_status_preserves_ordinary_reserved_marker_objects() {
     }
 }
 #[tokio::test]
-async fn fabric_non_job_default_schedule_stays_at_twenty_seconds() {
-    let mut replies = vec![response(200, r#"{"status":"Running"}"#, &[]); 7];
-    replies.push(success());
-    let http = Script::new(replies);
-    let clock = FakeClock::new();
-    complete(
-        &http,
-        &clock,
-        Audience::Fabric,
-        accepted(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        *clock.sleeps.lock().unwrap(),
-        [2, 7, 20, 20, 20, 20, 20, 20].map(Duration::from_secs)
-    );
+async fn fabric_operations_and_jobs_share_the_default_schedule_and_twenty_second_cap() {
+    for (location, pending, terminal) in [
+        ("/v1/operations/op-1", "Running", "Succeeded"),
+        (
+            "/v1/workspaces/workspace/items/item/jobs/instances/job",
+            "InProgress",
+            "Completed",
+        ),
+    ] {
+        let mut replies = vec![response(200, &format!(r#"{{"status":"{pending}"}}"#), &[]); 7];
+        replies.push(response(200, &format!(r#"{{"status":"{terminal}"}}"#), &[]));
+        let http = Script::new(replies);
+        let clock = FakeClock::new();
+        complete(
+            &http,
+            &clock,
+            Audience::Fabric,
+            response(202, "", &[("location", location)]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            *clock.sleeps.lock().unwrap(),
+            [2, 7, 20, 20, 20, 20, 20, 20].map(Duration::from_secs)
+        );
+        assert_eq!(http.calls.lock().unwrap().len(), 8);
+    }
 }
 
 #[tokio::test]
 async fn configured_intervals_do_not_shorten_server_hints_for_any_protocol() {
-    for audience in [Audience::Fabric, Audience::Azure] {
+    for audience in [Audience::Fabric, Audience::Azure, Audience::Storage] {
         for job in [false, true] {
-            if job && audience == Audience::Azure {
+            if job && audience != Audience::Fabric {
                 continue;
             }
             let location = if job {
                 "/v1/workspaces/workspace/items/item/jobs/instances/job"
-            } else if audience == Audience::Azure {
+            } else if audience != Audience::Fabric {
                 "/status"
             } else {
                 "/v1/operations/op-1"
             };
-            let handle_header = if audience == Audience::Azure {
+            let handle_header = if audience != Audience::Fabric {
                 "azure-asyncoperation"
             } else {
                 "location"
@@ -770,80 +780,130 @@ async fn arm_advertised_host_lookalike_is_rebased_before_polling() {
     );
 }
 #[tokio::test]
-async fn arm_location_pending_then_200_does_not_require_status_json() {
-    let initial = response(
-        202,
-        "original",
-        &[("location", "https://management.azure.com/status/one")],
-    );
-    let http = Script::new(vec![
-        response(201, "", &[]),
-        response(202, "", &[]),
-        response(200, "done", &[]),
-    ]);
-    let clock = FakeClock::new();
-    let result = complete(
-        &http,
-        &clock,
-        Audience::Azure,
-        initial,
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(result.status, 200);
-    assert_eq!(result.body, b"original");
-    assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(10); 3]);
+async fn azure_and_storage_location_pending_then_200_do_not_require_status_json() {
+    for audience in [Audience::Azure, Audience::Storage] {
+        let initial = response(202, "original", &[("location", "/status/one")]);
+        let http = Script::new(vec![
+            response(201, "", &[]),
+            response(202, "", &[]),
+            response(200, "done", &[]),
+        ]);
+        let clock = FakeClock::new();
+        let result = complete(&http, &clock, audience, initial, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(result.status, 200);
+        assert_eq!(result.body, b"original");
+        assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(10); 3]);
+        let calls = http.calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        for call in calls.iter() {
+            assert_eq!(
+                call.url.as_str(),
+                format!("{}/status/one", audience.base_url())
+            );
+        }
+    }
 }
 
 #[tokio::test]
-async fn arm_status_and_location_use_each_hint_or_ten_seconds_without_staged_backoff() {
-    for status_protocol in [false, true] {
-        let header = if status_protocol {
-            "azure-asyncoperation"
-        } else {
-            "location"
-        };
-        let initial = response(
-            202,
-            "original",
-            &[(header, "/status"), ("retry-after", "7")],
-        );
-        let pending_status = if status_protocol { 200 } else { 202 };
-        let http = Script::new(vec![
+async fn azure_and_storage_use_each_hint_or_ten_seconds_without_staged_backoff() {
+    for audience in [Audience::Azure, Audience::Storage] {
+        for status_protocol in [false, true] {
+            let header = if status_protocol {
+                "azure-asyncoperation"
+            } else {
+                "location"
+            };
+            let initial = response(
+                202,
+                "original",
+                &[(header, "/status"), ("retry-after", "7")],
+            );
+            let pending_status = if status_protocol { 200 } else { 202 };
+            let http = Script::new(vec![
+                response(
+                    pending_status,
+                    r#"{"status":"Running"}"#,
+                    &[("retry-after", "3")],
+                ),
+                response(pending_status, r#"{"status":"Running"}"#, &[]),
+                response(
+                    pending_status,
+                    r#"{"status":"Running"}"#,
+                    &[("retry-after", "invalid")],
+                ),
+                response(pending_status, r#"{"status":"Running"}"#, &[]),
+                success(),
+            ]);
+            let clock = FakeClock::new();
+            let result = complete(
+                &http,
+                &clock,
+                audience,
+                initial.clone(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                *clock.sleeps.lock().unwrap(),
+                [7, 3, 10, 10, 10].map(Duration::from_secs)
+            );
+            assert_eq!(clock.warnings.lock().unwrap().len(), 1);
+            assert_eq!(http.calls.lock().unwrap().len(), 5);
+            assert_eq!(result.status, 200);
+            assert_eq!(result.body, initial.body);
+            assert_eq!(result.headers, initial.headers);
+        }
+    }
+}
+
+#[tokio::test]
+async fn storage_status_failure_and_local_timeout_preserve_safe_recovery() {
+    for (terminal, config, expected, calls) in [
+        (
             response(
-                pending_status,
-                r#"{"status":"Running"}"#,
-                &[("retry-after", "3")],
+                200,
+                r#"{"status":"Failed","error":{"code":"StorageFailure","message":"BODY-CANARY"}}"#,
+                &[],
             ),
-            response(pending_status, r#"{"status":"Running"}"#, &[]),
-            response(
-                pending_status,
-                r#"{"status":"Running"}"#,
-                &[("retry-after", "invalid")],
-            ),
-            response(pending_status, r#"{"status":"Running"}"#, &[]),
+            LroConfig::default(),
+            ErrorKind::Service,
+            1,
+        ),
+        (
             success(),
-        ]);
-        let clock = FakeClock::new();
-        let result = complete(
+            LroConfig::new(None, Some(Duration::from_secs(5))).unwrap(),
+            ErrorKind::Timeout,
+            0,
+        ),
+    ] {
+        let http = Script::new(vec![terminal]);
+        let error = complete_with_config(
             &http,
-            &clock,
-            Audience::Azure,
-            initial.clone(),
+            &FakeClock::new(),
+            Audience::Storage,
+            response(
+                202,
+                "",
+                &[("azure-asyncoperation", "/status?secret=QUERY-CANARY")],
+            ),
             CancellationToken::new(),
+            config,
         )
         .await
-        .unwrap();
+        .unwrap_err();
+        assert_eq!(error.kind, expected);
+        assert_eq!(http.calls.lock().unwrap().len(), calls);
         assert_eq!(
-            *clock.sleeps.lock().unwrap(),
-            [7, 3, 10, 10, 10].map(Duration::from_secs)
+            error.recovery.as_ref().unwrap().status_url,
+            "https://onelake.dfs.fabric.microsoft.com/status"
         );
-        assert_eq!(clock.warnings.lock().unwrap().len(), 1);
-        assert_eq!(http.calls.lock().unwrap().len(), 5);
-        assert_eq!(result.status, 200);
-        assert_eq!(result.body, initial.body);
-        assert_eq!(result.headers, initial.headers);
+        if expected == ErrorKind::Service {
+            assert_eq!(error.service_code(), Some("StorageFailure"));
+        }
+        assert!(!format!("{error:?}").contains("CANARY"));
     }
 }
 
@@ -864,6 +924,10 @@ async fn raw_and_job_responses_do_not_invent_protocols() {
             response(202, "resource", &[("location", "/v1/workspaces/id")]),
         ),
         (Audience::Storage, accepted()),
+        (
+            Audience::Storage,
+            response(200, "resource", &[("location", "/status")]),
+        ),
         (Audience::PowerBi, accepted()),
         (Audience::Fabric, response(500, "raw failure", &[])),
     ] {
@@ -890,7 +954,7 @@ async fn raw_and_job_responses_do_not_invent_protocols() {
     }
 }
 #[tokio::test]
-async fn job_polling_uses_each_response_hint_or_ten_seconds_without_backoff() {
+async fn job_polling_uses_fabric_schedule_with_server_not_before_constraints() {
     let location = "/v1/workspaces/workspace/items/item/jobs/instances/job?token=CANARY";
     let initial = response(202, "", &[("location", location), ("retry-after", "7")]);
     let terminal = response(
@@ -926,11 +990,11 @@ async fn job_polling_uses_each_response_hint_or_ten_seconds_without_backoff() {
     assert_eq!(result.headers, terminal.headers);
     assert_eq!(
         *clock.sleeps.lock().unwrap(),
-        [7, 3, 10, 10].map(Duration::from_secs)
+        [7, 7, 20, 20].map(Duration::from_secs)
     );
     assert_eq!(
         *clock.warnings.lock().unwrap(),
-        vec!["Invalid Retry-After header; using 10-second job polling interval"]
+        vec!["Invalid Retry-After header; using client polling schedule"]
     );
     let requests = http.calls.lock().unwrap();
     assert_eq!(requests.len(), 4);
@@ -949,11 +1013,11 @@ async fn job_polling_uses_each_response_hint_or_ten_seconds_without_backoff() {
 async fn job_initial_delay_and_terminal_statuses_follow_job_protocol() {
     let location = "/v1/workspaces/workspace/items/item/jobs/instances/job";
     for (hint, seconds) in [
-        (None, 10),
+        (None, 2),
         (Some("60"), 60),
         (Some("Thu, 01 Jan 1970 00:00:07 GMT"), 7),
-        (Some("invalid"), 10),
-        (Some("0"), 0),
+        (Some("invalid"), 2),
+        (Some("0"), 2),
     ] {
         for (status, expected) in [
             ("Completed", None),
