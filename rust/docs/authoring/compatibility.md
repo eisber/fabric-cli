@@ -36,11 +36,13 @@ authority for implementation evidence.
   This replaces the previous automatic `auth status` execution and its JSON
   success/`Unauthorized` output; explicit `auth status` and other command JSON
   contracts are unchanged.
-- Login/status successes retain `selected: true` and report `logged_in: true`,
+- Login/status successes report `logged_in: true`,
   `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id` from the
-  validated binding. `mfa_evidence: "not_checked"` and
-  `service_access_verified: false` distinguish credential validation from MFA
-  or service authorization. No account name, token, or donor broker capabilities
+  validated binding. Status omits `selected`, `mfa_evidence`, and
+  `service_access_verified`; login retains `selected: true`,
+  `mfa_evidence: "not_checked"`, and `service_access_verified: false`.
+  Credential validation does not establish MFA or service authorization.
+  No account name, token, or donor broker capabilities
   are inferred; the existing JSON envelope and logout response are unchanged.
 - Bare `fab-rs auth` shows the same human-readable help as `fab-rs auth --help`,
   with stdout text, empty stderr, and exit zero. It needs no Azure CLI or

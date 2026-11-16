@@ -43,12 +43,13 @@ Rust's non-secret selection. API requires that selection even if Azure CLI is
 already signed in. Identity drift fails closed; select the intended identity in
 Azure CLI and run Rust login again.
 
-Successful login/status output retains `selected` and adds `logged_in`,
+Successful login/status output reports `logged_in`,
 `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id`. These are
 the validated binding's object IDs, not an account name inferred from token
-claims. Like the `feature/rust` auth summary, it explicitly reports
-`mfa_evidence: "not_checked"` and `service_access_verified: false`: acquiring
-a credential is not proof of MFA or Fabric service access. No access token is
+claims. Status omits `selected`, `mfa_evidence`, and `service_access_verified`.
+Login retains `selected: true`, `mfa_evidence: "not_checked"`, and
+`service_access_verified: false`. Acquiring a credential is not proof of MFA
+or Fabric service access. No access token is
 printed; the donor's Windows broker/account/token metadata is not adopted.
 
 Login errors distinguish recognized missing/PATH-unavailable Azure CLI

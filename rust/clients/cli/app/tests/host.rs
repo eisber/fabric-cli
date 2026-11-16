@@ -1501,13 +1501,10 @@ async fn explicit_status_reports_only_validated_binding_metadata() {
     assert_eq!(
         data(&status.1),
         json!([{
-            "selected": true,
             "logged_in": true,
             "authentication_mode": "Azure CLI",
             "tenant_id": TENANT,
             "principal_id": PRINCIPAL,
-            "mfa_evidence": "not_checked",
-            "service_access_verified": false,
         }])
     );
     assert!(!status.1.contains("synthetic-token"));
@@ -1534,10 +1531,18 @@ async fn login_reports_the_validated_binding_without_claiming_service_access() {
     let status = run(&["auth", "status"], &host).await;
     assert_eq!(login.0, 0);
     assert_eq!(status.0, 0);
-    assert_eq!(data(&login.1), data(&status.1));
-    assert_eq!(data(&login.1)[0]["tenant_id"], TENANT);
-    assert_eq!(data(&login.1)[0]["principal_id"], PRINCIPAL);
-    assert_eq!(data(&login.1)[0]["service_access_verified"], false);
+    assert_eq!(
+        data(&login.1),
+        json!([{
+            "selected": true,
+            "logged_in": true,
+            "authentication_mode": "Azure CLI",
+            "tenant_id": TENANT,
+            "principal_id": PRINCIPAL,
+            "mfa_evidence": "not_checked",
+            "service_access_verified": false,
+        }])
+    );
     assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
     assert!(!login.1.contains("synthetic-token"));
     assert!(host.transport.requests.lock().unwrap().is_empty());

@@ -505,13 +505,10 @@ fn selected(host: &dyn Host) -> Result<Binding, CommandError> {
 
 fn auth_data(binding: &Binding) -> Value {
     json!({
-        "selected": true,
         "logged_in": true,
         "authentication_mode": "Azure CLI",
         "tenant_id": binding.tenant,
         "principal_id": binding.principal,
-        "mfa_evidence": "not_checked",
-        "service_access_verified": false,
     })
 }
 
@@ -531,7 +528,11 @@ async fn execute(
                 let context = OperationContext::new(Duration::from_secs(240), cancellation);
                 let binding = host.login(&context).await?;
                 host.save_selection(&binding)?;
-                Ok(auth_data(&binding))
+                let mut data = auth_data(&binding);
+                data["selected"] = json!(true);
+                data["mfa_evidence"] = json!("not_checked");
+                data["service_access_verified"] = json!(false);
+                Ok(data)
             }
             Some("status") => {
                 let binding = selected(host)?;
