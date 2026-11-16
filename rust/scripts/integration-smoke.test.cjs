@@ -159,6 +159,27 @@ test('PR54 schema proof is candidate-only and never broadens the generic or post
   assert.ok(!block.includes('continue-on-error'));
 });
 
+test('PR63 Notebook proof runs only for its owned candidate, never for postpush or another entry', () => {
+  const notebook = require('./integration-notebook-smoke.cjs');
+  const text = workflow('integration-smoke.yml');
+  const block = text.split("      - name: Check the PR63 candidate's ")[1]
+    .split('\n      - name:')[0];
+  const expression = block.match(/\n        if: >-\n((?:          .+\n)+)/)[1]
+    .trim().replace(/\s*\n\s*/g, ' ');
+  for (const [event, head, expected] of [
+    ['pull_request', notebook.CANDIDATE, true], ['push', notebook.CANDIDATE, false],
+    ['pull_request', `${notebook.CANDIDATE}-lookalike`, false],
+    ['pull_request', 'unrelated', false], ['schedule', notebook.CANDIDATE, false],
+  ]) {
+    assert.equal(evaluates(expression, event, smoke.BRANCH, ref, true, head), expected);
+  }
+  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /CARGO_TARGET_DIR: \$\{\{ runner.temp \}\}\/integration-smoke-target/);
+  assert.ok(block.includes('node rust/scripts/integration-notebook-smoke.cjs'));
+  assert.ok(!block.includes('continue-on-error'));
+  assert.ok(text.includes('node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-notebook-smoke.test.cjs'));
+});
+
 test('PR source pin requires exact checkout and both exact parents, not source-only smoke', () => {
   const pin = () => smoke.sourcePin('pull_request', event, 'refs/pull/90/merge',
     combined, combined, [base, source], false);
