@@ -192,12 +192,11 @@ pub const MAX_SERVICE_MESSAGE_CHARS: usize = 512;
 /// Returns `None` when nothing displayable remains.
 pub fn sanitize_service_message(raw: &str) -> Option<String> {
     let mut words = Vec::new();
-    for word in raw
+    let visible: String = raw
         .chars()
         .filter(|c| !is_unsafe_display_char(*c))
-        .collect::<String>()
-        .split_whitespace()
-    {
+        .collect();
+    for word in visible.split_whitespace() {
         let lower = word.to_ascii_lowercase();
         match [lower.find("http://"), lower.find("https://")]
             .into_iter()
