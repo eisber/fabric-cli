@@ -12,6 +12,9 @@ mod http;
 mod parser;
 mod payload;
 
+/// Additive common/facade Run normalization over the released v2 foundation.
+pub mod v2_run;
+
 pub use http::HttpJobExecutor;
 pub use parser::{JobCommand, JobKind, ScheduleArgs, command_from_matches, job_subcommand};
 pub use payload::{JsonInput, NoFiles, execution_data, json_input, schedule_configuration};

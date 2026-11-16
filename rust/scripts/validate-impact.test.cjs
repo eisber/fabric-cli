@@ -4,22 +4,23 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
   oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment,
-  sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter} =
+  sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter,
+  coreReuseKey, runCoreCommands, executionSummary} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
 const validationRegistry = require('./validation-checks.cjs');
 
 function temporary(t) {
-  const directory = fs.mkdtempSync(path.join(process.env.IMPACT_TEST_ROOT ||
-    process.env.RUNNER_TEMP || os.tmpdir(), 'fabric-impact-runner-'));
+  const base = process.env.IMPACT_TEST_ROOT || path.join(__dirname, '..', 'target', 'validation-tests');
+  fs.mkdirSync(base, {recursive: true});
+  const directory = fs.mkdtempSync(path.join(base, 'fabric-impact-runner-'));
   t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
   return directory;
 }
@@ -115,7 +116,7 @@ test('build receipts retain only explicit Cargo resource settings, not unrelated
     CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
   });
   assert.deepEqual(buildEnvironment({}), {});
-  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-native-shard.yml'), 'utf8');
   for (const setting of ['CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL']) {
     assert.ok(workflow.includes(`${setting}: "0"`));
   }
@@ -160,6 +161,214 @@ test('command receipts record the actual allowlisted build overrides', t => {
   assert.equal(context.results[0].build_environment.CARGO_INCREMENTAL, '0');
   assert.ok(!Object.hasOwn(context.results[0].build_environment, 'GITHUB_TOKEN'));
   assert.ok(!fs.readFileSync(path.join(directory, 'commands.json'), 'utf8').includes('must-not-leak'));
+});
+
+function coreFixture(t) {
+  const root = temporary(t);
+  const artifacts = temporary(t);
+  execFileSync('git', ['init', '--quiet'], {cwd: root});
+  fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
+  fs.writeFileSync(path.join(root, 'rust', 'validation', 'impact-graph.json'),
+    JSON.stringify({checks: [
+      {id: 'setup'}, {id: 'contract-a', depends_on: ['setup']}, {id: 'contract-b'},
+    ]}));
+  const context = {root, artifacts, platform: 'windows', toolchain: {cargo: 'pinned'},
+    sourceBefore: sourceDigest(root), results: [], deadline: Date.now() + 10000,
+    commandTimeout: 1000, plan: {checks: ['contract-a', 'contract-b'], profiles: []}};
+  const command = testCommands([{package: 'fabric-sdk-transport', target: 'all'}],
+    ['fabric-sdk-transport/hyper-rustls'], 'first')[0];
+  const calls = [];
+  const run = item => commandResult(item, context, (program, args, options) => {
+    calls.push({program, args, options});
+    return {status: 0, stdout: 'test result: ok. 4 passed; 0 failed; 1 ignored', stderr: ''};
+  });
+  return {context, command, calls, run};
+}
+
+test('exact CORE duplicates retain every profile label and a real source receipt without counting tests twice', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  runCoreCommands([command, {...command, id: 'second'}, {...command, id: 'third'}], context, run);
+  assert.equal(calls.length, 1);
+  assert.equal(context.results.length, 1);
+  const [source] = context.results;
+  assert.deepEqual(source.aliases, [command.id, 'second', 'third']);
+  assert.equal(source.status, 'passed');
+  assert.equal(source.exit, 0);
+  assert.equal(source.error, null);
+  assert.equal(source.signal, null);
+  assert.deepEqual(source.args, command.args);
+  assert.equal(source.cwd, path.join(context.root, 'rust'));
+  assert.deepEqual(source.build_environment, buildEnvironment(calls[0].options.env));
+  assert.equal(source.tests_passed, 4);
+  assert.equal(source.tests_ignored, 1);
+  assert.ok(source.elapsed_ms >= 0);
+  assert.ok(source.timeout_ms > 0);
+  for (const stream of ['stdout', 'stderr']) {
+    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(source[stream])).digest('hex'),
+      source[`${stream}_sha256`]);
+  }
+  assert.deepEqual(executionSummary(context.results), {
+    commands: 1, commands_executed: 1, commands_reused: 2, tests_passed: 4, tests_ignored: 1,
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(context.artifacts, 'commands.json'))),
+    context.results);
+});
+
+test('nonidentical arguments, features, cwd and full effective environment never reuse CORE results', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  const variations = [
+    {args: [...command.args.slice(0, -1), '--lib']},
+    {args: command.args.map(arg => arg === 'fabric-sdk-transport/hyper-rustls'
+      ? 'fabric-sdk-transport/notebook-websocket' : arg)},
+    {cwd: context.root},
+    {env: {RUSTFLAGS: '-Dwarnings'}},
+    {env: {UNRECORDED_INPUT: 'different'}},
+  ];
+  runCoreCommands([command, ...variations.map((change, index) =>
+    ({...command, ...change, id: `different-${index}`}))], context, run);
+  assert.equal(calls.length, 1 + variations.length);
+  assert.ok(context.results.every(row => row.aliases.length === 1));
+  assert.throws(() => runCoreCommands([{...command,
+    env: {CARGO_TARGET_DIR: path.join(context.artifacts, 'other-target')}}], context, run),
+  /CARGO_TARGET_DIR differs/, 'a different target must fail the stronger manifest context fence');
+  const key = coreReuseKey(command, context);
+  for (const change of [{platform: 'linux'}, {toolchain: {cargo: 'other'}}, {sourceBefore: 'other'},
+    {targetDir: path.join(context.artifacts, 'other-target')}]) {
+    assert.notEqual(coreReuseKey(command, {...context, ...change}), key);
+  }
+});
+
+test('reuse compares ambient inputs privately and never persists secret values', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  const secret = 'dedup-secret-must-not-leak';
+  const input = {...command, env: {GITHUB_TOKEN: secret}};
+  runCoreCommands([input, {...input, id: 'alias'}], context, run);
+  assert.equal(calls.length, 1);
+  assert.ok(!fs.readFileSync(path.join(context.artifacts, 'commands.json'), 'utf8').includes(secret));
+  const original = process.env.FAB_DEDUP_TEST_INPUT;
+  t.after(() => {
+    if (original === undefined) delete process.env.FAB_DEDUP_TEST_INPUT;
+    else process.env.FAB_DEDUP_TEST_INPUT = original;
+  });
+  let count = 0;
+  runCoreCommands([command, {...command, id: 'changed-ambient'}], context, item => {
+    run(item);
+    process.env.FAB_DEDUP_TEST_INPUT = String(++count);
+  });
+  assert.equal(count, 2);
+});
+
+test('reuse is limited to audited CORE suites and never deduplicates setup or stateful contracts', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  const excluded = [
+    {...command, args: command.args.map(arg => arg === 'fabric-sdk-transport' ? 'fabric-cli' : arg)},
+    {...command, args: command.args.map(arg => arg === 'fabric-sdk-transport' ? 'unknown-suite' : arg)},
+    {...command, program: 'fixture'},
+    {...command, test: false},
+    {...command, kind: 'command'},
+    {...command, stdout: path.join(context.artifacts, 'observation.txt')},
+    {...command, deadline: context.deadline},
+    {...command, args: ['run', '--offline', '--locked', '--package', 'fabric-cli-update']},
+    {...command, args: [...command.args, '--', '--ignored']},
+  ];
+  for (const item of excluded) assert.equal(coreReuseKey(item, context), null);
+  const commands = excluded.flatMap((item, index) =>
+    [{...item, id: `first-${index}`}, {...item, id: `second-${index}`}]);
+  runCoreCommands([command, {...command, id: 'core-alias'}, ...commands], context, run);
+  assert.equal(calls.length, 1 + commands.length);
+  runContracts(context, {validateRegistry: () => {}, commandsFor: () => [{...command}]}, run);
+  assert.equal(calls.length, 4 + commands.length, 'all three contract/setup commands must execute');
+  assert.ok(context.results.slice(-3).every(row => row.aliases.length === 1));
+});
+
+test('failed executions abort CORE immediately and cannot supply reuse in another invocation', t => {
+  const {context, command, calls, run} = coreFixture(t);
+  for (const failure of [
+    {status: 1, stdout: '', stderr: 'failed'},
+    {status: null, error: new Error('ETIMEDOUT')},
+    {status: 0, signal: 'SIGTERM'},
+  ]) {
+    let attempts = 0;
+    assert.throws(() => runCoreCommands([command, {...command, id: 'unreached'}], context,
+      item => commandResult(item, context, () => { attempts++; return failure; })),
+    /Validation failed/);
+    assert.equal(attempts, 1);
+    assert.ok(context.results.every(row => row.aliases.length === 1));
+  }
+  runCoreCommands([command, {...command, id: 'after-failure'}], context, run);
+  assert.equal(calls.length, 1);
+  assert.equal(context.results.length, 4);
+  assert.deepEqual(context.results[3].aliases, [command.id, 'after-failure']);
+  runCoreCommands([command], context, run);
+  assert.equal(calls.length, 2, 'successful results cannot escape one CORE invocation');
+});
+
+test('source integrity failures remain fatal even when a duplicate already has coverage', t => {
+  const {context, command, run} = coreFixture(t);
+  assert.throws(() => runCoreCommands([command, {...command, id: 'alias'}], context, item => {
+    run(item);
+    fs.writeFileSync(path.join(context.root, 'changed-source.rs'), 'unexpected source write');
+  }), /Source changed during core validation/);
+  assert.deepEqual(context.results.at(-1).aliases, [command.id, 'alias']);
+  assert.notEqual(sourceDigest(context.root), context.sourceBefore);
+});
+
+test('every allowlisted package retains its full distinct feature obligations', t => {
+  const {context, calls, run} = coreFixture(t);
+  const commands = [];
+  for (const name of ['fabric-sdk-transport', 'fabric-identity', 'fabric-identity-windows',
+    'fabric-cli-repl', 'fabric-cli-update']) {
+    for (const features of [[], [`${name}/selected-feature`]]) {
+      const command = testCommands([{package: name, target: 'all'}], features, 'profile-a')[0];
+      commands.push(command, {...command, id: command.id.replace('profile-a', 'profile-b')});
+    }
+  }
+  runCoreCommands(commands, context, run);
+  assert.equal(calls.length, 10);
+  assert.equal(context.results.length, 10);
+  assert.equal(context.results.flatMap(row => row.aliases).length, 20);
+  assert.equal(executionSummary(context.results).commands_reused, 10);
+});
+
+test('streamed CORE awaits successful execution before aliasing and rejects asynchronous failures', async t => {
+  const {context, command, calls, run} = coreFixture(t);
+  let completed = false;
+  await runCoreCommands([command, {...command, id: 'alias'}], context, async item => {
+    await new Promise(resolve => setImmediate(resolve));
+    run(item);
+    completed = true;
+  });
+  assert.equal(completed, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(context.results[0].aliases, [command.id, 'alias']);
+  let attempts = 0;
+  await assert.rejects(runCoreCommands([command, {...command, id: 'unreached'}],
+    context, async () => {
+      attempts++;
+      await new Promise(resolve => setImmediate(resolve));
+      throw new Error('stream failed');
+    }), /stream failed/);
+  assert.equal(attempts, 1);
+  assert.equal(context.results.length, 1, 'failure must not reuse a prior invocation');
+  await assert.rejects(runCoreCommands([command], context, async () => {}),
+    /No successful execution receipt/);
+});
+
+test('only safe compilation and formatting descriptors share CORE coverage outside the audited suites', t => {
+  const {context, calls, run} = coreFixture(t);
+  const safe = coreCommands(plan(), 'windows').filter(command =>
+    ['fmt', 'check', 'clippy'].includes(command.args[0]));
+  runCoreCommands(safe.flatMap(command => [command, {...command, id: `alias:${command.id}`}]),
+    context, run);
+  assert.equal(calls.length, safe.length);
+  assert.ok(context.results.every(row => row.aliases.length === 2));
+  const unknown = testCommands([{package: 'arbitrary-contract', target: 'all'}])[0];
+  assert.throws(() => runCoreCommands([{...unknown, aliases: [unknown.id, 'unsafe']}],
+    context, run), /Unsafe core aliases/);
+  for (const command of safe) {
+    assert.equal(coreReuseKey({...command, kind: 'command'}, context), null);
+    assert.equal(coreReuseKey({...command, capture: true}, context), null);
+  }
 });
 
 test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
@@ -217,6 +426,32 @@ test('default full packages are grouped but exact target commands remain separat
   assert.deepEqual(commands[0].args, ['test', '--offline', '--locked',
     '--package', 'a', '--package', 'b', '--all-targets']);
   assert.deepEqual(commands[1].args.slice(-5), ['--bin', 'demo', '--example', 'probe', '--lib']);
+});
+
+test('full Windows CLI targets compile under the build budget before unchanged runtime tests', () => {
+  const selected = {
+    mode: 'full', packages: ['fabric-cli', 'fabric-core'],
+    tests: [{package: 'fabric-cli', target: 'all'}, {package: 'fabric-core', target: 'all'}],
+    profiles: [{id: 'combined', packages: ['fabric-cli'],
+      features: ['fabric-cli/headless'], platforms: ['windows', 'linux', 'macos'],
+      tests: [{package: 'fabric-cli', target: 'all'}]}],
+  };
+  const windows = coreCommands(selected, 'windows');
+  const compilations = windows.filter(command => command.args.includes('--no-run'));
+  assert.equal(compilations.length, 2);
+  for (const compile of compilations) {
+    const runtime = windows[windows.indexOf(compile) + 1];
+    assert.equal(compile.id, `${runtime.id}:compile`);
+    assert.deepEqual(compile.args.slice(0, -1), runtime.args);
+    assert.equal(runtime.test, true);
+    assert.ok(!runtime.args.includes('--no-run'));
+    assert.equal(compile.test, undefined);
+  }
+  for (const platform of ['linux', 'macos']) {
+    assert.ok(!coreCommands(selected, platform).some(command => command.args.includes('--no-run')));
+  }
+  assert.ok(!coreCommands({...selected, mode: 'affected'}, 'windows')
+    .some(command => command.args.includes('--no-run')));
 });
 
 test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
@@ -363,6 +598,52 @@ test('recorded command execution retains failures, output hashes, counts and lit
   })), /Validation failed/);
   assert.equal(context.results.length, 2);
   assert.equal(context.results[1].exit, null);
+});
+
+test('command timeouts respect command, contract and run budgets and retain timeout failures', t => {
+  const root = temporary(t);
+  const now = Date.now();
+  const context = {root, artifacts: root, commandTimeout: 600000,
+    deadline: now + 7200000, results: []};
+  const command = {id: 'bounded-command', program: 'cargo', args: ['check']};
+  commandResult(command, context, (_, __, opts) => {
+    assert.equal(opts.timeout, 600000);
+    return {status: 0};
+  });
+  assert.equal(context.results[0].timeout_ms, 600000);
+  assert.equal(context.results[0].timed_out, false);
+  commandResult({...command, deadline: now + 300000}, context, (_, __, opts) => {
+    assert.ok(opts.timeout > 0 && opts.timeout <= 300000);
+    return {status: 0};
+  });
+  context.deadline = now + 100000;
+  assert.throws(() => commandResult(command, context, (_, __, opts) => {
+    assert.ok(opts.timeout > 0 && opts.timeout <= 100000);
+    return {status: null, error: Object.assign(new Error('fixture timed out'), {code: 'ETIMEDOUT'}),
+      stdout: 'partial output', stderr: 'partial diagnostics'};
+  }), /Validation failed: bounded-command/);
+  const record = context.results.at(-1);
+  assert.equal(record.timed_out, true);
+  assert.equal(record.exit, null);
+  assert.equal(fs.readFileSync(record.stdout, 'utf8'), 'partial output');
+  assert.equal(fs.readFileSync(record.stderr, 'utf8'), 'partial diagnostics');
+});
+
+test('a real stalled command times out and cannot produce a successful receipt', async t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 200,
+    deadline: Date.now() + 10000, results: []};
+  await assert.rejects(async () => commandResult({
+    id: 'stalled-process', program: process.execPath,
+    args: ['-e', 'setTimeout(() => {}, 60000)'], cwd: root,
+  }, context), /Validation failed: stalled-process/);
+  const record = context.results[0];
+  assert.equal(record.timed_out, true);
+  assert.equal(record.timeout_ms, 200);
+  assert.notEqual(record.exit, 0);
+  assert.match(record.error, /ETIMEDOUT/);
+  assert.ok(record.elapsed_ms < 10000);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'commands.json'))), context.results);
 });
 
 test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
@@ -662,7 +943,10 @@ test('CI comparison rejects changed default availability and per-profile executa
 test('the executor refuses unbounded timeouts, in-checkout artifacts and execution platform impersonation', t => {
   const artifact = temporary(t);
   const root = path.resolve(__dirname, '..', '..');
-  const args = ['--plan', path.join(artifact, 'plan.json'), '--artifacts', path.join(artifact, 'logs')];
+  const fixtureRoot = path.join(artifact, 'checkout');
+  fs.mkdirSync(fixtureRoot);
+  const args = ['--root', fixtureRoot, '--plan', path.join(artifact, 'plan.json'),
+    '--artifacts', path.join(artifact, 'logs')];
   assert.throws(() => options([...args, '--budget-seconds', 'Infinity']), /Invalid timeout/);
   assert.throws(() => options(['--plan', path.join(artifact, 'plan.json'),
     '--artifacts', root]), /outside the checkout/);
@@ -672,28 +956,119 @@ test('the executor refuses unbounded timeouts, in-checkout artifacts and executi
   assert.throws(() => options([...args, '--platform', other, '--execute']), /actual native host/);
 });
 
+test('explicit plan headroom preserves defaults and the separate command timeout ceiling', t => {
+  const artifact = temporary(t);
+  const root = path.join(artifact, 'checkout');
+  fs.mkdirSync(root);
+  const args = ['--root', root, '--plan', path.join(artifact, 'plan.json'),
+    '--artifacts', path.join(artifact, 'logs')];
+  const defaults = options(args);
+  assert.equal(defaults.budget, 7200000);
+  assert.equal(defaults.commandTimeout, 600000);
+  const extended = options([...args, '--budget-seconds', '8100',
+    '--command-timeout-seconds', '7200']);
+  assert.equal(extended.budget, 8100000);
+  assert.equal(extended.commandTimeout, 7200000);
+  for (const [flag, maximum] of [['--budget-seconds', 8100], ['--command-timeout-seconds', 7200]]) {
+    assert.equal(options([...args, flag, '0.001'])[
+      flag === '--budget-seconds' ? 'budget' : 'commandTimeout'], 1);
+    for (const value of ['0', '-1', 'NaN', 'Infinity', String(maximum + 0.001),
+      String(maximum - 0.0001)]) {
+      assert.throws(() => options([...args, flag, value]), /Invalid (timeout|option)/, `${flag} ${value}`);
+    }
+  }
+  assert.throws(() => options([...args, '--budget-seconds', '8100',
+    '--command-timeout-seconds', '8100']), /Invalid timeout/);
+});
+
+test('extended plan budgets retain per-command and contract deadlines in actual command receipts', t => {
+  const root = temporary(t);
+  const now = Date.now();
+  const context = {root, artifacts: root, commandTimeout: 1800000,
+    deadline: now + 8100000, results: []};
+  for (const deadline of [undefined, now + 5000]) {
+    let actual;
+    commandResult({id: 'bounded-command', program: 'fixture', args: [],
+      ...(deadline ? {deadline} : {})}, context, (_, __, opts) => {
+      actual = opts.timeout;
+      return {status: 0, stdout: '', stderr: ''};
+    });
+    assert.equal(context.results.at(-1).timeout_ms, actual);
+    assert.ok(actual > 0 && actual <= (deadline ? 5000 : 120000));
+    if (!deadline) assert.equal(actual, 120000);
+  }
+});
+
 test('workflow always tests the planner, covers merge groups and periodic full runs, and has a stable fail-closed gate', () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const parent = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const native = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-native-shard.yml'), 'utf8');
+  const workflow = `${parent}\n${native}`;
   assert.match(workflow, /merge_group:/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /node --test rust\/scripts\/impact-plan\.test\.cjs/);
+  assert.ok(!workflow.includes('rust/scripts/validation-process.test.cjs'));
   assert.match(workflow, /rust\/scripts\/rust-coverage\.test\.cjs/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs select/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs native/);
   assert.match(workflow, /node rust\/scripts\/validate-impact\.cjs/);
-  assert.match(workflow, /name: Rust validation/);
-  assert.match(workflow, /if: always\(\)/);
-  assert.match(workflow, /needs: \[changes, native\]/);
-  assert.match(workflow, /"\$RUN_NATIVE" == true && "\$NATIVE_RESULT" == success/);
-  assert.match(workflow, /"\$RUN_NATIVE" == false && "\$NATIVE_RESULT" == skipped/);
-  assert.equal((workflow.match(/fetch-depth: 0/g) || []).length, 2,
-    'Both selection and native checkout need historical Python Git objects');
-  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2);
+  const gate = parent.slice(parent.indexOf('\n  validation:'));
+  assert.match(gate, /name: Rust validation/);
+  assert.match(gate, /if: always\(\)/);
+  assert.match(gate, /needs: \[changes, native\]/);
+  assert.match(gate, /node rust\/scripts\/impact-ci\.cjs aggregate/);
+  assert.match(gate, /NATIVE_RESULT: \$\{\{ needs\.native\.result \}\}/);
+  assert.match(gate, /RUN_NATIVE: \$\{\{ needs\.changes\.outputs\.run_native \}\}/);
+  assert.equal((workflow.match(/fetch-depth: 0/g) || []).length, 3,
+    'Selection, native and aggregate checkout retain verified Git history');
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3);
   assert.match(workflow, /--restore-oracle-deps --execute/);
+  assert.match(parent, /max-parallel: 3/);
+  assert.match(native, /max-parallel: 4/);
+  assert.match(workflow, /timeout-minutes: 15/);
+  assert.match(workflow, /--shard "\$\{\{ matrix\.shard \}\}"/);
+  assert.match(workflow, /--budget-seconds "\$\{\{ steps\.setup\.outputs\.budget_seconds \}\}"/);
+  assert.ok(workflow.includes('Math.min(720,840-Math.ceil(elapsed))'),
+    'Execution must account for setup time and retain cleanup headroom');
   assert.ok(!workflow.includes('function select(files'));
 });
 
-test('the common v2 branch runs the existing combined-candidate gate without privileged merge automation', () => {
+test('native CI restores compatible build outputs before Cargo and bounds each validator command', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-native-shard.yml'), 'utf8');
+  const cache = workflow.indexOf('name: Restore native Cargo dependencies and build outputs');
+  assert.ok(cache > 0 && cache < workflow.indexOf('cargo fetch --locked'));
+  const cacheStep = workflow.slice(cache, workflow.indexOf('      - name:', cache + 1));
+  const target = workflow.indexOf('name: Restore bounded compilation cohort');
+  assert.ok(target > cache && target < workflow.indexOf('cargo fetch --locked'));
+  const targetStep = workflow.slice(target, workflow.indexOf('      - name:', target + 1));
+  assert.ok(cacheStep.includes('actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
+  assert.ok(targetStep.includes('actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
+  for (const input of ['runner.os', 'runner.arch', 'rust/rust-toolchain.toml',
+    'rust/Cargo.lock', 'rust/**/Cargo.toml']) {
+    assert.ok(cacheStep.includes(input), `Dependency cache identity must include ${input}`);
+    assert.ok(targetStep.includes(input), `Compilation cache identity must include ${input}`);
+  }
+  for (const directory of ['${{ env.CARGO_HOME }}/registry/cache',
+    '${{ env.CARGO_HOME }}/registry/index', '${{ env.CARGO_HOME }}/git/db']) {
+    assert.ok(cacheStep.includes(directory));
+  }
+  assert.ok(targetStep.includes('rust/target'));
+  assert.ok(targetStep.includes('matrix.cache_group'));
+  assert.ok(targetStep.includes('jobs2-dev0-test0-incr0'));
+  for (const step of [cacheStep, targetStep]) {
+    assert.ok(!step.includes('rust-impact-results'));
+    assert.ok(!step.includes('github.sha'), 'Cache generations must not multiply by source revision');
+  }
+  assert.ok(workflow.includes('actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
+  assert.ok(workflow.includes('matrix.cache_writer'));
+  assert.ok(workflow.includes('steps.target-size.outputs.eligible'));
+  assert.ok(workflow.includes('CARGO_HOME=%s/rust-cargo-home\\n'));
+  assert.match(workflow, /cargo fetch --locked/);
+  assert.ok(!workflow.includes('cargo fetch --locked --target'),
+    'Offline cross-target dependency-graph contracts need their locked sources too');
+  assert.match(workflow, /--command-timeout-seconds 600/);
+});
+
+test('the common v2 branch retains full diagnostic triggers without privileged merge automation', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   const branch = 'dev/marcozo/fab-cli-v2-integration-20261104';
   const push = workflow.slice(workflow.indexOf('\n  push:'), workflow.indexOf('\n  merge_group:'));
@@ -708,7 +1083,11 @@ test('the common v2 branch runs the existing combined-candidate gate without pri
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.ok(!workflow.includes('pull_request_target:'));
   assert.ok(!workflow.includes('contents: write'));
-  assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
+  assert.ok(workflow.includes('matrix: ${{ fromJSON(needs.changes.outputs.native_pools) }}'));
+  assert.ok(workflow.includes('uses: ./.github/workflows/rust-native-shard.yml'));
+  const {matrixForPlan} = require('./impact-shards.cjs');
+  assert.deepEqual([...new Set(matrixForPlan(plan()).include.map(item => item.os))].sort(),
+    ['macos-15', 'ubuntu-24.04', 'windows-2025']);
   assert.ok(workflow.includes('github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before'));
   assert.ok(workflow.includes('persist-credentials: false'));
 });

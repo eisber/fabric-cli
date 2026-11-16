@@ -69,8 +69,11 @@ CLA, required checks, restricted-area review, and authority boundaries still app
 - Read/format/narrow checks first; run the smallest tests covering the slice.
   Include affected downstream consumers and relevant optional features using
   existing Cargo-metadata-based validation plans, not per-agent package lists.
-  Required full/native checks still gate integration; resource limits are not
-  permission to omit validation.
+  Required full/native checks still gate qualification; resource limits alone
+  are not permission to omit validation. The owner-approved provisional exception
+  for the named v2 integration branch uses the
+  [integration smoke gate](authoring-docs/build-validation.md#provisional-v2-integration-smoke).
+  It does not qualify features, releases, or other branches.
 - New test crates must deny `unnameable_test_items`. After adding or moving a
   helper or test, verify its enclosing scope and obtain an actual all-target
   check from the authorized validator. Formatting and metadata cannot establish

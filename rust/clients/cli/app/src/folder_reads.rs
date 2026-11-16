@@ -6,13 +6,13 @@
 use crate::{
     ItemSort, ReadHost, WriteError, errors,
     parser::{ReadCommand, ReadKind},
-    reads::{enum_name, required_id},
+    reads::{ListSelection, enum_name, hidden, required_id},
 };
 use fabric_cli_context::{
     Element, LookupKind, LookupRequest, NodeKind, PathInput, ResolveOptions, Resolver,
 };
 use fabric_cli_output::{
-    CommandError, HiddenItems, Indent, OutputEnvelope, OutputError, OutputInput, RenderPlan,
+    CommandError, Indent, OutputEnvelope, OutputError, OutputInput, RenderPlan,
 };
 use fabric_sdk::{
     folders::{
@@ -145,13 +145,16 @@ impl FolderReadHost<'_, '_> {
                 .execute_with_source_operations(command, operations, ready(()))
                 .await;
         }
-        let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
+        let selection = ListSelection::new(command)?;
         let resolver = Resolver::new(
             self.base.lookup,
             Arc::clone(&self.base.current),
             self.base.home.clone(),
         );
-        let target = resolver.resolve(PathInput::Tokens(&tokens), ResolveOptions::default());
+        let target = resolver.resolve(
+            PathInput::Scalar(&selection.path),
+            ResolveOptions::default(),
+        );
         let target = match target {
             Ok(target)
                 if target.kind() == NodeKind::Folder
@@ -213,6 +216,7 @@ impl FolderReadHost<'_, '_> {
         target: Arc<Element>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OutputInput, CommandError> {
+        let selection = ListSelection::new(command)?;
         let mut cancelled = pin!(cancelled);
         let workspace = target
             .workspace()
@@ -295,6 +299,7 @@ impl FolderReadHost<'_, '_> {
         });
         let rows: Vec<_> = elements
             .into_iter()
+            .filter(|(_, _, name, _)| selection.matches(name))
             .map(|(_, _, name, id)| {
                 if command.long {
                     json!({"name":name, "id":id})
@@ -326,12 +331,15 @@ impl FolderReadHost<'_, '_> {
         };
         let hidden_data =
             (!folder_context && (command.all || self.base.config.show_hidden)).then(|| {
-                HiddenItems::Strings(vec![
-                    ".sparkpools".into(),
-                    ".managedidentities".into(),
-                    ".managedprivateendpoints".into(),
-                    ".externaldatashares".into(),
-                ])
+                hidden(
+                    &[
+                        ".sparkpools",
+                        ".managedidentities",
+                        ".managedprivateendpoints",
+                        ".externaldatashares",
+                    ],
+                    &selection,
+                )
             });
         Ok(OutputInput {
             command: Some(command.name.clone()),

@@ -83,6 +83,54 @@ impl RunHandle {
         Self::location(target, endpoint, location, &prefix, false)
     }
 
+    /// Decode Notebook acceptance while keeping all observation on the selected endpoint.
+    ///
+    /// Notebook execution can return a cluster-origin job Location. For the
+    /// exact target's scheduler path, an HTTPS `*.analysis.windows.net` origin
+    /// is informational: only its validated path is rebound to `endpoint`.
+    /// No request or credential is sent to that cluster host. Other job handles
+    /// and generic-operation locations retain their exact-origin policy.
+    ///
+    /// # Errors
+    /// Rejects wrong owners, unsafe links, unrelated hosts, and mismatched paths.
+    pub fn notebook_acceptance(
+        target: &RunTarget,
+        endpoint: &EndpointBinding,
+        location: &str,
+    ) -> Result<Self, RunError> {
+        if target.kind() != RunTargetKind::Notebook {
+            return Err(RunError::WrongOwner);
+        }
+        if let Ok(handle) = Self::job(target, endpoint, location)
+            .or_else(|_| Self::operation(target, endpoint, location))
+        {
+            return Ok(handle);
+        }
+        if location.len() > 16 * 1024
+            || location.contains(['?', '#', '\\'])
+            || location.chars().any(char::is_control)
+        {
+            return Err(RunError::Protocol);
+        }
+        let (authority, raw_path) = location
+            .strip_prefix("https://")
+            .and_then(|rest| rest.split_once('/'))
+            .ok_or(RunError::Protocol)?;
+        let host = authority.strip_suffix(":443").unwrap_or(authority);
+        let url = Url::parse(location).map_err(|_| RunError::Protocol)?;
+        if !host.ends_with(".analysis.windows.net")
+            || url.host_str() != Some(host)
+            || url.port_or_known_default() != Some(443)
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.path().strip_prefix('/') != Some(raw_path)
+        {
+            return Err(RunError::Protocol);
+        }
+        let monitor = endpoint.url(url.path()).map_err(|_| RunError::Protocol)?;
+        Self::job(target, endpoint, monitor.as_str())
+    }
+
     /// Validate an actual generic-operation Location supplied by an adapter.
     ///
     /// UDF targets reject this: invocationId is synchronous correlation only.
@@ -334,6 +382,23 @@ impl<'a> RunSession<'a> {
         cancelled: impl Future<Output = ()> + Send + 'a,
     ) -> Result<Self, RunError> {
         let deadline = RunDeadline::start(clock.as_ref(), plan.timeout())?;
+        Self::with_deadline(client, plan, clock, cancelled, deadline)
+    }
+
+    /// Retain the caller's original absolute deadline across host preparation.
+    ///
+    /// # Errors
+    /// Rejects an expired deadline or one exceeding the normalized plan's budget.
+    pub fn with_deadline(
+        client: &'a JobClient,
+        plan: RunPreflight,
+        clock: Arc<dyn RunClock>,
+        cancelled: impl Future<Output = ()> + Send + 'a,
+        deadline: RunDeadline,
+    ) -> Result<Self, RunError> {
+        if deadline.remaining(clock.as_ref())? > plan.timeout().duration() {
+            return Err(RunError::InvalidTimeout);
+        }
         Ok(Self {
             client,
             evidence: RunEvidence {
@@ -672,7 +737,7 @@ impl Drop for RequestEvidence<'_> {
                             .filter(|(name, _)| name.eq_ignore_ascii_case("location"));
                         if let Some((_, location)) = locations.next()
                             && locations.next().is_none()
-                            && let Ok(handle) = RunHandle::job(
+                            && let Ok(handle) = RunHandle::notebook_acceptance(
                                 &self.evidence.target,
                                 &self.evidence.endpoint,
                                 location,

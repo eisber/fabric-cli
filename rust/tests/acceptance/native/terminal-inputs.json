@@ -1,9 +1,9 @@
 {
-  "schema": 1,
+  "schema": 2,
   "cases": [
-    {"name": "quit", "input": "quit\r", "contains": "Goodbye!", "exit": 0},
-    {"name": "eof", "input": "\u0004", "contains": "Error in interactive session:", "exit": 0},
-    {"name": "lexical-error", "input": "get \"unfinished\r", "contains": "No closing quotation", "exit": 0},
-    {"name": "interrupt", "input": "\u0003", "contains": "Goodbye!", "exit": 0}
+    {"name": "quit", "input": "quit\r", "contains": "Goodbye!", "not_contains": [], "exit": 0},
+    {"name": "eof", "input": "\u0004", "contains": null, "not_contains": ["Error in interactive session:"], "exit": 0},
+    {"name": "lexical-error", "input": "get \"unfinished\r", "contains": "No closing quotation", "not_contains": [], "exit": 0},
+    {"name": "interrupt", "input": "\u0003", "contains": "Goodbye!", "not_contains": [], "exit": 0}
   ]
 }

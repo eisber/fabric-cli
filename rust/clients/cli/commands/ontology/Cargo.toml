@@ -14,6 +14,7 @@ description = "Ontology alias catalog and local argument validation"
 layer = "cli"
 
 [dependencies]
+fabric-cli-output.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

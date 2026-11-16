@@ -36,6 +36,7 @@ pub fn observe(input: &Value) -> Option<Value> {
         Ok(
             Invocation::NativeTabular(_)
             | Invocation::Feedback(_)
+            | Invocation::MlEndpoint(_)
             | Invocation::Tabular(_)
             | Invocation::Batch(_)
             | Invocation::JobRead(_)

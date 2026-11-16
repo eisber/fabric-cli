@@ -3,6 +3,8 @@
 
 //! Real shared-HTTP and command consumers of independent pinned Python fixtures.
 
+#![deny(unnameable_test_items)]
+
 mod boundary_contract;
 mod catalog_contract;
 mod frontdoor_contract;

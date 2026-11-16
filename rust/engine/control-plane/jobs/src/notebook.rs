@@ -10,6 +10,9 @@
 use serde_json::{Map, Value};
 use std::{collections::HashSet, fmt};
 
+mod execution;
+pub use execution::execute;
+
 /// Native Notebook compute discriminator; configurations are not interchangeable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NotebookCompute {
@@ -116,6 +119,27 @@ impl NotebookRunRequest {
     /// Explicit native compute, absent when the service selects saved defaults.
     pub const fn compute(&self) -> Option<NotebookCompute> {
         self.compute
+    }
+
+    /// Validate the released execution adapter's non-high-concurrency profile.
+    ///
+    /// The schema validator retains the full documented request contract, but
+    /// high-concurrency session reuse is not installed by the Run adapter.
+    ///
+    /// # Errors
+    /// Rejects explicit high-concurrency options without changing the payload.
+    pub fn validate_standard_execution(&self) -> Result<(), NotebookInputError> {
+        if self
+            .body
+            .as_ref()
+            .and_then(|body| {
+                body.pointer("/executionData/computeConfiguration/highConcurrencyModeOptions")
+            })
+            .is_some()
+        {
+            return Err(NotebookInputError::UnsupportedField);
+        }
+        Ok(())
     }
 }
 

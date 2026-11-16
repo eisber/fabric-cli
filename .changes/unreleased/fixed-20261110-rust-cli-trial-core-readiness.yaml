@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: fixed
+body: Correct experimental Rust CLI ACL aliases, diagnostics and text values, clean interactive EOF, bounded read-only list prefixes, and selected-endpoint workspace core execution without changing the Python CLI.
+time: 2026-11-10T22:22:00Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

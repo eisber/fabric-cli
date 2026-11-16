@@ -24,6 +24,74 @@ const ITEM: &str = "22222222-2222-2222-2222-222222222222";
 const CREATED: &str = "33333333-3333-3333-3333-333333333333";
 
 #[tokio::test]
+async fn root_acl_get_effective_text_format_shows_records_and_explicit_json_stays_source_compatible()
+ {
+    for (saved, explicit, records) in [
+        ("text", None, true),
+        ("json", Some("text"), true),
+        ("text", Some("json"), false),
+        ("json", None, false),
+    ] {
+        let mut host = Harness::new();
+        let store = fabric_cli_local::ConfigStore::new(&host.root);
+        let mut settings = store.read().unwrap();
+        settings.insert("output_format".into(), json!(saved));
+        store.write(&settings).unwrap();
+        host.reply(
+            200,
+            json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+        );
+        let assignment = json!({
+            "id":"assignment-a",
+            "principal":{"id":"principal-a","displayName":"Synthetic Reader","type":"User","userDetails":{"userPrincipalName":"reader@example.invalid"}},
+            "role":"Viewer"
+        });
+        host.reply(200, json!({"value":[assignment.clone()]}));
+        let mut args = vec!["acl", "get", "Demo.Workspace"];
+        if let Some(format) = explicit {
+            args.extend(["--output_format", format]);
+        }
+        let output = host.execute(&args).await;
+        let stdout = success(&output);
+        if records {
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&stdout).unwrap(),
+                assignment
+            );
+            assert!(!stdout.contains("[0].principal"));
+        } else {
+            assert!(stdout.contains("[0].principal.displayName"));
+        }
+        assert_eq!(
+            host.requests().last().unwrap()["url"],
+            "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+        );
+        assert!(matches!(output.evidence, FamilyEvidence::Access(Ok(_))));
+    }
+}
+
+#[tokio::test]
+async fn root_acl_grant_revoke_reuse_workspace_mutations_without_new_item_support() {
+    for (leaf, method) in [("grant", "POST"), ("revoke", "DELETE")] {
+        let mut host = Harness::new();
+        host.reply(
+            200,
+            json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+        );
+        host.reply(200, if leaf == "grant" { json!({"value":[]}) } else {
+            json!({"value":[{"id":"assignment","principal":{"id":"principal","displayName":"Synthetic Reader","type":"User"},"role":"Viewer"}]})
+        });
+        host.reply(200, json!({}));
+        let mut args = vec!["acl", leaf, "Demo.Workspace", "-I", "principal", "-f"];
+        if leaf == "grant" {
+            args.extend(["-R", "Viewer"]);
+        }
+        success(&host.execute(&args).await);
+        assert_eq!(host.requests().last().unwrap()["method"], method);
+    }
+}
+
+#[tokio::test]
 async fn root_shortcut_uses_real_storage_properties_and_existing_shortcut_post() {
     let mut host = Harness::new();
     host.item("Lakehouse");

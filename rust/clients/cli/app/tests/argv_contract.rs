@@ -6,6 +6,137 @@
 use fabric_cli::parser::{Invocation, invalid_arguments_message, parse_args};
 use std::process::{Command, Output};
 
+#[test]
+fn acl_missing_targets_have_scoped_human_usage_or_the_original_json_envelope() {
+    let root = tempfile::tempdir().unwrap();
+    for saved in [None, Some("text"), Some("json"), Some("invalid")] {
+        std::fs::write(
+            root.path().join("config.json"),
+            serde_json::to_vec(
+                &saved
+                    .map(|format| serde_json::json!({"output_format":format}))
+                    .unwrap_or_else(|| serde_json::json!({})),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        for (args, explicit) in [
+            (vec!["acl", "ls"], None),
+            (vec!["acl", "dir"], None),
+            (vec!["acl", "get"], None),
+            (vec!["--output_format", "json", "acl", "ls"], Some("json")),
+            (vec!["acl", "ls", "--output_format=text"], Some("text")),
+            (vec!["acl", "--output_format", "json", "ls"], Some("json")),
+            (vec!["acl", "ls", "--query", "private-query-marker"], None),
+        ] {
+            let before = std::fs::read(root.path().join("config.json")).unwrap();
+            let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+                .env_clear()
+                .env("FAB_RUST_CONFIG_ROOT", root.path())
+                .env("FAB_RUST_TENANT", "invalid-tenant")
+                .env("FAB_RUST_AUTH_MODE", "invalid-provider")
+                .env("FAB_RUST_ACCOUNT", "private-account-marker")
+                .args(&args)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+            assert!(output.stdout.is_empty(), "{output:?}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(!stderr.contains("private-"));
+            match explicit.or(saved).unwrap_or("text") {
+                "json" => {
+                    let error: serde_json::Value = serde_json::from_str(&stderr).unwrap();
+                    assert_eq!(error["error"]["code"], "invalid_arguments");
+                    assert_eq!(
+                        error["error"]["message"],
+                        "Missing required argument(s): <path>.... Run fab-rs --help for available commands and usage."
+                    );
+                }
+                "text" => {
+                    for expected in [
+                        "missing ACL target",
+                        "Usage: fab-rs acl",
+                        "Demo.Workspace",
+                        "fab-rs ls /",
+                        "--help",
+                    ] {
+                        assert!(stderr.contains(expected), "{stderr}");
+                    }
+                    assert!(stderr.len() < 400);
+                }
+                _ => {
+                    let error: serde_json::Value = serde_json::from_str(&stderr).unwrap();
+                    assert_eq!(error["error"]["code"], "InvalidInput");
+                }
+            }
+            assert_eq!(
+                std::fs::read(root.path().join("config.json")).unwrap(),
+                before
+            );
+            assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+        }
+    }
+}
+
+#[test]
+fn acl_aliases_use_root_dispatch_and_local_syntax_errors_never_reach_a_host() {
+    for (canonical, alias, options) in [
+        (
+            "set",
+            "grant",
+            vec!["-I", "principal", "-R", "Viewer", "-f"],
+        ),
+        ("rm", "revoke", vec!["-I", "principal", "-f"]),
+        ("rm", "del", vec!["-I", "principal", "-f"]),
+    ] {
+        let run = |leaf| {
+            invoke(
+                &[vec!["acl", leaf, "Demo.Workspace"], options.clone()].concat(),
+                true,
+            )
+        };
+        let original = run(canonical);
+        let aliased = run(alias);
+        assert_eq!(aliased.status.code(), original.status.code());
+        assert_eq!(aliased.stdout, original.stdout);
+        assert_eq!(aliased.stderr, original.stderr);
+        let Invocation::Access(original) = parse_args(
+            ["fab-rs", "acl", canonical, "Demo.Workspace"]
+                .into_iter()
+                .chain(options.iter().copied()),
+        )
+        .unwrap() else {
+            panic!("expected access command")
+        };
+        let Invocation::Access(aliased) = parse_args(
+            ["fab-rs", "acl", alias, "Demo.Workspace"]
+                .into_iter()
+                .chain(options.iter().copied()),
+        )
+        .unwrap() else {
+            panic!("expected access command")
+        };
+        assert_eq!(format!("{original:?}"), format!("{aliased:?}"));
+    }
+    for args in [
+        vec!["acl", "ls", "--bad=private-query-marker"],
+        vec!["acl", "ls", "--output_format=private-query-marker"],
+        vec!["acl", "ls", "--query"],
+        vec!["acl", "grant", "private-query-marker", "-I", "principal"],
+        vec![
+            "acl",
+            "revoke",
+            "private-query-marker",
+            "-I",
+            "principal",
+            "-R",
+            "Viewer",
+        ],
+    ] {
+        diagnostic(&args);
+    }
+}
+
 fn invoke(args: &[&str], invalid_selectors: bool) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_fab-rs"));
     command.env_clear();

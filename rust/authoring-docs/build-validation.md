@@ -10,7 +10,65 @@ The Python workflows and packaging are unchanged.
 
 The [bounded candidate preflight](fast-check.md) documents the separate Linux
 fast workflow, immutable product/CI receipts, and guarded native-dispatch relay.
-Fast success is not a replacement for the three native OS gates.
+Fast success is not a replacement for the three native OS qualification gates.
+
+## Provisional v2 integration smoke
+
+The owner-approved 2026-11-12 policy reduces the premerge gate only for
+`dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli`.
+**Integration smoke (Windows, provisional)** runs in one `windows-2025` job on
+PRs targeting that exact branch and on pushes to that exact ref. It builds the
+actual `fabric-cli` headless `fab-cli-v2` binary, then the default `fab-rs` binary,
+once per debug feature profile. Headless explicitly disables default features and
+enables only `headless`; it is not the separate grouped `fab-cli` local host.
+The first locked build can restore public Cargo dependencies; the subsequent
+baseline build is offline. Executable cases are help, exact version, and
+deterministic sanitized invalid-input failures, with explicit exit/stream/JSON
+assertions and an isolated environment without credentials or external tools.
+No live identity or service operation is invoked.
+
+The PR checkout is the exact event merge commit, verified to have exactly the
+recorded base and source parents. Push receipts bind the actual commit and the
+previous ref, which must remain an ancestor (multi-commit fast forwards are
+allowed). Receipts retain source/base/checkout, toolchain, lock hash, binary
+hashes, command exits/output logs and timings, plus before/after per-file source
+inventories. Failure and missing evidence never become a pass. Cheap contracts:
+
+```text
+node --test rust/scripts/integration-smoke.test.cjs
+```
+
+There is deliberately no cross-run build cache in this narrow bootstrap.
+Windows cold compilation and dependency restoration can take minutes; the
+45-minute job and 20-minute per-build limits are bounds, not timing claims.
+The second profile reuses dependencies in the same target, not a purported
+subsecond full validation. Receipts measure actual elapsed time. No warm-run
+speedup is claimed without a measured run.
+
+On integration PRs/pushes the old selector, three-OS native jobs and stable
+**Rust validation** gate are visibly skipped, not reported as full validation
+success. Optional TOM is likewise skipped for integration PRs. All existing
+full suites remain on their previous other-branch, merge-group, scheduled and
+manual paths; manual dispatch at the integration ref can diagnose the combined
+branch. Broad failures remain visible repair debt. Smoke is not full-feature,
+cross-platform, Python parity, authentication or release qualification.
+Known material security, authentication and data-loss blockers and mandatory
+provider checks/reviews still apply. The serial integration driver must recheck
+source/base/conflicts and authority before merging and require postmerge basic
+smoke before the next separately authorized queue entry.
+
+The PR54 integration candidate additionally runs a candidate-branch-only Windows
+offline schema proof after the generic minimum. It checks SDK schema documents,
+the native provider and discovery/help/process targets with
+`v2-discovery,headless`. Legacy TABLE mounting runs separately with its required
+`native-read` feature as well; a feature-gated empty target is rejected, not
+counted as a pass. The discovery binary's registered schema test module
+includes the shared-undrained-pipe deadline/cancellation cases and their existing
+four-second bounds. Separate receipts retain actual counts, filtered tests, exits,
+both output hashes and unchanged source inventories. This optional leaf proof is
+not rerun on postmerge pushes and is not broker, live-service or three-OS evidence.
+
+## Full qualification and historical evidence
 
 Current local and PR selection uses the shared
 [dependency-aware validator](dependency-validation.md). Cargo metadata supplies
@@ -21,9 +79,9 @@ The command registry and executor are identical locally and in CI. The
 historical results below describe their recorded checkpoints, not a pass of a
 newly generated impact plan.
 
-Formatting is checked with one `cargo fmt --package <name> -- --check`
-invocation per selected package. This preserves the formatting gate while
-avoiding Windows' aggregate rustfmt command-line length limit.
+On Windows, formatting uses one `cargo fmt --package <name> -- --check`
+invocation per selected package, avoiding the aggregate rustfmt command-line
+length limit. POSIX hosts combine the selected packages.
 The acceptance inventory is checked against captured, locked/offline Cargo
 metadata, not a hand-maintained target list. Empty/all-skipped test execution
 and empty dependency graphs cannot satisfy a selected check.
@@ -37,21 +95,22 @@ Certificate profiles inherit the headless host. Their offline checks retain
 the same exit, stream, sanitization and credential-isolation assertions, with
 the diagnostic expected for the selected feature profile.
 
-The native workflow first runs all 33 existing engineering-harness tests and
-five additional bounded-PTY unit tests with an explicit inventory and the
-original Windows-only POSIX-PTY skip. It then
-preflights every workspace target and feature under strict Clippy and exercises
-all CLI targets with every feature before the
-unchanged full dependency-selected plan. Failure in either preflight remains
-blocking; these early checks do not replace native feature profiles or frozen
-source comparisons. Engineering receipts record the exact source SHA, host,
-case counts and observed PTY cleanup data.
+The native workflow partitions the dependency-selected plan across bounded
+native jobs. One shard per OS runs the engineering harness against the explicit
+inventory in `rust/scripts/engineering-inventory.json`, including the exact
+Windows-only POSIX-PTY skips. Engineering receipts record the exact source SHA,
+host, case counts and observed PTY cleanup data.
+Full plans also preflight every workspace target and feature under strict
+Clippy and exercise all CLI targets with every feature, as separate shards.
+Failure remains blocking; these checks do not replace isolated feature profiles
+or frozen source comparisons. Affected plans run their selected target and
+feature obligations instead of unconditional all-workspace preflights.
 The CLI preflight keeps executing remaining targets after a failed target to
 expose all failures in one bounded run; its final failure still blocks the plan.
 
-Early CLI tests and the shared validator provide explicit artifact-only identity
-and updater fixture roots. The preflight creates its directory under
-`RUNNER_TEMP`; the full validator injects its existing artifact root. Tests do
+CLI tests and the shared validator provide explicit artifact-only identity
+and updater fixture roots. Each shard injects its owned artifact root under
+`RUNNER_TEMP`. Tests do
 not require a writable ambient profile or fall back to source-tree fixtures.
 Batch authentication expectations follow the actual selected platform/provider:
 on POSIX, the default device-code method either reports missing explicit
@@ -76,10 +135,26 @@ their actual Windows-broker and interactive callers. POSIX broker-only builds
 retain their explicit unsupported-provider behavior without an unused
 presentation helper or a lint suppression.
 
-The complete CLI preflight creates its isolated test directory under
-`RUNNER_TEMP` and supplies the identity, updater and impact test-root bindings.
+The complete CLI preflight receives an isolated test directory under
+`RUNNER_TEMP` and the identity and updater test-root bindings.
 Its artifacts are retained with the native results; tests never need a fallback
 directory inside the checkout.
+
+Windows full-plan timing at source `5d2b201de8347c3d8055126c1405166c2d80c38a`
+showed that the executor's internal 120-minute limit could expire before the
+existing 150-minute job limit. In
+[PR run 42940191710](https://github.com/eisber/fabric-cli/actions/runs/42940191710),
+the unchanged 53-package, 38-profile, 29-contract plan timed out during
+`read-parity` after 293 commands; its receipt correctly remained incomplete.
+The same-source historical full run
+[42922714994](https://github.com/eisber/fabric-cli/actions/runs/42922714994)
+completed 305 commands in 119.66 minutes, with about three minutes of work from
+the first `read-parity` command through the final integrity check.
+The historical serial workflow therefore granted Windows a finite 135-minute
+plan budget. Local unsharded execution retains that explicit maximum; the
+current native CI partitions the plan into 15-minute jobs instead. Neither
+historical timing nor configured limits replace a complete current-head native
+run or establish that a new run passed.
 
 PTY cleanup drains already queued output while reaping only the owned child
 within the existing wait budget. A confirmed process-tree cleanup is distinct

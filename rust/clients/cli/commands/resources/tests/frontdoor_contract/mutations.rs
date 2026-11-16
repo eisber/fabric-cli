@@ -9,6 +9,119 @@ struct Prompt {
     questions: Vec<String>,
 }
 
+#[tokio::test]
+async fn grant_and_revoke_reuse_all_workspace_source_mutation_cases() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../../../tests/compatibility/access/mutation_cases.json"
+    ))
+    .unwrap();
+    let mut count = 0;
+    for case in fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["resource"] == "workspace")
+    {
+        let canonical = case["command"].as_str().unwrap();
+        let alias = if canonical == "set" {
+            "grant"
+        } else {
+            "revoke"
+        };
+        let mut outcomes = Vec::new();
+        for spelling in [canonical, alias] {
+            let mut args = vec![
+                "acl".into(),
+                spelling.into(),
+                "Workspace.Workspace".into(),
+                "-I".into(),
+                case["identity"].as_str().unwrap().into(),
+            ];
+            if canonical == "set" {
+                args.extend(["-R".into(), case["role"].as_str().unwrap().into()]);
+            }
+            if case["force"] == true {
+                args.push("-f".into());
+            }
+            let command = parsed(&args);
+            let replies = case["responses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| {
+                    reply(
+                        r["status"].as_u64().unwrap() as u16,
+                        &r["body"].to_string(),
+                        &[],
+                    )
+                })
+                .collect();
+            let (api, wire, credential) = setup(replies);
+            let targets = target(None);
+            let mut prompt = Prompt {
+                answers: case["confirmations"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_bool().unwrap())
+                    .collect(),
+                questions: Vec::new(),
+            };
+            let mut host = host(&api, &targets);
+            host.confirmation = Some(&mut prompt);
+            let result = host.execute(&command, pending()).await;
+            let requests: Vec<_> = wire
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|request| {
+                    let body = azure_core::Bytes::from(request.body());
+                    (
+                        request.method().to_string(),
+                        request.url().to_string(),
+                        body.to_vec(),
+                    )
+                })
+                .collect();
+            outcomes.push((
+                result,
+                requests,
+                credential.calls.load(Ordering::SeqCst),
+                prompt.questions,
+            ));
+        }
+        assert_eq!(outcomes[0], outcomes[1], "{}", case["name"]);
+        count += 1;
+    }
+    assert!(count >= 5, "must execute the workspace mutation inventory");
+}
+
+#[test]
+fn grant_revoke_invalid_arguments_remain_parser_errors() {
+    for args in [
+        vec!["acl", "grant", "Workspace.Workspace", "-I", "principal"],
+        vec!["acl", "grant", "Workspace.Workspace", "-R", "Viewer"],
+        vec![
+            "acl",
+            "revoke",
+            "Workspace.Workspace",
+            "-I",
+            "principal",
+            "-R",
+            "Viewer",
+        ],
+        vec!["acl", "revoke", "Workspace.Workspace"],
+        vec!["acl", "grant", "--unexpected"],
+    ] {
+        assert!(
+            register(clap::Command::new("test"))
+                .try_get_matches_from(std::iter::once("test").chain(args))
+                .is_err()
+        );
+    }
+}
+
 impl Confirmation for Prompt {
     fn confirm<'a>(
         &'a mut self,

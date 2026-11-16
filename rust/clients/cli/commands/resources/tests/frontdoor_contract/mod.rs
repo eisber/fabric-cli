@@ -4,6 +4,7 @@
 use super::*;
 mod mutations;
 mod raw;
+mod trial_ux;
 use fabric_cli_context::{Element, ItemType, NodeKind, WorkspaceType};
 use fabric_cli_output::text::{OutputFormat, ascii_width};
 use fabric_cli_resources::{

@@ -4,6 +4,7 @@
 //! Additive item APIs delegated to the focused item SDK.
 
 use crate::Client;
+pub use fabric_sdk_items::create;
 pub use fabric_sdk_items::delete;
 pub use fabric_sdk_items::ml_models;
 pub use fabric_sdk_items::update;

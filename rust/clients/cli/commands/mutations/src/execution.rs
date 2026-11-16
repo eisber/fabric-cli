@@ -9,7 +9,7 @@ use fabric_sdk_operations::{
     OperationResponse, OperationSession, OperationWarning,
 };
 use fabric_sdk_workspaces::{
-    CredentialSelection,
+    CredentialSelection, RequestContext,
     mutations::{
         ResourceError, ResourceMethod, ResourceOperation, ResourceOperations, ResourceOutcome,
     },
@@ -58,8 +58,7 @@ impl OperationExecutor for SharedHttp<'_> {
 /// The caller provides the credential, explicit selection, existing executor
 /// and cancellation future. No identity discovery, runtime or transport is added.
 pub struct FabricMutationBackend<'a> {
-    credential: Arc<dyn TokenCredential>,
-    selection: CredentialSelection,
+    context: RequestContext,
     executor: &'a HttpExecutor,
     limits: OperationLimits,
     cancelled: Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
@@ -67,7 +66,10 @@ pub struct FabricMutationBackend<'a> {
 }
 
 impl<'a> FabricMutationBackend<'a> {
-    /// Store explicit caller-owned dependencies without acquiring a token or I/O.
+    /// Store caller-owned dependencies and the executor's explicit endpoint.
+    ///
+    /// Initial requests, polling and results retain this binding without token
+    /// acquisition, I/O or a public-endpoint fallback during construction.
     pub fn new(
         credential: Arc<dyn TokenCredential>,
         selection: CredentialSelection,
@@ -76,8 +78,11 @@ impl<'a> FabricMutationBackend<'a> {
         cancelled: impl Future<Output = ()> + Send + 'a,
     ) -> Self {
         Self {
-            credential,
-            selection,
+            context: RequestContext::with_endpoint(
+                credential,
+                selection,
+                executor.endpoint().clone(),
+            ),
             executor,
             limits,
             cancelled: Box::pin(cancelled),
@@ -97,9 +102,8 @@ impl ResourceOperations for FabricMutationBackend<'_> {
         operation: ResourceOperation,
     ) -> CommandFuture<'_, Result<ResourceOutcome, ResourceError>> {
         Box::pin(async move {
-            let mut session = OperationSession::new(
-                self.credential.as_ref(),
-                &self.selection,
+            let mut session = OperationSession::with_context(
+                &self.context,
                 SharedHttp(self.executor),
                 self.limits,
                 self.cancelled.as_mut(),

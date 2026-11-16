@@ -29,6 +29,7 @@ pub(crate) enum Reply {
     Endless,
     Close,
     Raw(Vec<u8>),
+    RequireContentLength,
 }
 
 impl Reply {
@@ -218,6 +219,20 @@ async fn connection(
             .pop_front()
             .expect("unexpected request or implicit replay");
         match reply {
+            Reply::RequireContentLength => {
+                let status = if header.lines().any(|line| {
+                    line.split_once(':')
+                        .is_some_and(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                }) {
+                    "202 Accepted"
+                } else {
+                    "411 Length Required"
+                };
+                socket
+                    .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
+                    .await?;
+                socket.flush().await?;
+            }
             Reply::Fixed(status, headers, body) => {
                 let mut head = format!("HTTP/1.1 {status} Synthetic\r\n");
                 for (name, value) in headers {

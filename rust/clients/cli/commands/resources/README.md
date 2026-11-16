@@ -32,6 +32,37 @@ shared HTTP policy rather than installing another authentication or retry stack.
 `export_acls` requires `AclExportSink`; it never substitutes a no-op writer.
 The host remains responsible for actual storage export.
 
+## ACL command usability
+
+`fab-rs acl grant` is a discoverable alias of `acl set`; `acl revoke` is an alias
+of `acl rm`. Existing `set`, `rm` and `del` spellings remain available. Identity,
+role, force, confirmation and error handling are unchanged. Revoke removes the
+matching assignment; it does not accept a role selector. These aliases do not
+add item mutation support or expose ACL commands in the grouped `fab-cli` host.
+
+Read targets are workspaces (`Demo.Workspace`) or supported items
+(`Demo.Workspace/Book.Notebook`). An absolute target starts with `/`; an item
+can be relative to the current workspace. Use `fab-rs ls /` to discover workspace
+names. Workfolders, OneLake paths, SemanticModel, Environment and Dashboard
+targets are not supported by this front door. Item reads require Fabric
+administrator permission.
+
+The root executable reports a missing `acl ls`/`get` target on stderr with
+concise usage, a synthetic example and exit 2, before identity or network setup.
+An explicit `--output_format json`, or saved JSON setting, retains the existing
+sanitized JSON argument-error envelope. No other command's default is changed.
+
+For normal text output, the root uses `AccessHost::execute_for_output` with its
+effective format. Unqueried `acl get` then shows complete ACL record values using
+the shared structured text renderer, without table truncation or field loss.
+This is an owner-requested ACL-only UX exception to the Python field-discovery
+default, not a change to the frozen oracle or `read_acls`/`AccessHost::execute`.
+Explicit JSON, tabular export and explicit queries retain their existing contract.
+Use `-q '.'` to retrieve records in JSON or `-q ''` to explicitly discover field
+paths. Paging, source JSON empty-result behavior, collection bounds and provider errors remain
+unchanged. Separate offline UX tests cover the exception alongside the unchanged
+Python fixture tests.
+
 ## Output and evidence
 
 `CommandValue::write_json` writes results to stdout and diagnostics to stderr.

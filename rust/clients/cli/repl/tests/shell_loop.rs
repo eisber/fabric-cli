@@ -113,6 +113,27 @@ fn fake_editor_dispatches_owned_tokens_and_refreshes_context_after_commands() {
 }
 
 #[test]
+fn eof_stops_once_without_dispatch_notice_or_another_read() {
+    let mut input = FakeInput {
+        events: [
+            Ok(InputEvent::EndOfInput),
+            Ok(InputEvent::Line("must not execute".into())),
+        ]
+        .into(),
+        ..FakeInput::default()
+    };
+    let mut host = FakeHost::default();
+    assert_eq!(
+        run(&mut input, &mut host, Options::default()).unwrap(),
+        StopReason::EndOfInput
+    );
+    assert_eq!(input.prompts.len(), 1);
+    assert_eq!(input.events.len(), 1);
+    assert!(host.commands.is_empty());
+    assert_eq!(host.notices, [ShellNotice::Welcome]);
+}
+
+#[test]
 fn interrupt_continues_and_eof_stops_after_exactly_one_read_without_farewell() {
     let mut input = FakeInput {
         events: [

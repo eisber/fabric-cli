@@ -19,10 +19,8 @@ csv.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 parquet.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
 bytes.workspace = true
+thiserror.workspace = true
 
 [package.metadata.fabric]
 layer = "cli"

@@ -57,6 +57,10 @@ remains HTTPS-only and still configures the connector to enforce HTTPS.
   any GET retry policy.
 - HTTPS uses HTTP/1.1 and TLS 1.2/1.3. HTTP/2, HTTP/3, TLS early data and client
   certificates are not enabled.
+- Empty byte-body POSTs explicitly send `Content-Length: 0` when the caller
+  supplies neither Content-Length nor Transfer-Encoding. Zero body bytes remain
+  distinct from an explicit JSON `{}`; read methods, streamed bodies and
+  caller-supplied framing are not changed by this policy.
 - Socket timeouts are separate from the shared executor's overall deadline.
 - Responses preserve actual status and initial headers. Cookies are not managed.
 - Pull-driven gzip and zlib-wrapped deflate decoding retains backpressure and
@@ -84,6 +88,38 @@ Generic response conversion and legitimate repeated non-singleton headers are
 unchanged. This is not a guarantee against raw duplicates erased by an earlier
 parser or a custom HTTP client. See
 [native streaming provenance and metadata limits](../../../../authoring-docs/native-stream-http.md).
+
+## Diagnostics and HTTP 411
+
+The Rust `fab-rs` executable currently provides sanitized command error receipts,
+not a configured HTTP logger or tracing subscriber. `get --verbose` controls
+resource output, not transport diagnostics. The Python CLI's `debug_enabled`
+logging is separate; setting it or `RUST_LOG` does not enable native Rust request
+capture.
+
+For HTTP 411 (Length Required), capture the actual native wire framing rather
+than only the SDK request object. The offline TLS regression uses synthetic
+credentials and a loopback peer that rejects requests without Content-Length:
+
+```text
+cargo test --offline --locked -p fabric-sdk-transport --features hyper-rustls --lib framing_tests -- --nocapture
+```
+
+Its JSON diagnostic allowlists the method, logical route, body byte count,
+Content-Length, Transfer-Encoding, HTTP status and request count. It excludes
+URLs, target identifiers, authorization, cookies, request data and response
+bodies. This is test-only evidence, not live service acceptance or a production
+logging facility. The length-rejection case also checks that a POST is not
+replayed.
+
+For a future operational logging surface, use structured `tracing` events and
+async spans, with subscriber initialization and a bounded, opt-in file sink owned
+by the executable. Libraries must not initialize a global logger. Allowlist
+method, framing, byte counts, status, elapsed time and sanitized failure classes;
+do not dump HTTP requests or provider errors. A separate log sink preserves
+stdout results and the single JSON error envelope on stderr. Correlation IDs
+need explicit bounded validation before inclusion. Logging setup, redaction,
+file-write failures and retention require their own contracts and coverage.
 
 ## Offline composition
 

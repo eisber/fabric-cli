@@ -224,37 +224,7 @@ pub(super) fn run(command: &ExecuteCommand, state: &mut BatchState) -> io::Resul
 }
 
 fn owned_stdout() -> io::Result<std::fs::File> {
-    // An abandoned write must not hold Rust's global stdout lock: process
-    // cleanup flushes that stream even after a terminal command outcome.
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsHandle;
-        let output = io::stdout()
-            .as_handle()
-            .try_clone_to_owned()
-            .map(std::fs::File::from)?;
-        // A duplicated console handle still needs WriteConsoleW for Unicode.
-        // Never feed UTF-8 bytes to WriteFile if the handle changed since preflight.
-        if output.is_terminal() {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                WINDOWS_CONSOLE_OUTPUT_MESSAGE,
-            ));
-        }
-        Ok(output)
-    }
-    #[cfg(unix)]
-    {
-        use std::os::fd::AsFd;
-        io::stdout()
-            .as_fd()
-            .try_clone_to_owned()
-            .map(std::fs::File::from)
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        Err(io::Error::from(io::ErrorKind::Unsupported))
-    }
+    super::output::owned_stream(OutputStream::Stdout, false)
 }
 
 fn prepare_local(command: &ExecuteCommand) -> Result<PreparedExecution, Failure> {
@@ -479,7 +449,7 @@ impl Delivery {
 
     async fn publish_stdout(
         self,
-        mut output: impl Write + Send + 'static,
+        output: impl Write + Send + 'static,
         deadline: Instant,
         cancelled: impl Future<Output = Failure>,
     ) -> Publication {
@@ -507,31 +477,39 @@ impl Delivery {
                 evidence,
             );
         }
-        let worker =
-            tokio::task::spawn_blocking(move || self.write_to(&mut output, &mut io::sink()));
-        tokio::select! {
-            biased;
-            _ = tokio::time::sleep_until(deadline.into()) => Self::abandoned_output(
-                failure("timed_out", "The total deadline elapsed during result output.", 1),
+        use super::output::{OwnedWrite, write_owned};
+        match write_owned(output, deadline, cancelled, move |output| {
+            self.write_to(output, &mut io::sink())
+        })
+        .await
+        {
+            OwnedWrite::Deadline => Self::abandoned_output(
+                failure(
+                    "timed_out",
+                    "The total deadline elapsed during result output.",
+                    1,
+                ),
                 evidence,
             ),
-            interruption = cancelled => Self::abandoned_output(interruption, evidence),
-            result = worker => match result {
-                Ok(Ok(outcome)) => Publication::Complete(outcome),
-                Ok(Err(error)) => Publication::Diagnostic(Self::failed(
-                    "output_failed",
-                    &format!(
-                        "Writing or flushing query output failed ({:?}); data may be partial. The query will not be replayed.",
-                        error.kind()
-                    ),
-                    evidence,
-                    1,
-                )),
-                Err(_) => Self::abandoned_output(
-                    failure("output_failed", "The result output worker did not complete.", 1),
-                    evidence,
+            OwnedWrite::Cancelled(interruption) => Self::abandoned_output(interruption, evidence),
+            OwnedWrite::Complete(Ok(outcome)) => Publication::Complete(outcome),
+            OwnedWrite::Complete(Err(error)) => Publication::Diagnostic(Self::failed(
+                "output_failed",
+                &format!(
+                    "Writing or flushing query output failed ({:?}); data may be partial. The query will not be replayed.",
+                    error.kind()
                 ),
-            },
+                evidence,
+                1,
+            )),
+            OwnedWrite::WorkerFailed => Self::abandoned_output(
+                failure(
+                    "output_failed",
+                    "The result output worker did not complete.",
+                    1,
+                ),
+                evidence,
+            ),
         }
     }
 

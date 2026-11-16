@@ -155,12 +155,16 @@ function reverseConsumers(packages, seedNames) {
   return sorted(closure(seeds, name => consumers.get(name)));
 }
 function fileSnapshot(root, files) {
+  const sameIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino &&
+    left.size === right.size && left.mode === right.mode && left.mtimeNs === right.mtimeNs &&
+    left.birthtimeNs === right.birthtimeNs;
+  const sameSnapshot = (left, right) => sameIdentity(left, right) && left.ctimeNs === right.ctimeNs;
   return files.map(file => {
     relative(file);
     const absolute = path.join(root, ...file.split('/'));
     ownedPath(root, absolute, 'inventory input');
     let stat;
-    try { stat = fs.lstatSync(absolute); } catch (error) {
+    try { stat = fs.lstatSync(absolute, {bigint: true}); } catch (error) {
       if (['ENOENT', 'ENOTDIR'].includes(error.code)) return {path: file, state: 'missing'};
       throw error;
     }
@@ -169,16 +173,28 @@ function fileSnapshot(root, files) {
     assert(stat.isFile(), `Changed input is not a regular file: ${file}`);
     const digest = crypto.createHash('sha256'), buffer = Buffer.alloc(65536);
     const descriptor = fs.openSync(absolute, 'r');
+    let opened;
     try {
+      // Windows can materialize file metadata on the first open. Establish
+      // ctime stability on one handle, without permitting a path replacement
+      // or ignoring ctime changes while content is actually being read.
+      opened = fs.fstatSync(descriptor, {bigint: true});
+      assert(opened.isFile() && sameIdentity(stat, opened), `Input changed while hashing: ${file}`);
       let count;
       while ((count = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
         digest.update(buffer.subarray(0, count));
       }
-      const after = fs.fstatSync(descriptor);
-      assert(after.size === stat.size && after.mtimeMs === stat.mtimeMs &&
-        after.ctimeMs === stat.ctimeMs, `Input changed while hashing: ${file}`);
+      const after = fs.fstatSync(descriptor, {bigint: true});
+      let final;
+      try { final = fs.lstatSync(absolute, {bigint: true}); } catch (error) {
+        if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+      }
+      assert(sameSnapshot(opened, after) && final?.isFile() && sameSnapshot(after, final),
+        `Input changed while hashing: ${file}`);
     } finally { fs.closeSync(descriptor); }
-    return {path: file, state: 'file', size: stat.size, mode: stat.mode & 0o777, digest: digest.digest('hex')};
+    assert(opened.size <= BigInt(Number.MAX_SAFE_INTEGER), `Input exceeds safe snapshot size: ${file}`);
+    return {path: file, state: 'file', size: Number(opened.size),
+      mode: Number(opened.mode & 0o777n), digest: digest.digest('hex')};
   });
 }
 function fingerprinted(value) {
@@ -331,7 +347,7 @@ function graphModel(graph, packages) {
     item => ({packages: packageNames(item.packages, 'check packages'),
       components: strings(item.components, 'check components'), inputs: inputs(item.inputs),
       platforms: platforms(item.platforms), depends_on: strings(item.depends_on, 'check dependencies')}));
-  const components = named(graph.components, 'component', ['package', 'inputs', 'depends_on', 'tests', 'checks', 'coverage'],
+  const components = named(graph.components, 'component', ['package', 'inputs', 'depends_on', 'tests', 'checks', 'coverage', 'profiles'],
     item => {
       assert(packages.has(item.package), `Unknown component package: ${item.package}`);
       const coverage = item.coverage === undefined ? 'runtime' : item.coverage;
@@ -352,6 +368,7 @@ function graphModel(graph, packages) {
       }
       return {package: item.package, coverage, inputs: inputs(item.inputs),
         depends_on: strings(item.depends_on, 'component dependencies'), tests,
+        profiles: item.profiles === undefined ? undefined : strings(item.profiles, 'component profiles'),
         checks: strings(item.checks, 'component checks')};
     });
   const profiles = named(graph.profiles, 'profile', ['packages', 'features', 'platforms', 'checks'],
@@ -377,6 +394,9 @@ function graphModel(graph, packages) {
   }
   for (const item of [...components.values(), ...profiles.values()]) for (const check of item.checks) {
     assert(checks.has(check), `Unknown check: ${check}`);
+  }
+  for (const component of components.values()) for (const profile of component.profiles || []) {
+    assert(profiles.has(profile), `Unknown component profile: ${profile}`);
   }
   for (const check of checks.values()) for (const component of check.components) {
     assert(components.has(component), `Unknown check component: ${component}`);
@@ -434,8 +454,34 @@ function featureSet(packages, features = [], roots = [...packages.keys()]) {
   }
   return active;
 }
+// A feature on a consumer does not make all of that consumer's ordinary
+// dependencies feature obligations. Follow only declarations on the feature
+// path, then include the compile inputs of dependencies that path selects.
+function featureDependencies(packages, profile) {
+  const active = featureSet(packages, profile.features, profile.packages);
+  const result = new Set(), visited = new Set(), queue = [...profile.features];
+  for (let i = 0; i < queue.length; i++) {
+    const key = queue[i];
+    if (visited.has(key) || !active.has(key)) continue;
+    visited.add(key);
+    const [name, feature] = key.split('/');
+    for (const entry of packages.get(name).features[feature]) {
+      if (!entry.startsWith('dep:') && !entry.includes('/')) {
+        queue.push(`${name}/${entry}`);
+        continue;
+      }
+      const [alias, next] = entry.startsWith('dep:') ? [entry.slice(4)] : entry.split('/');
+      const dependency = packages.get(name).aliases.get(alias.replace(/\?$/, ''));
+      if (!dependency.internal) continue;
+      if (alias.endsWith('?') && !active.has(`${dependency.internal}/${next}`)) continue;
+      for (const dep of closure([dependency.internal], id => packages.get(id).deps)) result.add(dep);
+      if (next) queue.push(`${dependency.internal}/${next}`);
+    }
+  }
+  return result;
+}
 function fullInput(file) {
-  return /(^|\/)Cargo\.(toml|lock)$/.test(file) ||
+  return /(^|\/)Cargo\.lock$/.test(file) || ['Cargo.toml', 'rust/Cargo.toml'].includes(file) ||
     /(^|\/)rust-toolchain(?:\.toml)?$/.test(file) ||
     /(^|\/)\.cargo\//.test(file) || file.startsWith('.github/') ||
     /^rust\/scripts\/(?:impact-plan(?:\.test)?|impact-runner(?:\.test)?|rust-fast-check(?:\.test)?)\.cjs$/.test(file) ||
@@ -446,6 +492,7 @@ function fullInput(file) {
 function documentation(file) {
   // Deleted legacy paths must remain documentation-only during directory renames.
   return /^(README(?:\.[^/]+)?|AGENTS\.md)$/i.test(file) ||
+    /^\.changes\/unreleased\/[^/]+\.ya?ml$/i.test(file) ||
     /^rust\/(?:authoring-docs|docs)\/.+\.md$/i.test(file) ||
     file === 'rust/AGENTS.md' || file === 'rust/README.md';
 }
@@ -454,7 +501,7 @@ function documentation(file) {
  * Compute a platform-independent validation selection from Cargo metadata and
  * the declarative schema-1 impact graph. Unknown inputs conservatively go full.
  */
-function plan({metadata, graph, files, root, full = false, reason}) {
+function plan({metadata, baseMetadata, graph, files, root, full = false, reason}) {
   root = rootPath(root);
   const model = metadataModel(metadata, root), packages = model.packages;
   const rules = graphModel(graph, packages);
@@ -465,7 +512,10 @@ function plan({metadata, graph, files, root, full = false, reason}) {
   }));
   const reasons = new Set(), explanations = [], changed = new Set(), affected = new Set();
   const selectedComponents = new Set(), selectedChecks = new Set(), unscoped = new Set();
-  const runtimeChecks = new Set(), profileAffected = new Set();
+  const profileAffected = new Set(), profileObligations = new Set(), manifestSeeds = new Set();
+  const unknownSeeds = new Set();
+  let baseModel;
+  const consumerEdges = new Map([...model.consumers].map(([name, consumers]) => [name, new Set(consumers)]));
   const testSelections = new Map();
   function addTest(test, why) {
     const key = stable({package: test.package, target: test.target, ...(test.filter === undefined ? {} : {filter: test.filter})});
@@ -474,20 +524,73 @@ function plan({metadata, graph, files, root, full = false, reason}) {
   }
   function packageTests(name, why) { addTest({package: name, target: 'all'}, why); }
   function markFull(why) { full = true; reasons.add(why); }
-  function selectCheck(id, runtime = true) {
+  function selectCheck(id) {
     selectedChecks.add(id);
-    if (runtime) runtimeChecks.add(id);
   }
   if (full) reasons.add(reason || 'Explicit full validation requested');
   else if (reason) reasons.add(reason);
   const owners = [...packages.values()].sort((a, b) => b.directory.length - a.directory.length);
   for (const file of files) {
     if (fullInput(file)) { markFull(`Shared validation or Cargo input: ${file}`); continue; }
+    if (/(^|\/)Cargo\.toml$/.test(file)) {
+      try {
+        assert(baseMetadata, 'old metadata unavailable');
+        baseModel ||= metadataModel(baseMetadata, root);
+        assert(baseModel.packages.size === packages.size &&
+          [...packages].every(([name, pkg]) => baseModel.packages.get(name)?.manifest === pkg.manifest),
+        'package removal, rename or workspace membership change');
+        const owner = owners.find(pkg => pkg.manifest === file);
+        assert(owner, 'manifest is not a known package leaf');
+        const old = baseModel.packages.get(owner.name);
+        // A manifest can change dependencies, defaults, feature forwarding and
+        // target registration. Cover existing consumers from either graph;
+        // no old source or build script is executed.
+        changed.add(owner.name);
+        unscoped.add(owner.name);
+        manifestSeeds.add(owner.name);
+        profileAffected.add(owner.name);
+        packageTests(owner.name, `Package manifest: ${file}`);
+        for (const [name, consumers] of baseModel.consumers) {
+          for (const consumer of consumers) consumerEdges.get(name).add(consumer);
+        }
+        const dependencyChanges = new Set();
+        for (const alias of new Set([...old.aliases.keys(), ...owner.aliases.keys()])) {
+          if (stable(old.aliases.get(alias)) === stable(owner.aliases.get(alias))) continue;
+          for (const dependency of [old.aliases.get(alias), owner.aliases.get(alias)]) {
+            if (dependency?.internal) dependencyChanges.add(dependency.internal);
+          }
+        }
+        for (const feature of new Set([...Object.keys(old.features), ...Object.keys(owner.features)])) {
+          if (stable(old.features[feature]) === stable(owner.features[feature])) continue;
+          const obligation = {packages: [owner.name], features: [`${owner.name}/${feature}`]};
+          for (const previous of [baseModel, model]) {
+            for (const name of featureDependencies(previous.packages, obligation)) dependencyChanges.add(name);
+          }
+        }
+        for (const name of dependencyChanges) {
+          // Dependency/default-feature changes can change feature unification
+          // in an existing dependency, not just the manifest owner's build.
+          changed.add(name);
+          unscoped.add(name);
+          manifestSeeds.add(name);
+          packageTests(name, `Old/new manifest dependency: ${file}`);
+        }
+        for (const component of rules.components.values()) {
+          if (manifestSeeds.has(component.package) && component.coverage === 'runtime') {
+            selectedComponents.add(component.id);
+          }
+        }
+        explanations.push({file, package: owner.name, reason: 'Old/new package manifest dependency union'});
+      } catch (error) {
+        markFull(`Package manifest requires full validation: ${file}: ${error.message}`);
+      }
+      continue;
+    }
     const matched = [...rules.components.values()].filter(item => item.inputs.some(input => input.match.test(file)));
     const inputChecks = [...rules.checks.values()].filter(item => item.inputs.some(input => input.match.test(file)));
     for (const check of inputChecks) {
       selectCheck(check.id);
-      for (const name of check.packages) { affected.add(name); profileAffected.add(name); }
+      for (const name of check.packages) affected.add(name);
       explanations.push({file, check: check.id, reason: 'Declared check input'});
     }
     if (matched.length) {
@@ -505,6 +608,7 @@ function plan({metadata, graph, files, root, full = false, reason}) {
     const owner = owners.find(pkg => file.startsWith(`${pkg.directory}/`));
     if (owner) {
       changed.add(owner.name);
+      unknownSeeds.add(owner.name);
       const target = [...owner.targets.values()].find(item =>
         item.src === file && /^(test|example|bin):/.test(item.name));
       if (target) {
@@ -531,32 +635,36 @@ function plan({metadata, graph, files, root, full = false, reason}) {
   for (const id of componentClosure) {
     const component = rules.components.get(id);
     const runtime = component.coverage === 'runtime';
-    for (const check of component.checks) selectCheck(check, runtime);
+    for (const check of component.checks) selectCheck(check);
     for (const test of component.tests) {
       addTest(test, `Component closure: ${id}`);
       affected.add(test.package);
-      if (runtime) profileAffected.add(test.package);
+      if (runtime && component.profiles === undefined) profileAffected.add(test.package);
     }
     affected.add(component.package);
-    if (runtime) profileAffected.add(component.package);
+    if (runtime) {
+      if (component.profiles === undefined) profileAffected.add(component.package);
+      for (const profile of component.profiles || []) profileObligations.add(profile);
+    }
   }
   for (const check of rules.checks.values()) {
-    if (check.components.some(id => componentClosure.has(id))) selectCheck(check.id,
-      check.components.some(id => componentClosure.has(id) && rules.components.get(id).coverage === 'runtime'));
+    if (check.components.some(id => componentClosure.has(id))) selectCheck(check.id);
   }
-  for (const name of changed) { affected.add(name); profileAffected.add(name); }
-  const compileClosure = closure(affected, name => model.consumers.get(name));
+  for (const name of changed) affected.add(name);
+  const compileClosure = closure(affected, name => consumerEdges.get(name));
   for (const name of compileClosure) affected.add(name);
-  const unscopedClosure = closure(unscoped, name => model.consumers.get(name));
+  const unscopedClosure = closure(unscoped, name => consumerEdges.get(name));
+  const unknownClosure = closure(unknownSeeds, name => consumerEdges.get(name));
   const scopedCoverage = new Set();
   for (const id of componentClosure) {
     const component = rules.components.get(id);
     if (component.coverage === 'runtime') for (const test of component.tests) scopedCoverage.add(test.package);
   }
-  const scopedCargo = closure(scopedSeeds, name => model.consumers.get(name));
+  const scopedCargo = closure(scopedSeeds, name => consumerEdges.get(name));
   for (const name of scopedCargo) if (!scopedCoverage.has(name)) {
     const why = `Cargo consumer ${name} has no explicit component test coverage; full package fallback`;
     packageTests(name, why);
+    profileAffected.add(name);
     explanations.push({package: name, reason: why});
   }
   for (const name of unscopedClosure) {
@@ -565,33 +673,38 @@ function plan({metadata, graph, files, root, full = false, reason}) {
     const ownExactOnly = unscoped.has(name) &&
       [...testSelections.values()].some(test => test.package === name) &&
       ![...unscoped].some(other => other !== name &&
-        closure([other], pkg => model.consumers.get(pkg)).has(name));
-    if (!ownExactOnly) packageTests(name, 'Unscoped Cargo reverse consumer');
+        closure([other], pkg => consumerEdges.get(pkg)).has(name));
+    if (!ownExactOnly && (unknownClosure.has(name) || !scopedCoverage.has(name) || unscoped.has(name))) {
+      packageTests(name, 'Unscoped Cargo reverse consumer');
+    }
+    // Unknown consumers retain complete feature fallback. Known capability
+    // coverage can scope profiles even when a manifest requires all its tests.
+    if (unknownClosure.has(name) || !scopedCoverage.has(name)) profileAffected.add(name);
   }
   for (const check of rules.checks.values()) {
-    if (check.packages.some(name => unscopedClosure.has(name))) selectCheck(check.id);
+    if (check.packages.some(name => unknownClosure.has(name) ||
+      (unscopedClosure.has(name) && !scopedCoverage.has(name)))) selectCheck(check.id);
   }
   if (full) {
     for (const name of packages.keys()) { affected.add(name); packageTests(name, 'Full validation'); }
     for (const id of rules.components.keys()) componentClosure.add(id);
     for (const id of rules.checks.keys()) selectCheck(id);
   }
-  // Profiles and checks can introduce additional compile inputs. Stabilize the
-  // union before deciding feature coverage, rather than relying on graph order.
-  let selectedProfiles = [], checkClosure = new Set(), previous;
-  do {
-    previous = stable([sorted(affected), sorted(selectedChecks), sorted(profileAffected), sorted(runtimeChecks)]);
-    for (const name of closure(profileAffected, name => model.consumers.get(name))) profileAffected.add(name);
-    selectedProfiles = [...rules.profiles.values()].filter(profile =>
-      full || profile.packages.some(name => profileAffected.has(name)));
-    for (const profile of selectedProfiles) for (const check of profile.checks) selectCheck(check);
-    checkClosure = closure(selectedChecks, id => rules.checks.get(id).depends_on);
-    for (const id of checkClosure) for (const name of rules.checks.get(id).packages) affected.add(name);
-    for (const id of closure(runtimeChecks, id => rules.checks.get(id).depends_on)) {
-      for (const name of rules.checks.get(id).packages) profileAffected.add(name);
-    }
-    for (const name of closure(affected, name => model.consumers.get(name))) affected.add(name);
-  } while (previous !== stable([sorted(affected), sorted(selectedChecks), sorted(profileAffected), sorted(runtimeChecks)]));
+  // Compile consumers and check implementation packages are not behavioral
+  // feature roots. Feeding them back into selection activates unrelated CLI
+  // profiles merely because they share the executable package.
+  const selectedProfiles = [...rules.profiles.values()].filter(profile =>
+    full || profileObligations.has(profile.id) ||
+    profile.packages.some(name => profileAffected.has(name)) ||
+    [...featureDependencies(packages, profile)].some(name => changed.has(name)) ||
+    (baseModel && [...featureDependencies(baseModel.packages, profile)].some(name => changed.has(name))));
+  for (const profile of selectedProfiles) {
+    for (const name of profile.packages) affected.add(name);
+    for (const check of profile.checks) selectCheck(check);
+  }
+  const checkClosure = closure(selectedChecks, id => rules.checks.get(id).depends_on);
+  for (const id of checkClosure) for (const name of rules.checks.get(id).packages) affected.add(name);
+  for (const name of closure(affected, name => consumerEdges.get(name))) affected.add(name);
   const defaults = new Map([...packages.keys()].map(name => [name, featureSet(packages, [], [name])]));
   const profileFeatures = new Map(selectedProfiles.map(profile =>
     [profile.id, featureSet(packages, profile.features, profile.packages)]));
@@ -657,7 +770,8 @@ function plan({metadata, graph, files, root, full = false, reason}) {
         .map(profile => profile.id))})))
     .sort((a, b) => compare(stable([a.package, a.target]), stable([b.package, b.target])));
   const metadataInputDigest = hash(metadataSnapshot(metadata));
-  const inputs = {schema: 1, root, base: null, head: null, files,
+  const baseMetadataDigest = baseMetadata === undefined ? null : hash(metadataSnapshot(baseMetadata));
+  const inputs = {schema: 1, root, base: null, head: null, files, base_metadata_digest: baseMetadataDigest,
     graph_digest: hash(graph), script_digest: SCRIPT_DIGEST, metadata_digest: metadataInputDigest,
     inventory: {scope: 'explicit-files', files: snapshots, digest: hash(snapshots)}};
   const result = {schema: 1, root, mode, reason: sorted(reasons).join('; '), reasons: sorted(reasons), files,
@@ -670,6 +784,7 @@ function plan({metadata, graph, files, root, full = false, reason}) {
     }),
     explanations: explanations.sort((a, b) => compare(stable(a), stable(b))),
     graph_digest: hash(graph), metadata_digest, metadata_input_digest: metadataInputDigest,
+    base_metadata_digest: baseMetadataDigest,
     script_digest: SCRIPT_DIGEST, file_snapshot: snapshots, target_catalog: targetCatalog, inputs,
     synthetic_scope: true, head_complete: false, evidence_scope: 'synthetic-inputs'};
   return fingerprinted(result);
@@ -750,15 +865,108 @@ function options(argv) {
   return result;
 }
 
+// Parse only TOML data from Git objects. Cargo metadata on an old checkout can
+// resolve registries or invoke wrappers; neither is needed for dependency union.
+const BASE_MANIFEST_PARSER = String.raw`
+import json, os, posixpath, sys, tomllib
+
+data = json.load(sys.stdin)
+root, documents = data["root"], data["manifests"]
+workspace = tomllib.loads(documents["rust/Cargo.toml"])["workspace"]
+members = workspace["members"]
+expected = set(documents) - {"rust/Cargo.toml"}
+assert len(members) <= 512 and all(isinstance(m, str) for m in members)
+assert all(not any(c in m for c in "*?[]\\") for m in members), "nonliteral workspace members"
+assert {"rust/" + m + "/Cargo.toml" for m in members} == expected, "workspace membership changed"
+
+def absolute(value):
+    return os.path.abspath(os.path.join(root, *value.split("/")))
+
+packages = []
+for manifest in sorted(expected):
+    document = tomllib.loads(documents[manifest])
+    package = document["package"]
+    name = package["name"]
+    assert isinstance(name, str)
+    dependencies = []
+    sections = [(None, document)]
+    sections += list(document.get("target", {}).items())
+    for target, section in sections:
+        for kind, table in [(None, "dependencies"), ("dev", "dev-dependencies"), ("build", "build-dependencies")]:
+            for alias, declared in section.get(table, {}).items():
+                spec = {"version": declared} if isinstance(declared, str) else dict(declared)
+                inherited = spec.pop("workspace", False)
+                directory = posixpath.dirname(manifest)
+                if inherited:
+                    assert inherited is True
+                    shared = workspace["dependencies"][alias]
+                    shared = {"version": shared} if isinstance(shared, str) else dict(shared)
+                    extra_features = spec.pop("features", [])
+                    assert set(spec) <= {"optional", "default-features"}, "unsupported workspace dependency override"
+                    # Cargo rejects an override that disables inherited defaults.
+                    assert spec.get("default-features", True) or shared.get("default-features", True) is False
+                    shared.update(spec)
+                    shared["features"] = shared.get("features", []) + extra_features
+                    spec, directory = shared, "rust"
+                assert set(spec) <= {"version", "path", "package", "features", "optional", "default-features",
+                    "git", "branch", "tag", "rev", "registry", "registry-index", "public"}, "unsupported dependency declaration"
+                dependency = {"name": spec.get("package", alias), "rename": alias if spec.get("package", alias) != alias else None,
+                    "kind": kind, "target": target, "optional": spec.get("optional", False),
+                    "uses_default_features": spec.get("default-features", True), "features": spec.get("features", [])}
+                if "path" in spec:
+                    assert isinstance(spec["path"], str)
+                    dependency["path"] = absolute(posixpath.normpath(directory + "/" + spec["path"]))
+                else:
+                    dependency["source"] = "external"
+                dependencies.append(dependency)
+    features = document.get("features", {})
+    assert all(isinstance(entries, list) and all(isinstance(entry, str) for entry in entries) for entries in features.values())
+    explicit = {entry[4:] for entries in features.values() for entry in entries if entry.startswith("dep:")}
+    for dependency in dependencies:
+        alias = dependency["rename"] or dependency["name"]
+        if dependency["optional"] and alias not in explicit and alias not in features:
+            features[alias] = ["dep:" + alias]
+    packages.append({"id": "base:" + name, "name": name, "manifest_path": absolute(manifest),
+        "dependencies": dependencies, "features": features, "targets": []})
+json.dump({"version": 1, "workspace_members": [p["id"] for p in packages], "packages": packages}, sys.stdout)
+`;
+
+function baseManifestMetadata(metadata, root, ref, git, exec) {
+  assert(/^[a-fA-F0-9]{40}$/.test(ref), 'Base metadata ref must be a full commit');
+  const model = metadataModel(metadata, root);
+  const paths = ['rust/Cargo.toml', ...sorted([...model.packages.values()].map(pkg => pkg.manifest))];
+  assert(paths.length <= 513, 'Base manifest inventory exceeds 512 packages');
+  const manifests = {};
+  const started = Date.now();
+  let bytes = 0;
+  for (const file of paths) {
+    assert(Date.now() - started < 30000, 'Base manifest extraction exceeded 30 seconds');
+    relative(file);
+    const content = git(['show', `${ref}:${file}`]);
+    bytes += Buffer.byteLength(content);
+    assert(Buffer.byteLength(content) <= 1024 * 1024 && bytes <= 16 * 1024 * 1024,
+      'Base manifest data exceeds parsing bounds');
+    manifests[file] = content;
+  }
+  const input = JSON.stringify({root, manifests});
+  let last;
+  for (const program of ['python', 'python3']) {
+    try {
+      return parseJson(exec(program, ['-I', '-B', '-c', BASE_MANIFEST_PARSER], root, {input}));
+    } catch (error) { last = error; }
+  }
+  throw new Error(`Offline base TOML metadata unavailable: ${last?.message}`);
+}
+
 /**
  * CLI entry point. The injected exec/read/write hooks make local and CI discovery
  * testable without invoking Git or Cargo in unit tests.
  */
 function main(argv = process.argv.slice(2), hooks = {}) {
   const opts = options(argv), root = rootPath(opts.root || path.resolve(__dirname, '../..'));
-  const exec = hooks.exec || ((program, args, cwd) => execFileSync(program, args,
-    {cwd, encoding: 'utf8', timeout: program === 'git' ? 15000 : 120000,
-      maxBuffer: 64 * 1024 * 1024, windowsHide: true}));
+  const exec = hooks.exec || ((program, args, cwd, extra = {}) => execFileSync(program, args,
+    {cwd, encoding: 'utf8', timeout: program === 'cargo' ? 120000 : 15000,
+      maxBuffer: 64 * 1024 * 1024, windowsHide: true, ...extra}));
   const read = hooks.read || (file => fs.readFileSync(file, 'utf8'));
   const write = hooks.write || ((file, content, append = false) => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
@@ -800,12 +1008,23 @@ function main(argv = process.argv.slice(2), hooks = {}) {
   const metadata = opts.metadata ? parseJson(read(opts.metadata)) : parseJson(exec('cargo',
     ['metadata', '--offline', '--locked', '--no-deps', '--format-version', '1'], path.join(root, 'rust')));
   const graph = parseJson(read(opts.graph || path.join(root, 'rust', 'validation', 'impact-graph.json')));
-  const selection = plan({metadata, graph, files, root, full, reason});
+  let baseMetadata, baseMetadataRef = null;
+  if (!full && !files.some(fullInput) && files.some(file => /(^|\/)Cargo\.toml$/.test(file))) {
+    try {
+      baseMetadataRef = base || head;
+      baseMetadata = baseManifestMetadata(metadata, root, baseMetadataRef, git, exec);
+    } catch {
+      full = true;
+      reason = 'Old/new leaf manifest metadata unavailable or unsupported; full validation required';
+    }
+  }
+  const selection = plan({metadata, baseMetadata, graph, files, root, full, reason});
   const provenance = {base, head, dirty: dirtyFiles.length > 0, dirty_files: dirtyFiles,
     dirty_snapshot: selection.file_snapshot.filter(item => dirtyFiles.includes(item.path)),
     synthetic_scope: !!opts['files-json'], head_complete: !opts['files-json'],
     evidence_scope: opts['files-json'] ? 'synthetic-inputs' : 'checkout'};
-  const inputs = {...selection.inputs, base, head, ci: !!(env.CI || env.GITHUB_ACTIONS),
+  const inputs = {...selection.inputs, base, head, base_metadata_ref: baseMetadataRef,
+    ci: !!(env.CI || env.GITHUB_ACTIONS),
     full: !!opts.full, graph_path: opts.graph || path.join(root, 'rust', 'validation', 'impact-graph.json'),
     metadata_path: opts.metadata || null, files_json: opts['files-json'] || null,
     evidence_scope: provenance.evidence_scope,
@@ -841,7 +1060,8 @@ function verifyPlan(selection, {root = selection.inputs?.root, exec, read} = {})
   assert(selection.script_digest === SCRIPT_DIGEST && selection.script_digest === currentScript &&
     selection.inputs.script_digest === currentScript, 'Planner source changed');
   assert(selection.inputs.graph_digest === selection.graph_digest &&
-    selection.inputs.metadata_digest === selection.metadata_input_digest, 'Input digest provenance mismatch');
+    selection.inputs.metadata_digest === selection.metadata_input_digest &&
+    selection.inputs.base_metadata_digest === selection.base_metadata_digest, 'Input digest provenance mismatch');
   assert(stable(selection.inputs.files) === stable(selection.files), 'Changed-file provenance mismatch');
   if (selection.inputs.graph_path) assert(hash(parseJson(readFile(selection.inputs.graph_path))) ===
     selection.graph_digest, 'Impact graph changed');
@@ -870,7 +1090,7 @@ function verifyPlan(selection, {root = selection.inputs?.root, exec, read} = {})
     evidence_scope: selection.evidence_scope};
 }
 
-module.exports = {plan, commands, main, reverseConsumers, verifyPlan};
+module.exports = {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata};
 if (require.main === module) {
   try { main(); } catch (error) {
     console.error(`Impact planning failed: ${error.message}`);
