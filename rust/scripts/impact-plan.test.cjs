@@ -1091,6 +1091,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-kql-database-create', 'kql_database_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-eventhouse', 'eventhouse_create', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create', 'create_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
       'rust/engine/core/http/transport/Cargo.toml'],
   ];
@@ -1107,6 +1108,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(section.includes(`required-features = ["${feature}"]`));
   }
   for (const [pkg, target] of [
+    ['fabric-sdk', 'notebook_create'],
     ['fabric-sdk', 'notebook_runtime'], ['fabric-sdk', 'notebook_observability'],
     ['fabric-sdk', 'livy_native'], ['fabric-sdk-http', 'native_runtime'],
   ]) {
@@ -1187,6 +1189,20 @@ test('combined Eventhouse and KQL executable tests require both bindings and the
   ]) {
     assert.ok(component.inputs.includes(`rust/clients/cli/app/${file}`), file);
   }
+});
+
+test('native create process contract requires both typed create and explicit headless host', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const manifest = fs.readFileSync(path.join(root, 'rust/clients/cli/app/Cargo.toml'), 'utf8');
+  const section = manifest.split('[[test]]').find(item => item.includes('name = "create_v2_process"'));
+  assert.ok(section.includes('required-features = ["v2-create", "headless"]'));
+  assert.ok(graph.profiles.some(profile => profile.packages.includes('fabric-cli') &&
+    profile.features.includes('fabric-cli/v2-create') &&
+    profile.features.includes('fabric-cli/headless') &&
+    JSON.stringify(profile.platforms) === JSON.stringify(['windows', 'linux', 'macos'])));
+  assert.ok(graph.components.some(component => component.tests.some(item =>
+    item.package === 'fabric-cli' && item.target === 'test:create_v2_process')));
 });
 
 function relocatedCatalogFixture(files) {

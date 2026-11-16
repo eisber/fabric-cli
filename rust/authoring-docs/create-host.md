@@ -128,6 +128,11 @@ malformed or mismatched final results in `meta.submission.resource`, outside
 data projection. Those fields are accepted evidence, not completed resources;
 the failed/unknown outcome remains nonzero and never becomes success.
 An unparsed acceptance body is preserved as explicitly labeled base64 evidence.
+Every nonempty actual create/result response uses the same bounded strict JSON
+decoder as retained acceptance evidence. Duplicate keys at any depth, including
+escape-equivalent keys, reject instead of collapsing to a last value. The
+outcome stays unknown/nonzero, exact bounded response bytes remain labeled
+base64 evidence, and prior accepted identity/handles survive independently.
 An unexpected success-class status on an operation result remains an invalid,
 unknown outcome, not a provider-confirmed rejection. The original shared-engine
 typed HTTP error/status is retained independently of the receipt classification.
@@ -194,3 +199,20 @@ and run in their respective feature sets: each intentionally rejects the other
 disabled owner. A separate combined executable suite enables both and checks
 typed schema selection, cross-owner input rejection, local approval fencing
 and help without changing those original expectations.
+
+The PR63 Notebook integration candidate adds a ten-minute, candidate-only
+offline Windows check. It retains the complete Notebook HTTP, shared-host and
+process targets, plus SDK Notebook/Report, shared policy/LRO (including prepared
+wire-view), Report/KQL/Eventhouse and Livy composition targets. Each selected
+target must actually execute nonzero tests without ignored or filtered cases;
+the receipt records actual per-target counts, exits, streams and source hashes.
+The generic headless and post-push smoke profiles remain unchanged.
+
+Notebook now shares the existing `v2-create` opt-in with Report. The executable
+fixtures consequently disclose both mounted owners, test each selected schema,
+and reject unsupported owners and nonmetadata targets before input I/O.
+Earlier Notebook-only/Notebook-disabled assertions are replaced by these
+combined dispatch assertions, not by looser receipt or approval expectations.
+The 65 Notebook HTTP fixtures and protected acceptance/projection assertions
+are unchanged. This bounded proof does not establish full native-platform,
+live-service or release qualification.

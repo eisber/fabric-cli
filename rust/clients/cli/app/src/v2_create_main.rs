@@ -6,8 +6,7 @@
 use super::{Failure, NativeSession, failed, headless};
 use fabric_cli::create_command::{
     CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding, CreateCommandError,
-    CreateExecution, CreateTransportEvidence, PreparedCreateCommand, command_for_binding,
-    v2_create,
+    CreateExecution, CreateTransportEvidence, PreparedCreateCommand, command_for_binding, v2_create,
 };
 use fabric_cli::get_target::{GetRepresentation, GetTarget};
 use fabric_sdk::{Client, EndpointBinding, ServiceOrigin};
@@ -27,6 +26,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
             let bindings: &[&dyn CreateBinding] = &[
                 &fabric_cli::v2_create_report::ReportCreateBinding,
+                &fabric_cli::create_notebook::NotebookBinding,
                 #[cfg(feature = "v2-kql-database-create")]
                 &fabric_cli::kql_database_create::KqlReadWriteCreate,
                 #[cfg(feature = "v2-create-eventhouse")]
@@ -154,6 +154,7 @@ fn selected_binding(destination: &OsStr) -> Result<&'static dyn CreateBinding, C
     };
     match owner.as_str() {
         "Report" => Ok(&fabric_cli::v2_create_report::ReportCreateBinding),
+        "Notebook" => Ok(&fabric_cli::create_notebook::NotebookBinding),
         #[cfg(feature = "v2-kql-database-create")]
         "KQLDatabase" => Ok(&fabric_cli::kql_database_create::KqlReadWriteCreate),
         #[cfg(feature = "v2-create-eventhouse")]
