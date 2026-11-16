@@ -904,8 +904,8 @@ async fn semantic_model_creation_trusts_advertised_status_and_result_hosts() {
             "https://result-service.example.test/v1/operations/op-1/result",
         ),
     ] {
-        let progress = "Polling operation; waiting for status\nOperation status: Succeeded\n";
-        let (code, stdout, stderr, calls) = run_script(
+        let progress = "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n";
+        let (code, stdout, stderr, calls) = run_options(
             &[
                 "api",
                 "workspaces/workspace/items",
@@ -929,12 +929,14 @@ async fn semantic_model_creation_trusts_advertised_status_and_result_hosts() {
             ],
             false,
             false,
-            progress,
-            &[
-                "https://api.fabric.microsoft.com/v1/workspaces/workspace/items",
-                status,
-                result,
-            ],
+            RunOptions {
+                urls: &[
+                    "https://api.fabric.microsoft.com/v1/workspaces/workspace/items",
+                    status,
+                    result,
+                ],
+                ..Default::default()
+            },
         )
         .await;
         assert_eq!(code, 0, "{stdout}");
