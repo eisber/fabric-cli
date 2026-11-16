@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: fixed
+body: Add a separately registered, fail-closed manual recovery workflow for exact integration-revision two-profile smoke, preserving existing push and pull-request validation.
+time: 2026-11-16T21:15:00Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber
