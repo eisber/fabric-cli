@@ -35,6 +35,7 @@ struct Writer {
     stderr: bool,
     fail: bool,
     fail_after_flushes: Option<usize>,
+    fail_once_after_bytes: Option<usize>,
     cancel: Option<CancellationToken>,
     cancel_after_flushes: usize,
 }
@@ -52,6 +53,16 @@ impl Write for Writer {
         } else {
             &self.streams.stdout
         };
+        if let Some(limit) = self.fail_once_after_bytes {
+            let mut stream = stream.lock().unwrap();
+            if stream.len() >= limit {
+                self.fail_once_after_bytes = None;
+                return Err(io::Error::other("IO-CANARY"));
+            }
+            let count = bytes.len().min(limit - stream.len());
+            stream.extend_from_slice(&bytes[..count]);
+            return Ok(count);
+        }
         stream.lock().unwrap().extend_from_slice(bytes);
         Ok(bytes.len())
     }
@@ -73,6 +84,7 @@ struct TestClock {
     first_wait: Mutex<bool>,
     real_time: bool,
     verbose: bool,
+    terminal: bool,
 }
 #[async_trait]
 impl Clock for TestClock {
@@ -95,16 +107,23 @@ impl Clock for TestClock {
             if self.verbose {
                 let text = String::from_utf8_lossy(&stderr);
                 assert!(text.contains("HTTP #1 received 202"));
-                assert!(text.contains("Monitoring "));
+                assert!(text.contains("accepted (HTTP 202). Polling for completion..."));
                 assert!(*self.streams.flushes.lock().unwrap() > 1);
             } else {
                 assert!(
-                    stderr.as_slice() == b"Monitoring job execution...\n"
-                        || stderr.as_slice() == b"Monitoring operation execution...\n"
-                        || stderr.as_slice() == b"\x1b[36mMonitoring job execution...\x1b[0m\n",
+                    stderr.starts_with(b"Job accepted (HTTP 202). Polling for completion...\n")
+                        || stderr.starts_with(
+                            b"Operation accepted (HTTP 202). Polling for completion...\n"
+                        )
+                        || stderr.starts_with(
+                            b"\x1b[36mJob accepted (HTTP 202). Polling for completion...\x1b[0m\n"
+                        ),
                     "start notification must precede the first wait: {stderr:?}"
                 );
-                assert_eq!(*self.streams.flushes.lock().unwrap(), 1);
+                assert_eq!(
+                    *self.streams.flushes.lock().unwrap(),
+                    if self.terminal { 2 } else { 1 }
+                );
             }
             assert!(self.streams.stdout.lock().unwrap().is_empty());
         }
@@ -121,16 +140,20 @@ impl Clock for TestClock {
 #[derive(Debug)]
 struct Credential {
     delay: Duration,
+    expected_scope: Option<&'static str>,
 }
 #[async_trait]
 impl TokenCredential for Credential {
     async fn get_token(
         &self,
-        _: &[&str],
+        scopes: &[&str],
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
         if !self.delay.is_zero() {
             tokio::time::sleep(self.delay).await;
+        }
+        if let Some(expected) = self.expected_scope {
+            assert_eq!(scopes, &[expected]);
         }
         Ok(AccessToken::new(
             "TOKEN-CANARY",
@@ -191,6 +214,8 @@ struct FakeHost {
     transport: Arc<Transport>,
     color: bool,
     credential_delay: Duration,
+    terminal: bool,
+    expected_scope: Option<&'static str>,
 }
 #[async_trait]
 impl Host for FakeHost {
@@ -215,6 +240,7 @@ impl Host for FakeHost {
     fn credential(&self, _: Binding) -> Result<Arc<dyn TokenCredential>, CommandError> {
         Ok(Arc::new(Credential {
             delay: self.credential_delay,
+            expected_scope: self.expected_scope,
         }))
     }
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError> {
@@ -225,6 +251,9 @@ impl Host for FakeHost {
     }
     fn progress_color(&self) -> bool {
         self.color
+    }
+    fn progress_terminal(&self) -> bool {
+        self.terminal
     }
 }
 
@@ -250,7 +279,7 @@ async fn run(
         replies,
         fail_stderr,
         cancel_on_progress,
-        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\n",
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\n",
         &[],
     )
     .await
@@ -285,9 +314,12 @@ struct RunOptions<'a> {
     real_time: bool,
     response_delays: Vec<Duration>,
     color: bool,
+    terminal: bool,
     fail_after_flushes: Option<usize>,
+    fail_once_after_bytes: Option<usize>,
     cancel_after_flushes: Option<usize>,
     credential_delay: Duration,
+    expected_scope: Option<&'static str>,
 }
 
 async fn run_options(
@@ -306,6 +338,7 @@ async fn run_options(
             first_wait: Mutex::new(true),
             real_time: options.real_time,
             verbose: args.contains(&"--verbose"),
+            terminal: options.terminal,
         }),
         transport: Arc::new(Transport {
             replies: Mutex::new(replies.into()),
@@ -317,6 +350,8 @@ async fn run_options(
         }),
         color: options.color,
         credential_delay: options.credential_delay,
+        terminal: options.terminal,
+        expected_scope: options.expected_scope,
     };
     let cancellation = CancellationToken::new();
     let mut stdout = Writer {
@@ -324,6 +359,7 @@ async fn run_options(
         stderr: false,
         fail: false,
         fail_after_flushes: None,
+        fail_once_after_bytes: None,
         cancel: None,
         cancel_after_flushes: 1,
     };
@@ -332,6 +368,7 @@ async fn run_options(
         stderr: true,
         fail: fail_stderr,
         fail_after_flushes: options.fail_after_flushes,
+        fail_once_after_bytes: options.fail_once_after_bytes,
         cancel: (cancel_on_progress || options.cancel_after_flushes.is_some())
             .then(|| cancellation.clone()),
         cancel_after_flushes: options.cancel_after_flushes.unwrap_or(1),
@@ -358,6 +395,238 @@ fn accepted(location: &str) -> ApiResponse {
         json!({}),
         &[("location", location), ("x-fixture", "HEADER-CANARY")],
     )
+}
+
+#[tokio::test(start_paused = true)]
+async fn terminal_refreshes_each_second_and_clears_before_permanent_output_without_requiring_color()
+{
+    for color in [false, true] {
+        let start = tokio::time::Instant::now();
+        let (code, stdout, stderr, calls) = run_options(
+            &["api", "items", "--method", "post"],
+            vec![
+                response(202, json!({}), &[("location", JOB), ("retry-after", "3")]),
+                response(200, json!({"status":"Completed"}), &[]),
+            ],
+            false,
+            false,
+            RunOptions {
+                real_time: true,
+                terminal: true,
+                color,
+                response_delays: vec![Duration::ZERO, Duration::from_secs(3)],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(calls, 2);
+        assert_eq!(start.elapsed(), Duration::from_secs(6));
+        let permanent = |message: &str, tone: &str| {
+            if color {
+                format!("\x1b[{tone}m{message}\x1b[0m\n")
+            } else {
+                format!("{message}\n")
+            }
+        };
+        let transient = |message: &str| {
+            if color {
+                format!("\r\x1b[2K\x1b[?7l\x1b[90m{message}\x1b[0m\x1b[?7h")
+            } else {
+                format!("\r\x1b[2K\x1b[?7l{message}\x1b[?7h")
+            }
+        };
+        let mut expected = permanent("Job accepted (HTTP 202). Polling for completion...", "36");
+        expected +=
+            &transient("Waiting for job completion; next status check in 3s (0s elapsed)...");
+        expected +=
+            &transient("Waiting for job completion; next status check in 2s (1s elapsed)...");
+        expected +=
+            &transient("Waiting for job completion; next status check in 1s (2s elapsed)...");
+        expected += if color {
+            "\x1b[0m\r\x1b[2K\x1b[?7h"
+        } else {
+            "\r\x1b[2K\x1b[?7h"
+        };
+        expected += &permanent("Checking job status...", "36");
+        expected += &transient(
+            "Waiting for job status response; 1s since this check started (4s elapsed)...",
+        );
+        expected += &transient(
+            "Waiting for job status response; 2s since this check started (5s elapsed)...",
+        );
+        expected += if color {
+            "\x1b[0m\r\x1b[2K\x1b[?7h"
+        } else {
+            "\r\x1b[2K\x1b[?7h"
+        };
+        expected += &permanent("Job instance status: Completed", "32");
+        expected += &permanent("Job completed.", "32");
+        assert_eq!(stderr, expected);
+        if !color {
+            assert!(!stderr.contains("\x1b[90m"));
+            assert!(!stderr.contains("\x1b[0m"));
+        }
+        assert!(!stdout.contains('\x1b'));
+        assert!(!stdout.contains("Waiting"));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn terminal_cancellation_timeout_and_http_failure_clear_the_waiting_line() {
+    for scenario in ["cancel", "timeout", "http"] {
+        let (code, stdout, stderr, calls) = run_options(
+            &[
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--polling-config",
+                r#"{"timeout":3,"poll_interval":1}"#,
+            ],
+            vec![
+                response(
+                    202,
+                    json!({}),
+                    &[
+                        ("location", JOB),
+                        ("retry-after", if scenario == "http" { "1" } else { "60" }),
+                    ],
+                ),
+                response(
+                    403,
+                    json!({"error":{"code":"Forbidden","message":"BODY-CANARY"}}),
+                    &[],
+                ),
+            ],
+            false,
+            false,
+            RunOptions {
+                real_time: true,
+                terminal: true,
+                cancel_after_flushes: (scenario == "cancel").then_some(3),
+                response_delays: vec![Duration::ZERO, Duration::from_millis(1500)],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(code, 1, "{stdout}");
+        assert_eq!(calls, if scenario == "http" { 2 } else { 1 });
+        assert!(stderr.ends_with("\r\x1b[2K\x1b[?7h"), "{stderr:?}");
+        assert!(!stderr.contains("completed."));
+        assert!(!stderr.contains("CANARY"));
+        assert!(stdout.contains("outcome_uncertain"));
+        let error = if scenario == "cancel" {
+            "Cancelled"
+        } else if scenario == "timeout" {
+            "Timeout"
+        } else {
+            "Forbidden"
+        };
+        assert!(stdout.contains(error), "{stdout}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn terminal_refresh_write_failure_stops_local_wait_with_safe_recovery() {
+    let start = tokio::time::Instant::now();
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![response(
+            202,
+            json!({}),
+            &[("location", JOB), ("retry-after", "60")],
+        )],
+        false,
+        false,
+        RunOptions {
+            real_time: true,
+            terminal: true,
+            fail_after_flushes: Some(2),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert_eq!(calls, 1);
+    assert_eq!(start.elapsed(), Duration::from_secs(1));
+    assert!(stdout.contains("Cannot write polling progress"));
+    assert!(stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("CANARY"));
+    assert!(!stderr.contains("Checking"));
+}
+
+#[tokio::test]
+async fn partial_colored_wait_failure_resets_terminal_style_and_wrapping_during_cleanup() {
+    let accepted_line = "\x1b[36mJob accepted (HTTP 202). Polling for completion...\x1b[0m\n";
+    let partial = "\r\x1b[2K\x1b[?7l\x1b[90mWaiting ";
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![accepted(JOB)],
+        false,
+        false,
+        RunOptions {
+            terminal: true,
+            color: true,
+            fail_once_after_bytes: Some(accepted_line.len() + partial.len()),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 1, "{stdout}");
+    assert_eq!(calls, 1);
+    assert_eq!(
+        stderr,
+        format!("{accepted_line}{partial}\x1b[0m\r\x1b[2K\x1b[?7h")
+    );
+    assert!(stdout.contains("Cannot write polling progress"));
+    assert!(stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("CANARY"));
+}
+
+#[tokio::test]
+async fn deduplicated_job_is_not_mislabeled_as_completed() {
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![
+            accepted(JOB),
+            response(200, json!({"status":"Deduped"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions::default(),
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 2);
+    assert_eq!(
+        stderr,
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Deduped\nJob finished with status: Deduped.\n"
+    );
+    assert!(!stderr.contains("Job completed."));
+}
+
+#[tokio::test]
+async fn completion_output_failure_preserves_recovery_instead_of_reporting_success() {
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![
+            accepted(JOB),
+            response(200, json!({"status":"Completed"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions {
+            fail_after_flushes: Some(3),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert_eq!(calls, 2);
+    assert!(stderr.ends_with("Job instance status: Completed\n"));
+    assert!(stdout.contains("Cannot write polling progress"));
+    assert!(stdout.contains("outcome_uncertain"));
 }
 
 #[tokio::test]
@@ -457,19 +726,26 @@ async fn heartbeats_repeat_during_server_waits_and_preserve_every_real_status() 
     assert_eq!(
         stderr,
         concat!(
-            "Monitoring job execution...\n",
-            "Waiting for next job status check; no status received yet (10s elapsed)...\n",
-            "Waiting for next job status check; no status received yet (20s elapsed)...\n",
+            "Job accepted (HTTP 202). Polling for completion...\n",
+            "Waiting for job completion; next status check in 20s (5s elapsed)...\n",
+            "Waiting for job completion; next status check in 15s (10s elapsed)...\n",
+            "Waiting for job completion; next status check in 10s (15s elapsed)...\n",
+            "Waiting for job completion; next status check in 5s (20s elapsed)...\n",
             "Checking job status...\n",
             "Job instance status: InProgress (25%)\n",
-            "Waiting for next job status check; last status: InProgress (25%) (35s elapsed)...\n",
-            "Waiting for next job status check; last status: InProgress (25%) (45s elapsed)...\n",
+            "Waiting for job completion; next status check in 20s; Last reported status: InProgress (25%) (30s elapsed)...\n",
+            "Waiting for job completion; next status check in 15s; Last reported status: InProgress (25%) (35s elapsed)...\n",
+            "Waiting for job completion; next status check in 10s; Last reported status: InProgress (25%) (40s elapsed)...\n",
+            "Waiting for job completion; next status check in 5s; Last reported status: InProgress (25%) (45s elapsed)...\n",
             "Checking job status...\n",
             "Job instance status: InProgress (25%)\n",
-            "Waiting for next job status check; last status: InProgress (25%) (60s elapsed)...\n",
-            "Waiting for next job status check; last status: InProgress (25%) (70s elapsed)...\n",
+            "Waiting for job completion; next status check in 20s; Last reported status: InProgress (25%) (55s elapsed)...\n",
+            "Waiting for job completion; next status check in 15s; Last reported status: InProgress (25%) (60s elapsed)...\n",
+            "Waiting for job completion; next status check in 10s; Last reported status: InProgress (25%) (65s elapsed)...\n",
+            "Waiting for job completion; next status check in 5s; Last reported status: InProgress (25%) (70s elapsed)...\n",
             "Checking job status...\n",
             "Job instance status: Completed\n",
+            "Job completed.\n",
         )
     );
     assert!(!stderr.contains("CANARY"));
@@ -520,8 +796,8 @@ async fn verbose_events_during_credentials_do_not_postpone_progress_heartbeats()
         .map(|line| format!("{line}\n"))
         .collect::<String>();
     assert_eq!(progress, plain.2);
-    assert!(progress.contains("(11s elapsed)"));
-    assert!(progress.contains("(21s elapsed)"));
+    assert!(progress.contains("(12s elapsed)"));
+    assert!(progress.contains("(22s elapsed)"));
     assert!(verbose.2.contains("Credentials: completed (7000 ms)"));
     assert!(!verbose.2.contains("CANARY"));
 }
@@ -560,6 +836,34 @@ async fn verbose_color_uses_only_renderer_sequences_and_preserves_stdout() {
     assert_eq!(outputs[0], outputs[1]);
 }
 
+#[tokio::test]
+async fn verbose_groups_clear_transient_terminal_progress_before_writing() {
+    let (code, stdout, stderr, calls) = run_options(
+        &["--verbose", "api", "items", "--method", "post"],
+        vec![
+            accepted(JOB),
+            response(200, json!({"status":"Completed"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions {
+            terminal: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 2);
+    assert!(stderr.contains("next status check in "));
+    assert!(
+        stderr.contains("\r\x1b[2K\x1b[?7h[debug +"),
+        "the live line must be cleared before a diagnostic group: {stderr:?}"
+    );
+    assert!(stderr.contains("Job completed.\n"));
+    assert!(!stderr.contains("CANARY"));
+    assert!(!stdout.contains('\x1b'));
+}
+
 #[tokio::test(start_paused = true)]
 async fn heartbeats_continue_while_a_status_request_has_not_responded() {
     let start = tokio::time::Instant::now();
@@ -580,15 +884,18 @@ async fn heartbeats_continue_while_a_status_request_has_not_responded() {
     .await;
     assert_eq!(code, 0, "{stdout}");
     assert_eq!(calls, 2);
-    assert_eq!(start.elapsed(), Duration::from_secs(26));
+    assert_eq!(start.elapsed(), Duration::from_secs(27));
     assert_eq!(
         stderr,
         concat!(
-            "Monitoring job execution...\n",
+            "Job accepted (HTTP 202). Polling for completion...\n",
             "Checking job status...\n",
-            "Waiting for job status response; no status received yet (11s elapsed)...\n",
-            "Waiting for job status response; no status received yet (21s elapsed)...\n",
+            "Waiting for job status response; 5s since this check started (7s elapsed)...\n",
+            "Waiting for job status response; 10s since this check started (12s elapsed)...\n",
+            "Waiting for job status response; 15s since this check started (17s elapsed)...\n",
+            "Waiting for job status response; 20s since this check started (22s elapsed)...\n",
             "Job instance status: Completed\n",
+            "Job completed.\n",
         )
     );
 }
@@ -620,11 +927,14 @@ async fn completed_service_status_is_not_reported_as_running_while_fetching_a_re
     assert_eq!(
         stderr,
         concat!(
-            "Monitoring operation execution...\n",
+            "Operation accepted (HTTP 202). Polling for completion...\n",
             "Checking operation status...\n",
             "Operation status: Succeeded\n",
-            "Waiting for operation result; last status: Succeeded (12s elapsed)...\n",
-            "Waiting for operation result; last status: Succeeded (22s elapsed)...\n",
+            "Waiting for operation result; Last reported status: Succeeded (7s elapsed)...\n",
+            "Waiting for operation result; Last reported status: Succeeded (12s elapsed)...\n",
+            "Waiting for operation result; Last reported status: Succeeded (17s elapsed)...\n",
+            "Waiting for operation result; Last reported status: Succeeded (22s elapsed)...\n",
+            "Operation completed.\n",
         )
     );
 }
@@ -661,7 +971,7 @@ async fn heartbeat_output_failure_and_cancellation_stop_waits_and_inflight_reque
             assert_eq!(calls, if inflight { 2 } else { 1 });
             assert_eq!(
                 start.elapsed(),
-                Duration::from_secs(if inflight { 11 } else { 10 })
+                Duration::from_secs(if inflight { 7 } else { 5 })
             );
             let envelope: Value = serde_json::from_str(&stdout).unwrap();
             assert_eq!(
@@ -713,7 +1023,7 @@ async fn deadline_stops_heartbeats_without_sending_a_status_request() {
     assert!(stdout.contains("Timeout"));
     assert_eq!(
         stderr,
-        "Monitoring job execution...\nWaiting for next job status check; no status received yet (10s elapsed)...\n"
+        "Job accepted (HTTP 202). Polling for completion...\nWaiting for job completion; next status check in 55s (5s elapsed)...\nWaiting for job completion; next status check in 50s (10s elapsed)...\n"
     );
 }
 
@@ -740,10 +1050,16 @@ async fn color_is_opt_in_for_injected_streams_and_never_reaches_json() {
         assert_eq!(
             stderr,
             format!(
-                "\x1b[36mMonitoring job execution...\x1b[0m\n\
-                 \x1b[36mWaiting for next job status check; no status received yet (10s elapsed)...\x1b[0m\n\
+                "\x1b[36mJob accepted (HTTP 202). Polling for completion...\x1b[0m\n\
+                 \x1b[90mWaiting for job completion; next status check in 10s (5s elapsed)...\x1b[0m\n\
+                 \x1b[90mWaiting for job completion; next status check in 5s (10s elapsed)...\x1b[0m\n\
                  \x1b[36mChecking job status...\x1b[0m\n\
-                 \x1b[{tone}mJob instance status: {terminal}\x1b[0m\n"
+                 \x1b[{tone}mJob instance status: {terminal}\x1b[0m\n{}",
+                if terminal == "Completed" {
+                    "\x1b[32mJob completed.\x1b[0m\n"
+                } else {
+                    ""
+                },
             )
         );
         assert!(!stdout.contains('\x1b'));
@@ -812,7 +1128,7 @@ async fn statuses_are_flushed_before_next_poll_and_stdout_is_one_projected_envel
     assert_eq!(calls, 3);
     assert_eq!(
         stderr,
-        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nJob completed.\nInvalid percentageComplete; omitting polling percentage\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(envelope["status"], "Success");
@@ -828,12 +1144,12 @@ async fn start_is_flushed_before_a_long_retry_after_for_operations_and_jobs() {
         (
             "/v1/operations/op-1",
             "Succeeded",
-            "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n",
+            "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n",
         ),
         (
             JOB,
             "Completed",
-            "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\n",
+            "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Completed\nJob completed.\n",
         ),
     ] {
         let (code, stdout, stderr, calls) = run(
@@ -865,6 +1181,61 @@ async fn start_is_flushed_before_a_long_retry_after_for_operations_and_jobs() {
             serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],
             terminal
         );
+    }
+}
+
+#[tokio::test]
+async fn storage_uses_azure_polling_protocols_and_progress_unless_async() {
+    for header in ["azure-asyncoperation", "location"] {
+        for asynchronous in [false, true] {
+            let mut args = vec![
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--audience",
+                "storage",
+                "--show-headers",
+            ];
+            if asynchronous {
+                args.push("--async");
+            }
+            let initial = response(
+                202,
+                json!({"original":"resource"}),
+                &[(header, "/status?secret=QUERY-CANARY")],
+            );
+            let (code, stdout, stderr, calls) = run_options(
+                &args,
+                vec![initial, response(200, json!({"status":"Succeeded"}), &[])],
+                false,
+                false,
+                RunOptions {
+                    urls: &[
+                        "https://onelake.dfs.fabric.microsoft.com/items",
+                        "https://onelake.dfs.fabric.microsoft.com/status?secret=QUERY-CANARY",
+                    ],
+                    expected_scope: Some("https://storage.azure.com/.default"),
+                    ..Default::default()
+                },
+            )
+            .await;
+            assert_eq!(code, 0, "{stdout}");
+            assert_eq!(calls, if asynchronous { 1 } else { 2 });
+            let output: Value = serde_json::from_str(&stdout).unwrap();
+            let result = &output["result"]["data"][0];
+            assert_eq!(result["status_code"], if asynchronous { 202 } else { 200 });
+            assert_eq!(result["text"], json!({"original":"resource"}));
+            if asynchronous {
+                assert!(stderr.is_empty());
+            } else {
+                assert_eq!(
+                    stderr,
+                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+                );
+            }
+            assert!(!stderr.contains("CANARY"));
+        }
     }
 }
 
@@ -928,10 +1299,11 @@ async fn failure_and_unknown_statuses_are_safe_and_start_output_failure_stops_po
         assert_eq!(
             stderr,
             if status.contains("CANARY") {
-                "Monitoring job execution...\nChecking job status...\n".into()
+                "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\n"
+                    .into()
             } else {
                 format!(
-                    "Monitoring job execution...\nChecking job status...\nJob instance status: {status}\n"
+                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: {status}\n"
                 )
             }
         );
@@ -975,7 +1347,10 @@ async fn local_cancellation_and_deadline_do_not_report_future_polls() {
         "cancellation after start must prevent the first status GET"
     );
     assert!(stdout.contains("Cancelled"));
-    assert_eq!(stderr, "Monitoring job execution...\n");
+    assert_eq!(
+        stderr,
+        "Job accepted (HTTP 202). Polling for completion...\n"
+    );
     let (code, stdout, stderr, calls) = run(
         &[
             "api",
@@ -993,7 +1368,10 @@ async fn local_cancellation_and_deadline_do_not_report_future_polls() {
     assert_eq!(code, 1);
     assert_eq!(calls, 1);
     assert!(stdout.contains("Timeout"));
-    assert_eq!(stderr, "Monitoring job execution...\n");
+    assert_eq!(
+        stderr,
+        "Job accepted (HTTP 202). Polling for completion...\n"
+    );
 }
 
 #[tokio::test]
@@ -1025,7 +1403,7 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
         ],
         false,
         false,
-        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (0%)\nChecking operation status...\n",
+        "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Running (0%)\nChecking operation status...\n",
         &[
             "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
             STATUS,
@@ -1039,7 +1417,7 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
     assert_eq!(calls, 5, "one POST, three status GETs and one result GET");
     assert_eq!(
         stderr,
-        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (0%)\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\nOperation status: Succeeded (100%)\n"
+        "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Running (0%)\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\nOperation status: Succeeded (100%)\nOperation completed.\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(
@@ -1069,7 +1447,7 @@ async fn semantic_model_creation_trusts_advertised_status_and_result_hosts() {
             "https://result-service.example.test/v1/operations/op-1/result",
         ),
     ] {
-        let progress = "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n";
+        let progress = "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n";
         let (code, stdout, stderr, calls) = run_options(
             &[
                 "api",
@@ -1157,7 +1535,7 @@ async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_comple
         ],
         false,
         false,
-        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\n",
+        "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\n",
         &[
             "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
             STATUS,
@@ -1170,7 +1548,7 @@ async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_comple
     assert_eq!(calls, 4, "one POST, two status GETs and one result GET");
     assert_eq!(
         stderr,
-        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\nOperation status: Succeeded (100%)\n"
+        "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\nOperation status: Succeeded (100%)\nOperation completed.\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(
@@ -1243,7 +1621,7 @@ async fn msit_job_polls_its_location_and_reports_progress_without_following_home
         ],
         false,
         false,
-        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\n",
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\n",
         &[
             "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
             MSIT_JOB,
@@ -1255,7 +1633,7 @@ async fn msit_job_polls_its_location_and_reports_progress_without_following_home
     assert_eq!(calls, 3, "one POST and two job GETs");
     assert_eq!(
         stderr,
-        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\n"
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
     );
     assert_eq!(
         serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],
@@ -1280,7 +1658,7 @@ async fn regional_job_reports_terminal_success_or_failure_without_replaying_post
             ],
             false,
             false,
-            "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress (25%)\nChecking job status...\n",
+            "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress (25%)\nChecking job status...\n",
             &[
                 "https://api.fabric.microsoft.com/v1/items",
                 REGIONAL_JOB,
@@ -1293,7 +1671,12 @@ async fn regional_job_reports_terminal_success_or_failure_without_replaying_post
         assert_eq!(
             stderr,
             format!(
-                "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress (25%)\nChecking job status...\nJob instance status: {terminal}\n"
+                "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress (25%)\nChecking job status...\nJob instance status: {terminal}\n{}",
+                if terminal == "Completed" {
+                    "Job completed.\n"
+                } else {
+                    ""
+                },
             )
         );
         assert!(!stdout.contains("QUERY-CANARY"));
@@ -1334,7 +1717,7 @@ async fn invalid_percentages_keep_safe_status_progress_and_report_a_static_warni
         assert_eq!(calls, 2);
         assert_eq!(
             stderr,
-            "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+            "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Completed\nJob completed.\nInvalid percentageComplete; omitting polling percentage\n"
         );
         assert!(!stdout.contains("CANARY"));
         assert!(!stderr.contains("CANARY"));
@@ -1363,6 +1746,6 @@ async fn invalid_percentages_keep_safe_status_progress_and_report_a_static_warni
     assert_eq!(calls, 4);
     assert_eq!(
         stderr,
-        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nJob completed.\nInvalid percentageComplete; omitting polling percentage\n"
     );
 }

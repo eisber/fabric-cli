@@ -16,9 +16,9 @@ pub enum OperationKind {
     Fabric,
     /// Fabric job-instance status JSON.
     FabricJob,
-    /// ARM Azure-AsyncOperation status JSON.
+    /// Azure/Storage Azure-AsyncOperation status JSON.
     ArmStatus,
-    /// ARM Location HTTP status semantics.
+    /// Azure/Storage Location HTTP status semantics.
     ArmLocation,
 }
 /// Validated service operation handle. No bearer/custom request headers.
@@ -194,14 +194,14 @@ fn id_handle(id: &str) -> OperationHandle {
         id,
     )
 }
-fn arm_location(value: &str) -> Result<Url, CoreError> {
-    let base = Url::parse(Audience::Azure.base_url()).expect("fixed audience URL");
+fn async_location(audience: Audience, value: &str) -> Result<Url, CoreError> {
+    let base = Url::parse(audience.base_url()).expect("fixed audience URL");
     let host = base.host_str().expect("fixed audience host");
     if let Some((_, suffix)) = value.split_once(host) {
         let relative = format!("/{}", suffix.trim_start_matches('/'));
-        resolve_operation_url(Audience::Azure, &relative, &base)
+        resolve_operation_url(audience, &relative, &base)
     } else {
-        resolve_operation_url(Audience::Azure, value, &base)
+        resolve_operation_url(audience, value, &base)
     }
 }
 fn fabric_status_handle(mut url: Url, id: &str) -> OperationHandle {
@@ -284,7 +284,7 @@ fn discover(audience: Audience, head: &ApiResponse) -> Result<Option<OperationHa
             }
             Ok(id.map(id_handle))
         }
-        Audience::Azure if matches!(head.status, 201 | 202) => {
+        Audience::Azure | Audience::Storage if matches!(head.status, 201 | 202) => {
             let selected = head
                 .header("azure-asyncoperation")
                 .map(|v| (v, OperationKind::ArmStatus))
@@ -294,7 +294,7 @@ fn discover(audience: Audience, head: &ApiResponse) -> Result<Option<OperationHa
                 });
             selected
                 .map(|(location, kind)| {
-                    arm_location(location).map(|url| {
+                    async_location(audience, location).map(|url| {
                         Some(OperationHandle {
                             url,
                             operation_id: None,

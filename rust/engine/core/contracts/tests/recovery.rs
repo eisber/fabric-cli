@@ -64,7 +64,7 @@ fn operation_url_rejection_categories_do_not_disclose_inputs() {
 }
 
 #[test]
-fn fabric_and_arm_safe_head_capture_redacts_queries() {
+fn fabric_azure_and_storage_safe_head_capture_redacts_queries() {
     for (audience, status, fields, expected) in [
         (
             Audience::Fabric,
@@ -92,6 +92,21 @@ fn fabric_and_arm_safe_head_capture_redacts_queries() {
             202,
             vec![("location", "/location-status?secret=synthetic")],
             "https://management.azure.com/location-status",
+        ),
+        (
+            Audience::Storage,
+            201,
+            vec![
+                ("azure-asyncoperation", "/status?secret=synthetic"),
+                ("location", "https://evil.invalid/ignored"),
+            ],
+            "https://onelake.dfs.fabric.microsoft.com/status",
+        ),
+        (
+            Audience::Storage,
+            202,
+            vec![("location", "/location-status?secret=synthetic")],
+            "https://onelake.dfs.fabric.microsoft.com/location-status",
         ),
     ] {
         let capture = ResponseHeadCapture::new(audience);
@@ -175,6 +190,45 @@ fn arm_advertised_locations_use_python_endpoint_suffix_on_the_fixed_origin() {
 }
 
 #[test]
+fn storage_handles_keep_the_storage_origin_and_reject_unsafe_destinations() {
+    for status in [201, 202] {
+        for (header, kind) in [
+            ("azure-asyncoperation", OperationKind::ArmStatus),
+            ("location", OperationKind::ArmLocation),
+        ] {
+            for location in [
+                "/operations/one?secret=CANARY",
+                "https://onelake.dfs.fabric.microsoft.com/operations/one?secret=CANARY",
+            ] {
+                let handle =
+                    operation_handle(Audience::Storage, status, &headers(&[(header, location)]))
+                        .unwrap()
+                        .unwrap();
+                assert_eq!(handle.kind(), kind);
+                assert_eq!(
+                    handle.url().as_str(),
+                    "https://onelake.dfs.fabric.microsoft.com/operations/one?secret=CANARY"
+                );
+                assert!(!format!("{handle:?}").contains("CANARY"));
+            }
+            for location in [
+                "https://management.azure.com/operations/one?secret=CANARY",
+                "https://evil.invalid/operations/one?secret=CANARY",
+                "/operations/%2e%2e/secret?secret=CANARY",
+                "/operations/one#CANARY",
+            ] {
+                let error =
+                    operation_handle(Audience::Storage, status, &headers(&[(header, location)]))
+                        .unwrap_err();
+                assert_eq!(error.kind, ErrorKind::Protocol);
+                assert!(error.recovery.is_none());
+                assert!(!error.to_string().contains("CANARY"));
+            }
+        }
+    }
+}
+
+#[test]
 fn unsafe_head_cannot_expose_an_unvalidated_url_or_erase_known_safe_id() {
     for value in [
         "http://evil.invalid/operation?secret=synthetic",
@@ -252,11 +306,7 @@ fn raw_statuses_jobs_and_other_audiences_do_not_invent_recovery() {
                 ("x-ms-operation-id", "op-1"),
             ],
         ),
-        (
-            Audience::Storage,
-            202,
-            vec![("location", "/v1/operations/op-1")],
-        ),
+        (Audience::Storage, 202, vec![("x-ms-operation-id", "op-1")]),
         (Audience::PowerBi, 202, vec![("x-ms-operation-id", "op-1")]),
     ] {
         let capture = ResponseHeadCapture::new(audience);

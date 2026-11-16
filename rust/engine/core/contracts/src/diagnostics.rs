@@ -352,10 +352,10 @@ labels! {
         Fabric => "Fabric operation",
         /// Fabric job.
         FabricJob => "Fabric job",
-        /// ARM status document.
-        ArmStatus => "ARM status",
-        /// ARM Location status.
-        ArmLocation => "ARM Location"
+        /// Azure/Storage status document.
+        ArmStatus => "Azure/Storage status",
+        /// Azure/Storage Location status.
+        ArmLocation => "Azure/Storage Location"
     }
 }
 labels! {

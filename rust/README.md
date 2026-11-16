@@ -143,11 +143,11 @@ not implemented, and `RUST_LOG` does not enable these diagnostics.
 
 ### Operation polling
 
-Recognized Fabric/ARM operations and Fabric job instances poll **by default**.
+Recognized Fabric, Azure, and Storage operations and Fabric job instances poll **by default**.
 `--async` returns the actual initial response, without polling or starting background
-work. Fabric non-job LROs use a 2-, 7-, then 20-second client schedule (20 seconds
+work. Fabric LROs and job instances use a 2-, 7-, then 20-second client schedule (20 seconds
 thereafter), never earlier than a valid `Retry-After`;
-ARM operations and job instances use each response's `Retry-After`, or 10 seconds when absent or
+Azure/Storage operations use each response's `Retry-After`, or 10 seconds when absent or
 invalid, without exponential backoff. There is no overall polling timeout by
 default: a backend that never completes can keep the command waiting indefinitely.
 Individual poll/result requests, including their retries, remain bounded to 240
@@ -167,8 +167,16 @@ There is no `max_attempts` option. `--async` cannot be combined with
 `--polling-config`, even an empty object: async mode returns only the initial
 response and does not support polling. This conflict fails before input loading,
 identity acquisition, or sending a request. This replaces the earlier
-`--lro-config` spelling; no alias is retained. Power BI/Storage responses still
+`--lro-config` spelling; no alias is retained. Power BI responses still
 return raw: timing configuration does not add support for new polling protocols.
+
+Storage (OneLake) uses the same polling protocols as Azure: HTTP 201/202 with
+`Azure-AsyncOperation` takes precedence over `Location`. Status JSON drives
+`Azure-AsyncOperation`; Location-only polling continues on 201/202 and completes
+on 200. Polling stays on the selected audience's fixed origin and token scope:
+Storage uses `onelake.dfs.fabric.microsoft.com` and the Storage scope, not ARM.
+Completion preserves the initial body/headers and normalizes its status to 200.
+Without either header the response stays raw; `--async` skips polling.
 
 Job polling recognizes a safe `Location` of the form
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`.
@@ -197,28 +205,38 @@ Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 
 Once a valid operation/job enters polling, the CLI immediately prints and flushes
-`Monitoring operation execution...` or `Monitoring job execution...` to
+`Operation accepted (HTTP 202). Polling for completion...` (or `Job accepted`,
+with the actual HTTP acknowledgement code) to
 **stderr**, before the first polling delay (including a long `Retry-After`).
 Before each status GET it prints `Checking operation status...` or
-`Checking job status...`. After **10 seconds without a progress line**, it prints
-a waiting heartbeat, repeating every 10 seconds until another update. Heartbeats
-include elapsed polling time and the last service status/percentage, if any;
+`Checking job status...`. An interactive terminal refreshes one waiting line
+**every second**, starting with the next check's actual countdown.
+Redirected stderr prints a waiting heartbeat after **5 seconds without an
+update**, repeating every 5 seconds until another update. Heartbeats
+include elapsed polling time and the **last reported** service status/percentage, if any;
 they distinguish waiting for the next check from waiting for a status response
 or final result. For example:
 
 ```text
-Monitoring job execution...
-Waiting for next job status check; no status received yet (10s elapsed)...
+Job accepted (HTTP 202). Polling for completion...
 Checking job status...
 Job instance status: InProgress
-Waiting for next job status check; last status: InProgress (30s elapsed)...
+Waiting for job completion; next status check in 2s; Last reported status: InProgress (7s elapsed)...
 Checking job status...
 Job instance status: Completed
+Job completed.
 ```
 
 These are local liveness messages, not new service observations or estimated
 progress. They do not send extra requests or shorten `Retry-After`.
-The 10-second display interval is fixed and independent of `poll_interval`.
+Display refreshes are independent of `poll_interval`. The countdown comes from
+the engine's selected delay, including `Retry-After`, not an assumed interval.
+While a status GET is pending, the display reports how long that check has been
+waiting instead of suggesting that a new service status has arrived.
+Real checks and service statuses remain permanent lines; terminal waiting output
+is cleared before those lines and on completion, failure, timeout, or cancellation.
+A final completion message follows successful result retrieval/conversion;
+`Deduped` retains its distinct outcome rather than being called completed.
 Updates continue while credentials, a status request, retries, or result retrieval
 are pending. They begin only after the initial response establishes a valid
 polling handle, not during the initial request or its credential acquisition.
@@ -231,8 +249,10 @@ Every recognized pending or terminal polling status is printed and flushed to
 percentage metadata is omitted with a safe warning; missing/null values leave
 status-only output. These updates are enabled by default, unlike Python's
 debug-gated shared polling logs. Terminal progress is cyan, completion statuses
-green, failures red, and cancellation yellow. Redirected stderr, `TERM=dumb`, and
-environments with `NO_COLOR` set use plain text. Stdout remains a single final JSON response.
+green, failures red, cancellation yellow, and waiting text subdued gray.
+Redirected stderr and `TERM=dumb` use append-only plain text.
+`NO_COLOR` disables colors but keeps in-place refresh on an interactive terminal.
+Stdout remains a single final JSON response.
 `--async`, ordinary raw responses, and help/version do not emit progress.
 
 When running a shell alias such as `fabrs`, use `type -a fabrs` to check which

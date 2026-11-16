@@ -1700,7 +1700,7 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
                 if asynchronous {
                     ""
                 } else {
-                    "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
+                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1715,6 +1715,25 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn arm_creation_reports_the_actual_http_acknowledgement() {
+    let host = FakeHost::new(vec![
+        response(201, "{}", &[("azure-asyncoperation", "/status")]),
+        response(200, r#"{"status":"Succeeded"}"#, &[]),
+    ]);
+    let (code, stdout, stderr) = run(
+        &["api", "items", "--method", "post", "--audience", "azure"],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(
+        stderr,
+        "Operation accepted (HTTP 201). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+    );
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -1749,7 +1768,7 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
                 if asynchronous {
                     ""
                 } else {
-                    "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\n"
+                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1816,12 +1835,12 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
             stderr,
             match terminal {
                 r#"{"status":"Failed","failureReason":{"message":"BODY-CANARY"}}"# => {
-                    "Monitoring job execution...\nChecking job status...\nJob instance status: Failed\n"
+                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Failed\n"
                 }
                 r#"{"status":"Cancelled"}"# => {
-                    "Monitoring job execution...\nChecking job status...\nJob instance status: Cancelled\n"
+                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Cancelled\n"
                 }
-                _ => "Monitoring job execution...\nChecking job status...\n",
+                _ => "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\n",
             }
         );
         assert!(!stdout.contains("CANARY"));
@@ -1875,7 +1894,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
     assert_eq!(code, 0, "{stdout}");
     assert_eq!(
         stderr,
-        "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\n"
+        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
     );
     assert_eq!(data(&stdout), json!([]));
     assert!(!stdout.contains("CANARY"));
@@ -1957,7 +1976,7 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
                 if asynchronous {
                     ""
                 } else {
-                    "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
+                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -2865,7 +2884,7 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
             if scenario == "async" {
                 ""
             } else {
-                "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
+                "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
             }
         );
         let data = data(result["stdout"].as_str().unwrap());
@@ -3059,9 +3078,9 @@ mod polling_configuration {
                 assert_eq!(
                     stderr,
                     if job {
-                        "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\n"
+                        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
                     } else {
-                        "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
+                        "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
                     }
                 );
                 assert_eq!(
@@ -3150,9 +3169,9 @@ mod polling_configuration {
             assert_eq!(
                 stderr,
                 if timed {
-                    "Monitoring operation execution...\n"
+                    "Operation accepted (HTTP 202). Polling for completion...\n"
                 } else {
-                    "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
+                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();

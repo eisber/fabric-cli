@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Fabric/ARM LRO and job reconciliation of the initial response; never repeats a mutation.
+//! Fabric/Azure/Storage LRO and job reconciliation; never repeats a mutation.
 #![forbid(unsafe_code)]
 use async_trait::async_trait;
 use fabric_core::diagnostics::{
@@ -21,9 +21,9 @@ use std::{
 };
 use url::Url;
 
-/// First Fabric non-job polling delay; subsequent fallbacks are seven then twenty seconds.
+/// First Fabric operation/job polling delay; subsequent fallbacks are seven then twenty seconds.
 pub const INITIAL_DELAY: Duration = Duration::from_secs(2);
-/// Job-style polling interval for jobs and ARM when Retry-After is absent or invalid.
+/// Azure/Storage fallback interval; the legacy public name is retained for compatibility.
 pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
 const POLL_REQUEST_TIMEOUT: Duration = Duration::from_secs(240);
 
@@ -65,6 +65,18 @@ pub trait PollObserver: Send + Sync {
     ///
     /// Uses the same cancellation, deadline and error handling as status observations.
     async fn started(&self, _kind: Strategy) -> Result<(), CoreError> {
+        Ok(())
+    }
+
+    /// Observe the initial HTTP acknowledgement, not a backend execution state.
+    /// Defaults to the existing start callback for compatibility.
+    async fn accepted(&self, kind: Strategy, _http_status: u16) -> Result<(), CoreError> {
+        self.started(kind).await
+    }
+
+    /// Observe the selected next status-check delay, including server hints.
+    /// Callback time counts toward the delay and the reconciliation deadline.
+    async fn waiting(&self, _kind: Strategy, _delay: Duration) -> Result<(), CoreError> {
         Ok(())
     }
 
@@ -289,7 +301,12 @@ async fn reconcile(
         *terminal,
     )
     .await?;
-    bounded_with_clock(clock, context, observer.started(handle.kind())).await??;
+    bounded_with_clock(
+        clock,
+        context,
+        observer.accepted(handle.kind(), initial.status),
+    )
+    .await??;
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
     let mut warned_percentage = false;
@@ -298,8 +315,7 @@ async fn reconcile(
         // The parser exposes safe diagnostics to callers; invalid server hints fall back
         // to the fixed client policy and never reveal header contents.
         let job = matches!(handle.kind(), Strategy::FabricJob);
-        let server_interval =
-            job || matches!(handle.kind(), Strategy::ArmLocation | Strategy::ArmStatus);
+        let server_interval = matches!(handle.kind(), Strategy::ArmLocation | Strategy::ArmStatus);
         let fallback = config.poll_interval.unwrap_or(if server_interval {
             JOB_POLLING_INTERVAL
         } else {
@@ -316,10 +332,8 @@ async fn reconcile(
                 source = DelaySource::InvalidServerHint;
                 clock.diagnostic(if config.poll_interval.is_some() {
                     "Invalid Retry-After header; using configured polling interval"
-                } else if job {
-                    "Invalid Retry-After header; using 10-second job polling interval"
                 } else if server_interval {
-                    "Invalid Retry-After header; using 10-second ARM polling interval"
+                    "Invalid Retry-After header; using 10-second Azure/Storage polling interval"
                 } else {
                     "Invalid Retry-After header; using client polling schedule"
                 });
@@ -333,6 +347,8 @@ async fn reconcile(
         if server.is_some_and(|server| server == wait) {
             source = DelaySource::Server;
         }
+        let before = clock.now();
+        bounded_with_clock(clock, context, observer.waiting(handle.kind(), wait)).await??;
         diagnostic(
             observer,
             clock,
@@ -345,7 +361,8 @@ async fn reconcile(
             *terminal,
         )
         .await?;
-        sleep_with_budget(clock, wait, context).await?;
+        let remaining_wait = wait.saturating_sub(clock.now().duration_since(before));
+        sleep_with_budget(clock, remaining_wait, context).await?;
         bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
@@ -365,7 +382,11 @@ async fn reconcile(
             Strategy::ArmLocation => match response.status {
                 200 => (State::Success, "Succeeded", None, None),
                 201 | 202 => (State::Pending, "Running", None, None),
-                _ => return Err(protocol("Unexpected ARM Location response status")),
+                _ => {
+                    return Err(protocol(
+                        "Unexpected Azure/Storage Location response status",
+                    ));
+                }
             },
             kind => {
                 if kind == Strategy::FabricJob && response.status != 200 {
@@ -569,10 +590,11 @@ async fn reconcile(
 }
 /// Reconcile the actual initial response without ever replaying the initial request.
 ///
-/// Raw non-LRO responses are returned unchanged. ARM and Fabric job-instance Locations
-/// poll using Retry-After or ten seconds; jobs return terminal job JSON.
+/// Raw non-LRO responses are returned unchanged. Fabric operations and jobs use
+/// two-, seven-, then twenty-second delays, respecting Retry-After. Azure/Storage use
+/// Retry-After or ten seconds; jobs return terminal job JSON.
 /// Fabric terminal status is returned when no result is advertised.
-/// ARM completion preserves initial body/headers and
+/// Azure/Storage completion preserves initial body/headers and
 /// normalizes only its status to 200. Waiting has no overall deadline by default;
 /// individual status/result requests are bounded to 240 seconds.
 /// Recovery errors describe local uncertainty, never backend rollback.
