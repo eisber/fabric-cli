@@ -39,16 +39,16 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<u
         );
     }
     let mut sink = FileSink::default();
-    if let Some(export) = &command.export {
-        if sink.preflight(export).is_err() {
-            return failed(
-                Failure::new(
-                    "ExportPreflightFailed",
-                    "Maps export destination is unavailable or already exists; no processing started.",
-                ),
-                2,
-            );
-        }
+    if let Some(export) = &command.export
+        && sink.preflight(export).is_err()
+    {
+        return failed(
+            Failure::new(
+                "ExportPreflightFailed",
+                "Maps export destination is unavailable or already exists; no processing started.",
+            ),
+            2,
+        );
     }
     let result = if let Some(path) = &command.offline_fixture {
         let read = || -> Result<_, Failure> {
@@ -97,14 +97,8 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<u
     if let Some(export) = &command.export {
         let table = match fabric_cli::maps::export_table(&result, offline) {
             Ok(table) => table,
-            Err(_) => {
-                return failed(
-                    Failure::new(
-                        "InvalidExport",
-                        "Maps result table validation failed; no data file was published.",
-                    ),
-                    1,
-                );
+            Err(message) => {
+                return failed(Failure::new("InvalidExport", message), 1);
             }
         };
         let bytes = match fabric_cli_output::tabular::encode(&table, export.format) {
@@ -113,7 +107,7 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<u
                 return failed(
                     Failure::new(
                         "ExportEncodingFailed",
-                        "Maps result encoding failed; no data file was published.",
+                        "Maps export exceeded its 8 MiB encoded-output budget or could not be encoded; no file was published. Select a smaller result or another format.",
                     ),
                     1,
                 );
@@ -147,14 +141,8 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<u
             offline,
         ) {
             Ok(bytes) => bytes,
-            Err(_) => {
-                return failed(
-                    Failure::new(
-                        "OutputFailed",
-                        "Maps result projection or serialization failed.",
-                    ),
-                    1,
-                );
+            Err(message) => {
+                return failed(Failure::new("OutputFailed", message), 1);
             }
         };
         io::stdout().lock().write_all(&bytes)?;

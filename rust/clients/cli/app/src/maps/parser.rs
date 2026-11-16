@@ -77,7 +77,7 @@ pub fn maps_command() -> Command {
         .arg(Arg::new("experimental-private-contract").long("experimental-private-contract").global(true).action(ArgAction::SetTrue))
         .arg(option("timeout").global(true).default_value("60").help("Total deadline in seconds, 1..=120"))
         .arg(option("offline-fixture").global(true).help("Offline-only synthetic provider JSON; never contacts any service"))
-        .arg(option("query").global(true).help("JMESPath projection of data; status and completeness are retained separately"))
+        .arg(option("query").global(true).help("Bounded JMESPath field/index/wildcard path only; no functions, filters, pipes or constructors"))
         .arg(option("output-format").global(true).value_parser(["json", "text"]).default_value("json"))
         .arg(option("format").global(true).value_parser(["json", "csv", "parquet"]).requires("output").help("Export real result rows with logical JSON cells, not invocation summaries"))
         .arg(option("output").global(true).requires("format"))
@@ -207,10 +207,10 @@ pub fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<MapsComman
         return Err(invalid());
     }
     let query = matches.get_one::<String>("query").cloned();
-    if let Some(query) = &query {
-        if query.len() > 1024 || fabric_cli_query::validate_json_projection(query).is_err() {
-            return Err(invalid());
-        }
+    if let Some(query) = &query
+        && super::projection::validate(query).is_err()
+    {
+        return Err(invalid());
     }
     let export = matches
         .get_one::<String>("format")

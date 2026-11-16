@@ -105,7 +105,14 @@ JSON output includes separate operation, API version, private-contract label,
 request context, completeness, result count, and untouched provider data.
 `--output-format text` uses labelled nested JSON instead of flattening geometry
 or temporal values. `--query` uses the existing type-preserving JMESPath
-evaluator on `data`; it cannot hide a partial-failure exit status.
+evaluator on `data`, restricted to nonexpanding field/index/wildcard paths such
+as `results[0].temperature` or `features[*].properties.confidence`. Functions,
+filters, pipes, quoted field names, and value constructors are explicitly
+unsupported. A conservative serialized intermediate-clone budget is checked
+before evaluation, not only after rendering; this is not a process-wide heap
+quota. Projection cannot hide partial-failure
+status. All file codecs use the same 8 MiB encoded-output ceiling, including
+CSV escaping overhead.
 
 Every expected matrix pair has explicit zero-based indices and a status.
 Missing pairs have a null status, failed pairs retain their provider status,

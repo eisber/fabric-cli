@@ -495,3 +495,66 @@ fn empty_results_keep_schema_and_credential_bearing_fixture_is_withheld() {
     assert!(!encode(&table, TabularFormat::Parquet).unwrap().is_empty());
     assert_eq!(execution::offline_fixture(&c.request,b"{\"type\":\"FeatureCollection\",\"features\":[],\"accountSasToken\":\"not-a-credential\"}").unwrap_err().code,"CredentialInResponse");
 }
+
+#[test]
+fn csv_escaping_cannot_exceed_the_maps_encoded_output_limit() {
+    let c = command(&["geocode", "--address", "synthetic"]);
+    let candidate = json!({"type":"Feature","geometry":{"type":"Point","coordinates":[0,0]},"properties":{"confidence":"High"}});
+    let payload = json!({"type":"FeatureCollection","metadata":"\"".repeat(300_000),"features":vec![candidate;12]});
+    let bytes = serde_json::to_vec(&payload).unwrap();
+    assert!(bytes.len() < fabric_sdk::maps::MAX_RESPONSE_BYTES);
+    let result = ProcessingResult::parse(&c.request, &bytes).unwrap();
+    let rows = result.export_rows().unwrap();
+    assert!(serde_json::to_vec(&rows).unwrap().len() < fabric_sdk::maps::MAX_OUTPUT_BYTES);
+    let unconstrained = fabric_cli_output::tabular::TabularTable::from_rows_with_json_columns(
+        &rows,
+        &["result", "context", "responseMetadata"],
+    )
+    .unwrap();
+    assert!(
+        encode(&unconstrained, TabularFormat::Csv).unwrap().len()
+            > fabric_sdk::maps::MAX_OUTPUT_BYTES
+    );
+    let bounded = export_table(&result, true).unwrap();
+    assert!(encode(&bounded, TabularFormat::Csv).is_err());
+}
+
+#[test]
+fn expanding_queries_are_rejected_before_evaluation_and_safe_paths_keep_native_types() {
+    let c = command(&["current", "--coordinates", "0,0"]);
+    let payload = json!({"results":[{"dateTime":"2026-11-15T17:47:00-05:00","temperature":{"value":8.3},"large":"x".repeat(1024*1024)}]});
+    let result =
+        ProcessingResult::parse(&c.request, &serde_json::to_vec(&payload).unwrap()).unwrap();
+    let expanding = std::iter::repeat_n("[@,@]", 20)
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(
+        parse(
+            ["current", "--coordinates", "0,0", "--query", &expanding]
+                .into_iter()
+                .map(OsString::from)
+        )
+        .is_err()
+    );
+    assert!(render(&result, Some(&expanding), false, true).is_err());
+    for query in [
+        "results[*].temperature.value",
+        "results[0].temperature.value",
+        "results[].temperature.value",
+    ] {
+        let output: Value =
+            serde_json::from_slice(&render(&result, Some(query), false, true).unwrap()).unwrap();
+        assert!(output["data"] == json!([8.3]) || output["data"] == json!(8.3));
+    }
+    for query in [
+        "map(&@, results)",
+        "{a: @, b: @}",
+        "results[?temperature.value]",
+        "results[0].[large,large]",
+    ] {
+        assert!(
+            render(&result, Some(query), false, true).is_err(),
+            "{query}"
+        );
+    }
+}

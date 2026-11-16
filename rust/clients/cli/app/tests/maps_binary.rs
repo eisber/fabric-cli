@@ -119,6 +119,51 @@ fn unsupported_headless_mode_is_rejected_before_secret_configuration_capture() {
 }
 
 #[test]
+fn csv_expansion_budget_fails_without_publishing_a_native_data_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = temp.path().join("synthetic-large-geocode.json");
+    let output_path = temp.path().join("must-not-exist.csv");
+    let candidate = json!({"type":"Feature","geometry":{"type":"Point","coordinates":[0,0]},"properties":{"confidence":"High"}});
+    let payload = json!({"type":"FeatureCollection","metadata":"\"".repeat(300_000),"features":vec![candidate;12]});
+    std::fs::write(&fixture, serde_json::to_vec(&payload).unwrap()).unwrap();
+    let output = run(&[
+        "maps",
+        "geocode",
+        "--address",
+        "synthetic",
+        "--offline-fixture",
+        fixture.to_str().unwrap(),
+        "--format",
+        "csv",
+        "--output",
+        output_path.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!output_path.exists());
+    assert!(String::from_utf8(output.stderr).unwrap().contains("8 MiB"));
+}
+
+#[test]
+fn expanding_query_fails_before_offline_file_or_identity_access() {
+    let output = run(&[
+        "maps",
+        "current",
+        "--coordinates",
+        "0,0",
+        "--query",
+        "[@,@] | [@,@]",
+        "--offline-fixture",
+        "this-fixture-must-not-be-opened.json",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("InvalidArguments")
+    );
+}
+
+#[test]
 fn outer200_fixture_matrix_missing_and_failed_pairs_produce_nonzero_native_status() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("synthetic-partial-matrix.json");

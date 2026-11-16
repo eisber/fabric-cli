@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use fabric_cli_output::tabular::{TabularColumn, TabularTable, TabularType};
+use fabric_cli_output::tabular::{TabularColumn, TabularLimits, TabularTable, TabularType};
 use fabric_sdk::maps::{MAX_OUTPUT_BYTES, ProcessingResult};
 use serde_json::{Value, json};
 
@@ -22,8 +22,7 @@ pub fn render(
         "live-unqualified-private-contract"
     });
     if let Some(query) = query {
-        document["data"] = fabric_cli_query::project_json(&document["data"], query)
-            .map_err(|_| "Invalid Maps query projection.")?;
+        document["data"] = super::projection::project(&document["data"], query)?;
         document["projected"] = Value::Bool(true);
     }
     let mut output = BoundedOutput(Vec::new());
@@ -62,8 +61,12 @@ pub fn export_table(
         });
     }
 
+    let limits = TabularLimits {
+        max_output_bytes: MAX_OUTPUT_BYTES,
+        ..TabularLimits::default()
+    };
     if rows.is_empty() {
-        return TabularTable::new(
+        return TabularTable::with_limits(
             vec![
                 TabularColumn::new("resultIndex", TabularType::UInt64, false),
                 TabularColumn::new("result", TabularType::Json, true),
@@ -77,11 +80,16 @@ pub fn export_table(
                 TabularColumn::new("validation", TabularType::String, false),
             ],
             Vec::new(),
+            limits,
         )
         .map_err(|_| "Maps empty result schema failed.");
     }
-    TabularTable::from_rows_with_json_columns(&rows, &["result", "context", "responseMetadata"])
-        .map_err(|_| "Maps results cannot be represented losslessly in the requested table.")
+    TabularTable::from_rows_with_json_columns_and_limits(
+        &rows,
+        &["result", "context", "responseMetadata"],
+        limits,
+    )
+    .map_err(|_| "Maps results cannot be represented losslessly in the requested table.")
 }
 
 struct BoundedOutput(Vec<u8>);
