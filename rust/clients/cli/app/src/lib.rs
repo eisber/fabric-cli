@@ -548,7 +548,7 @@ pub fn parser() -> Command {
         .subcommand_required(true)
         .arg(help_arg())
         .arg(Arg::new("verbose").long("verbose").global(true).action(ArgAction::SetTrue)
-            .help("Print privacy-preserving debug diagnostics to stderr"))
+            .help("Print debug diagnostics logs to console"))
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
         .subcommand(Command::new("auth").about("Bind fab-rs to an existing Azure CLI identity.")
             .after_help("fab-rs does not sign in to or sign out of Azure CLI; run az login separately.")
