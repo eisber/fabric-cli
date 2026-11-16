@@ -34,11 +34,17 @@ struct Writer {
     streams: Arc<Streams>,
     stderr: bool,
     fail: bool,
+    fail_after_flushes: Option<usize>,
     cancel: Option<CancellationToken>,
+    cancel_after_flushes: usize,
 }
 impl Write for Writer {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if self.fail {
+        if self.fail
+            || self
+                .fail_after_flushes
+                .is_some_and(|count| *self.streams.flushes.lock().unwrap() >= count)
+        {
             return Err(io::Error::other("IO-CANARY"));
         }
         let stream = if self.stderr {
@@ -51,7 +57,9 @@ impl Write for Writer {
     }
     fn flush(&mut self) -> io::Result<()> {
         *self.streams.flushes.lock().unwrap() += 1;
-        if let Some(cancellation) = &self.cancel {
+        if let Some(cancellation) = &self.cancel
+            && *self.streams.flushes.lock().unwrap() >= self.cancel_after_flushes
+        {
             cancellation.cancel();
         }
         Ok(())
@@ -63,11 +71,16 @@ struct TestClock {
     diagnostics: Mutex<Vec<&'static str>>,
     streams: Arc<Streams>,
     first_wait: Mutex<bool>,
+    real_time: bool,
 }
 #[async_trait]
 impl Clock for TestClock {
     fn now(&self) -> Instant {
-        *self.now.lock().unwrap()
+        if self.real_time {
+            tokio::time::Instant::now().into_std()
+        } else {
+            *self.now.lock().unwrap()
+        }
     }
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH
@@ -79,14 +92,19 @@ impl Clock for TestClock {
         if std::mem::take(&mut *self.first_wait.lock().unwrap()) {
             let stderr = self.streams.stderr.lock().unwrap();
             assert!(
-                stderr.as_slice() == b"Polling job; waiting for status\n"
-                    || stderr.as_slice() == b"Polling operation; waiting for status\n",
+                stderr.as_slice() == b"Monitoring job execution...\n"
+                    || stderr.as_slice() == b"Monitoring operation execution...\n"
+                    || stderr.as_slice() == b"\x1b[36mMonitoring job execution...\x1b[0m\n",
                 "start notification must precede the first wait: {stderr:?}"
             );
             assert_eq!(*self.streams.flushes.lock().unwrap(), 1);
             assert!(self.streams.stdout.lock().unwrap().is_empty());
         }
-        *self.now.lock().unwrap() += delay;
+        if self.real_time {
+            tokio::time::sleep(delay).await;
+        } else {
+            *self.now.lock().unwrap() += delay;
+        }
         context.remaining_at(self.now())?;
         Ok(())
     }
@@ -112,8 +130,9 @@ struct Transport {
     replies: Mutex<VecDeque<ApiResponse>>,
     calls: Mutex<usize>,
     streams: Arc<Streams>,
-    before_third_request: String,
+    before_third_request: Option<String>,
     urls: Vec<String>,
+    response_delays: Mutex<VecDeque<Duration>>,
 }
 #[async_trait]
 impl HttpTransport for Transport {
@@ -122,29 +141,34 @@ impl HttpTransport for Transport {
         request: ApiRequest,
         _: &OperationContext,
     ) -> Result<ApiResponse, CoreError> {
-        let mut calls = self.calls.lock().unwrap();
-        if *calls == 0 {
-            assert_eq!(request.method, "POST");
-        } else {
-            assert_eq!(request.method, "GET");
-            assert!(request.body.is_empty());
-            assert_eq!(request.headers.len(), 1, "fresh authorization only");
+        {
+            let mut calls = self.calls.lock().unwrap();
+            if *calls == 0 {
+                assert_eq!(request.method, "POST");
+            } else {
+                assert_eq!(request.method, "GET");
+                assert!(request.body.is_empty());
+                assert_eq!(request.headers.len(), 1, "fresh authorization only");
+            }
+            if !self.urls.is_empty() {
+                assert_eq!(request.url.as_str(), self.urls[*calls]);
+            }
+            if *calls == 2
+                && let Some(expected) = &self.before_third_request
+            {
+                assert_eq!(&*self.streams.stderr.lock().unwrap(), expected.as_bytes());
+                assert_eq!(*self.streams.flushes.lock().unwrap(), 4);
+                assert!(
+                    self.streams.stdout.lock().unwrap().is_empty(),
+                    "no JSON until completion"
+                );
+            }
+            *calls += 1;
         }
-        if !self.urls.is_empty() {
-            assert_eq!(request.url.as_str(), self.urls[*calls]);
+        let delay = self.response_delays.lock().unwrap().pop_front();
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
         }
-        if *calls == 2 {
-            assert_eq!(
-                &*self.streams.stderr.lock().unwrap(),
-                self.before_third_request.as_bytes()
-            );
-            assert_eq!(*self.streams.flushes.lock().unwrap(), 2);
-            assert!(
-                self.streams.stdout.lock().unwrap().is_empty(),
-                "no JSON until completion"
-            );
-        }
-        *calls += 1;
         Ok(self.replies.lock().unwrap().pop_front().unwrap())
     }
 }
@@ -152,6 +176,7 @@ impl HttpTransport for Transport {
 struct FakeHost {
     clock: Arc<TestClock>,
     transport: Arc<Transport>,
+    color: bool,
 }
 #[async_trait]
 impl Host for FakeHost {
@@ -182,6 +207,9 @@ impl Host for FakeHost {
     fn take_diagnostics(&self) -> Vec<&'static str> {
         std::mem::take(&mut *self.clock.diagnostics.lock().unwrap())
     }
+    fn progress_color(&self) -> bool {
+        self.color
+    }
 }
 
 fn response(status: u16, body: Value, headers: &[(&str, &str)]) -> ApiResponse {
@@ -206,7 +234,7 @@ async fn run(
         replies,
         fail_stderr,
         cancel_on_progress,
-        "Polling job; waiting for status\nJob instance status: InProgress\n",
+        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\n",
         &[],
     )
     .await
@@ -220,6 +248,38 @@ async fn run_script(
     before_third_request: &str,
     urls: &[&str],
 ) -> (u8, String, String, usize) {
+    run_options(
+        args,
+        replies,
+        fail_stderr,
+        cancel_on_progress,
+        RunOptions {
+            before_third_request: Some(before_third_request),
+            urls,
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[derive(Default)]
+struct RunOptions<'a> {
+    before_third_request: Option<&'a str>,
+    urls: &'a [&'a str],
+    real_time: bool,
+    response_delays: Vec<Duration>,
+    color: bool,
+    fail_after_flushes: Option<usize>,
+    cancel_after_flushes: Option<usize>,
+}
+
+async fn run_options(
+    args: &[&str],
+    replies: Vec<ApiResponse>,
+    fail_stderr: bool,
+    cancel_on_progress: bool,
+    options: RunOptions<'_>,
+) -> (u8, String, String, usize) {
     let streams = Arc::new(Streams::default());
     let host = FakeHost {
         clock: Arc::new(TestClock {
@@ -227,27 +287,35 @@ async fn run_script(
             diagnostics: Mutex::new(Vec::new()),
             streams: streams.clone(),
             first_wait: Mutex::new(true),
+            real_time: options.real_time,
         }),
         transport: Arc::new(Transport {
             replies: Mutex::new(replies.into()),
             calls: Mutex::new(0),
             streams: streams.clone(),
-            before_third_request: before_third_request.into(),
-            urls: urls.iter().map(|url| (*url).into()).collect(),
+            before_third_request: options.before_third_request.map(Into::into),
+            urls: options.urls.iter().map(|url| (*url).into()).collect(),
+            response_delays: Mutex::new(options.response_delays.into()),
         }),
+        color: options.color,
     };
     let cancellation = CancellationToken::new();
     let mut stdout = Writer {
         streams: streams.clone(),
         stderr: false,
         fail: false,
+        fail_after_flushes: None,
         cancel: None,
+        cancel_after_flushes: 1,
     };
     let mut stderr = Writer {
         streams: streams.clone(),
         stderr: true,
         fail: fail_stderr,
-        cancel: cancel_on_progress.then(|| cancellation.clone()),
+        fail_after_flushes: options.fail_after_flushes,
+        cancel: (cancel_on_progress || options.cancel_after_flushes.is_some())
+            .then(|| cancellation.clone()),
+        cancel_after_flushes: options.cancel_after_flushes.unwrap_or(1),
     };
     let code = fabric_cli::run(
         std::iter::once("fab-rs")
@@ -271,6 +339,279 @@ fn accepted(location: &str) -> ApiResponse {
         json!({}),
         &[("location", location), ("x-fixture", "HEADER-CANARY")],
     )
+}
+
+#[tokio::test(start_paused = true)]
+async fn heartbeats_repeat_during_server_waits_and_preserve_every_real_status() {
+    let start = tokio::time::Instant::now();
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![
+            response(202, json!({}), &[("location", JOB), ("retry-after", "25")]),
+            response(
+                200,
+                json!({"status":"InProgress","percentageComplete":25}),
+                &[("retry-after", "25")],
+            ),
+            response(
+                200,
+                json!({"status":"InProgress","percentageComplete":25}),
+                &[("retry-after", "25")],
+            ),
+            response(200, json!({"status":"Completed"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions {
+            real_time: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 4, "heartbeats must not send extra requests");
+    assert_eq!(start.elapsed(), Duration::from_secs(75));
+    assert_eq!(
+        stderr,
+        concat!(
+            "Monitoring job execution...\n",
+            "Waiting for next job status check; no status received yet (10s elapsed)...\n",
+            "Waiting for next job status check; no status received yet (20s elapsed)...\n",
+            "Checking job status...\n",
+            "Job instance status: InProgress (25%)\n",
+            "Waiting for next job status check; last status: InProgress (25%) (35s elapsed)...\n",
+            "Waiting for next job status check; last status: InProgress (25%) (45s elapsed)...\n",
+            "Checking job status...\n",
+            "Job instance status: InProgress (25%)\n",
+            "Waiting for next job status check; last status: InProgress (25%) (60s elapsed)...\n",
+            "Waiting for next job status check; last status: InProgress (25%) (70s elapsed)...\n",
+            "Checking job status...\n",
+            "Job instance status: Completed\n",
+        )
+    );
+    assert!(!stderr.contains("CANARY"));
+    let envelope: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["result"]["data"][0]["text"]["status"], "Completed");
+    assert!(!stdout.contains("elapsed"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn heartbeats_continue_while_a_status_request_has_not_responded() {
+    let start = tokio::time::Instant::now();
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![
+            response(202, json!({}), &[("location", JOB), ("retry-after", "1")]),
+            response(200, json!({"status":"Completed"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions {
+            real_time: true,
+            response_delays: vec![Duration::ZERO, Duration::from_secs(25)],
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 2);
+    assert_eq!(start.elapsed(), Duration::from_secs(26));
+    assert_eq!(
+        stderr,
+        concat!(
+            "Monitoring job execution...\n",
+            "Checking job status...\n",
+            "Waiting for job status response; no status received yet (11s elapsed)...\n",
+            "Waiting for job status response; no status received yet (21s elapsed)...\n",
+            "Job instance status: Completed\n",
+        )
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn completed_service_status_is_not_reported_as_running_while_fetching_a_result() {
+    let (code, stdout, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![
+            accepted("/v1/operations/op-1"),
+            response(
+                200,
+                json!({"status":"Succeeded"}),
+                &[("location", "/v1/operations/op-1/result")],
+            ),
+            response(200, json!({"value":"done"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions {
+            real_time: true,
+            response_delays: vec![Duration::ZERO, Duration::ZERO, Duration::from_secs(25)],
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(calls, 3);
+    assert_eq!(
+        stderr,
+        concat!(
+            "Monitoring operation execution...\n",
+            "Checking operation status...\n",
+            "Operation status: Succeeded\n",
+            "Waiting for operation result; last status: Succeeded (12s elapsed)...\n",
+            "Waiting for operation result; last status: Succeeded (22s elapsed)...\n",
+        )
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn heartbeat_output_failure_and_cancellation_stop_waits_and_inflight_requests() {
+    for inflight in [false, true] {
+        for fail in [false, true] {
+            let initial_delay = if inflight { "1" } else { "60" };
+            let completed_flushes = if inflight { 2 } else { 1 };
+            let start = tokio::time::Instant::now();
+            let (code, stdout, stderr, calls) = run_options(
+                &["api", "items", "--method", "post"],
+                vec![
+                    response(
+                        202,
+                        json!({}),
+                        &[("location", JOB), ("retry-after", initial_delay)],
+                    ),
+                    response(200, json!({"status":"Completed"}), &[]),
+                ],
+                false,
+                false,
+                RunOptions {
+                    real_time: true,
+                    response_delays: vec![Duration::ZERO, Duration::from_secs(60)],
+                    fail_after_flushes: fail.then_some(completed_flushes),
+                    cancel_after_flushes: (!fail).then_some(completed_flushes + 1),
+                    ..Default::default()
+                },
+            )
+            .await;
+            assert_eq!(code, 1, "{stdout}");
+            assert_eq!(calls, if inflight { 2 } else { 1 });
+            assert_eq!(
+                start.elapsed(),
+                Duration::from_secs(if inflight { 11 } else { 10 })
+            );
+            let envelope: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(
+                envelope["result"]["error_code"],
+                if fail { "Transport" } else { "Cancelled" }
+            );
+            assert!(stdout.contains("outcome_uncertain"));
+            if fail {
+                assert!(stdout.contains("Cannot write polling progress"));
+                assert!(!stderr.contains("elapsed"));
+            } else {
+                assert_eq!(stderr.matches("elapsed").count(), 1);
+            }
+            assert!(!stderr.contains("Completed"));
+            assert!(!stdout.contains("CANARY"));
+            assert!(!stderr.contains("CANARY"));
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn deadline_stops_heartbeats_without_sending_a_status_request() {
+    let start = tokio::time::Instant::now();
+    let (code, stdout, stderr, calls) = run_options(
+        &[
+            "api",
+            "items",
+            "--method",
+            "post",
+            "--polling-config",
+            r#"{"timeout":15}"#,
+        ],
+        vec![response(
+            202,
+            json!({}),
+            &[("location", JOB), ("retry-after", "60")],
+        )],
+        false,
+        false,
+        RunOptions {
+            real_time: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(code, 1, "{stdout}");
+    assert_eq!(calls, 1);
+    assert_eq!(start.elapsed(), Duration::from_secs(15));
+    assert!(stdout.contains("Timeout"));
+    assert_eq!(
+        stderr,
+        "Monitoring job execution...\nWaiting for next job status check; no status received yet (10s elapsed)...\n"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn color_is_opt_in_for_injected_streams_and_never_reaches_json() {
+    for (terminal, tone) in [("Completed", "32"), ("Failed", "31")] {
+        let (code, stdout, stderr, calls) = run_options(
+            &["api", "items", "--method", "post"],
+            vec![
+                response(202, json!({}), &[("location", JOB), ("retry-after", "15")]),
+                response(200, json!({"status":terminal}), &[]),
+            ],
+            false,
+            false,
+            RunOptions {
+                real_time: true,
+                color: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(code, u8::from(terminal == "Failed"), "{stdout}");
+        assert_eq!(calls, 2);
+        assert_eq!(
+            stderr,
+            format!(
+                "\x1b[36mMonitoring job execution...\x1b[0m\n\
+                 \x1b[36mWaiting for next job status check; no status received yet (10s elapsed)...\x1b[0m\n\
+                 \x1b[36mChecking job status...\x1b[0m\n\
+                 \x1b[{tone}mJob instance status: {terminal}\x1b[0m\n"
+            )
+        );
+        assert!(!stdout.contains('\x1b'));
+        serde_json::from_str::<Value>(&stdout).unwrap();
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn slow_initial_raw_and_async_requests_do_not_start_a_heartbeat() {
+    for args in [
+        vec!["api", "items", "--method", "post"],
+        vec!["api", "items", "--method", "post", "--async"],
+    ] {
+        let asynchronous = args.contains(&"--async");
+        let (code, stdout, stderr, calls) = run_options(
+            &args,
+            vec![if asynchronous {
+                accepted(JOB)
+            } else {
+                response(200, json!({}), &[])
+            }],
+            false,
+            false,
+            RunOptions {
+                response_delays: vec![Duration::from_secs(25)],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(calls, 1);
+        assert!(stderr.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -306,7 +647,7 @@ async fn statuses_are_flushed_before_next_poll_and_stdout_is_one_projected_envel
     assert_eq!(calls, 3);
     assert_eq!(
         stderr,
-        "Polling job; waiting for status\nJob instance status: InProgress\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(envelope["status"], "Success");
@@ -322,12 +663,12 @@ async fn start_is_flushed_before_a_long_retry_after_for_operations_and_jobs() {
         (
             "/v1/operations/op-1",
             "Succeeded",
-            "Polling operation; waiting for status\nOperation status: Succeeded\n",
+            "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n",
         ),
         (
             JOB,
             "Completed",
-            "Polling job; waiting for status\nJob instance status: Completed\n",
+            "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\n",
         ),
     ] {
         let (code, stdout, stderr, calls) = run(
@@ -422,9 +763,11 @@ async fn failure_and_unknown_statuses_are_safe_and_start_output_failure_stops_po
         assert_eq!(
             stderr,
             if status.contains("CANARY") {
-                "Polling job; waiting for status\n".into()
+                "Monitoring job execution...\nChecking job status...\n".into()
             } else {
-                format!("Polling job; waiting for status\nJob instance status: {status}\n")
+                format!(
+                    "Monitoring job execution...\nChecking job status...\nJob instance status: {status}\n"
+                )
             }
         );
     }
@@ -467,7 +810,7 @@ async fn local_cancellation_and_deadline_do_not_report_future_polls() {
         "cancellation after start must prevent the first status GET"
     );
     assert!(stdout.contains("Cancelled"));
-    assert_eq!(stderr, "Polling job; waiting for status\n");
+    assert_eq!(stderr, "Monitoring job execution...\n");
     let (code, stdout, stderr, calls) = run(
         &[
             "api",
@@ -485,7 +828,7 @@ async fn local_cancellation_and_deadline_do_not_report_future_polls() {
     assert_eq!(code, 1);
     assert_eq!(calls, 1);
     assert!(stdout.contains("Timeout"));
-    assert_eq!(stderr, "Polling job; waiting for status\n");
+    assert_eq!(stderr, "Monitoring job execution...\n");
 }
 
 #[tokio::test]
@@ -517,7 +860,7 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
         ],
         false,
         false,
-        "Polling operation; waiting for status\nOperation status: Running (0%)\n",
+        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (0%)\nChecking operation status...\n",
         &[
             "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
             STATUS,
@@ -531,7 +874,7 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
     assert_eq!(calls, 5, "one POST, three status GETs and one result GET");
     assert_eq!(
         stderr,
-        "Polling operation; waiting for status\nOperation status: Running (0%)\nOperation status: Running (12.5%)\nOperation status: Succeeded (100%)\n"
+        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (0%)\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\nOperation status: Succeeded (100%)\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(
@@ -583,7 +926,7 @@ async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_comple
         ],
         false,
         false,
-        "Polling operation; waiting for status\nOperation status: Running (12.5%)\n",
+        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\n",
         &[
             "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
             STATUS,
@@ -596,7 +939,7 @@ async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_comple
     assert_eq!(calls, 4, "one POST, two status GETs and one result GET");
     assert_eq!(
         stderr,
-        "Polling operation; waiting for status\nOperation status: Running (12.5%)\nOperation status: Succeeded (100%)\n"
+        "Monitoring operation execution...\nChecking operation status...\nOperation status: Running (12.5%)\nChecking operation status...\nOperation status: Succeeded (100%)\n"
     );
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(
@@ -669,7 +1012,7 @@ async fn msit_job_polls_its_location_and_reports_progress_without_following_home
         ],
         false,
         false,
-        "Job instance status: InProgress\n",
+        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\n",
         &[
             "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/execute/instances",
             MSIT_JOB,
@@ -681,7 +1024,7 @@ async fn msit_job_polls_its_location_and_reports_progress_without_following_home
     assert_eq!(calls, 3, "one POST and two job GETs");
     assert_eq!(
         stderr,
-        "Job instance status: InProgress\nJob instance status: Completed\n"
+        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\n"
     );
     assert_eq!(
         serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],
@@ -706,7 +1049,7 @@ async fn regional_job_reports_terminal_success_or_failure_without_replaying_post
             ],
             false,
             false,
-            "Polling job; waiting for status\nJob instance status: InProgress (25%)\n",
+            "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress (25%)\nChecking job status...\n",
             &[
                 "https://api.fabric.microsoft.com/v1/items",
                 REGIONAL_JOB,
@@ -719,7 +1062,7 @@ async fn regional_job_reports_terminal_success_or_failure_without_replaying_post
         assert_eq!(
             stderr,
             format!(
-                "Polling job; waiting for status\nJob instance status: InProgress (25%)\nJob instance status: {terminal}\n"
+                "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress (25%)\nChecking job status...\nJob instance status: {terminal}\n"
             )
         );
         assert!(!stdout.contains("QUERY-CANARY"));
@@ -760,7 +1103,7 @@ async fn invalid_percentages_keep_safe_status_progress_and_report_a_static_warni
         assert_eq!(calls, 2);
         assert_eq!(
             stderr,
-            "Polling job; waiting for status\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+            "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
         );
         assert!(!stdout.contains("CANARY"));
         assert!(!stderr.contains("CANARY"));
@@ -789,6 +1132,6 @@ async fn invalid_percentages_keep_safe_status_progress_and_report_a_static_warni
     assert_eq!(calls, 4);
     assert_eq!(
         stderr,
-        "Polling job; waiting for status\nJob instance status: InProgress\nJob instance status: InProgress\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
+        "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nInvalid percentageComplete; omitting polling percentage\n"
     );
 }

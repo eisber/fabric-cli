@@ -1163,7 +1163,7 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
                 if asynchronous {
                     ""
                 } else {
-                    "Polling operation; waiting for status\nOperation status: Succeeded\n"
+                    "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1212,7 +1212,7 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
                 if asynchronous {
                     ""
                 } else {
-                    "Polling job; waiting for status\nJob instance status: InProgress\nJob instance status: Completed\n"
+                    "Monitoring job execution...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1279,12 +1279,12 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
             stderr,
             match terminal {
                 r#"{"status":"Failed","failureReason":{"message":"BODY-CANARY"}}"# => {
-                    "Polling job; waiting for status\nJob instance status: Failed\n"
+                    "Monitoring job execution...\nChecking job status...\nJob instance status: Failed\n"
                 }
                 r#"{"status":"Cancelled"}"# => {
-                    "Polling job; waiting for status\nJob instance status: Cancelled\n"
+                    "Monitoring job execution...\nChecking job status...\nJob instance status: Cancelled\n"
                 }
-                _ => "Polling job; waiting for status\n",
+                _ => "Monitoring job execution...\nChecking job status...\n",
             }
         );
         assert!(!stdout.contains("CANARY"));
@@ -1338,7 +1338,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
     assert_eq!(code, 0, "{stdout}");
     assert_eq!(
         stderr,
-        "Polling job; waiting for status\nJob instance status: Completed\n"
+        "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\n"
     );
     assert_eq!(data(&stdout), json!([]));
     assert!(!stdout.contains("CANARY"));
@@ -1420,7 +1420,7 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
                 if asynchronous {
                     ""
                 } else {
-                    "Polling operation; waiting for status\nOperation status: Succeeded\n"
+                    "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -2307,7 +2307,7 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
             if scenario == "async" {
                 ""
             } else {
-                "Polling operation; waiting for status\nOperation status: Succeeded\n"
+                "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
             }
         );
         let data = data(result["stdout"].as_str().unwrap());
@@ -2501,9 +2501,9 @@ mod polling_configuration {
                 assert_eq!(
                     stderr,
                     if job {
-                        "Polling job; waiting for status\nJob instance status: Completed\n"
+                        "Monitoring job execution...\nChecking job status...\nJob instance status: Completed\n"
                     } else {
-                        "Polling operation; waiting for status\nOperation status: Succeeded\n"
+                        "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
                     }
                 );
                 assert_eq!(
@@ -2592,9 +2592,9 @@ mod polling_configuration {
             assert_eq!(
                 stderr,
                 if timed {
-                    "Polling operation; waiting for status\n"
+                    "Monitoring operation execution...\n"
                 } else {
-                    "Polling operation; waiting for status\nOperation status: Succeeded\n"
+                    "Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();

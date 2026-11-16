@@ -55,7 +55,11 @@ impl HttpExecutor for Script {
 }
 
 #[derive(Default)]
-struct Recorder(Mutex<Vec<PollProgress>>, Mutex<Vec<OperationKind>>);
+struct Recorder(
+    Mutex<Vec<PollProgress>>,
+    Mutex<Vec<OperationKind>>,
+    Mutex<usize>,
+);
 #[async_trait]
 impl PollObserver for Recorder {
     async fn started(&self, kind: OperationKind) -> Result<(), CoreError> {
@@ -65,6 +69,13 @@ impl PollObserver for Recorder {
 
     async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
         self.0.lock().unwrap().push(progress);
+        Ok(())
+    }
+
+    async fn polling(&self, _: OperationKind) -> Result<(), CoreError> {
+        let mut count = self.2.lock().unwrap();
+        assert_eq!(*count, self.0.lock().unwrap().len());
+        *count += 1;
         Ok(())
     }
 }
@@ -96,10 +107,10 @@ enum StartAction {
 struct StoppingStart<'a> {
     action: StartAction,
     clock: &'a TestClock,
+    during_poll: bool,
 }
-#[async_trait]
-impl PollObserver for StoppingStart<'_> {
-    async fn started(&self, _: OperationKind) -> Result<(), CoreError> {
+impl StoppingStart<'_> {
+    async fn stop(&self) -> Result<(), CoreError> {
         match &self.action {
             StartAction::Fail => Err(CoreError::new(
                 ErrorKind::Transport,
@@ -115,8 +126,25 @@ impl PollObserver for StoppingStart<'_> {
             }
         }
     }
+}
+#[async_trait]
+impl PollObserver for StoppingStart<'_> {
+    async fn started(&self, _: OperationKind) -> Result<(), CoreError> {
+        if self.during_poll {
+            Ok(())
+        } else {
+            self.stop().await
+        }
+    }
+    async fn polling(&self, _: OperationKind) -> Result<(), CoreError> {
+        if self.during_poll {
+            self.stop().await
+        } else {
+            Ok(())
+        }
+    }
     async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
-        panic!("start must stop reconciliation before a status GET")
+        panic!("notification must stop reconciliation before a status GET")
     }
 }
 
@@ -209,49 +237,57 @@ async fn start_is_once_before_waiting_and_does_not_invent_a_service_status() {
         assert!(clock.now().duration_since(start) >= Duration::from_secs(600));
         assert_eq!(*observer.1.lock().unwrap(), [kind]);
         assert_eq!(observer.0.lock().unwrap().len(), 2);
+        assert_eq!(*observer.2.lock().unwrap(), 2);
         assert_eq!(*script.calls.lock().unwrap(), 2);
     }
 }
 
 #[tokio::test]
-async fn start_failure_cancellation_and_time_share_reconciliation_bounds_and_recovery() {
-    let cancellation = CancellationToken::new();
-    for (action, expected) in [
-        (StartAction::Fail, ErrorKind::Transport),
-        (
-            StartAction::Cancel(cancellation.clone()),
-            ErrorKind::Cancelled,
-        ),
-        (StartAction::Expire, ErrorKind::Timeout),
-    ] {
-        let clock = TestClock(Mutex::new(Instant::now()));
-        let observer = StoppingStart {
-            action,
-            clock: &clock,
-        };
-        let script = Script {
-            replies: Mutex::new(VecDeque::new()),
-            calls: Mutex::new(0),
-        };
-        let token = if matches!(observer.action, StartAction::Cancel(_)) {
-            cancellation.clone()
-        } else {
-            CancellationToken::new()
-        };
-        let error = complete_observed(
-            &script,
-            &clock,
-            Audience::Fabric,
-            response(202, "", &[("location", JOB)]),
-            token,
-            LroConfig::new(None, Some(Duration::from_secs(1))).unwrap(),
-            &observer,
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(error.kind, expected);
-        assert!(error.recovery.unwrap().outcome_uncertain);
-        assert_eq!(*script.calls.lock().unwrap(), 0);
+async fn notification_failures_cancellation_and_time_share_reconciliation_bounds_and_recovery() {
+    for during_poll in [false, true] {
+        let cancellation = CancellationToken::new();
+        for (action, expected) in [
+            (StartAction::Fail, ErrorKind::Transport),
+            (
+                StartAction::Cancel(cancellation.clone()),
+                ErrorKind::Cancelled,
+            ),
+            (StartAction::Expire, ErrorKind::Timeout),
+        ] {
+            let clock = TestClock(Mutex::new(Instant::now()));
+            let observer = StoppingStart {
+                action,
+                clock: &clock,
+                during_poll,
+            };
+            let script = Script {
+                replies: Mutex::new(VecDeque::new()),
+                calls: Mutex::new(0),
+            };
+            let token = if matches!(observer.action, StartAction::Cancel(_)) {
+                cancellation.clone()
+            } else {
+                CancellationToken::new()
+            };
+            let error = complete_observed(
+                &script,
+                &clock,
+                Audience::Fabric,
+                response(202, "", &[("location", JOB)]),
+                token,
+                LroConfig::new(
+                    Some(Duration::from_millis(100)),
+                    Some(Duration::from_secs(1)),
+                )
+                .unwrap(),
+                &observer,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.kind, expected);
+            assert!(error.recovery.unwrap().outcome_uncertain);
+            assert_eq!(*script.calls.lock().unwrap(), 0);
+        }
     }
 }
 
@@ -279,6 +315,7 @@ async fn raw_and_pre_cancelled_operations_do_not_notify_start() {
         assert_eq!(count, 0);
         assert!(observer.0.lock().unwrap().is_empty());
         assert!(observer.1.lock().unwrap().is_empty());
+        assert_eq!(*observer.2.lock().unwrap(), 0);
     }
 }
 

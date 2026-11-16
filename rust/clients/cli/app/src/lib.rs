@@ -26,12 +26,14 @@ use fabric_sdk_http::{HttpClient, SystemClock, bounded_with_clock};
 use serde_json::{Value, json};
 use std::{
     ffi::OsString,
-    io::Write,
+    io::{IsTerminal, Write},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::{mpsc, oneshot};
+
+const PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 
 struct ProgressEvent {
     progress: ConsoleUpdate,
@@ -40,14 +42,18 @@ struct ProgressEvent {
 
 enum ConsoleUpdate {
     Started(OperationKind),
+    Polling(OperationKind),
     Status(PollProgress),
 }
 
-struct ConsoleProgress(mpsc::Sender<ProgressEvent>);
+struct ConsoleProgress {
+    events: mpsc::Sender<ProgressEvent>,
+    failed: CancellationToken,
+}
 impl ConsoleProgress {
     async fn send(&self, progress: ConsoleUpdate) -> Result<(), CoreError> {
         let (written, received) = oneshot::channel();
-        self.0
+        self.events
             .send(ProgressEvent { progress, written })
             .await
             .map_err(|_| progress_error())?;
@@ -61,6 +67,10 @@ impl PollObserver for ConsoleProgress {
         self.send(ConsoleUpdate::Started(kind)).await
     }
 
+    async fn polling(&self, kind: OperationKind) -> Result<(), CoreError> {
+        self.send(ConsoleUpdate::Polling(kind)).await
+    }
+
     async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
         self.send(ConsoleUpdate::Status(progress)).await
     }
@@ -70,32 +80,110 @@ fn progress_error() -> CoreError {
     CoreError::new(ErrorKind::Transport, "Cannot write polling progress")
 }
 
-fn write_progress(progress: ConsoleUpdate, stderr: &mut dyn Write) -> Result<(), CoreError> {
-    let result = match progress {
-        ConsoleUpdate::Started(kind) => {
-            let label = if kind == OperationKind::FabricJob {
-                "job"
-            } else {
-                "operation"
-            };
-            writeln!(stderr, "Polling {label}; waiting for status")
-        }
-        ConsoleUpdate::Status(progress) => {
-            let label = if progress.is_job() {
-                "Job instance status"
-            } else {
-                "Operation status"
-            };
-            if let Some(percentage) = progress.percentage_complete() {
-                writeln!(stderr, "{label}: {} ({percentage}%)", progress.status())
-            } else {
-                writeln!(stderr, "{label}: {}", progress.status())
-            }
-        }
+fn progress_line(
+    message: &str,
+    color: bool,
+    tone: &str,
+    stderr: &mut dyn Write,
+) -> Result<(), CoreError> {
+    let result = if color {
+        writeln!(stderr, "\x1b[{tone}m{message}\x1b[0m")
+    } else {
+        writeln!(stderr, "{message}")
     };
     result
         .and_then(|()| stderr.flush())
         .map_err(|_| progress_error())
+}
+
+fn progress_label(kind: OperationKind) -> &'static str {
+    if kind == OperationKind::FabricJob {
+        "job"
+    } else {
+        "operation"
+    }
+}
+
+fn status_text(progress: PollProgress) -> String {
+    if let Some(percentage) = progress.percentage_complete() {
+        format!("{} ({percentage}%)", progress.status())
+    } else {
+        progress.status().into()
+    }
+}
+
+#[derive(Default)]
+struct ProgressDisplay {
+    started: Option<(OperationKind, tokio::time::Instant)>,
+    latest: Option<PollProgress>,
+    requesting: bool,
+}
+
+impl ProgressDisplay {
+    fn update(
+        &mut self,
+        update: ConsoleUpdate,
+        color: bool,
+        stderr: &mut dyn Write,
+    ) -> Result<(), CoreError> {
+        let (message, tone) = match update {
+            ConsoleUpdate::Started(kind) => {
+                self.started = Some((kind, tokio::time::Instant::now()));
+                (
+                    format!("Monitoring {} execution...", progress_label(kind)),
+                    "36",
+                )
+            }
+            ConsoleUpdate::Polling(kind) => {
+                self.requesting = true;
+                (format!("Checking {} status...", progress_label(kind)), "36")
+            }
+            ConsoleUpdate::Status(progress) => {
+                self.latest = Some(progress);
+                self.requesting = false;
+                let label = if progress.is_job() {
+                    "Job instance status"
+                } else {
+                    "Operation status"
+                };
+                let tone = match progress.status() {
+                    "Succeeded" | "Completed" | "Deduped" => "32",
+                    "Failed" => "31",
+                    "Cancelled" => "33",
+                    _ => "36",
+                };
+                (format!("{label}: {}", status_text(progress)), tone)
+            }
+        };
+        progress_line(&message, color, tone, stderr)
+    }
+
+    fn heartbeat(&self, color: bool, stderr: &mut dyn Write) -> Result<(), CoreError> {
+        let (kind, started) = self.started.ok_or_else(progress_error)?;
+        let label = progress_label(kind);
+        let waiting = if self.latest.is_some_and(|progress| {
+            matches!(progress.status(), "Succeeded" | "Completed" | "Deduped")
+        }) {
+            format!("Waiting for {label} result")
+        } else if self.requesting {
+            format!("Waiting for {label} status response")
+        } else {
+            format!("Waiting for next {label} status check")
+        };
+        let last = self.latest.map_or_else(
+            || "; no status received yet".into(),
+            |progress| format!("; last status: {}", status_text(progress)),
+        );
+        progress_line(
+            &format!(
+                "{waiting}{last} ({}s elapsed)...",
+                started.elapsed().as_secs()
+            ),
+            color,
+            "36",
+            stderr,
+        )
+    }
 }
 
 /// Host-owned effects; fake implementations prove parser and output behavior offline.
@@ -118,6 +206,10 @@ pub trait Host: Send + Sync {
     /// Drain safe static diagnostics for the host to write to stderr, never JSON stdout.
     fn take_diagnostics(&self) -> Vec<&'static str> {
         Vec::new()
+    }
+    /// Whether progress can use ANSI color. Injected/nonterminal streams default to plain text.
+    fn progress_color(&self) -> bool {
+        false
     }
 }
 
@@ -212,6 +304,11 @@ impl Host for NativeHost {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()),
         )
+    }
+    fn progress_color(&self) -> bool {
+        std::io::stderr().is_terminal()
+            && std::env::var_os("NO_COLOR").is_none()
+            && std::env::var_os("TERM").is_none_or(|term| term != "dumb")
     }
 }
 
@@ -351,18 +448,32 @@ pub async fn run(
         }
     };
     let (sender, mut events) = mpsc::channel(1);
-    let observer = ConsoleProgress(sender);
+    let observer = ConsoleProgress {
+        events: sender,
+        failed: CancellationToken::new(),
+    };
     let result = {
         let execution = execute(&matches, host, cancellation, &observer);
+        let heartbeat = tokio::time::sleep(PROGRESS_INTERVAL);
+        let mut display = ProgressDisplay::default();
         tokio::pin!(execution);
+        tokio::pin!(heartbeat);
         loop {
             tokio::select! {
+                biased;
+                result = &mut execution => break result,
                 Some(event) = events.recv() => {
-                    let result = write_progress(event.progress, stderr);
+                    let result = display.update(event.progress, host.progress_color(), stderr);
                     // Cancellation can drop the observer while its event is queued.
                     let _ = event.written.send(result);
+                    heartbeat.as_mut().reset(tokio::time::Instant::now() + PROGRESS_INTERVAL);
                 }
-                result = &mut execution => break result,
+                () = &mut heartbeat, if display.started.is_some() && !observer.failed.is_cancelled() => {
+                    if display.heartbeat(host.progress_color(), stderr).is_err() {
+                        observer.failed.cancel();
+                    }
+                    heartbeat.as_mut().reset(tokio::time::Instant::now() + PROGRESS_INTERVAL);
+                }
             }
         }
     };
@@ -408,7 +519,7 @@ async fn execute(
     matches: &clap::ArgMatches,
     host: &dyn Host,
     cancellation: CancellationToken,
-    observer: &dyn PollObserver,
+    observer: &ConsoleProgress,
 ) -> Result<Value, CommandError> {
     match matches.subcommand() {
         Some(("auth", auth)) => match auth.subcommand_name() {
@@ -487,7 +598,7 @@ async fn execute(
                 initial
             } else {
                 fabric_cli_api::validate_response_body(&initial.body).map_err(attach_recovery)?;
-                fabric_sdk_api::complete_observed(
+                let reconciliation = fabric_sdk_api::complete_observed(
                     &client,
                     clock.as_ref(),
                     prepared.audience,
@@ -495,8 +606,14 @@ async fn execute(
                     cancellation,
                     prepared.lro_config,
                     observer,
-                )
-                .await?
+                );
+                tokio::select! {
+                    biased;
+                    () = observer.failed.cancelled() => {
+                        return Err(attach_recovery(progress_error().into()));
+                    }
+                    result = reconciliation => result?,
+                }
             };
             fabric_cli_api::response_data(
                 response,

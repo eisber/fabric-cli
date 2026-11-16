@@ -56,6 +56,14 @@ pub trait PollObserver: Send + Sync {
         Ok(())
     }
 
+    /// Observe a status check after its required wait, before credentials or HTTP.
+    ///
+    /// Called once per logical status GET, not for individual transport retries.
+    /// Uses the same cancellation, deadline and error handling as status observations.
+    async fn polling(&self, _kind: Strategy) -> Result<(), CoreError> {
+        Ok(())
+    }
+
     /// Observe a recognized status before waiting again or returning its outcome.
     ///
     /// Observation shares the operation cancellation/deadline. Return only safe
@@ -252,6 +260,7 @@ async fn reconcile(
             _ => fallback.max(server.unwrap_or_default()),
         };
         sleep_with_budget(clock, wait, context).await?;
+        bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
             return Err(CoreError::new(
@@ -422,11 +431,12 @@ pub async fn complete_with_config(
     .await
 }
 
-/// Reconcile with an injected start notification and status GET observations.
+/// Reconcile with injected start, status-check and service-status observations.
 ///
-/// Notifies once after validation and before the first wait, then reports
-/// pending and terminal statuses, but not initial/result response statuses,
-/// malformed or unknown statuses, failed HTTP attempts, or unsent polls.
+/// Notifies once after validation and before the first wait, before each logical
+/// status GET, and for recognized pending/terminal statuses. Initial/result
+/// response statuses, malformed/unknown statuses, and failed HTTP attempts do
+/// not generate service-status observations. Required waits precede check notifications.
 /// Existing unobserved entry points preserve their effect-free default.
 pub async fn complete_observed(
     executor: &dyn HttpExecutor,

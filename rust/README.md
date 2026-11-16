@@ -155,16 +155,42 @@ Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 
 Once a valid operation/job enters polling, the CLI immediately prints and flushes
-`Polling operation; waiting for status` or `Polling job; waiting for status` to
+`Monitoring operation execution...` or `Monitoring job execution...` to
 **stderr**, before the first polling delay (including a long `Retry-After`).
-This is local waiting feedback, not a service status or estimated percentage.
-Every recognized pending or terminal polling status is then printed and flushed to
+Before each status GET it prints `Checking operation status...` or
+`Checking job status...`. After **10 seconds without a progress line**, it prints
+a waiting heartbeat, repeating every 10 seconds until another update. Heartbeats
+include elapsed polling time and the last service status/percentage, if any;
+they distinguish waiting for the next check from waiting for a status response
+or final result. For example:
+
+```text
+Monitoring job execution...
+Waiting for next job status check; no status received yet (10s elapsed)...
+Checking job status...
+Job instance status: InProgress
+Waiting for next job status check; last status: InProgress (30s elapsed)...
+Checking job status...
+Job instance status: Completed
+```
+
+These are local liveness messages, not new service observations or estimated
+progress. They do not send extra requests or shorten `Retry-After`.
+The 10-second display interval is fixed and independent of `poll_interval`.
+Updates continue while credentials, a status request, retries, or result retrieval
+are pending. They begin only after the initial response establishes a valid
+polling handle, not during the initial request or its credential acquisition.
+The CLI stays in the foreground while monitoring a server-side background job.
+
+Every recognized pending or terminal polling status is printed and flushed to
 **stderr** immediately, for example `Operation status: Running (50%)` or
 `Job instance status: InProgress`. Numeric `percentageComplete` values from
 0 through 100, including zero and fractions, are shown when supplied. Invalid
 percentage metadata is omitted with a safe warning; missing/null values leave
 status-only output. These updates are enabled by default, unlike Python's
-debug-gated shared polling logs. Stdout remains a single final JSON response.
+debug-gated shared polling logs. Terminal progress is cyan, completion statuses
+green, failures red, and cancellation yellow. Redirected stderr, `TERM=dumb`, and
+environments with `NO_COLOR` set use plain text. Stdout remains a single final JSON response.
 `--async`, ordinary raw responses, and help/version do not emit progress.
 
 When running a shell alias such as `fabrs`, use `type -a fabrs` to check which

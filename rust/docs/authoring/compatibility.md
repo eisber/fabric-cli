@@ -214,10 +214,22 @@ states are protocol errors. Mutations are sent once; uncertain sends are not
 replayed. Safe GET retries remain inside the operation deadline.
 
 Entering validated reconciliation emits and flushes
-`Polling operation; waiting for status` or `Polling job; waiting for status`
+`Monitoring operation execution...` or `Monitoring job execution...`
 to stderr before the first polling delay, including any `Retry-After`. This
 static local notification does not assert a backend status or percentage.
-Recognized pending and terminal status GETs then emit live, flushed stderr progress
+Each logical status GET emits `Checking operation status...` or
+`Checking job status...` after its required delay, before credentials or HTTP.
+The CLI emits a heartbeat after 10 seconds without a progress line, repeating
+every 10 seconds. It shows elapsed polling time and the last observed status
+and percentage, or explicitly says no status has arrived. Heartbeats distinguish
+a scheduled wait, an unanswered status request, and final-result retrieval.
+They remain active during credentials/retries and never send requests or change
+server not-before constraints. The display interval is fixed, separate from API
+polling configuration. No heartbeat covers the initial request.
+All lines are flushed. Native terminal progress uses cyan, successful statuses
+green, failures red, and cancellations yellow; redirected streams, `TERM=dumb`,
+and `NO_COLOR` use plain text.
+Recognized pending and terminal status GETs emit live, flushed stderr progress
 through an injected observer; engine libraries never write to the console.
 `Operation status: Running (50%)` and `Job instance status: InProgress` are
 example lines. Only canonical recognized status and finite numeric
@@ -227,7 +239,10 @@ progress, and invalid supplied metadata produces a safe static warning.
 No body text, error text, headers, URL queries, or arbitrary percentage strings
 are printed as progress. Stdout remains one final JSON envelope. Async/raw,
 initial/result responses, failed HTTP attempts, and unknown/malformed statuses
-emit no progress. Default-enabled status/percentage reporting intentionally
+emit no service-status observations. A pre-request line is not evidence that a
+response arrived. Heartbeats stop with local completion, failure, cancellation,
+or timeout; output failure stops local reconciliation with safe recovery, not
+the remote job. Default-enabled status/percentage reporting intentionally
 differs from Python's debug-gated shared polling logs.
 
 Timeout, local Ctrl+C, terminal failure, and uncertain transport outcomes preserve

@@ -252,7 +252,7 @@ fn subprocess(scenario: &str) -> Output {
                 );
                 let _ = ready.send(());
             }
-            if line == b"Polling operation; waiting for status\n" {
+            if line == b"Monitoring operation execution...\n" {
                 polling_started = true;
             }
             bytes.extend(line);
@@ -298,16 +298,15 @@ fn assert_lifecycle(scenario: &str) {
     assert!(output.stdout.ends_with(b"\n"));
     if scenario == "cancel" {
         assert!(
-            output.stderr == b"Polling operation; waiting for status\nOFFLINE_SIGNAL_READY\n"
-                || output.stderr
-                    == b"Polling operation; waiting for status\nOFFLINE_SIGNAL_READY\r\n",
+            output.stderr == b"Monitoring operation execution...\nOFFLINE_SIGNAL_READY\n"
+                || output.stderr == b"Monitoring operation execution...\nOFFLINE_SIGNAL_READY\r\n",
             "{:?}",
             output.stderr
         );
     } else {
         let expected: &[u8] = match scenario {
-            "poll" => b"Polling operation; waiting for status\nOperation status: Succeeded\n",
-            "failed" => b"Polling operation; waiting for status\nOperation status: Failed\n",
+            "poll" => b"Monitoring operation execution...\nChecking operation status...\nOperation status: Succeeded\n",
+            "failed" => b"Monitoring operation execution...\nChecking operation status...\nOperation status: Failed\n",
             _ => b"",
         };
         assert_eq!(output.stderr, expected);
