@@ -92,6 +92,19 @@ Delete prompts on stderr after resolving the target. An entered blank line,
 input do not confirm. `--force` bypasses only confirmation.
 
 Resource `--query` runs on the native object or complete array in `result.data`.
+For `workspace list` and `item list`, a single field identifier such as `--query id`
+is shorthand for `--query '[].{id: id}'`, returning `[{"id":"..."}]`.
+Quoted JMESPath identifiers select literal keys, for example `--query '"a.b"'`.
+Rows retain their order, missing or null fields produce `{"id":null}`, and
+selected values retain their JSON types (including arrays and objects).
+An empty list remains `[]`. No unselected fields are returned.
+Other expressions retain ordinary JMESPath behavior on the complete list:
+`--query '[].id'` returns an array of values, `--query "[?type=='Lakehouse']"`
+filters rows, and `--query 'length(@)'` returns the existing scalar string.
+Single-resource queries are unchanged: `workspace get <id> --query id` returns
+the selected scalar, not a projected object. Empty queries bypass projection;
+`.` and `@` select the complete resource data. This list-only shortcut does not
+apply to raw `api`, which still requires explicit wrapper paths below.
 Resource success envelopes use a non-indented UTF-8 JSON layout. List fetches all
 pages and fails if the complete unfiltered compact JSON array
 exceeds 32 MiB. Mutations accept `--async` or `--polling-config` with the same

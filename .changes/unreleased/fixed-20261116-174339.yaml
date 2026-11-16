@@ -1,0 +1,6 @@
+kind: fixed
+body: Fix fab-rs workspace and item list --query single-field projection while preserving explicit JMESPath and raw API behavior.
+time: 2026-11-16T17:43:39.422965+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

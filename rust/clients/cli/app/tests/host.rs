@@ -380,6 +380,175 @@ async fn resources_use_direct_ids_and_native_output() {
 }
 
 #[tokio::test]
+async fn resource_list_field_projection_runs_after_name_resolution_and_all_pages() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    for kind in ["workspace", "item"] {
+        let mut responses = Vec::new();
+        if kind == "item" {
+            responses.push(response(
+                200,
+                &format!(r#"{{"value":[{{"id":"{workspace}","displayName":"testrustcrud"}}]}}"#),
+                &[],
+            ));
+        }
+        responses.extend([
+            response(
+                200,
+                r#"{"value":[{"id":"b2fe34d2-2197-4f2f-933f-8352fd0318fb","hidden":"CANARY"}],"continuationToken":"next"}"#,
+                &[],
+            ),
+            response(200, r#"{"value":[{"id":"second","hidden":"CANARY"}]}"#, &[]),
+        ]);
+        let host = FakeHost::new(responses);
+        let mut args = vec![kind, "list", "--query", "id"];
+        if kind == "item" {
+            args.extend(["--workspace", "testrustcrud"]);
+        }
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout} {stderr}");
+        assert_eq!(
+            data(&stdout),
+            json!([{"id":"b2fe34d2-2197-4f2f-933f-8352fd0318fb"}, {"id":"second"}])
+        );
+        assert!(!stdout.contains("CANARY"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), if kind == "item" { 3 } else { 2 });
+        let last = requests.last().unwrap();
+        assert_eq!(last.url.query(), Some("continuationToken=next"));
+        assert_eq!(
+            last.url.path(),
+            if kind == "item" {
+                format!("/v1/workspaces/{workspace}/items")
+            } else {
+                "/v1/workspaces".to_owned()
+            }
+        );
+    }
+}
+
+#[tokio::test]
+async fn resource_list_field_projection_keeps_json_fidelity_and_empty_results() {
+    for (body, query, expected) in [
+        (r#"{"value":[]}"#, "id", "[]"),
+        (
+            r#"{"value":[{"v":false},{"v":0},{"v":""},{"v":null},{}]}"#,
+            "v",
+            r#"[{"v":false},{"v":0},{"v":""},{"v":null},{"v":null}]"#,
+        ),
+        (
+            r#"{"value":[{"v":184467440737095516170},{"v":-0},{"v":[null,false]},{"v":{"$serde_json::private::Number":"123","é":1.0}}]}"#,
+            "v",
+            r#"[{"v":184467440737095516170},{"v":0},{"v":[null,false]},{"v":{"$serde_json::private::Number":"123","é":1.0}}]"#,
+        ),
+        (
+            r#"{"value":[{"$serde_json::private::Number":123,"hidden":"CANARY"},{}]}"#,
+            r#""$serde_json::private::Number""#,
+            r#"[{"$serde_json::private::Number":123},{"$serde_json::private::Number":null}]"#,
+        ),
+    ] {
+        let host = FakeHost::new(vec![response(200, body, &[])]);
+        let (code, stdout, stderr) = run(&["workspace", "list", "--query", query], &host).await;
+        assert_eq!(code, 0, "{stdout} {stderr}");
+        let result = fabric_core_json::decode(stdout.as_bytes()).unwrap();
+        assert_eq!(
+            result["result"]["data"],
+            fabric_core_json::decode(expected.as_bytes()).unwrap(),
+            "{query}"
+        );
+        assert!(!stdout.contains("CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn resource_list_queries_preserve_explicit_jmespath_and_identity() {
+    let body = r#"{"value":[{"id":"b","n":2},{"id":"a","n":1}]}"#;
+    for (query, expected) in [
+        ("[].id", json!(["b", "a"])),
+        ("[0].id", json!("b")),
+        ("[?n > `1`].id", json!(["b"])),
+        ("[].{key: id}", json!([{"key":"b"}, {"key":"a"}])),
+        ("sort_by(@, &n)[].id", json!(["a", "b"])),
+        ("length(@)", json!("2")),
+        ("@ | id", json!("None")),
+        ("[?n > `9`]", json!([])),
+        ("", json!([{"id":"b","n":2}, {"id":"a","n":1}])),
+        (".", json!([{"id":"b","n":2}, {"id":"a","n":1}])),
+        ("@", json!([{"id":"b","n":2}, {"id":"a","n":1}])),
+    ] {
+        let host = FakeHost::new(vec![response(200, body, &[])]);
+        let (code, stdout, stderr) = run(&["workspace", "list", "--query", query], &host).await;
+        assert_eq!(code, 0, "{query}: {stdout} {stderr}");
+        assert_eq!(data(&stdout), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn resource_field_shortcut_does_not_change_single_resources_or_raw_api() {
+    let guid = "00000000-0000-0000-0000-000000000001";
+    for kind in ["workspace", "item"] {
+        for (query, expected) in [
+            ("id", json!("answer")),
+            ("n", json!("0")),
+            ("missing", json!("None")),
+            ("{key: id}", json!({"key":"answer"})),
+            ("v", json!([])),
+        ] {
+            let host = FakeHost::new(vec![response(200, r#"{"id":"answer","n":0,"v":[]}"#, &[])]);
+            let mut args = vec![kind, "get", guid, "--query", query];
+            if kind == "item" {
+                args.extend(["--workspace", guid]);
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 0, "{stdout} {stderr}");
+            assert_eq!(data(&stdout), expected, "{kind} {query}");
+        }
+    }
+    for (query, expected) in [
+        ("id", json!("None")),
+        ("text.value[].id", json!(["answer"])),
+        ("text.value[].{id: id}", json!([{"id":"answer"}])),
+    ] {
+        let host = FakeHost::new(vec![response(
+            200,
+            r#"{"value":[{"id":"answer","hidden":"CANARY"}],"continuationToken":"next"}"#,
+            &[],
+        )]);
+        let (code, stdout, stderr) = run(&["api", "workspaces", "--query", query], &host).await;
+        assert_eq!(code, 0, "{stdout} {stderr}");
+        assert_eq!(data(&stdout), expected, "{query}");
+        assert!(!stdout.contains("CANARY"));
+        assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn resource_projection_does_not_publish_partial_lists_or_bypass_preflight() {
+    for second in [
+        response(403, r#"{"error":"CANARY"}"#, &[]),
+        response(200, r#"{"value":[null]}"#, &[]),
+    ] {
+        let host = FakeHost::new(vec![
+            response(
+                200,
+                r#"{"value":[{"id":"PARTIAL-CANARY"}],"continuationToken":"next"}"#,
+                &[],
+            ),
+            second,
+        ]);
+        let (code, stdout, _) = run(&["workspace", "list", "--query", "id"], &host).await;
+        assert_ne!(code, 0);
+        assert!(!stdout.contains("PARTIAL-CANARY"));
+        assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+    }
+    for query in ["[?", "[?id='CANARY']", "length()", "[::0]"] {
+        let host = FakeHost::new(vec![]);
+        let (code, _, _) = run(&["workspace", "list", "--query", query], &host).await;
+        assert_eq!(code, 1, "{query}");
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
 async fn item_selector_combinations_only_fetch_required_names() {
     let workspace = "00000000-0000-0000-0000-000000000001";
     let item = "00000000-0000-0000-0000-000000000002";

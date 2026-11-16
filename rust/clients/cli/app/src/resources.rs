@@ -36,7 +36,9 @@ pub(crate) fn command(kind: &'static str) -> Command {
         let mut leaf = Command::new(verb)
             .disable_help_flag(true)
             .arg(super::help_arg())
-            .arg(Arg::new("query").long("query"));
+            .arg(Arg::new("query").long("query").help(
+                "JMESPath on resource data; list single-field queries keep one object per row",
+            ));
         if kind == "item" {
             leaf = leaf.arg(
                 Arg::new("workspace")
@@ -279,7 +281,12 @@ pub(crate) async fn execute(
     };
     match prepared.query.as_deref().filter(|query| !query.is_empty()) {
         Some(query) => {
-            fabric_cli_query::search(&data, query).map_err(|_| invalid("Invalid JMESPath query"))
+            let result = if prepared.verb == "list" {
+                fabric_cli_query::search_list(&data, query)
+            } else {
+                fabric_cli_query::search(&data, query)
+            };
+            result.map_err(|_| invalid("Invalid JMESPath query"))
         }
         None => Ok(data),
     }

@@ -1,15 +1,93 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Offline public contracts, with expectations from the Python search wrapper.
+//! Offline query contracts; raw search expectations come from the Python wrapper.
 
 #![forbid(unsafe_code)]
 #![deny(unnameable_test_items)]
 
 use fabric_cli_query::{
-    QueryErrorKind, SearchOptions, project, search, search_with_options, validate,
+    QueryErrorKind, SearchOptions, project, search, search_list, search_with_options, validate,
 };
 use serde_json::{Value, json};
+
+#[test]
+fn list_single_field_shorthand_keeps_rows_keys_and_native_values() {
+    let rows = json!([
+        {"v": false, "hidden": "CANARY"},
+        {"v": 0},
+        {"v": ""},
+        {"v": null},
+        {},
+        {"v": []},
+        {"v": {}},
+        {"v": [1, null]},
+        {"v": {"nested": true}}
+    ]);
+    assert_eq!(
+        search_list(&rows, " v ").unwrap(),
+        json!([
+            {"v": false}, {"v": 0}, {"v": ""}, {"v": null}, {"v": null},
+            {"v": []}, {"v": {}}, {"v": [1, null]}, {"v": {"nested": true}}
+        ])
+    );
+    assert_eq!(search_list(&json!([]), "id").unwrap(), json!([]));
+    for (expression, key) in [
+        (r#""a.b""#, "a.b"),
+        (r#""quote\"key""#, "quote\"key"),
+        (r#""\u00e9""#, "é"),
+        (r#""""#, ""),
+        (
+            r#""$serde_json::private::Number""#,
+            "$serde_json::private::Number",
+        ),
+    ] {
+        let rows = json!([{key: 1, "hidden": "CANARY"}, {}]);
+        assert_eq!(
+            search_list(&rows, expression).unwrap(),
+            json!([{key: 1}, {key: null}]),
+            "{expression}"
+        );
+    }
+}
+
+#[test]
+fn list_shorthand_does_not_reinterpret_existing_expressions_or_raw_search() {
+    let rows = json!([{"id": "b", "n": 2}, {"id": "a", "n": 1}]);
+    for expression in [
+        ".",
+        "@",
+        "",
+        "[].id",
+        "[*].id",
+        "[0].id",
+        "[id]",
+        "id.foo",
+        "[?n > `1`]",
+        "[].{key: id}",
+        "length(@)",
+        "sort_by(@, &n)[].id",
+        "@ | id",
+        "'id'",
+        "`false`",
+    ] {
+        assert_eq!(
+            search_list(&rows, expression).unwrap(),
+            search(&rows, expression).unwrap(),
+            "{expression}"
+        );
+    }
+    assert_eq!(search(&rows, "id").unwrap(), json!("None"));
+    let single = json!({"id": "a", "n": 0});
+    assert_eq!(search_list(&single, "id").unwrap(), json!("a"));
+    assert_eq!(search_list(&single, "n").unwrap(), json!("0"));
+    for expression in ["[?", "length()", "[?id='x']", "[::0]"] {
+        assert_eq!(
+            search_list(&rows, expression).unwrap_err().kind(),
+            search(&rows, expression).unwrap_err().kind()
+        );
+    }
+}
 
 #[test]
 fn scalar_results_preserve_python_strings_including_falsey_values() {
