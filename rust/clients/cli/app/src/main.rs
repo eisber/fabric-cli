@@ -18,6 +18,8 @@ mod interactive;
 #[cfg(feature = "interactive")]
 mod interactive_binding;
 mod local_host;
+#[cfg(feature = "maps")]
+mod maps_main;
 #[cfg(feature = "native-host")]
 mod native_read;
 #[cfg(feature = "repl")]
@@ -60,6 +62,10 @@ type UpdateLifetime = ();
 
 fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     let arguments = std::env::args_os().collect::<Vec<_>>();
+    #[cfg(feature = "maps")]
+    if arguments.get(1).is_some_and(|argument| argument == "maps") {
+        return maps_main::run(arguments.iter().skip(2).cloned()).map(ExitCode::from);
+    }
     #[cfg(feature = "v2-deploy")]
     if arguments
         .get(1)

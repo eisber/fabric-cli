@@ -15,6 +15,7 @@ layer = "identity"
 
 [features]
 default = []
+maps-private = []
 certificate-store = []
 
 [dependencies]

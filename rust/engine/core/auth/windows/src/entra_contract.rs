@@ -24,6 +24,9 @@ pub enum TokenAudience {
     Arm,
     /// Native SQL, acquired only for an explicit SQL token request.
     Sql,
+    /// Private Shared Maps issuer; only explicit experimental processing requests.
+    #[cfg(feature = "maps-private")]
+    PowerBiMaps,
 }
 
 impl TokenAudience {
@@ -34,6 +37,8 @@ impl TokenAudience {
             Self::OneLake => "https://storage.azure.com/.default",
             Self::Arm => "https://management.azure.com/.default",
             Self::Sql => "https://database.windows.net/.default",
+            #[cfg(feature = "maps-private")]
+            Self::PowerBiMaps => "https://analysis.windows.net/powerbi/api/.default",
         }
     }
 }

@@ -35,6 +35,8 @@ pub mod jobs;
 #[cfg(feature = "v2-kql-database-create")]
 pub mod kql_database_create;
 pub mod local_commands;
+#[cfg(feature = "maps")]
+pub mod maps;
 pub mod ml_endpoint;
 pub mod native_tabular;
 pub mod parser;

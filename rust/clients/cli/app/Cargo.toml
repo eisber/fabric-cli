@@ -103,6 +103,7 @@ required-features = ["interactive"]
 
 [features]
 default = []
+maps = ["native-host", "fabric-identity/maps-private"]
 semantic-model = ["dep:fabric-cli-semantic-model"]
 semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
