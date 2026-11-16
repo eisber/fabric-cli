@@ -138,11 +138,16 @@ instances.
 no sleeps, status/result fetches, or background process.
 No `--wait`, `--wait=false`, `--no-wait`, or individual timing flags.
 
-Fabric operation/job client schedule: 2, 7, then 20 seconds repeatedly. Azure/Storage operations
+Default Fabric operation/job schedule: 2 seconds then 7 seconds, ignoring server
+hints for the first two checks. Later waits use the minimum of 20 seconds and
+valid `Retry-After`, or 20 seconds if absent/invalid. This user-approved policy
+can poll earlier than the service asks, with increased throttling risk.
+Azure/Storage operations
 use each response's `Retry-After`, or 10 seconds when absent/invalid, without
-staged backoff. Valid server delta-seconds
-or HTTP-date `Retry-After` is a not-before constraint, never permission to poll
-earlier; invalid values use fallback with safe diagnostics. Delays, credential
+staged backoff. Server delta-seconds and HTTP-date `Retry-After` are supported;
+invalid values use fallback with safe diagnostics. Explicit interval overrides
+and Fabric result retrieval still retain server not-before constraints.
+Delays, credential
 acquisition, retries, status requests, and final-result retrieval all share the
 remaining budget when one is configured. Initial request timeout is separately
 240 seconds; each status/result request and its retries also has a 240-second
@@ -203,10 +208,10 @@ Fabric job-instance Locations of the exact form
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
 are reconciled separately, using their validated Fabric service URL rather than
 `/v1/operations/{id}`. A valid additional operation ID does not change the job
-protocol selected by that Location. Jobs use the same 2-, 7-, then repeated
-20-second client schedule as Fabric operations, respecting `Retry-After`
-(delta-seconds or HTTP date) as a minimum and diagnosing invalid hints safely.
-This shared schedule is a user-approved difference from Python's job polling.
+protocol selected by that Location. Jobs use the same default 2-, 7-, then
+capped-at-20-second policy as Fabric operations, diagnosing invalid hints safely.
+This shared schedule and its Retry-After override are user-approved differences
+from Python's job polling.
 Jobs share the optional overall polling budget,
 GET retry bounds and local cancellation behavior, without remote cancellation.
 Job GETs must return HTTP 200 and a recognized JSON status: `NotStarted` and
@@ -247,30 +252,24 @@ Failed status/result responses expose their service error identifier in
 remains `Service`. Raw service error messages are not emitted.
 
 Entering validated reconciliation emits and flushes
-`Operation accepted (HTTP 202). Polling for completion...` or `Job accepted`
-(using the actual initial HTTP status)
-to stderr before the first polling delay, including any `Retry-After`. This
+`Operation accepted. Polling for completion...` or `Job accepted`
+to stderr before the first polling delay, without an HTTP code. This
 static local notification does not assert a backend status or percentage.
 Each logical status GET emits `Checking operation status...` or
 `Checking job status...` after its required delay, before credentials or HTTP.
-Interactive terminals show a waiting line immediately and refresh it every
-second; redirected stderr emits a heartbeat after 5 seconds without an update,
-repeating every 5 seconds. Waiting text shows elapsed polling time, an actual
-countdown supplied by the engine's selected delay, and any **last reported**
-status/percentage. It never says no status was received merely because the first
-status GET has not returned. Pending status requests show time since that check
-started. Heartbeats distinguish
-a scheduled wait, an unanswered status request, and final-result retrieval.
-They remain active during credentials/retries and never send requests or change
-server not-before constraints. The display interval is fixed, separate from API
-polling configuration. No heartbeat covers the initial request.
-All output is flushed. Real checks/statuses remain permanent lines; transient
-terminal waiting output is cleared before permanent output and all local exits.
+Each scheduled wait prints a fixed line immediately on terminals and redirected
+stderr, using the engine's selected delay, without countdown or elapsed time.
+There is no terminal refresh. After five seconds without a response, a status
+request or final-result retrieval prints one waiting notice with the last
+reported status/percentage, if known. This notice does not repeat during that
+phase; it also covers credentials/retries. Display messages never send requests
+or change timing policy and do not cover the initial request.
+All output is flushed and remains on permanent lines.
 Successful result retrieval/conversion prints a final completion line; `Deduped`
 remains distinct. Native terminal checks use cyan, successful statuses green,
 failures red, cancellations yellow, and waiting text gray.
 Redirected streams and `TERM=dumb` use append-only plain text; `NO_COLOR` disables
-color independently of interactive refresh.
+color.
 Recognized pending and terminal status GETs emit live, flushed stderr progress
 through an injected observer; engine libraries never write to the console.
 `Operation status: Running (50%)` and `Job instance status: InProgress` are
@@ -282,7 +281,7 @@ No body text, error text, headers, URL queries, or arbitrary percentage strings
 are printed as progress. Stdout remains one final JSON envelope. Async/raw,
 initial/result responses, failed HTTP attempts, and unknown/malformed statuses
 emit no service-status observations. A pre-request line is not evidence that a
-response arrived. Heartbeats stop with local completion, failure, cancellation,
+response arrived. Waiting notices stop with local completion, failure, cancellation,
 or timeout; output failure stops local reconciliation with safe recovery, not
 the remote job. Default-enabled status/percentage reporting intentionally
 differs from Python's debug-gated shared polling logs.

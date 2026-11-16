@@ -252,7 +252,7 @@ fn subprocess(scenario: &str) -> Output {
                 );
                 let _ = ready.send(());
             }
-            if line == b"Operation accepted (HTTP 202). Polling for completion...\n" {
+            if line == b"Operation accepted. Polling for completion...\n" {
                 polling_started = true;
             }
             bytes.extend(line);
@@ -298,15 +298,15 @@ fn assert_lifecycle(scenario: &str) {
     assert!(output.stdout.ends_with(b"\n"));
     if scenario == "cancel" {
         assert!(
-            output.stderr == b"Operation accepted (HTTP 202). Polling for completion...\nOFFLINE_SIGNAL_READY\n"
-                || output.stderr == b"Operation accepted (HTTP 202). Polling for completion...\nOFFLINE_SIGNAL_READY\r\n",
+            output.stderr == b"Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nOFFLINE_SIGNAL_READY\n"
+                || output.stderr == b"Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nOFFLINE_SIGNAL_READY\r\n",
             "{:?}",
             output.stderr
         );
     } else {
         let expected: &[u8] = match scenario {
-            "poll" => b"Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n",
-            "failed" => b"Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Failed\n",
+            "poll" => b"Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n",
+            "failed" => b"Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Failed\n",
             _ => b"",
         };
         assert_eq!(output.stderr, expected);

@@ -145,8 +145,11 @@ not implemented, and `RUST_LOG` does not enable these diagnostics.
 
 Recognized Fabric, Azure, and Storage operations and Fabric job instances poll **by default**.
 `--async` returns the actual initial response, without polling or starting background
-work. Fabric LROs and job instances use a 2-, 7-, then 20-second client schedule (20 seconds
-thereafter), never earlier than a valid `Retry-After`;
+work. Fabric LROs and job instances wait 2 seconds before the first check and
+7 seconds before the second, ignoring `Retry-After` for those two waits.
+Subsequent waits use the minimum of 20 seconds and a valid `Retry-After`;
+absent/invalid hints use 20 seconds. This explicitly permits polling earlier
+than the service requests and can increase throttling.
 Azure/Storage operations use each response's `Retry-After`, or 10 seconds when absent or
 invalid, without exponential backoff. There is no overall polling timeout by
 default: a backend that never completes can keep the command waiting indefinitely.
@@ -194,8 +197,8 @@ operation status/result and exact job-instance routes may use additional hosts;
 raw user-supplied endpoints remain fixed-origin. TLS certificate verification,
 credential/fragment, port, and unsafe-path checks remain enabled.
 Origin-relative result Locations retain the operation's validated host.
-`home-cluster-uri` is not a polling target. Job polling honors `Retry-After`,
-including the initial wait before the first status/progress update.
+`home-cluster-uri` is not a polling target. Job polling uses the same default
+timing policy as Fabric operations.
 With a valid `x-ms-operation-id`, a safe non-status `Location` supplies only the
 origin for `/v1/operations/{id}`. Result-header Locations likewise select that
 operation's `/result` route, not an arbitrary advertised resource path.
@@ -205,40 +208,33 @@ Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 
 Once a valid operation/job enters polling, the CLI immediately prints and flushes
-`Operation accepted (HTTP 202). Polling for completion...` (or `Job accepted`,
-with the actual HTTP acknowledgement code) to
-**stderr**, before the first polling delay (including a long `Retry-After`).
+`Operation accepted. Polling for completion...` (or `Job accepted`) to
+**stderr**, before the first polling delay.
 Before each status GET it prints `Checking operation status...` or
-`Checking job status...`. An interactive terminal refreshes one waiting line
-**every second**, starting with the next check's actual countdown.
-Redirected stderr prints a waiting heartbeat after **5 seconds without an
-update**, repeating every 5 seconds until another update. Heartbeats
-include elapsed polling time and the **last reported** service status/percentage, if any;
-they distinguish waiting for the next check from waiting for a status response
-or final result. For example:
+`Checking job status...`. Each scheduled wait prints one fixed line with the
+engine's selected delay, with no countdown, elapsed time, or terminal refresh.
+If a status request or result retrieval takes more than 5 seconds, one additional
+waiting line identifies that phase and the last reported status, if known.
+It does not repeat while that phase remains unchanged. For example:
 
 ```text
-Job accepted (HTTP 202). Polling for completion...
+Job accepted. Polling for completion...
+Waiting for job completion; next status check in 2s...
 Checking job status...
 Job instance status: InProgress
-Waiting for job completion; next status check in 2s; Last reported status: InProgress (7s elapsed)...
+Waiting for job completion; next status check in 7s...
 Checking job status...
 Job instance status: Completed
 Job completed.
 ```
 
 These are local liveness messages, not new service observations or estimated
-progress. They do not send extra requests or shorten `Retry-After`.
-Display refreshes are independent of `poll_interval`. The countdown comes from
-the engine's selected delay, including `Retry-After`, not an assumed interval.
-While a status GET is pending, the display reports how long that check has been
-waiting instead of suggesting that a new service status has arrived.
-Real checks and service statuses remain permanent lines; terminal waiting output
-is cleared before those lines and on completion, failure, timeout, or cancellation.
+progress. They do not send extra requests or change the engine's timing policy.
+All messages are permanent lines in both terminals and redirected output.
 A final completion message follows successful result retrieval/conversion;
 `Deduped` retains its distinct outcome rather than being called completed.
-Updates continue while credentials, a status request, retries, or result retrieval
-are pending. They begin only after the initial response establishes a valid
+The delayed waiting notice also covers credentials and retries.
+Messages begin only after the initial response establishes a valid
 polling handle, not during the initial request or its credential acquisition.
 The CLI stays in the foreground while monitoring a server-side background job.
 
@@ -251,7 +247,7 @@ status-only output. These updates are enabled by default, unlike Python's
 debug-gated shared polling logs. Terminal progress is cyan, completion statuses
 green, failures red, cancellation yellow, and waiting text subdued gray.
 Redirected stderr and `TERM=dumb` use append-only plain text.
-`NO_COLOR` disables colors but keeps in-place refresh on an interactive terminal.
+`NO_COLOR` disables colors.
 Stdout remains a single final JSON response.
 `--async`, ordinary raw responses, and help/version do not emit progress.
 

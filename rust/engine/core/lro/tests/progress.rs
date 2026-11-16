@@ -551,7 +551,7 @@ async fn start_is_once_before_waiting_and_does_not_invent_a_service_status() {
         )
         .await
         .unwrap();
-        assert!(clock.now().duration_since(start) >= Duration::from_secs(600));
+        assert_eq!(clock.now().duration_since(start), Duration::from_secs(9));
         assert_eq!(*observer.1.lock().unwrap(), [kind]);
         assert_eq!(observer.0.lock().unwrap().len(), 2);
         assert_eq!(*observer.2.lock().unwrap(), 2);
@@ -640,7 +640,7 @@ async fn schedule_reports_server_and_configured_delays_without_adding_callback_t
             202,
             vec![("location", JOB), ("retry-after", "25")],
             None,
-            vec![25, 7],
+            vec![2, 7],
         ),
         (
             OperationKind::Fabric,

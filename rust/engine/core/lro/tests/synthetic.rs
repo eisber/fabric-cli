@@ -214,6 +214,50 @@ async fn fabric_operations_and_jobs_share_the_default_schedule_and_twenty_second
 }
 
 #[tokio::test]
+async fn fabric_checks_start_at_two_and_seven_then_cap_server_hints_at_twenty() {
+    for (location, pending, terminal) in [
+        ("/v1/operations/op-1", "Running", "Succeeded"),
+        (
+            "/v1/workspaces/workspace/items/item/jobs/instances/job",
+            "InProgress",
+            "Completed",
+        ),
+    ] {
+        let body = format!(r#"{{"status":"{pending}"}}"#);
+        let http = Script::new(vec![
+            response(200, &body, &[("retry-after", "60")]),
+            response(200, &body, &[("retry-after", "60")]),
+            response(200, &body, &[("retry-after", "3")]),
+            response(200, &body, &[]),
+            response(200, &body, &[("retry-after", "invalid")]),
+            response(200, &body, &[("retry-after", "0")]),
+            response(
+                200,
+                &body,
+                &[("retry-after", "Thu, 01 Jan 1970 00:01:17 GMT")],
+            ),
+            response(200, &format!(r#"{{"status":"{terminal}"}}"#), &[]),
+        ]);
+        let clock = FakeClock::new();
+        complete(
+            &http,
+            &clock,
+            Audience::Fabric,
+            response(202, "", &[("location", location), ("retry-after", "20")]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            *clock.sleeps.lock().unwrap(),
+            [2, 7, 20, 3, 20, 20, 0, 5].map(Duration::from_secs)
+        );
+        assert_eq!(clock.warnings.lock().unwrap().len(), 1);
+        assert_eq!(http.calls.lock().unwrap().len(), 8);
+    }
+}
+
+#[tokio::test]
 async fn configured_intervals_do_not_shorten_server_hints_for_any_protocol() {
     for audience in [Audience::Fabric, Audience::Azure, Audience::Storage] {
         for job in [false, true] {
@@ -380,7 +424,7 @@ async fn configured_timeout_spans_polls_and_skips_get_at_deadline() {
 #[tokio::test]
 async fn unrepresentable_server_delay_fails_safely_without_polling_or_timer_overflow() {
     let http = Script::new(vec![]);
-    let error = complete(
+    let error = complete_with_config(
         &http,
         &FakeClock::new(),
         Audience::Fabric,
@@ -393,6 +437,7 @@ async fn unrepresentable_server_delay_fails_safely_without_polling_or_timer_over
             ],
         ),
         CancellationToken::new(),
+        LroConfig::new(Some(Duration::from_secs(2)), None).unwrap(),
     )
     .await
     .unwrap_err();
@@ -401,18 +446,19 @@ async fn unrepresentable_server_delay_fails_safely_without_polling_or_timer_over
     assert!(http.calls.lock().unwrap().is_empty());
 }
 #[tokio::test]
-async fn retry_after_delta_date_invalid_and_budget_are_not_before() {
+async fn configured_retry_after_delta_date_invalid_and_budget_are_not_before() {
     for value in ["7", "Thu, 01 Jan 1970 00:00:07 GMT"] {
         let clock = FakeClock::new();
         let http = Script::new(vec![success()]);
         let mut initial = accepted();
         initial.headers.insert("Retry-After".into(), value.into());
-        complete(
+        complete_with_config(
             &http,
             &clock,
             Audience::Fabric,
             initial,
             CancellationToken::new(),
+            LroConfig::new(Some(Duration::from_secs(2)), None).unwrap(),
         )
         .await
         .unwrap();
@@ -445,7 +491,7 @@ async fn retry_after_delta_date_invalid_and_budget_are_not_before() {
         Audience::Fabric,
         initial,
         CancellationToken::new(),
-        LroConfig::new(None, Some(Duration::from_secs(600))).unwrap(),
+        LroConfig::new(Some(Duration::from_secs(2)), Some(Duration::from_secs(600))).unwrap(),
     )
     .await
     .unwrap_err();
@@ -954,7 +1000,7 @@ async fn raw_and_job_responses_do_not_invent_protocols() {
     }
 }
 #[tokio::test]
-async fn job_polling_uses_fabric_schedule_with_server_not_before_constraints() {
+async fn job_polling_uses_fabric_schedule_with_capped_server_hints() {
     let location = "/v1/workspaces/workspace/items/item/jobs/instances/job?token=CANARY";
     let initial = response(202, "", &[("location", location), ("retry-after", "7")]);
     let terminal = response(
@@ -990,7 +1036,7 @@ async fn job_polling_uses_fabric_schedule_with_server_not_before_constraints() {
     assert_eq!(result.headers, terminal.headers);
     assert_eq!(
         *clock.sleeps.lock().unwrap(),
-        [7, 7, 20, 20].map(Duration::from_secs)
+        [2, 7, 20, 20].map(Duration::from_secs)
     );
     assert_eq!(
         *clock.warnings.lock().unwrap(),
@@ -1014,8 +1060,8 @@ async fn job_initial_delay_and_terminal_statuses_follow_job_protocol() {
     let location = "/v1/workspaces/workspace/items/item/jobs/instances/job";
     for (hint, seconds) in [
         (None, 2),
-        (Some("60"), 60),
-        (Some("Thu, 01 Jan 1970 00:00:07 GMT"), 7),
+        (Some("60"), 2),
+        (Some("Thu, 01 Jan 1970 00:00:07 GMT"), 2),
         (Some("invalid"), 2),
         (Some("0"), 2),
     ] {
@@ -1099,7 +1145,7 @@ async fn job_budget_and_local_cancellation_preserve_query_redacted_recovery() {
             Audience::Fabric,
             response(202, "", &[("location", location), ("retry-after", "601")]),
             cancellation,
-            LroConfig::new(None, Some(Duration::from_secs(600))).unwrap(),
+            LroConfig::new(Some(Duration::from_secs(2)), Some(Duration::from_secs(600))).unwrap(),
         )
         .await
         .unwrap_err();

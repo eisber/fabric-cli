@@ -42,7 +42,6 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
-const TERMINAL_REFRESH: Duration = Duration::from_secs(1);
 
 struct ProgressEvent {
     progress: ConsoleUpdate,
@@ -55,8 +54,8 @@ enum ConsoleUpdate {
 }
 
 enum ProgressUpdate {
-    Accepted(OperationKind, u16),
-    Waiting(Duration, tokio::time::Instant),
+    Accepted(OperationKind),
+    Waiting(Duration),
     Polling(OperationKind),
     Status(PollProgress),
     Finished,
@@ -227,13 +226,12 @@ impl DiagnosticObserver for ConsoleProgress {
 
 #[async_trait]
 impl PollObserver for ConsoleProgress {
-    async fn accepted(&self, kind: OperationKind, status: u16) -> Result<(), CoreError> {
-        self.send(ProgressUpdate::Accepted(kind, status)).await
+    async fn accepted(&self, kind: OperationKind, _: u16) -> Result<(), CoreError> {
+        self.send(ProgressUpdate::Accepted(kind)).await
     }
 
     async fn waiting(&self, _: OperationKind, delay: Duration) -> Result<(), CoreError> {
-        self.send(ProgressUpdate::Waiting(delay, tokio::time::Instant::now()))
-            .await
+        self.send(ProgressUpdate::Waiting(delay)).await
     }
 
     async fn polling(&self, kind: OperationKind) -> Result<(), CoreError> {
@@ -264,9 +262,14 @@ fn progress_line(
     } else {
         writeln!(stderr, "{message}")
     };
-    result
+    let result = result
         .and_then(|()| stderr.flush())
-        .map_err(|_| progress_error())
+        .map_err(|_| progress_error());
+    if result.is_err() && color {
+        // A partial colored write must not leave the user's terminal styled.
+        let _ = write!(stderr, "\x1b[0m").and_then(|()| stderr.flush());
+    }
+    result
 }
 
 fn progress_label(kind: OperationKind) -> &'static str {
@@ -287,67 +290,55 @@ fn status_text(progress: PollProgress) -> String {
 
 #[derive(Default)]
 struct ProgressDisplay {
-    started: Option<(OperationKind, tokio::time::Instant)>,
+    started: Option<OperationKind>,
     latest: Option<PollProgress>,
-    requesting: Option<tokio::time::Instant>,
-    scheduled: Option<(Duration, tokio::time::Instant)>,
-    transient: bool,
-    transient_color: bool,
+    requesting: bool,
+    waiting_reported: bool,
 }
 
 impl ProgressDisplay {
-    fn clear(&mut self, stderr: &mut dyn Write) -> Result<(), CoreError> {
-        if self.transient {
-            let reset = if self.transient_color { "\x1b[0m" } else { "" };
-            write!(stderr, "{reset}\r\x1b[2K\x1b[?7h")
-                .and_then(|()| stderr.flush())
-                .map_err(|_| progress_error())?;
-            self.transient = false;
-        }
-        Ok(())
-    }
-
     fn update(
         &mut self,
         update: ProgressUpdate,
         color: bool,
-        terminal: bool,
         stderr: &mut dyn Write,
     ) -> Result<(), CoreError> {
         if matches!(update, ProgressUpdate::Finished) {
             return self.finish(color, stderr);
         }
-        if let ProgressUpdate::Waiting(delay, since) = update {
-            self.scheduled = Some((delay, since));
-            self.requesting = None;
-            return if terminal {
-                self.heartbeat(color, terminal, stderr)
-            } else {
-                Ok(())
-            };
+        if let ProgressUpdate::Waiting(delay) = update {
+            self.requesting = false;
+            self.waiting_reported = true;
+            let label = progress_label(self.started.ok_or_else(progress_error)?);
+            return progress_line(
+                &format!(
+                    "Waiting for {label} completion; next status check in {}s...",
+                    delay.as_secs_f64()
+                ),
+                color,
+                "90",
+                stderr,
+            );
         }
-        self.clear(stderr)?;
         let (message, tone) = match update {
-            ProgressUpdate::Accepted(kind, status) => {
-                self.started = Some((kind, tokio::time::Instant::now()));
+            ProgressUpdate::Accepted(kind) => {
+                self.started = Some(kind);
                 let label = if kind == OperationKind::FabricJob {
                     "Job"
                 } else {
                     "Operation"
                 };
-                (
-                    format!("{label} accepted (HTTP {status}). Polling for completion..."),
-                    "36",
-                )
+                (format!("{label} accepted. Polling for completion..."), "36")
             }
             ProgressUpdate::Polling(kind) => {
-                self.requesting = Some(tokio::time::Instant::now());
-                self.scheduled = None;
+                self.requesting = true;
+                self.waiting_reported = false;
                 (format!("Checking {} status...", progress_label(kind)), "36")
             }
             ProgressUpdate::Status(progress) => {
                 self.latest = Some(progress);
-                self.requesting = None;
+                self.requesting = false;
+                self.waiting_reported = false;
                 let label = if progress.is_job() {
                     "Job instance status"
                 } else {
@@ -369,59 +360,30 @@ impl ProgressDisplay {
         progress_line(&message, color, tone, stderr)
     }
 
-    fn heartbeat(
-        &mut self,
-        color: bool,
-        terminal: bool,
-        stderr: &mut dyn Write,
-    ) -> Result<(), CoreError> {
-        let (kind, started) = self.started.ok_or_else(progress_error)?;
+    fn heartbeat(&mut self, color: bool, stderr: &mut dyn Write) -> Result<(), CoreError> {
+        if self.waiting_reported {
+            return Ok(());
+        }
+        let kind = self.started.ok_or_else(progress_error)?;
         let label = progress_label(kind);
         let waiting = if self.latest.is_some_and(|progress| {
             matches!(progress.status(), "Succeeded" | "Completed" | "Deduped")
         }) {
             format!("Waiting for {label} result")
-        } else if let Some(since) = self.requesting {
-            format!(
-                "Waiting for {label} status response; {}s since this check started",
-                since.elapsed().as_secs()
-            )
-        } else if let Some((delay, since)) = self.scheduled {
-            let remaining = delay.saturating_sub(since.elapsed());
-            let seconds = remaining
-                .as_secs()
-                .saturating_add(u64::from(remaining.subsec_nanos() > 0));
-            format!("Waiting for {label} completion; next status check in {seconds}s")
+        } else if self.requesting {
+            format!("Waiting for {label} status response")
         } else {
             format!("Waiting for {label} completion")
         };
         let last = self.latest.map_or_else(String::new, |progress| {
             format!("; Last reported status: {}", status_text(progress))
         });
-        let message = format!(
-            "{waiting}{last} ({}s elapsed)...",
-            started.elapsed().as_secs()
-        );
-        if terminal {
-            self.transient = true;
-            self.transient_color = color;
-            // Clip narrow-terminal output instead of wrapping/scrolling past the live line.
-            let result = if color {
-                write!(stderr, "\r\x1b[2K\x1b[?7l\x1b[90m{message}\x1b[0m\x1b[?7h")
-            } else {
-                write!(stderr, "\r\x1b[2K\x1b[?7l{message}\x1b[?7h")
-            };
-            result
-                .and_then(|()| stderr.flush())
-                .map_err(|_| progress_error())
-        } else {
-            progress_line(&message, color, "90", stderr)
-        }
+        self.waiting_reported = true;
+        progress_line(&format!("{waiting}{last}..."), color, "90", stderr)
     }
 
     fn finish(&mut self, color: bool, stderr: &mut dyn Write) -> Result<(), CoreError> {
-        self.clear(stderr)?;
-        if let Some((kind, _)) = self.started {
+        if let Some(kind) = self.started {
             let label = if kind == OperationKind::FabricJob {
                 "Job"
             } else {
@@ -463,7 +425,7 @@ pub trait Host: Send + Sync {
     fn progress_color(&self) -> bool {
         false
     }
-    /// Whether stderr supports in-place terminal progress, independently of color.
+    /// Whether stderr is an interactive terminal, independently of color.
     fn progress_terminal(&self) -> bool {
         false
     }
@@ -757,11 +719,7 @@ pub async fn run(
                 .await?;
             execute(&matches, host, cancellation, &observer).await
         };
-        let interval = if host.progress_terminal() {
-            TERMINAL_REFRESH
-        } else {
-            PROGRESS_INTERVAL
-        };
+        let interval = PROGRESS_INTERVAL;
         let heartbeat = tokio::time::sleep(interval);
         let mut display = ProgressDisplay::default();
         tokio::pin!(execution);
@@ -770,37 +728,18 @@ pub async fn run(
             tokio::select! {
                 biased;
                 result = &mut execution => {
-                    if !observer.broken.load(Ordering::Relaxed)
-                        && let Err(error) = display.clear(stderr)
-                    {
-                        if observer.timing.is_some() {
-                            observer.broken.store(true, Ordering::Relaxed);
-                            let mut failure = observer.reporting_error();
-                            if failure.recovery.is_none()
-                                && let Err(original) = result
-                            {
-                                failure.recovery = original.recovery;
-                            }
-                            break Err(failure);
-                        }
-                        let mut failure = result.err().unwrap_or_else(|| error.into());
-                        failure.message.push_str("; cannot clear polling progress output");
-                        break Err(failure);
-                    }
                     break result;
                 }
                 Some(event) = events.recv() => {
                     let result = match event.progress {
                         ConsoleUpdate::Progress(update) => {
-                            let result = display.update(update, host.progress_color(), host.progress_terminal(), stderr);
+                            let result = display.update(update, host.progress_color(), stderr);
                             heartbeat.as_mut().reset(tokio::time::Instant::now() + interval);
                             result
                         }
                         ConsoleUpdate::Diagnostic(event, elapsed) => {
                             observer.remember(&event, false);
-                            let result = display.clear(stderr)
-                                .map_err(|_| diagnostics::error())
-                                .and_then(|()| diagnostics::write(&event, elapsed, host.progress_color(), stderr));
+                            let result = diagnostics::write(&event, elapsed, host.progress_color(), stderr);
                             if result.is_ok() {
                                 observer.remember(&event, true);
                             }
@@ -813,8 +752,8 @@ pub async fn run(
                     // Cancellation can drop the observer while its event is queued.
                     let _ = event.written.send(result);
                 }
-                () = &mut heartbeat, if display.started.is_some() && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
-                    if display.heartbeat(host.progress_color(), host.progress_terminal(), stderr).is_err() {
+                () = &mut heartbeat, if display.started.is_some() && !display.waiting_reported && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
+                    if display.heartbeat(host.progress_color(), stderr).is_err() {
                         if observer.timing.is_some() {
                             observer.broken.store(true, Ordering::Relaxed);
                         }

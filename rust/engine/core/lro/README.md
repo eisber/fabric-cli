@@ -6,11 +6,15 @@
 has no mutation request to replay. All status/result requests are bodyless GETs
 without caller headers; authentication is supplied by the injected executor.
 
-Fabric operation/job fallback delays are 2, 7, then 20 seconds repeatedly. Azure/Storage default
+Default Fabric operation/job waits are 2 seconds then 7 seconds, regardless of
+server hints. Subsequent waits use `min(20 seconds, Retry-After)`, with 20 seconds
+when the hint is absent/invalid. This user-approved policy can poll earlier than
+the service requests and increase throttling. Azure/Storage default
 to each response's `Retry-After`, or 10 seconds when absent/invalid.
-There is no attempt limit. Valid `Retry-After` seconds or HTTP dates are
-not-before constraints. Invalid values invoke the caller's safe diagnostic
-hook and fall back to the client schedule. A successful Fabric status's `Retry-After`
+There is no attempt limit. `Retry-After` supports seconds or HTTP dates.
+Invalid values invoke the caller's safe diagnostic hook and fall back to the
+client schedule. Explicit interval overrides still treat valid server hints
+as not-before constraints. A successful Fabric status's `Retry-After`
 also delays its result GET (invalid terminal hints fall back to two seconds).
 A hint at or beyond a configured remaining deadline times out without that GET.
 Sleep, credentials, HTTP retries, and final
@@ -45,8 +49,8 @@ failure remains `Service`.
 Fabric job-instance Locations use a separate JSON status protocol. Only exact
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
 routes are recognized, after the same URL safety checks. Job polling uses the
-same 2-, 7-, then repeated 20-second schedule as Fabric operations, never earlier
-than a valid `Retry-After` (invalid hints emit a safe diagnostic).
+same 2-, 7-, then capped-at-20-second schedule as Fabric operations
+(invalid hints emit a safe diagnostic).
 It shares the optional overall budget and safe GET
 executor. `NotStarted`/`InProgress` remain pending; `Completed`/`Deduped` return
 the actual terminal job response. `Failed`/`Cancelled`, unexpected HTTP statuses,
@@ -60,7 +64,7 @@ and actual initial HTTP status once before the first wait. By default it forward
 to the existing default no-op `started` callback, preserving existing observers.
 This acknowledgement is not an observed backend execution state.
 The default no-op `waiting` callback exposes the selected status-check delay,
-including server not-before constraints, before sleeping. Time spent in that
+after applying the protocol's timing policy, before sleeping. Time spent in that
 callback counts toward the delay rather than adding an extra wait.
 Raw responses and invalid handles
 do not notify; cancellation before reconciliation suppresses the callback.
@@ -74,9 +78,10 @@ failed HTTP attempts and unknown/malformed statuses do not generate observations
 All callbacks share cancellation and the overall deadline; callback errors retain
 known recovery and stop local polling. No console I/O or runtime discovery occurs
 in the engine. Existing `complete`/`complete_with_config` callers remain unobserved.
-The CLI owns its independent one-second terminal refresh, five-second
-append-only waiting heartbeat, and terminal coloring;
-neither timer nor presentation policy is part of the engine.
+The CLI prints a fixed selected-delay line once per scheduled wait and a single
+notice after five seconds of an unanswered request or pending result retrieval.
+It does not refresh or print elapsed time. Presentation and terminal coloring
+are not part of the engine.
 
 Status and result-error JSON use the shared bounded `fabric-core-json` decoder.
 Reserved serde marker names remain ordinary object keys, including in unrelated

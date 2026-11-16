@@ -1700,7 +1700,7 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
                 if asynchronous {
                     ""
                 } else {
-                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+                    "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1718,7 +1718,7 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
 }
 
 #[tokio::test]
-async fn arm_creation_reports_the_actual_http_acknowledgement() {
+async fn arm_creation_reports_acceptance_without_the_http_code() {
     let host = FakeHost::new(vec![
         response(201, "{}", &[("azure-asyncoperation", "/status")]),
         response(200, r#"{"status":"Succeeded"}"#, &[]),
@@ -1731,7 +1731,7 @@ async fn arm_creation_reports_the_actual_http_acknowledgement() {
     assert_eq!(code, 0, "{stdout}");
     assert_eq!(
         stderr,
-        "Operation accepted (HTTP 201). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+        "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 10s...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
     );
     assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
 }
@@ -1768,7 +1768,7 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
                 if asynchronous {
                     ""
                 } else {
-                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: InProgress\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
+                    "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 2s...\nChecking job status...\nJob instance status: InProgress\nWaiting for job completion; next status check in 7s...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1835,12 +1835,13 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
             stderr,
             match terminal {
                 r#"{"status":"Failed","failureReason":{"message":"BODY-CANARY"}}"# => {
-                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Failed\n"
+                    "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 2s...\nChecking job status...\nJob instance status: Failed\n"
                 }
                 r#"{"status":"Cancelled"}"# => {
-                    "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Cancelled\n"
+                    "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 2s...\nChecking job status...\nJob instance status: Cancelled\n"
                 }
-                _ => "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\n",
+                _ =>
+                    "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 2s...\nChecking job status...\n",
             }
         );
         assert!(!stdout.contains("CANARY"));
@@ -1894,7 +1895,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
     assert_eq!(code, 0, "{stdout}");
     assert_eq!(
         stderr,
-        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
+        "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 2s...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
     );
     assert_eq!(data(&stdout), json!([]));
     assert!(!stdout.contains("CANARY"));
@@ -1976,7 +1977,7 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
                 if asynchronous {
                     ""
                 } else {
-                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\n"
+                    "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -2884,7 +2885,7 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
             if scenario == "async" {
                 ""
             } else {
-                "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+                "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
             }
         );
         let data = data(result["stdout"].as_str().unwrap());
@@ -3078,9 +3079,9 @@ mod polling_configuration {
                 assert_eq!(
                     stderr,
                     if job {
-                        "Job accepted (HTTP 202). Polling for completion...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
+                        "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 0.5s...\nChecking job status...\nJob instance status: Completed\nJob completed.\n"
                     } else {
-                        "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+                        "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 0.5s...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
                     }
                 );
                 assert_eq!(
@@ -3137,7 +3138,7 @@ mod polling_configuration {
     }
 
     #[tokio::test]
-    async fn timeout_stops_local_wait_and_omitted_timeout_has_no_ten_minute_cap() {
+    async fn timeout_stops_local_wait_and_default_fabric_delay_ignores_initial_hint() {
         for (config, timed) in [
             (r#"{"timeout":0.5}"#, true),
             (r#"{"timeout":701}"#, false),
@@ -3169,9 +3170,9 @@ mod polling_configuration {
             assert_eq!(
                 stderr,
                 if timed {
-                    "Operation accepted (HTTP 202). Polling for completion...\n"
+                    "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\n"
                 } else {
-                    "Operation accepted (HTTP 202). Polling for completion...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
+                    "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\nOperation completed.\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -3187,7 +3188,7 @@ mod polling_configuration {
             } else {
                 assert_eq!(
                     host.clock.now().duration_since(start),
-                    Duration::from_secs(700)
+                    Duration::from_secs(2)
                 );
             }
         }

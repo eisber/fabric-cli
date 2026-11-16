@@ -21,7 +21,7 @@ use std::{
 };
 use url::Url;
 
-/// First Fabric operation/job polling delay; subsequent fallbacks are seven then twenty seconds.
+/// First Fabric operation/job delay; next is seven, then server hints capped at twenty seconds.
 pub const INITIAL_DELAY: Duration = Duration::from_secs(2);
 /// Azure/Storage fallback interval; the legacy public name is retained for compatibility.
 pub const JOB_POLLING_INTERVAL: Duration = Duration::from_secs(10);
@@ -312,8 +312,7 @@ async fn reconcile(
     let mut warned_percentage = false;
     loop {
         context.remaining_at(clock.now())?;
-        // The parser exposes safe diagnostics to callers; invalid server hints fall back
-        // to the fixed client policy and never reveal header contents.
+        // Invalid hints fall back to the client policy without revealing header contents.
         let job = matches!(handle.kind(), Strategy::FabricJob);
         let server_interval = matches!(handle.kind(), Strategy::ArmLocation | Strategy::ArmStatus);
         let fallback = config.poll_interval.unwrap_or(if server_interval {
@@ -341,6 +340,8 @@ async fn reconcile(
             }
         };
         let wait = match (config.poll_interval, server_interval, server) {
+            (None, false, _) if delay < Duration::from_secs(20) => delay,
+            (None, false, Some(server)) => delay.min(server),
             (None, true, Some(server)) => server,
             _ => fallback.max(server.unwrap_or_default()),
         };
@@ -591,7 +592,8 @@ async fn reconcile(
 /// Reconcile the actual initial response without ever replaying the initial request.
 ///
 /// Raw non-LRO responses are returned unchanged. Fabric operations and jobs use
-/// two-, seven-, then twenty-second delays, respecting Retry-After. Azure/Storage use
+/// two- then seven-second delays, followed by Retry-After capped at twenty seconds
+/// (twenty seconds if absent/invalid). Azure/Storage use
 /// Retry-After or ten seconds; jobs return terminal job JSON.
 /// Fabric terminal status is returned when no result is advertised.
 /// Azure/Storage completion preserves initial body/headers and

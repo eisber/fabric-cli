@@ -80,8 +80,10 @@ response once, and starts no background work. Poll/result GETs do not carry the
 original mutation body or custom request headers.
 
 Recognized Fabric/Azure/Storage LROs and Fabric job instances poll; Power BI remains
-raw. Fabric operation/job fallback intervals are 2, 7, then 20 seconds repeatedly,
-respecting server not-before hints. Azure/Storage use each response's `Retry-After`
+raw. Fabric operation/job defaults are 2 seconds then 7 seconds regardless of
+server hints, followed by `min(20 seconds, Retry-After)` (20 seconds if the hint
+is absent/invalid). This can poll earlier than the service requests.
+Azure/Storage use each response's `Retry-After`
 or a 10-second fallback, without the staged schedule.
 Storage uses Azure's 201/202 `Azure-AsyncOperation`/`Location` protocols while
 retaining its fixed OneLake origin and Storage token scope. Responses without a
@@ -103,6 +105,8 @@ return-immediately default. Ctrl+C cancels local work, not the service-side oper
 Each recognized status GET prints and flushes a readable status line to stderr
 while the command runs, including terminal states:
 `Job instance status: InProgress` or `Operation status: Succeeded`.
+Acceptance omits the HTTP code. Each scheduled wait prints its fixed delay once,
+without elapsed time, a countdown, or refreshing terminal output.
 Stdout remains one final machine-readable JSON envelope. Lines contain only
 canonical recognized statuses, not URLs, queries, headers, arbitrary body fields,
 backend errors, or percentages. Unknown/malformed statuses fail without echoing
