@@ -157,28 +157,39 @@ Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 
 Once a valid operation/job enters polling, the CLI immediately prints and flushes
-`Monitoring operation execution...` or `Monitoring job execution...` to
+`Operation accepted (HTTP 202). Polling for completion...` (or `Job accepted`,
+with the actual HTTP acknowledgement code) to
 **stderr**, before the first polling delay (including a long `Retry-After`).
 Before each status GET it prints `Checking operation status...` or
-`Checking job status...`. After **10 seconds without a progress line**, it prints
-a waiting heartbeat, repeating every 10 seconds until another update. Heartbeats
-include elapsed polling time and the last service status/percentage, if any;
+`Checking job status...`. An interactive terminal refreshes one waiting line
+**every second**, starting with the next check's actual countdown.
+Redirected stderr prints a waiting heartbeat after **5 seconds without an
+update**, repeating every 5 seconds until another update. Heartbeats
+include elapsed polling time and the **last reported** service status/percentage, if any;
 they distinguish waiting for the next check from waiting for a status response
 or final result. For example:
 
 ```text
-Monitoring job execution...
-Waiting for next job status check; no status received yet (10s elapsed)...
+Job accepted (HTTP 202). Polling for completion...
+Waiting for job completion; next status check in 5s (5s elapsed)...
 Checking job status...
 Job instance status: InProgress
-Waiting for next job status check; last status: InProgress (30s elapsed)...
+Waiting for job completion; next status check in 5s; Last reported status: InProgress (15s elapsed)...
 Checking job status...
 Job instance status: Completed
+Job completed.
 ```
 
 These are local liveness messages, not new service observations or estimated
 progress. They do not send extra requests or shorten `Retry-After`.
-The 10-second display interval is fixed and independent of `poll_interval`.
+Display refreshes are independent of `poll_interval`. The countdown comes from
+the engine's selected delay, including `Retry-After`, not an assumed interval.
+While a status GET is pending, the display reports how long that check has been
+waiting instead of suggesting that a new service status has arrived.
+Real checks and service statuses remain permanent lines; terminal waiting output
+is cleared before those lines and on completion, failure, timeout, or cancellation.
+A final completion message follows successful result retrieval/conversion;
+`Deduped` retains its distinct outcome rather than being called completed.
 Updates continue while credentials, a status request, retries, or result retrieval
 are pending. They begin only after the initial response establishes a valid
 polling handle, not during the initial request or its credential acquisition.
@@ -191,8 +202,10 @@ Every recognized pending or terminal polling status is printed and flushed to
 percentage metadata is omitted with a safe warning; missing/null values leave
 status-only output. These updates are enabled by default, unlike Python's
 debug-gated shared polling logs. Terminal progress is cyan, completion statuses
-green, failures red, and cancellation yellow. Redirected stderr, `TERM=dumb`, and
-environments with `NO_COLOR` set use plain text. Stdout remains a single final JSON response.
+green, failures red, cancellation yellow, and waiting text subdued gray.
+Redirected stderr and `TERM=dumb` use append-only plain text.
+`NO_COLOR` disables colors but keeps in-place refresh on an interactive terminal.
+Stdout remains a single final JSON response.
 `--async`, ordinary raw responses, and help/version do not emit progress.
 
 When running a shell alias such as `fabrs`, use `type -a fabrs` to check which

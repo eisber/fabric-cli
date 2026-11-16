@@ -50,9 +50,14 @@ No job result URL is fetched, no mutation is replayed, and local timeout or
 cancellation never cancels the remote job. Unsupported job routes remain raw.
 
 `complete_observed` accepts a caller-owned `PollObserver` in addition to timing
-configuration. Its default no-op `started` callback receives the validated
-operation kind once before the first wait. This notification describes local
-reconciliation, not an observed service status. Raw responses and invalid handles
+configuration. Its `accepted` callback receives the validated operation kind
+and actual initial HTTP status once before the first wait. By default it forwards
+to the existing default no-op `started` callback, preserving existing observers.
+This acknowledgement is not an observed backend execution state.
+The default no-op `waiting` callback exposes the selected status-check delay,
+including server not-before constraints, before sleeping. Time spent in that
+callback counts toward the delay rather than adding an extra wait.
+Raw responses and invalid handles
 do not notify; cancellation before reconciliation suppresses the callback.
 Its default no-op `polling` callback runs after each required delay, before
 credentials or HTTP for that logical status GET. It does not fire separately
@@ -64,7 +69,8 @@ failed HTTP attempts and unknown/malformed statuses do not generate observations
 All callbacks share cancellation and the overall deadline; callback errors retain
 known recovery and stop local polling. No console I/O or runtime discovery occurs
 in the engine. Existing `complete`/`complete_with_config` callers remain unobserved.
-The CLI owns its independent 10-second waiting heartbeat and terminal coloring;
+The CLI owns its independent one-second terminal refresh, five-second
+append-only waiting heartbeat, and terminal coloring;
 neither timer nor presentation policy is part of the engine.
 
 Status and result-error JSON use the shared bounded `fabric-core-json` decoder.

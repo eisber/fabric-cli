@@ -56,6 +56,18 @@ pub trait PollObserver: Send + Sync {
         Ok(())
     }
 
+    /// Observe the initial HTTP acknowledgement, not a backend execution state.
+    /// Defaults to the existing start callback for compatibility.
+    async fn accepted(&self, kind: Strategy, _http_status: u16) -> Result<(), CoreError> {
+        self.started(kind).await
+    }
+
+    /// Observe the selected next status-check delay, including server hints.
+    /// Callback time counts toward the delay and the reconciliation deadline.
+    async fn waiting(&self, _kind: Strategy, _delay: Duration) -> Result<(), CoreError> {
+        Ok(())
+    }
+
     /// Observe a status check after its required wait, before credentials or HTTP.
     ///
     /// Called once per logical status GET, not for individual transport retries.
@@ -243,7 +255,12 @@ async fn reconcile(
     settings: (LroConfig, &dyn PollObserver),
 ) -> Result<ApiResponse, CoreError> {
     let (config, observer) = settings;
-    bounded_with_clock(clock, context, observer.started(handle.kind())).await??;
+    bounded_with_clock(
+        clock,
+        context,
+        observer.accepted(handle.kind(), initial.status),
+    )
+    .await??;
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
     let mut warned_percentage = false;
@@ -278,7 +295,10 @@ async fn reconcile(
             (None, true, Some(server)) => server,
             _ => fallback.max(server.unwrap_or_default()),
         };
-        sleep_with_budget(clock, wait, context).await?;
+        let before = clock.now();
+        bounded_with_clock(clock, context, observer.waiting(handle.kind(), wait)).await??;
+        let remaining_wait = wait.saturating_sub(clock.now().duration_since(before));
+        sleep_with_budget(clock, remaining_wait, context).await?;
         bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {

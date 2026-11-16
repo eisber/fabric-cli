@@ -226,21 +226,30 @@ Failed status/result responses expose their service error identifier in
 remains `Service`. Raw service error messages are not emitted.
 
 Entering validated reconciliation emits and flushes
-`Monitoring operation execution...` or `Monitoring job execution...`
+`Operation accepted (HTTP 202). Polling for completion...` or `Job accepted`
+(using the actual initial HTTP status)
 to stderr before the first polling delay, including any `Retry-After`. This
 static local notification does not assert a backend status or percentage.
 Each logical status GET emits `Checking operation status...` or
 `Checking job status...` after its required delay, before credentials or HTTP.
-The CLI emits a heartbeat after 10 seconds without a progress line, repeating
-every 10 seconds. It shows elapsed polling time and the last observed status
-and percentage, or explicitly says no status has arrived. Heartbeats distinguish
+Interactive terminals show a waiting line immediately and refresh it every
+second; redirected stderr emits a heartbeat after 5 seconds without an update,
+repeating every 5 seconds. Waiting text shows elapsed polling time, an actual
+countdown supplied by the engine's selected delay, and any **last reported**
+status/percentage. It never says no status was received merely because the first
+status GET has not returned. Pending status requests show time since that check
+started. Heartbeats distinguish
 a scheduled wait, an unanswered status request, and final-result retrieval.
 They remain active during credentials/retries and never send requests or change
 server not-before constraints. The display interval is fixed, separate from API
 polling configuration. No heartbeat covers the initial request.
-All lines are flushed. Native terminal progress uses cyan, successful statuses
-green, failures red, and cancellations yellow; redirected streams, `TERM=dumb`,
-and `NO_COLOR` use plain text.
+All output is flushed. Real checks/statuses remain permanent lines; transient
+terminal waiting output is cleared before permanent output and all local exits.
+Successful result retrieval/conversion prints a final completion line; `Deduped`
+remains distinct. Native terminal checks use cyan, successful statuses green,
+failures red, cancellations yellow, and waiting text gray.
+Redirected streams and `TERM=dumb` use append-only plain text; `NO_COLOR` disables
+color independently of interactive refresh.
 Recognized pending and terminal status GETs emit live, flushed stderr progress
 through an injected observer; engine libraries never write to the console.
 `Operation status: Running (50%)` and `Job instance status: InProgress` are

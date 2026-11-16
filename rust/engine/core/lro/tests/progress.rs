@@ -108,6 +108,7 @@ struct StoppingStart<'a> {
     action: StartAction,
     clock: &'a TestClock,
     during_poll: bool,
+    during_wait: bool,
 }
 impl StoppingStart<'_> {
     async fn stop(&self) -> Result<(), CoreError> {
@@ -130,7 +131,7 @@ impl StoppingStart<'_> {
 #[async_trait]
 impl PollObserver for StoppingStart<'_> {
     async fn started(&self, _: OperationKind) -> Result<(), CoreError> {
-        if self.during_poll {
+        if self.during_poll || self.during_wait {
             Ok(())
         } else {
             self.stop().await
@@ -138,6 +139,13 @@ impl PollObserver for StoppingStart<'_> {
     }
     async fn polling(&self, _: OperationKind) -> Result<(), CoreError> {
         if self.during_poll {
+            self.stop().await
+        } else {
+            Ok(())
+        }
+    }
+    async fn waiting(&self, _: OperationKind, _: Duration) -> Result<(), CoreError> {
+        if self.during_wait {
             self.stop().await
         } else {
             Ok(())
@@ -244,7 +252,7 @@ async fn start_is_once_before_waiting_and_does_not_invent_a_service_status() {
 
 #[tokio::test]
 async fn notification_failures_cancellation_and_time_share_reconciliation_bounds_and_recovery() {
-    for during_poll in [false, true] {
+    for (during_poll, during_wait) in [(false, false), (true, false), (false, true)] {
         let cancellation = CancellationToken::new();
         for (action, expected) in [
             (StartAction::Fail, ErrorKind::Transport),
@@ -259,6 +267,7 @@ async fn notification_failures_cancellation_and_time_share_reconciliation_bounds
                 action,
                 clock: &clock,
                 during_poll,
+                during_wait,
             };
             let script = Script {
                 replies: Mutex::new(VecDeque::new()),
@@ -287,6 +296,122 @@ async fn notification_failures_cancellation_and_time_share_reconciliation_bounds
             assert_eq!(error.kind, expected);
             assert!(error.recovery.unwrap().outcome_uncertain);
             assert_eq!(*script.calls.lock().unwrap(), 0);
+        }
+    }
+}
+
+struct Schedule<'a> {
+    clock: &'a TestClock,
+    accepted: Mutex<Vec<(OperationKind, u16)>>,
+    waits: Mutex<Vec<Duration>>,
+    callback_delay: Duration,
+}
+#[async_trait]
+impl PollObserver for Schedule<'_> {
+    async fn accepted(&self, kind: OperationKind, status: u16) -> Result<(), CoreError> {
+        self.accepted.lock().unwrap().push((kind, status));
+        Ok(())
+    }
+    async fn waiting(&self, _: OperationKind, delay: Duration) -> Result<(), CoreError> {
+        self.waits.lock().unwrap().push(delay);
+        *self.clock.0.lock().unwrap() += self.callback_delay;
+        Ok(())
+    }
+    async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn schedule_reports_server_and_configured_delays_without_adding_callback_time() {
+    for (kind, audience, status, headers, configured, expected) in [
+        (
+            OperationKind::FabricJob,
+            Audience::Fabric,
+            202,
+            vec![("location", JOB), ("retry-after", "25")],
+            None,
+            vec![25, 10],
+        ),
+        (
+            OperationKind::Fabric,
+            Audience::Fabric,
+            202,
+            vec![("location", "/v1/operations/op-1")],
+            None,
+            vec![2, 7],
+        ),
+        (
+            OperationKind::Fabric,
+            Audience::Fabric,
+            202,
+            vec![("location", "/v1/operations/op-1"), ("retry-after", "30")],
+            Some(20),
+            vec![30, 20],
+        ),
+        (
+            OperationKind::ArmStatus,
+            Audience::Azure,
+            201,
+            vec![
+                (
+                    "azure-asyncoperation",
+                    "https://management.azure.com/status",
+                ),
+                ("retry-after", "25"),
+            ],
+            None,
+            vec![25, 10],
+        ),
+    ] {
+        for callback_delay in [
+            Duration::ZERO,
+            Duration::from_secs(1),
+            Duration::from_secs(40),
+        ] {
+            let clock = TestClock(Mutex::new(Instant::now()));
+            let start = clock.now();
+            let observer = Schedule {
+                clock: &clock,
+                accepted: Mutex::new(Vec::new()),
+                waits: Mutex::new(Vec::new()),
+                callback_delay,
+            };
+            let terminal = if kind == OperationKind::FabricJob {
+                "Completed"
+            } else {
+                "Succeeded"
+            };
+            let script = Script {
+                replies: Mutex::new(VecDeque::from([
+                    response(200, r#"{"status":"InProgress"}"#, &[]),
+                    response(200, &format!(r#"{{"status":"{terminal}"}}"#), &[]),
+                ])),
+                calls: Mutex::new(0),
+            };
+            complete_observed(
+                &script,
+                &clock,
+                audience,
+                response(status, "", &headers),
+                CancellationToken::new(),
+                LroConfig::new(configured.map(Duration::from_secs), None).unwrap(),
+                &observer,
+            )
+            .await
+            .unwrap();
+            assert_eq!(*observer.accepted.lock().unwrap(), [(kind, status)]);
+            let expected: Vec<_> = expected.iter().copied().map(Duration::from_secs).collect();
+            assert_eq!(*observer.waits.lock().unwrap(), expected);
+            assert_eq!(
+                clock.now().duration_since(start),
+                expected
+                    .iter()
+                    .map(|delay| (*delay).max(callback_delay))
+                    .sum::<Duration>(),
+                "callback latency counts toward each selected delay"
+            );
+            assert_eq!(*script.calls.lock().unwrap(), 2);
         }
     }
 }
