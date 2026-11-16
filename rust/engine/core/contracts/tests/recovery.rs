@@ -110,6 +110,71 @@ fn fabric_and_arm_safe_head_capture_redacts_queries() {
 }
 
 #[test]
+fn arm_advertised_locations_use_python_endpoint_suffix_on_the_fixed_origin() {
+    for (location, expected) in [
+        (
+            "https://management.azure.com/operations/one?api-version=1",
+            "https://management.azure.com/operations/one?api-version=1",
+        ),
+        (
+            "http://management.azure.com/operations/one?api-version=1",
+            "https://management.azure.com/operations/one?api-version=1",
+        ),
+        (
+            "https://management.azure.com.evil.invalid/operations/one",
+            "https://management.azure.com/.evil.invalid/operations/one",
+        ),
+        (
+            "https://user:password@management.azure.com:8443/operations/one",
+            "https://management.azure.com/:8443/operations/one",
+        ),
+        (
+            "https://evil.invalid/management.azure.com/operations/one",
+            "https://management.azure.com/operations/one",
+        ),
+        (
+            "/operations/one?api-version=1",
+            "https://management.azure.com/operations/one?api-version=1",
+        ),
+    ] {
+        for header in ["azure-asyncoperation", "location"] {
+            let handle = operation_handle(Audience::Azure, 202, &headers(&[(header, location)]))
+                .unwrap()
+                .unwrap();
+            assert_eq!(handle.url().as_str(), expected);
+        }
+    }
+    assert!(
+        operation_handle(
+            Audience::Azure,
+            202,
+            &headers(&[("location", "https://evil.invalid/operations/one")]),
+        )
+        .is_err()
+    );
+    assert!(
+        operation_handle(
+            Audience::Azure,
+            202,
+            &headers(&[(
+                "location",
+                "https://management.azure.com/operations/%2e%2e/secret"
+            )]),
+        )
+        .is_err(),
+        "unsafe paths remain rejected after rebasing"
+    );
+    assert!(
+        validate_operation_url(
+            Audience::Azure,
+            "https://management.azure.com.evil.invalid/operations/one"
+        )
+        .is_err(),
+        "executable polling destinations remain bound to the Azure endpoint"
+    );
+}
+
+#[test]
 fn unsafe_head_cannot_expose_an_unvalidated_url_or_erase_known_safe_id() {
     for value in [
         "http://evil.invalid/operation?secret=synthetic",

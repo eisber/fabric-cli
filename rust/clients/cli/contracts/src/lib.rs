@@ -17,21 +17,25 @@ pub struct CommandError {
     pub message: String,
     /// Known, sanitized accepted-operation evidence.
     pub recovery: Option<Value>,
+    exit_code: u8,
 }
 
 impl CommandError {
     /// Construct a failure without sensitive details.
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        let code = code.into();
+        let exit_code = if code == "Unauthorized" { 4 } else { 1 };
         Self {
-            code: code.into(),
+            code,
             message: message.into(),
             recovery: None,
+            exit_code,
         }
     }
 
     /// Unauthorized is exit 4; all other command failures are exit 1.
     pub fn exit_code(&self) -> u8 {
-        if self.code == "Unauthorized" { 4 } else { 1 }
+        self.exit_code
     }
 }
 
@@ -46,12 +50,19 @@ impl From<CoreError> for CommandError {
             ErrorKind::Cancelled => "Cancelled",
             ErrorKind::Service => "Service",
         };
+        let exit_code = if error.kind == ErrorKind::Unauthorized {
+            4
+        } else {
+            1
+        };
+        let code = error.service_code().unwrap_or(code).to_owned();
         Self {
-            code: code.into(),
+            code,
             message: error.message,
             recovery: error
                 .recovery
                 .and_then(|value| serde_json::to_value(value).ok()),
+            exit_code,
         }
     }
 }

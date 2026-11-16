@@ -341,6 +341,70 @@ fn accepted(location: &str) -> ApiResponse {
     )
 }
 
+#[tokio::test]
+async fn service_error_code_reaches_json_for_status_and_result_failures() {
+    for (replies, expected, calls) in [
+        (
+            vec![
+                accepted("/v1/operations/op-1"),
+                response(
+                    200,
+                    json!({"status":"Failed","error":{"errorCode":"DuplicateDatasetNamesInWorkspace","message":"SECRET-CANARY"}}),
+                    &[],
+                ),
+            ],
+            "DuplicateDatasetNamesInWorkspace",
+            2,
+        ),
+        (
+            vec![
+                accepted("/v1/operations/op-1"),
+                response(
+                    200,
+                    json!({"status":"Succeeded"}),
+                    &[("location", "/v1/operations/op-1/result")],
+                ),
+                response(
+                    400,
+                    json!({"errorCode":"ResultFailed","message":"SECRET-CANARY"}),
+                    &[],
+                ),
+            ],
+            "ResultFailed",
+            3,
+        ),
+        (
+            vec![
+                accepted("/v1/operations/op-1"),
+                response(
+                    200,
+                    json!({"status":"Failed","error":{"errorCode":"Unauthorized"}}),
+                    &[],
+                ),
+            ],
+            "Unauthorized",
+            2,
+        ),
+    ] {
+        let (exit, stdout, stderr, actual_calls) = run_options(
+            &["api", "items", "--method", "post"],
+            replies,
+            false,
+            false,
+            RunOptions::default(),
+        )
+        .await;
+        assert_eq!(exit, 1, "{stdout}");
+        assert_eq!(actual_calls, calls);
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["status"], "Failure");
+        assert_eq!(envelope["result"]["error_code"], expected);
+        assert_eq!(envelope["result"]["data"][0]["operation_id"], "op-1");
+        assert!(!stdout.contains("SECRET-CANARY"));
+        assert!(!stderr.contains("SECRET-CANARY"));
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn heartbeats_repeat_during_server_waits_and_preserve_every_real_status() {
     let start = tokio::time::Instant::now();

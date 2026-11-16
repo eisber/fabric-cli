@@ -208,7 +208,9 @@ submissions, `--show-headers` exposes the headers the service returns.
 
 JSON is the sole data format. Raw initial HTTP errors remain inspectable
 response data; authentication, transport, malformed-response, and LRO failures
-are command failures. See the
+are command failures. Failed operation status/result responses expose a
+service error code in `result.error_code` when available and valid; otherwise
+they use `Service`. Service error messages are not forwarded. See the
 [complete compatibility contract](docs/authoring/compatibility.md)
 before migrating scripts.
 

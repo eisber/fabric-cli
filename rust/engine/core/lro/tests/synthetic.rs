@@ -483,6 +483,170 @@ async fn fabric_result_and_only_documented_no_result_condition() {
         assert_eq!(http.calls.lock().unwrap().len(), 2);
     }
 }
+
+#[tokio::test]
+async fn failed_status_and_result_report_service_codes_without_exposing_messages() {
+    for (replies, expected) in [
+        (
+            vec![response(
+                200,
+                r#"{"status":"Failed","error":{"errorCode":"DuplicateDatasetNamesInWorkspace","message":"SECRET-CANARY"}}"#,
+                &[],
+            )],
+            "DuplicateDatasetNamesInWorkspace",
+        ),
+        (
+            vec![response(
+                400,
+                r#"{"error":{"code":"StatusCheckFailed","message":"SECRET-CANARY"}}"#,
+                &[],
+            )],
+            "StatusCheckFailed",
+        ),
+        (
+            vec![
+                response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("location", "/v1/operations/op-1/result")],
+                ),
+                response(
+                    400,
+                    r#"{"errorCode":"ResultNotReady","message":"SECRET-CANARY"}"#,
+                    &[],
+                ),
+            ],
+            "ResultNotReady",
+        ),
+        (
+            vec![
+                response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("location", "/v1/operations/op-1/result")],
+                ),
+                response(
+                    400,
+                    r#"{"error":{"errorCode":"ResultFailed","message":"SECRET-CANARY"}}"#,
+                    &[],
+                ),
+            ],
+            "ResultFailed",
+        ),
+        (
+            vec![
+                response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("location", "/v1/operations/op-1/result")],
+                ),
+                response(
+                    400,
+                    "non-JSON SECRET-CANARY",
+                    &[("x-ms-public-api-error-code", "HeaderResultFailure")],
+                ),
+            ],
+            "HeaderResultFailure",
+        ),
+        (
+            vec![response(
+                500,
+                "non-JSON SECRET-CANARY",
+                &[("x-ms-error-code", "HeaderFailure")],
+            )],
+            "HeaderFailure",
+        ),
+    ] {
+        let expected_calls = replies.len();
+        let http = Script::new(replies);
+        let error = complete(
+            &http,
+            &FakeClock::new(),
+            Audience::Fabric,
+            accepted(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Service);
+        assert_eq!(error.service_code(), Some(expected));
+        assert!(error.recovery.is_some());
+        assert!(!format!("{error:?}").contains("SECRET-CANARY"));
+        assert_eq!(http.calls.lock().unwrap().len(), expected_calls);
+    }
+}
+
+#[tokio::test]
+async fn arm_and_job_failures_report_nested_service_codes() {
+    for (audience, initial) in [
+        (
+            Audience::Azure,
+            response(202, "", &[("azure-asyncoperation", "/status")]),
+        ),
+        (
+            Audience::Fabric,
+            response(
+                202,
+                "",
+                &[(
+                    "location",
+                    "/v1/workspaces/workspace/items/item/jobs/instances/job",
+                )],
+            ),
+        ),
+    ] {
+        let http = Script::new(vec![response(
+            200,
+            r#"{"status":"Failed","error":{"code":"BackendFailure"}}"#,
+            &[],
+        )]);
+        let error = complete(
+            &http,
+            &FakeClock::new(),
+            audience,
+            initial,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Service);
+        assert_eq!(error.service_code(), Some("BackendFailure"));
+        assert!(error.recovery.is_some());
+        assert_eq!(http.calls.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn invalid_or_missing_service_codes_remain_sanitized_failures() {
+    for (body, omitted) in [
+        (r#"{"status":"Failed"}"#, false),
+        (
+            r#"{"status":"Failed","error":{"errorCode":"https://SECRET-CANARY/"}}"#,
+            true,
+        ),
+        (r#"{"status":"Failed","error":{"errorCode":""}}"#, true),
+    ] {
+        let http = Script::new(vec![response(200, body, &[])]);
+        let error = complete(
+            &http,
+            &FakeClock::new(),
+            Audience::Fabric,
+            accepted(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Service);
+        assert_eq!(error.service_code(), None);
+        assert_eq!(error.message.contains("error code omitted"), omitted);
+        assert!(!format!("{error:?}").contains("SECRET-CANARY"));
+    }
+    let oversized = "A".repeat(129);
+    let error = CoreError::service_failure("Backend operation failed", Some(&oversized));
+    assert_eq!(error.service_code(), None);
+    assert!(error.message.contains("error code omitted"));
+    assert!(!format!("{error:?}").contains(&oversized));
+}
 #[tokio::test]
 async fn unsafe_result_is_rejected_with_recovery_without_forwarding_bearer() {
     let http = Script::new(vec![response(
@@ -575,6 +739,35 @@ async fn arm_prefers_asyncoperation_and_preserves_initial_body_headers() {
     assert_eq!(result.headers, initial.headers);
     assert_eq!(http.calls.lock().unwrap()[0].url.path(), "/operations/one");
     assert_eq!(*clock.sleeps.lock().unwrap(), [Duration::from_secs(10)]);
+}
+
+#[tokio::test]
+async fn arm_advertised_host_lookalike_is_rebased_before_polling() {
+    let initial = response(
+        202,
+        "original",
+        &[(
+            "Azure-AsyncOperation",
+            "https://management.azure.com.evil.invalid/operations/one?api-version=1",
+        )],
+    );
+    let http = Script::new(vec![success()]);
+    let result = complete(
+        &http,
+        &FakeClock::new(),
+        Audience::Azure,
+        initial,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, 200);
+    let calls = http.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].url.as_str(),
+        "https://management.azure.com/.evil.invalid/operations/one?api-version=1"
+    );
 }
 #[tokio::test]
 async fn arm_location_pending_then_200_does_not_require_status_json() {

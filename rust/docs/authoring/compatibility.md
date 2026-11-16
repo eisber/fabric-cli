@@ -206,6 +206,11 @@ API parity or a port of the full job-command subsystem.
 
 ARM 201/202 prefers `Azure-AsyncOperation` over Location and interprets terminal
 JSON status. Location-only polling continues for 201/202 and completes on 200.
+Like Python's shared ARM handler, an advertised URL containing the Azure endpoint
+is reduced to the suffix after that endpoint and polled on the fixed Azure HTTPS
+origin; the advertised hostname is not used as a bearer-token destination.
+Origin-relative headers remain supported as a Rust extension. Existing URL
+component and path checks still apply to the resulting polling URL.
 ARM preserves the shared Python normalized completion status/shape where
 applicable; `--async` never normalizes the initial response.
 
@@ -215,6 +220,10 @@ URLs get the shared operation-origin checks, without forwarding original mutatio
 bodies or custom headers. Cancelled/Canceled are failures; malformed/unknown
 states are protocol errors. Mutations are sent once; uncertain sends are not
 replayed. Safe GET retries remain inside the operation deadline.
+
+Failed status/result responses expose their service error identifier in
+`result.error_code` when it is a bounded ASCII identifier; otherwise the code
+remains `Service`. Raw service error messages are not emitted.
 
 Entering validated reconciliation emits and flushes
 `Monitoring operation execution...` or `Monitoring job execution...`

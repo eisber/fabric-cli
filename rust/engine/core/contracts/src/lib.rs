@@ -94,6 +94,8 @@ pub struct CoreError {
     pub message: String,
     /// Accepted-operation recovery evidence.
     pub recovery: Option<RecoveryInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    service_code: Option<String>,
 }
 impl CoreError {
     /// Construct a safe error.
@@ -102,7 +104,33 @@ impl CoreError {
             kind,
             message: message.into(),
             recovery: None,
+            service_code: None,
         }
+    }
+
+    /// Construct a service failure with a bounded identifier instead of arbitrary response text.
+    pub fn service_failure(message: impl Into<String>, code: Option<&str>) -> Self {
+        let mut error = Self::new(ErrorKind::Service, message);
+        if let Some(code) = code {
+            if !code.is_empty()
+                && code.len() <= 128
+                && code
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            {
+                error.service_code = Some(code.to_owned());
+            } else {
+                error
+                    .message
+                    .push_str("; invalid service error code omitted");
+            }
+        }
+        error
+    }
+
+    /// Validated service error identifier, if one was supplied.
+    pub fn service_code(&self) -> Option<&str> {
+        self.service_code.as_deref()
     }
 }
 impl fmt::Display for CoreError {

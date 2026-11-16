@@ -118,6 +118,25 @@ fn body(response: &ApiResponse) -> Result<Value, CoreError> {
     }
     fabric_core_json::decode(&response.body).map_err(|_| protocol("Malformed operation JSON"))
 }
+fn error_code(json: &Value) -> Option<&str> {
+    let error = json.get("error");
+    error
+        .and_then(|value| value.get("errorCode"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            error
+                .and_then(|value| value.get("code"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| json.get("errorCode").and_then(Value::as_str))
+        .or_else(|| json.get("code").and_then(Value::as_str))
+}
+fn service_failure(response: &ApiResponse, code: Option<&str>, message: &str) -> CoreError {
+    let code = code
+        .or_else(|| response.header("x-ms-public-api-error-code"))
+        .or_else(|| response.header("x-ms-error-code"));
+    CoreError::service_failure(message, code)
+}
 enum State {
     Pending,
     Success,
@@ -263,15 +282,22 @@ async fn reconcile(
         bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
-            return Err(CoreError::new(
-                ErrorKind::Service,
-                "Operation status request failed",
+            let json = body(&response);
+            let message = if json.is_ok() {
+                "Operation status request failed"
+            } else {
+                "Operation status request failed; error response was not valid JSON"
+            };
+            return Err(service_failure(
+                &response,
+                json.as_ref().ok().and_then(error_code),
+                message,
             ));
         }
-        let (current, status, percentage) = match handle.kind() {
+        let (current, status, percentage, failure_code) = match handle.kind() {
             Strategy::ArmLocation => match response.status {
-                200 => (State::Success, "Succeeded", None),
-                201 | 202 => (State::Pending, "Running", None),
+                200 => (State::Success, "Succeeded", None, None),
+                201 | 202 => (State::Pending, "Running", None, None),
                 _ => return Err(protocol("Unexpected ARM Location response status")),
             },
             kind => {
@@ -284,10 +310,16 @@ async fn reconcile(
                 } else {
                     state(&json)?
                 };
+                let failure_code = if matches!(current, State::Failed | State::Cancelled) {
+                    error_code(&json).map(str::to_owned)
+                } else {
+                    None
+                };
                 (
                     current,
                     status,
                     percentage(&json, clock, &mut warned_percentage),
+                    failure_code,
                 )
             }
         };
@@ -303,14 +335,12 @@ async fn reconcile(
         .await??;
         match current {
             State::Failed | State::Cancelled => {
-                return Err(CoreError::new(
-                    ErrorKind::Service,
-                    if job {
-                        "Backend job failed or was cancelled"
-                    } else {
-                        "Backend operation failed or was cancelled"
-                    },
-                ));
+                let message = if job {
+                    "Backend job failed or was cancelled"
+                } else {
+                    "Backend operation failed or was cancelled"
+                };
+                return Err(service_failure(&response, failure_code.as_deref(), message));
             }
             State::Pending => {
                 previous = response;
@@ -362,18 +392,19 @@ async fn reconcile(
                 if (200..300).contains(&result_response.status) {
                     return Ok(result_response);
                 }
-                let error_body = body(&result_response)?;
-                let code = error_body
-                    .get("errorCode")
-                    .or_else(|| error_body.get("code"))
-                    .or_else(|| error_body.get("error").and_then(|v| v.get("code")))
-                    .and_then(Value::as_str);
-                if code == Some("OperationHasNoResult") {
+                let error_body = body(&result_response);
+                if error_body.as_ref().ok().and_then(error_code) == Some("OperationHasNoResult") {
                     return Ok(response);
                 }
-                return Err(CoreError::new(
-                    ErrorKind::Service,
-                    "Operation result retrieval failed",
+                let message = if error_body.is_ok() {
+                    "Operation result retrieval failed"
+                } else {
+                    "Operation result retrieval failed; error response was not valid JSON"
+                };
+                return Err(service_failure(
+                    &result_response,
+                    error_body.as_ref().ok().and_then(error_code),
+                    message,
                 ));
             }
         }

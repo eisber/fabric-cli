@@ -28,7 +28,15 @@ closed. Successful status without an advertised
 result, and the documented `OperationHasNoResult` result error, return the actual
 terminal status response. ARM prioritizes Azure-AsyncOperation over Location;
 on completion it returns the initial body/headers with status normalized to 200,
-matching the retained Python shape. Other audiences are raw.
+matching the retained Python shape. As in Python, an advertised header containing
+the Azure endpoint contributes its suffix to the fixed Azure polling origin;
+origin-relative headers also work. Other audiences are raw.
+
+Failed status or result responses expose a bounded service error identifier when
+available, without forwarding service error messages. Codes must be nonempty,
+at most 128 bytes, and contain only ASCII letters, digits, `.`, `_`, or `-`;
+invalid codes are omitted with a diagnostic. When no code is supplied, the
+failure remains `Service`.
 
 Fabric job-instance Locations use a separate JSON status protocol. Only exact
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`

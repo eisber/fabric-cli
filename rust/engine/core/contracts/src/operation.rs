@@ -194,6 +194,16 @@ fn id_handle(id: &str) -> OperationHandle {
         id,
     )
 }
+fn arm_location(value: &str) -> Result<Url, CoreError> {
+    let base = Url::parse(Audience::Azure.base_url()).expect("fixed audience URL");
+    let host = base.host_str().expect("fixed audience host");
+    if let Some((_, suffix)) = value.split_once(host) {
+        let relative = format!("/{}", suffix.trim_start_matches('/'));
+        resolve_operation_url(Audience::Azure, &relative, &base)
+    } else {
+        resolve_operation_url(Audience::Azure, value, &base)
+    }
+}
 fn fabric_status_handle(mut url: Url, id: &str) -> OperationHandle {
     url.set_path(&format!("/v1/operations/{id}"));
     url.set_query(None);
@@ -284,7 +294,7 @@ fn discover(audience: Audience, head: &ApiResponse) -> Result<Option<OperationHa
                 });
             selected
                 .map(|(location, kind)| {
-                    validate_operation_url(audience, location).map(|url| {
+                    arm_location(location).map(|url| {
                         Some(OperationHandle {
                             url,
                             operation_id: None,
