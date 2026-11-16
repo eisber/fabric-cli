@@ -63,6 +63,18 @@ as IDs for existing resources. Exact name lookup scans every page and fails on
 missing or ambiguous names. Item scope is always specified using `--workspace`;
 workspace commands do not accept it.
 
+Argument errors retain the JSON `Failure` envelope and `InvalidInput` code.
+Missing required arguments identify their option or positional placeholder;
+for example, `fab-rs item list` reports:
+
+```text
+Missing required arguments: --workspace <workspace>. Run fab-rs item list --help.
+```
+
+Other parser failures identify known arguments or the kind of mistake and point
+to the relevant command's help.
+Diagnostics never echo supplied argument values or unknown argument names.
+
 Payloads are inline JSON objects or `@` followed by a regular UTF-8 JSON file.
 Creation requires `displayName` either positionally or in the payload. If both
 are present they must match; a positional GUID is rejected. Item creation also

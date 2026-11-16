@@ -799,6 +799,132 @@ async fn genuine_argument_errors_remain_sanitized_failures_without_auth_effects(
 }
 
 #[tokio::test]
+async fn missing_item_workspace_is_actionable_in_the_existing_failure_envelope() {
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, stderr) = run(&["item", "list"], &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout).unwrap(),
+        json!({
+            "timestamp": "2000-01-01T00:00:00Z",
+            "status": "Failure",
+            "command": "item list",
+            "result": {
+                "error_code": "InvalidInput",
+                "message": "Missing required arguments: --workspace <workspace>. Run fab-rs item list --help."
+            }
+        })
+    );
+    assert!(stderr.is_empty());
+    assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+    assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn parser_diagnostics_identify_schema_arguments_without_echoing_values() {
+    for (args, details, help) in [
+        (
+            vec!["item", "update"],
+            vec![
+                "Missing required arguments:",
+                "--workspace <workspace>",
+                "<target>",
+                "--payload <payload>",
+            ],
+            "fab-rs item update --help",
+        ),
+        (
+            vec!["workspace", "get"],
+            vec!["Missing required arguments:", "<target>"],
+            "fab-rs workspace get --help",
+        ),
+        (
+            vec!["api", "--headers", "authorization=SECRET-CANARY"],
+            vec!["Missing required arguments:", "<endpoint>"],
+            "fab-rs api --help",
+        ),
+        (
+            vec!["item", "list", "--workspace"],
+            vec!["A value is required for --workspace <workspace>."],
+            "fab-rs item list --help",
+        ),
+        (
+            vec!["workspace", "create", "SECRET-CANARY", "--payload"],
+            vec!["A value is required for --payload <payload>."],
+            "fab-rs workspace create --help",
+        ),
+        (
+            vec!["api", "SECRET-CANARY", "--headers"],
+            vec!["A value is required for --headers <headers>."],
+            "fab-rs api --help",
+        ),
+        (
+            vec!["api", "SECRET-CANARY", "--audience=SECRET-CANARY"],
+            vec!["Invalid value for --audience <audience>."],
+            "fab-rs api --help",
+        ),
+        (
+            vec![
+                "item",
+                "list",
+                "--workspace",
+                "SECRET-CANARY",
+                "--query",
+                "FIRST-SECRET-CANARY",
+                "--query",
+                "SECOND-SECRET-CANARY",
+            ],
+            vec!["Argument --query <query> cannot be repeated"],
+            "fab-rs item list --help",
+        ),
+        (
+            vec!["item"],
+            vec!["Missing subcommand.", "list, get, create, update, delete"],
+            "fab-rs item --help",
+        ),
+        (
+            vec!["item", "SECRET-CANARY"],
+            vec![
+                "Unrecognized subcommand.",
+                "list, get, create, update, delete",
+            ],
+            "fab-rs item --help",
+        ),
+        (
+            vec![
+                "item",
+                "list",
+                "--workspace",
+                "SECRET-CANARY",
+                "--SECRET-CANARY=SECRET-CANARY",
+            ],
+            vec!["Unexpected argument."],
+            "fab-rs item list --help",
+        ),
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["status"], "Failure");
+        assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+        let message = envelope["result"]["message"].as_str().unwrap();
+        for detail in details {
+            assert!(message.contains(detail), "{args:?}: {message}");
+        }
+        assert!(message.ends_with(&format!("Run {help}.")), "{message}");
+        assert!(!stdout.contains("CANARY"), "{stdout}");
+        assert!(stderr.is_empty());
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn invalid_methods_explain_lowercase_values_without_disclosure_or_auth_effects() {
     for method in [
         "POST",
@@ -882,20 +1008,26 @@ async fn lowercase_methods_still_reach_identity_validation_without_sending_reque
 
 #[tokio::test]
 async fn unrelated_parser_errors_do_not_receive_method_diagnostics() {
-    for args in [
-        vec!["api", "items", "--method", "post", "--audience", "POST"],
-        vec!["api", "items", "--UNKNOWN-CANARY", "--method", "POST"],
-        vec!["auth", "login", "--method", "POST"],
+    for (args, expected) in [
+        (
+            vec!["api", "items", "--method", "post", "--audience", "POST"],
+            "Invalid value for --audience <audience>. Run fab-rs api --help.",
+        ),
+        (
+            vec!["api", "items", "--UNKNOWN-CANARY", "--method", "POST"],
+            "Unexpected argument. Run fab-rs api --help.",
+        ),
+        (
+            vec!["auth", "login", "--method", "POST"],
+            "Unexpected argument. Run fab-rs auth login --help.",
+        ),
     ] {
         let host = FakeHost::new(vec![]);
         let (code, stdout, stderr) = run(&args, &host).await;
         assert_eq!(code, 1);
         let envelope: Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(envelope["result"]["error_code"], "InvalidInput");
-        assert_eq!(
-            envelope["result"]["message"],
-            "Invalid command arguments. Run fab-rs --help."
-        );
+        assert_eq!(envelope["result"]["message"], expected);
         assert!(!stdout.contains("CANARY"));
         assert!(stderr.is_empty());
         assert_eq!(host.hooks.load(Ordering::SeqCst), 1);

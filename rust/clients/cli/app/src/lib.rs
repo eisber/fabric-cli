@@ -336,6 +336,87 @@ fn command_name(args: &[OsString]) -> &'static str {
     }
 }
 
+fn argument_error_message(args: &[OsString], error: &clap::Error) -> String {
+    let invalid_args = match error.get(ContextKind::InvalidArg) {
+        Some(ContextValue::String(arg)) => std::slice::from_ref(arg),
+        Some(ContextValue::Strings(args)) => args.as_slice(),
+        _ => &[],
+    };
+    if command_name(args) == "api"
+        && error.kind() == ParseErrorKind::InvalidValue
+        && invalid_args == ["--method <method>"]
+    {
+        return "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST.".to_owned();
+    }
+
+    let mut definition = parser();
+    definition.build();
+    let mut command = &definition;
+    let mut path = String::from("fab-rs");
+    for arg in args.iter().skip(1) {
+        let Some(subcommand) = arg.to_str().and_then(|name| command.find_subcommand(name)) else {
+            break;
+        };
+        command = subcommand;
+        path.push(' ');
+        path.push_str(command.get_name());
+    }
+    // Error contexts may contain raw input. Emit only labels from our static command schema.
+    let labels: Vec<String> = invalid_args
+        .iter()
+        .filter_map(|label| {
+            command
+                .get_arguments()
+                .map(ToString::to_string)
+                .find(|known| known == label)
+        })
+        .collect();
+    let detail = match error.kind() {
+        ParseErrorKind::MissingRequiredArgument if !labels.is_empty() => {
+            format!("Missing required arguments: {}.", labels.join(", "))
+        }
+        ParseErrorKind::MissingSubcommand | ParseErrorKind::InvalidSubcommand => {
+            let available = command
+                .get_subcommands()
+                .map(Command::get_name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let problem = if error.kind() == ParseErrorKind::MissingSubcommand {
+                "Missing subcommand"
+            } else {
+                "Unrecognized subcommand"
+            };
+            format!("{problem}. Available subcommands: {available}.")
+        }
+        ParseErrorKind::InvalidValue
+        | ParseErrorKind::ValueValidation
+        | ParseErrorKind::InvalidUtf8
+        | ParseErrorKind::TooFewValues
+        | ParseErrorKind::WrongNumberOfValues
+            if !labels.is_empty() =>
+        {
+            let problem = if matches!(
+                error.get(ContextKind::InvalidValue),
+                Some(ContextValue::String(value)) if value.is_empty()
+            ) {
+                "A value is required for"
+            } else {
+                "Invalid value for"
+            };
+            format!("{problem} {}.", labels.join(", "))
+        }
+        ParseErrorKind::ArgumentConflict if !labels.is_empty() => format!(
+            "Argument {} cannot be repeated or combined with a conflicting argument.",
+            labels.join(", ")
+        ),
+        ParseErrorKind::UnknownArgument | ParseErrorKind::TooManyValues => {
+            "Unexpected argument.".to_owned()
+        }
+        _ => "Invalid command arguments.".to_owned(),
+    };
+    format!("{detail} Run {path} --help.")
+}
+
 fn timestamp(host: &dyn Host) -> String {
     let date: chrono::DateTime<chrono::Utc> = host.clock().wall_now().into();
     let precision = if date.timestamp_subsec_micros() == 0 {
@@ -404,21 +485,10 @@ pub async fn run(
             };
         }
         Err(error) => {
-            // Clap diagnostics can echo raw input containing header credentials. Do not copy them.
-            let message = if name == "api"
-                && error.kind() == ParseErrorKind::InvalidValue
-                && matches!(
-                    error.get(ContextKind::InvalidArg),
-                    Some(ContextValue::String(arg)) if arg == "--method <method>"
-                ) {
-                "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST."
-            } else {
-                "Invalid command arguments. Run fab-rs --help."
-            };
             return write_failure(
                 host,
                 name,
-                CommandError::new("InvalidInput", message),
+                CommandError::new("InvalidInput", argument_error_message(&args, &error)),
                 stdout,
                 stderr,
             );
