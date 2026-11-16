@@ -297,6 +297,9 @@ test('workflow keeps original integration events separate and runs no native PR 
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /if-no-files-found: error/);
   const native = workflow.split('\n  smoke:')[1];
+  const jobEnv = native.split('\n    env:')[1].split('\n    steps:')[0];
+  assert.ok(!jobEnv.includes('${{ runner.'),
+    'Runner context is unavailable in job-level env; use step-level env for runner paths');
   const condition = native.match(/\n    if: (.+)/)[1];
   for (const [name, ref, expected] of [
     ['workflow_dispatch', 'refs/heads/main', true],

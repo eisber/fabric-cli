@@ -47,8 +47,6 @@ jobs:
     env:
       REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
       REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
-      RECOVERY_ARTIFACTS: ${{ runner.temp }}/integration-smoke-recovery-receipts
-      CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-recovery-target
       CARGO_BUILD_JOBS: "2"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_INCREMENTAL: "0"
@@ -63,6 +61,7 @@ jobs:
         id: pin
         env:
           GH_TOKEN: ${{ github.token }}
+          RECOVERY_ARTIFACTS: ${{ runner.temp }}/integration-smoke-recovery-receipts
         run: node driver/.github/scripts/integration-smoke-recovery.cjs preflight
       - name: Check out only the validated integration revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,6 +74,8 @@ jobs:
       - name: Exercise the existing bounded two-profile minimum
         env:
           GH_TOKEN: ${{ github.token }}
+          RECOVERY_ARTIFACTS: ${{ runner.temp }}/integration-smoke-recovery-receipts
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-recovery-target
         run: node driver/.github/scripts/integration-smoke-recovery.cjs run
       - name: Retain manual provenance, exact source inventory and executable results
         if: always()
