@@ -25,6 +25,7 @@ pub mod execute;
 pub mod exists_command;
 #[cfg(feature = "native-host")]
 pub mod families;
+pub mod feedback;
 mod folder_reads;
 pub mod get_backend;
 mod get_budget;

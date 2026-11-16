@@ -40,6 +40,31 @@ userinfo, fragments, non-HTTPS ports and unsafe headers are rejected.
 Authentication, host, proxy credentials, cookies and hop-by-hop headers cannot
 be overridden. URL, body and header allocations remain bounded.
 
+## Fixed OCV feedback adapter
+
+`execute_feedback(feedback::Environment, &AccessToken, &[u8])` submits exactly one
+authenticated JSON POST, using only these fixed endpoint/scope pairs:
+
+| Environment | Endpoint | Required delegated scope |
+| --- | --- | --- |
+| `Production` | `https://petrol.office.microsoft.com/v1/feedback/authenticated` | `https://petrol.office.microsoft.com/Feedback.ReadWrite` |
+| `Ppe` | `https://petrol-int.office.microsoft.com/v1/feedback/authenticated` | `https://petrol-int.office.microsoft.com/Feedback.ReadWrite` |
+
+The caller serializes the JSON body and acquires its token for exactly
+`Environment::scope()`. Tokens are opaque: this adapter cannot verify audience
+or permissions and does not acquire or refresh credentials. Empty tokens,
+tokens containing control characters, and empty or oversized request bodies fail
+before network or timer activity. Request and decoded response bodies are each
+capped at 64 KiB (65,536 bytes).
+
+The adapter accepts no URL/header overrides, ignores the general endpoint
+selection, and does not extend `ServiceOrigin` or `EndpointBinding`. It delegates
+to the existing private execution engine and overall deadline. All statuses,
+including 202, 429 and 503, remain raw responses; POSTs are never replayed or
+followed by retry waits. Transport/stream failure, response overflow, timeout or
+cancellation cannot prove that a submission did not occur. No new transport,
+runtime, identity provider or live-service support claim is implied.
+
 ## Operation integration
 
 The `OperationExecutor` adapter translates typed request and response fields

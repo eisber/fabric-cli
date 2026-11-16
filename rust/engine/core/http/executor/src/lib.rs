@@ -92,6 +92,7 @@ mod bound;
 mod capacities;
 pub use bound::PublicOrigin;
 mod evidence;
+pub mod feedback;
 mod folders;
 mod items;
 pub mod native_runtime;
