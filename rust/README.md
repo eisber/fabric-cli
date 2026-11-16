@@ -52,21 +52,19 @@ fab-rs workspace create [display-name] [--payload <json-or-@file>]
 fab-rs workspace update <name-or-guid> --payload <json-or-@file>
 fab-rs workspace delete <name-or-guid> [--force]
 fab-rs item list --workspace <name-or-guid>
-fab-rs item get <name-or-guid> [--workspace <name-or-guid>]
+fab-rs item get <name-or-guid> --workspace <name-or-guid>
 fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file>]
-fab-rs item update <name-or-guid> [--workspace <name-or-guid>] --payload <json-or-@file>
-fab-rs item delete <name-or-guid> [--workspace <name-or-guid>] [--force]
+fab-rs item update <name-or-guid> --workspace <name-or-guid> --payload <json-or-@file>
+fab-rs item delete <name-or-guid> --workspace <name-or-guid> [--force]
 ```
 
 Selectors are single display names or GUIDs; GUID-shaped names are interpreted
 as IDs for existing resources. Exact name lookup scans every page and fails on
-missing or ambiguous names. Item list and create require `--workspace`, as do
-get, update, and delete when the target is a name. For a GUID target without
-`--workspace`, the CLI scans all accessible workspace and item pages to find
-its workspace before issuing the requested operation. This can be slow, needs
-permission to list those workspaces and items, and fails if any scan fails or
-the ID is missing or ambiguous. Supplying `--workspace` avoids that scan.
-Workspace commands do not accept `--workspace`.
+missing or ambiguous names. All item commands require `--workspace`. GUID
+selectors are used directly without lookup. Workspace names are resolved by
+exact display name; item names are resolved by exact display name within the
+selected workspace's item collection. Workspace commands do not accept
+`--workspace`.
 
 Argument errors retain the JSON `Failure` envelope and `InvalidInput` code.
 Missing required arguments identify their option or positional placeholder;

@@ -255,15 +255,15 @@ async fn resources_validate_locally_before_credentials_or_http() {
         vec!["workspace", "list", "--workspace", guid],
         vec!["item", "list"],
         vec!["item", "create", "new", "--payload", r#"{"type":"X"}"#],
-        vec!["item", "get", "name"],
+        vec!["item", "get", guid],
         vec![
             "item",
             "update",
-            "name",
+            guid,
             "--payload",
             r#"{"displayName":"new"}"#,
         ],
-        vec!["item", "delete", "name", "--force"],
+        vec!["item", "delete", guid, "--force"],
         vec!["workspace", "create", guid],
         vec!["item", "create", guid, "--workspace", guid],
         vec!["workspace", "create"],
@@ -588,143 +588,6 @@ async fn item_selector_combinations_only_fetch_required_names() {
             requests.last().unwrap().url.path(),
             format!("/v1/workspaces/{workspace}/items/{item}")
         );
-    }
-}
-
-#[tokio::test]
-async fn item_guid_without_workspace_discovers_scope_for_each_verb() {
-    let workspace = "00000000-0000-0000-0000-000000000001";
-    let later_workspace = "00000000-0000-0000-0000-000000000002";
-    let item = "00000000-0000-0000-0000-000000000003";
-    for (verb, method) in [("get", "GET"), ("update", "PATCH"), ("delete", "DELETE")] {
-        let host = FakeHost::new(vec![
-            response(
-                200,
-                &format!(r#"{{"value":[{{"id":"{workspace}"}}],"continuationToken":"next"}}"#),
-                &[],
-            ),
-            response(
-                200,
-                &format!(r#"{{"value":[{{"id":"{later_workspace}"}}]}}"#),
-                &[],
-            ),
-            response(200, r#"{"value":[]}"#, &[]),
-            response(200, r#"{"value":[],"continuationToken":"next"}"#, &[]),
-            response(200, &format!(r#"{{"value":[{{"id":"{item}"}}]}}"#), &[]),
-            response(
-                if verb == "delete" { 204 } else { 200 },
-                if verb == "delete" { "" } else { "{}" },
-                &[],
-            ),
-        ]);
-        let args = match verb {
-            "update" => vec![
-                "item",
-                verb,
-                item,
-                "--payload",
-                r#"{"displayName":"renamed"}"#,
-            ],
-            "delete" => vec!["item", verb, item, "--force"],
-            _ => vec!["item", verb, item],
-        };
-        let (code, _, _) = run(&args, &host).await;
-        assert_eq!(code, 0, "{args:?}");
-        let requests = host.transport.requests.lock().unwrap();
-        assert_eq!(requests.len(), 6);
-        assert_eq!(requests[5].method, method);
-        assert_eq!(
-            requests[5].url.path(),
-            format!("/v1/workspaces/{later_workspace}/items/{item}")
-        );
-    }
-}
-
-#[tokio::test]
-async fn item_guid_discovery_fails_closed_before_mutation() {
-    let workspace = "00000000-0000-0000-0000-000000000001";
-    let item = "00000000-0000-0000-0000-000000000003";
-    for item_page in [
-        response(200, r#"{"value":[]}"#, &[]),
-        response(403, "{}", &[]),
-        response(200, r#"{"value":[{"id":"invalid"}]}"#, &[]),
-        response(
-            200,
-            &format!(r#"{{"value":[{{"id":"{item}"}},{{"id":"{item}"}}]}}"#),
-            &[],
-        ),
-    ] {
-        let host = FakeHost::new(vec![
-            response(
-                200,
-                &format!(r#"{{"value":[{{"id":"{workspace}"}}]}}"#),
-                &[],
-            ),
-            item_page,
-        ]);
-        let (code, _, _) = run(&["item", "delete", item, "--force"], &host).await;
-        assert_eq!(code, 1);
-        let requests = host.transport.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert!(requests.iter().all(|request| request.method == "GET"));
-        assert_eq!(host.confirmation_calls.load(Ordering::SeqCst), 0);
-    }
-}
-
-#[tokio::test]
-async fn item_guid_discovery_precedes_delete_confirmation() {
-    let workspace = "00000000-0000-0000-0000-000000000001";
-    let item = "00000000-0000-0000-0000-000000000003";
-    let host = FakeHost::new(vec![
-        response(
-            200,
-            &format!(r#"{{"value":[{{"id":"{workspace}"}}]}}"#),
-            &[],
-        ),
-        response(200, &format!(r#"{{"value":[{{"id":"{item}"}}]}}"#), &[]),
-    ]);
-    host.confirmations.lock().unwrap().push_back(Ok(false));
-    let (code, _, stderr) = run(&["item", "delete", item], &host).await;
-    assert_eq!(code, 1);
-    assert!(stderr.contains(item));
-    assert!(stderr.contains(workspace));
-    assert_eq!(host.confirmation_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
-}
-
-#[tokio::test]
-async fn item_guid_discovery_does_not_mutate_after_incomplete_or_ambiguous_search() {
-    let first = "00000000-0000-0000-0000-000000000001";
-    let second = "00000000-0000-0000-0000-000000000002";
-    let item = "00000000-0000-0000-0000-000000000003";
-    for last_page in [
-        response(403, "{}", &[]),
-        response(200, &format!(r#"{{"value":[{{"id":"{item}"}}]}}"#), &[]),
-    ] {
-        let host = FakeHost::new(vec![
-            response(
-                200,
-                &format!(r#"{{"value":[{{"id":"{first}"}},{{"id":"{second}"}}]}}"#),
-                &[],
-            ),
-            response(200, &format!(r#"{{"value":[{{"id":"{item}"}}]}}"#), &[]),
-            last_page,
-        ]);
-        let (code, _, _) = run(
-            &[
-                "item",
-                "update",
-                item,
-                "--payload",
-                r#"{"displayName":"new"}"#,
-            ],
-            &host,
-        )
-        .await;
-        assert_eq!(code, 1);
-        let requests = host.transport.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
-        assert!(requests.iter().all(|request| request.method == "GET"));
     }
 }
 
@@ -1146,6 +1009,7 @@ async fn parser_diagnostics_identify_schema_arguments_without_echoing_values() {
             vec![
                 "Missing required arguments:",
                 "<target>",
+                "--workspace <workspace>",
                 "--payload <payload>",
             ],
             "fab-rs item update --help",

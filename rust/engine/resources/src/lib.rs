@@ -9,7 +9,7 @@ use fabric_core::{
     OperationContext,
 };
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
 /// A resource selector, parsed before credentials or network access.
@@ -188,55 +188,6 @@ pub async fn list(
     })
     .await?;
     Ok(Value::Array(entries))
-}
-
-/// Find the unique accessible workspace containing an item ID.
-///
-/// Every workspace and item page must be read successfully before a mutation
-/// can be routed; an inaccessible workspace prevents a conclusive result.
-pub async fn find_item_workspace(
-    executor: &dyn HttpExecutor,
-    clock: &dyn Clock,
-    context: &OperationContext,
-    item_id: &str,
-) -> Result<String, CoreError> {
-    let item_id = Uuid::parse_str(item_id).map_err(|_| invalid("Invalid item ID"))?;
-    let mut workspaces = BTreeSet::new();
-    scan(executor, clock, context, "workspaces", |entry| {
-        let id = entry
-            .get("id")
-            .and_then(Value::as_str)
-            .and_then(|id| Uuid::parse_str(id).ok())
-            .ok_or_else(|| protocol("Workspace has an invalid ID"))?;
-        workspaces.insert(id);
-        if workspaces.len() > MAX_RESPONSE_BYTES / 36 {
-            return Err(protocol("Workspace discovery exceeds allocation bound"));
-        }
-        Ok(())
-    })
-    .await?;
-
-    let mut match_workspace = None;
-    for workspace in workspaces {
-        let workspace = workspace.hyphenated().to_string();
-        let endpoint = format!("workspaces/{workspace}/items");
-        scan(executor, clock, context, &endpoint, |entry| {
-            let id = entry
-                .get("id")
-                .and_then(Value::as_str)
-                .and_then(|id| Uuid::parse_str(id).ok())
-                .ok_or_else(|| protocol("Item has an invalid ID"))?;
-            if id == item_id {
-                if match_workspace.is_some() {
-                    return Err(invalid("Item ID matches multiple entries"));
-                }
-                match_workspace = Some(workspace.clone());
-            }
-            Ok(())
-        })
-        .await?;
-    }
-    match_workspace.ok_or_else(|| invalid("Item ID not found in accessible workspaces"))
 }
 
 /// Resolve an ID directly or find exactly one exact display name across all pages.
