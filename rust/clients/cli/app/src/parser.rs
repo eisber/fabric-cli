@@ -69,6 +69,8 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// OCV feedback preview or explicitly authorized submission.
+    Feedback(crate::feedback::FeedbackCommand),
     /// Real run/query/execute frontend with an explicitly injected backend boundary.
     NativeTabular(crate::native_tabular::NativeCommand),
     /// Explicit tabular file delivery around one declared production operation.
@@ -160,6 +162,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
+        .subcommand(crate::feedback::command())
         .subcommand(crate::execute::command())
         .subcommands(semantic_model_commands())
         .subcommand(fabric_cli_tables::command())
@@ -322,6 +325,12 @@ where
     };
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
+    }
+    if name == "feedback" {
+        if matches.contains_id("batch_commands") {
+            return Err(invalid_arguments());
+        }
+        return crate::feedback::from_matches(values).map(Invocation::Feedback);
     }
     let export = crate::tabular_export::request(&matches);
     let wrap = |mut invocation: Invocation| {

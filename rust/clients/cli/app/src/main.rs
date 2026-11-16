@@ -10,6 +10,7 @@ mod auth;
 mod auth_binding;
 mod batch_state;
 mod delete_host;
+mod feedback_host;
 #[cfg(feature = "headless")]
 mod headless;
 #[cfg(feature = "interactive")]
@@ -97,6 +98,9 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(arguments);
+    if let Ok(Invocation::Feedback(command)) = &invocation {
+        return feedback_host::run(command).map(exit_status);
+    }
     #[cfg(feature = "semantic-model")]
     if let Ok(Invocation::SemanticModel(command)) = &invocation {
         // Offline analysis validates before update policy or navigation setup.
@@ -146,6 +150,7 @@ fn dispatch(
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        Ok(Invocation::Feedback(command)) => return feedback_host::run(&command),
         Ok(Invocation::NativeTabular(command)) => {
             return write_export(fabric_cli::native_tabular::not_configured(&command));
         }

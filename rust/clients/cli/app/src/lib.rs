@@ -17,6 +17,7 @@ pub mod deploy;
 mod errors;
 pub mod execute;
 pub mod exists_command;
+pub mod feedback;
 #[cfg(feature = "native-host")]
 pub mod families;
 mod folder_reads;
