@@ -154,7 +154,11 @@ hints. Conflicting operation IDs and unsafe origins/components still fail.
 Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 
-Every recognized pending or terminal polling status is printed and flushed to
+Once a valid operation/job enters polling, the CLI immediately prints and flushes
+`Polling operation; waiting for status` or `Polling job; waiting for status` to
+**stderr**, before the first polling delay (including a long `Retry-After`).
+This is local waiting feedback, not a service status or estimated percentage.
+Every recognized pending or terminal polling status is then printed and flushed to
 **stderr** immediately, for example `Operation status: Running (50%)` or
 `Job instance status: InProgress`. Numeric `percentageComplete` values from
 0 through 100, including zero and fractions, are shown when supplied. Invalid
@@ -162,6 +166,11 @@ percentage metadata is omitted with a safe warning; missing/null values leave
 status-only output. These updates are enabled by default, unlike Python's
 debug-gated shared polling logs. Stdout remains a single final JSON response.
 `--async`, ordinary raw responses, and help/version do not emit progress.
+
+When running a shell alias such as `fabrs`, use `type -a fabrs` to check which
+executable it names. Rebuilding in a different checkout does not update that
+binary. Use the freshly built executable from the intended checkout to see its
+progress behavior; see the [build instructions](CONTRIBUTING.md#build-and-run-locally).
 
 Empty/whitespace API response bodies now produce `text: ""`, not the Python
 `"(Empty)"` marker. An initial 202 means accepted, not completed. Do not repeat an

@@ -213,7 +213,11 @@ bodies or custom headers. Cancelled/Canceled are failures; malformed/unknown
 states are protocol errors. Mutations are sent once; uncertain sends are not
 replayed. Safe GET retries remain inside the operation deadline.
 
-Recognized pending and terminal status GETs emit live, flushed stderr progress
+Entering validated reconciliation emits and flushes
+`Polling operation; waiting for status` or `Polling job; waiting for status`
+to stderr before the first polling delay, including any `Retry-After`. This
+static local notification does not assert a backend status or percentage.
+Recognized pending and terminal status GETs then emit live, flushed stderr progress
 through an injected observer; engine libraries never write to the console.
 `Operation status: Running (50%)` and `Job instance status: InProgress` are
 example lines. Only canonical recognized status and finite numeric

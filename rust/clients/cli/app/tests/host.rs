@@ -1163,7 +1163,7 @@ async fn empty_initial_body_remains_valid_with_default_polling_and_async() {
                 if asynchronous {
                     ""
                 } else {
-                    "Operation status: Succeeded\n"
+                    "Polling operation; waiting for status\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1212,7 +1212,7 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
                 if asynchronous {
                     ""
                 } else {
-                    "Job instance status: InProgress\nJob instance status: Completed\n"
+                    "Polling job; waiting for status\nJob instance status: InProgress\nJob instance status: Completed\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -1279,10 +1279,12 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
             stderr,
             match terminal {
                 r#"{"status":"Failed","failureReason":{"message":"BODY-CANARY"}}"# => {
-                    "Job instance status: Failed\n"
+                    "Polling job; waiting for status\nJob instance status: Failed\n"
                 }
-                r#"{"status":"Cancelled"}"# => "Job instance status: Cancelled\n",
-                _ => "",
+                r#"{"status":"Cancelled"}"# => {
+                    "Polling job; waiting for status\nJob instance status: Cancelled\n"
+                }
+                _ => "Polling job; waiting for status\n",
             }
         );
         assert!(!stdout.contains("CANARY"));
@@ -1334,7 +1336,10 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
     )
     .await;
     assert_eq!(code, 0, "{stdout}");
-    assert_eq!(stderr, "Job instance status: Completed\n");
+    assert_eq!(
+        stderr,
+        "Polling job; waiting for status\nJob instance status: Completed\n"
+    );
     assert_eq!(data(&stdout), json!([]));
     assert!(!stdout.contains("CANARY"));
     assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
@@ -1415,7 +1420,7 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
                 if asynchronous {
                     ""
                 } else {
-                    "Operation status: Succeeded\n"
+                    "Polling operation; waiting for status\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();
@@ -2302,7 +2307,7 @@ fn blackbox_process_uses_real_parser_host_engine_and_output_with_injected_effect
             if scenario == "async" {
                 ""
             } else {
-                "Operation status: Succeeded\n"
+                "Polling operation; waiting for status\nOperation status: Succeeded\n"
             }
         );
         let data = data(result["stdout"].as_str().unwrap());
@@ -2496,9 +2501,9 @@ mod polling_configuration {
                 assert_eq!(
                     stderr,
                     if job {
-                        "Job instance status: Completed\n"
+                        "Polling job; waiting for status\nJob instance status: Completed\n"
                     } else {
-                        "Operation status: Succeeded\n"
+                        "Polling operation; waiting for status\nOperation status: Succeeded\n"
                     }
                 );
                 assert_eq!(
@@ -2587,9 +2592,9 @@ mod polling_configuration {
             assert_eq!(
                 stderr,
                 if timed {
-                    ""
+                    "Polling operation; waiting for status\n"
                 } else {
-                    "Operation status: Succeeded\n"
+                    "Polling operation; waiting for status\nOperation status: Succeeded\n"
                 }
             );
             let requests = host.transport.requests.lock().unwrap();

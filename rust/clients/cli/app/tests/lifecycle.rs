@@ -239,13 +239,21 @@ fn subprocess(scenario: &str) -> Output {
     let stderr = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let mut reader = BufReader::new(stderr);
+        let mut polling_started = false;
         loop {
             let mut line = Vec::new();
             if reader.read_until(b'\n', &mut line).unwrap() == 0 {
                 break;
             }
             if line == b"OFFLINE_SIGNAL_READY\n" || line == b"OFFLINE_SIGNAL_READY\r\n" {
+                assert!(
+                    polling_started,
+                    "real stderr must arrive before the first wait"
+                );
                 let _ = ready.send(());
+            }
+            if line == b"Polling operation; waiting for status\n" {
+                polling_started = true;
             }
             bytes.extend(line);
         }
@@ -290,15 +298,16 @@ fn assert_lifecycle(scenario: &str) {
     assert!(output.stdout.ends_with(b"\n"));
     if scenario == "cancel" {
         assert!(
-            output.stderr == b"OFFLINE_SIGNAL_READY\n"
-                || output.stderr == b"OFFLINE_SIGNAL_READY\r\n",
+            output.stderr == b"Polling operation; waiting for status\nOFFLINE_SIGNAL_READY\n"
+                || output.stderr
+                    == b"Polling operation; waiting for status\nOFFLINE_SIGNAL_READY\r\n",
             "{:?}",
             output.stderr
         );
     } else {
         let expected: &[u8] = match scenario {
-            "poll" => b"Operation status: Succeeded\n",
-            "failed" => b"Operation status: Failed\n",
+            "poll" => b"Polling operation; waiting for status\nOperation status: Succeeded\n",
+            "failed" => b"Polling operation; waiting for status\nOperation status: Failed\n",
             _ => b"",
         };
         assert_eq!(output.stderr, expected);

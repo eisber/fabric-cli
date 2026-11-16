@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
-    HttpExecutor, OperationContext,
+    HttpExecutor, OperationContext, OperationKind,
 };
 use fabric_sdk_operations::{LroConfig, PollObserver, PollProgress, complete_observed};
 use std::{
@@ -55,12 +55,68 @@ impl HttpExecutor for Script {
 }
 
 #[derive(Default)]
-struct Recorder(Mutex<Vec<PollProgress>>);
+struct Recorder(Mutex<Vec<PollProgress>>, Mutex<Vec<OperationKind>>);
 #[async_trait]
 impl PollObserver for Recorder {
+    async fn started(&self, kind: OperationKind) -> Result<(), CoreError> {
+        self.1.lock().unwrap().push(kind);
+        Ok(())
+    }
+
     async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
         self.0.lock().unwrap().push(progress);
         Ok(())
+    }
+}
+
+struct StartClock<'a> {
+    clock: TestClock,
+    observer: &'a Recorder,
+    expected: OperationKind,
+}
+#[async_trait]
+impl Clock for StartClock<'_> {
+    fn now(&self) -> Instant {
+        self.clock.now()
+    }
+    fn wall_now(&self) -> SystemTime {
+        self.clock.wall_now()
+    }
+    async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
+        assert_eq!(*self.observer.1.lock().unwrap(), [self.expected]);
+        self.clock.sleep(delay, context).await
+    }
+}
+
+enum StartAction {
+    Fail,
+    Cancel(CancellationToken),
+    Expire,
+}
+struct StoppingStart<'a> {
+    action: StartAction,
+    clock: &'a TestClock,
+}
+#[async_trait]
+impl PollObserver for StoppingStart<'_> {
+    async fn started(&self, _: OperationKind) -> Result<(), CoreError> {
+        match &self.action {
+            StartAction::Fail => Err(CoreError::new(
+                ErrorKind::Transport,
+                "Cannot write polling progress",
+            )),
+            StartAction::Cancel(cancellation) => {
+                cancellation.cancel();
+                std::future::pending().await
+            }
+            StartAction::Expire => {
+                *self.clock.0.lock().unwrap() += Duration::from_secs(2);
+                Ok(())
+            }
+        }
+    }
+    async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
+        panic!("start must stop reconciliation before a status GET")
     }
 }
 
@@ -117,6 +173,113 @@ async fn observe(
     .await;
     let count = *script.calls.lock().unwrap();
     (result, count)
+}
+
+#[tokio::test]
+async fn start_is_once_before_waiting_and_does_not_invent_a_service_status() {
+    for (location, kind, terminal) in [
+        (JOB, OperationKind::FabricJob, "Completed"),
+        ("/v1/operations/op-1", OperationKind::Fabric, "Succeeded"),
+    ] {
+        let observer = Recorder::default();
+        let clock = StartClock {
+            clock: TestClock(Mutex::new(Instant::now())),
+            observer: &observer,
+            expected: kind,
+        };
+        let start = clock.now();
+        let script = Script {
+            replies: Mutex::new(VecDeque::from([
+                response(200, r#"{"status":"InProgress"}"#, &[]),
+                response(200, &format!(r#"{{"status":"{terminal}"}}"#), &[]),
+            ])),
+            calls: Mutex::new(0),
+        };
+        complete_observed(
+            &script,
+            &clock,
+            Audience::Fabric,
+            response(202, "", &[("location", location), ("retry-after", "600")]),
+            CancellationToken::new(),
+            LroConfig::default(),
+            &observer,
+        )
+        .await
+        .unwrap();
+        assert!(clock.now().duration_since(start) >= Duration::from_secs(600));
+        assert_eq!(*observer.1.lock().unwrap(), [kind]);
+        assert_eq!(observer.0.lock().unwrap().len(), 2);
+        assert_eq!(*script.calls.lock().unwrap(), 2);
+    }
+}
+
+#[tokio::test]
+async fn start_failure_cancellation_and_time_share_reconciliation_bounds_and_recovery() {
+    let cancellation = CancellationToken::new();
+    for (action, expected) in [
+        (StartAction::Fail, ErrorKind::Transport),
+        (
+            StartAction::Cancel(cancellation.clone()),
+            ErrorKind::Cancelled,
+        ),
+        (StartAction::Expire, ErrorKind::Timeout),
+    ] {
+        let clock = TestClock(Mutex::new(Instant::now()));
+        let observer = StoppingStart {
+            action,
+            clock: &clock,
+        };
+        let script = Script {
+            replies: Mutex::new(VecDeque::new()),
+            calls: Mutex::new(0),
+        };
+        let token = if matches!(observer.action, StartAction::Cancel(_)) {
+            cancellation.clone()
+        } else {
+            CancellationToken::new()
+        };
+        let error = complete_observed(
+            &script,
+            &clock,
+            Audience::Fabric,
+            response(202, "", &[("location", JOB)]),
+            token,
+            LroConfig::new(None, Some(Duration::from_secs(1))).unwrap(),
+            &observer,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, expected);
+        assert!(error.recovery.unwrap().outcome_uncertain);
+        assert_eq!(*script.calls.lock().unwrap(), 0);
+    }
+}
+
+#[tokio::test]
+async fn raw_and_pre_cancelled_operations_do_not_notify_start() {
+    for (initial, cancelled) in [
+        (response(200, "{}", &[]), false),
+        (response(202, "", &[]), false),
+        (response(202, "", &[("location", JOB)]), true),
+    ] {
+        let observer = Recorder::default();
+        let cancellation = CancellationToken::new();
+        if cancelled {
+            cancellation.cancel();
+        }
+        let (result, count) = observe(
+            initial,
+            vec![],
+            &observer,
+            cancellation,
+            LroConfig::default(),
+        )
+        .await;
+        assert_eq!(result.is_err(), cancelled);
+        assert_eq!(count, 0);
+        assert!(observer.0.lock().unwrap().is_empty());
+        assert!(observer.1.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]
@@ -289,6 +452,7 @@ async fn rejected_urls_and_unknown_or_malformed_statuses_never_emit_raw_progress
         assert_eq!(result.unwrap_err().kind, ErrorKind::Protocol);
         assert_eq!(count, 0);
         assert!(recorder.0.lock().unwrap().is_empty());
+        assert!(recorder.1.lock().unwrap().is_empty());
     }
     for body in [
         r#"{"status":"BODY-CANARY\nINJECTION"}"#,

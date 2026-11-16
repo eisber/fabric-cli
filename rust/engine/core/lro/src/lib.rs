@@ -49,6 +49,13 @@ impl PollProgress {
 /// Caller-owned observation boundary. The engine never writes console output.
 #[async_trait]
 pub trait PollObserver: Send + Sync {
+    /// Observe validated reconciliation before its first wait, not a service status.
+    ///
+    /// Uses the same cancellation, deadline and error handling as status observations.
+    async fn started(&self, _kind: Strategy) -> Result<(), CoreError> {
+        Ok(())
+    }
+
     /// Observe a recognized status before waiting again or returning its outcome.
     ///
     /// Observation shares the operation cancellation/deadline. Return only safe
@@ -209,6 +216,7 @@ async fn reconcile(
     settings: (LroConfig, &dyn PollObserver),
 ) -> Result<ApiResponse, CoreError> {
     let (config, observer) = settings;
+    bounded_with_clock(clock, context, observer.started(handle.kind())).await??;
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
     let mut warned_percentage = false;
@@ -414,9 +422,10 @@ pub async fn complete_with_config(
     .await
 }
 
-/// Reconcile with an injected observer for each recognized status GET response.
+/// Reconcile with an injected start notification and status GET observations.
 ///
-/// Includes pending and terminal statuses, but not initial/result responses,
+/// Notifies once after validation and before the first wait, then reports
+/// pending and terminal statuses, but not initial/result response statuses,
 /// malformed or unknown statuses, failed HTTP attempts, or unsent polls.
 /// Existing unobserved entry points preserve their effect-free default.
 pub async fn complete_observed(

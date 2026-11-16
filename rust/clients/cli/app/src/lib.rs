@@ -18,7 +18,7 @@ use clap::{
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
     Audience, CancellationToken, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
-    OperationContext,
+    OperationContext, OperationKind,
 };
 use fabric_identity::{AzureCliSession, Binding, BoundCredential, ProcessExecutor};
 use fabric_sdk_api::{PollObserver, PollProgress};
@@ -34,14 +34,18 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 struct ProgressEvent {
-    progress: PollProgress,
+    progress: ConsoleUpdate,
     written: oneshot::Sender<Result<(), CoreError>>,
 }
 
+enum ConsoleUpdate {
+    Started(OperationKind),
+    Status(PollProgress),
+}
+
 struct ConsoleProgress(mpsc::Sender<ProgressEvent>);
-#[async_trait]
-impl PollObserver for ConsoleProgress {
-    async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
+impl ConsoleProgress {
+    async fn send(&self, progress: ConsoleUpdate) -> Result<(), CoreError> {
         let (written, received) = oneshot::channel();
         self.0
             .send(ProgressEvent { progress, written })
@@ -51,20 +55,43 @@ impl PollObserver for ConsoleProgress {
     }
 }
 
+#[async_trait]
+impl PollObserver for ConsoleProgress {
+    async fn started(&self, kind: OperationKind) -> Result<(), CoreError> {
+        self.send(ConsoleUpdate::Started(kind)).await
+    }
+
+    async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
+        self.send(ConsoleUpdate::Status(progress)).await
+    }
+}
+
 fn progress_error() -> CoreError {
     CoreError::new(ErrorKind::Transport, "Cannot write polling progress")
 }
 
-fn write_progress(progress: PollProgress, stderr: &mut dyn Write) -> Result<(), CoreError> {
-    let label = if progress.is_job() {
-        "Job instance status"
-    } else {
-        "Operation status"
-    };
-    let result = if let Some(percentage) = progress.percentage_complete() {
-        writeln!(stderr, "{label}: {} ({percentage}%)", progress.status())
-    } else {
-        writeln!(stderr, "{label}: {}", progress.status())
+fn write_progress(progress: ConsoleUpdate, stderr: &mut dyn Write) -> Result<(), CoreError> {
+    let result = match progress {
+        ConsoleUpdate::Started(kind) => {
+            let label = if kind == OperationKind::FabricJob {
+                "job"
+            } else {
+                "operation"
+            };
+            writeln!(stderr, "Polling {label}; waiting for status")
+        }
+        ConsoleUpdate::Status(progress) => {
+            let label = if progress.is_job() {
+                "Job instance status"
+            } else {
+                "Operation status"
+            };
+            if let Some(percentage) = progress.percentage_complete() {
+                writeln!(stderr, "{label}: {} ({percentage}%)", progress.status())
+            } else {
+                writeln!(stderr, "{label}: {}", progress.status())
+            }
+        }
     };
     result
         .and_then(|()| stderr.flush())

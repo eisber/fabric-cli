@@ -42,11 +42,15 @@ No job result URL is fetched, no mutation is replayed, and local timeout or
 cancellation never cancels the remote job. Unsupported job routes remain raw.
 
 `complete_observed` accepts a caller-owned `PollObserver` in addition to timing
-configuration. Each recognized successful status GET supplies a `PollProgress`
+configuration. Its default no-op `started` callback receives the validated
+operation kind once before the first wait. This notification describes local
+reconciliation, not an observed service status. Raw responses and invalid handles
+do not notify; cancellation before reconciliation suppresses the callback.
+Each recognized successful status GET supplies a `PollProgress`
 containing only a canonical status and protocol label, including failed/cancelled
 terminal statuses before their service error. Initial responses, result GETs,
 failed HTTP attempts and unknown/malformed statuses do not generate observations.
-The callback shares cancellation and the overall deadline; callback errors retain
+Both callbacks share cancellation and the overall deadline; callback errors retain
 known recovery and stop local polling. No console I/O or runtime discovery occurs
 in the engine. Existing `complete`/`complete_with_config` callers remain unobserved.
 
