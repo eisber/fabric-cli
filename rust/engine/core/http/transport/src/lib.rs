@@ -59,8 +59,14 @@ impl NativeHttpClient {
         context: &OperationContext,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
-        if request.url.scheme() != "https" || request.body.len() > MAX_REQUEST_BYTES {
-            return Err(error("Native transport requires bounded HTTPS requests"));
+        if request.url.scheme() != "https" {
+            return Err(error("Native transport requires an HTTPS URL"));
+        }
+        if request.body.len() > MAX_REQUEST_BYTES {
+            return Err(error(&format!(
+                "Request body is {} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit",
+                request.body.len()
+            )));
         }
         let mut builder = http::Request::builder()
             .method(request.method.as_str())
@@ -75,7 +81,7 @@ impl NativeHttpClient {
             .client
             .request(request)
             .await
-            .map_err(|_| error("HTTP send failed; request outcome may be uncertain"))?;
+            .map_err(|failure| send_failure(&failure))?;
         let status = response.status().as_u16();
         if (300..400).contains(&status) {
             return Err(CoreError::new(
@@ -111,7 +117,7 @@ fn ingest_headers(
             .saturating_add(value.len());
         if header_bytes > 64 * 1024 {
             return Err(rejected(protocol(
-                "Response headers exceed allocation bound",
+                "Response headers exceed the 65536-byte total limit",
             )));
         }
         if headers.contains_key(name.as_str())
@@ -160,7 +166,9 @@ where
             let frame = frame.map_err(|_| error("HTTP response stream failed"))?;
             if let Ok(bytes) = frame.into_data() {
                 if wire.len().saturating_add(bytes.len()) > MAX_RESPONSE_BYTES {
-                    return Err(protocol("Wire response exceeds allocation bound"));
+                    return Err(protocol(&format!(
+                        "Response body exceeds the {MAX_RESPONSE_BYTES}-byte size limit"
+                    )));
                 }
                 wire.extend_from_slice(&bytes);
             }
@@ -184,6 +192,89 @@ where
 }
 fn error(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Transport, message)
+}
+
+// Only fixed labels are reported: lower-level error text can echo hostnames,
+// addresses, or peer-supplied data, so it is never copied into the message.
+fn send_failure(failure: &hyper_util::client::legacy::Error) -> CoreError {
+    let reason = failure_reason(failure);
+    let message = if failure.is_connect() {
+        match reason {
+            Some(reason) => {
+                format!("Unable to connect to the service ({reason}); request was not sent")
+            }
+            None => "Unable to connect to the service; request was not sent".to_owned(),
+        }
+    } else {
+        match reason {
+            Some(reason) => {
+                format!("HTTP send failed ({reason}); request outcome may be uncertain")
+            }
+            None => "HTTP send failed; request outcome may be uncertain".to_owned(),
+        }
+    };
+    error(&message)
+}
+
+fn failure_reason(failure: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
+    let mut current = Some(failure);
+    let mut depth = 0;
+    while let Some(cause) = current {
+        if let Some(reason) = cause_reason(cause) {
+            return Some(reason);
+        }
+        depth += 1;
+        if depth > 16 {
+            break;
+        }
+        current = cause.source();
+    }
+    None
+}
+
+fn cause_reason(cause: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
+    const TLS: &str = "TLS handshake or certificate verification failed";
+    if cause.downcast_ref::<rustls::Error>().is_some() {
+        return Some(TLS);
+    }
+    // hyper-util's DNS ConnectError type is private; its fixed display text is stable.
+    if cause.to_string() == "dns error" {
+        return Some("DNS resolution failed");
+    }
+    if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+        // io::Error::source skips the wrapped error, so inspect it explicitly.
+        if io
+            .get_ref()
+            .is_some_and(|inner| inner.downcast_ref::<rustls::Error>().is_some())
+        {
+            return Some(TLS);
+        }
+        use std::io::ErrorKind as Io;
+        return match io.kind() {
+            Io::ConnectionRefused => Some("connection refused"),
+            Io::TimedOut => Some("connection timed out"),
+            Io::ConnectionReset | Io::ConnectionAborted | Io::BrokenPipe | Io::UnexpectedEof => {
+                Some("connection reset or closed by peer")
+            }
+            Io::NetworkUnreachable | Io::HostUnreachable | Io::NetworkDown => {
+                Some("network unreachable")
+            }
+            Io::AddrNotAvailable => Some("local address not available"),
+            _ => None,
+        };
+    }
+    if let Some(hyper) = cause.downcast_ref::<hyper::Error>() {
+        if hyper.is_incomplete_message() {
+            return Some("connection closed before the response completed");
+        }
+        if hyper.is_timeout() {
+            return Some("timed out");
+        }
+        if hyper.is_parse() {
+            return Some("malformed HTTP response");
+        }
+    }
+    None
 }
 fn protocol(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Protocol, message)
@@ -219,7 +310,9 @@ async fn decode(wire: Vec<u8>, encoding: Option<&str>) -> Result<Vec<u8>, CoreEr
             break;
         }
         if decoded.len().saturating_add(count) > MAX_RESPONSE_BYTES {
-            return Err(protocol("Decoded response exceeds allocation bound"));
+            return Err(protocol(&format!(
+                "Decompressed response exceeds the {MAX_RESPONSE_BYTES}-byte size limit"
+            )));
         }
         decoded.extend_from_slice(&chunk[..count]);
         tokio::task::yield_now().await;
@@ -290,5 +383,21 @@ mod tests {
             decode(wire, Some("gzip")).await.unwrap_err().kind,
             ErrorKind::Protocol
         );
+    }
+
+    #[test]
+    fn failure_reasons_use_fixed_labels() {
+        let refused = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "SECRET-host");
+        assert_eq!(failure_reason(&refused), Some("connection refused"));
+        let tls = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            rustls::Error::InvalidCertificate(rustls::CertificateError::Expired),
+        );
+        assert_eq!(
+            failure_reason(&tls),
+            Some("TLS handshake or certificate verification failed")
+        );
+        let other = std::io::Error::other("SECRET-detail");
+        assert_eq!(failure_reason(&other), None);
     }
 }

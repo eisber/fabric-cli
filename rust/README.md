@@ -273,7 +273,11 @@ they use `Service`. Failed/cancelled Fabric jobs also read
 `failureReason.message` as `result.failure_reason.message` in the final JSON.
 This service-provided text may contain sensitive details; it is JSON-escaped
 and never copied into progress, verbose logs, or error debug formatting.
-Other service messages and unrelated response fields are not forwarded.
+For other failed operations and status or result HTTP failures, the service's
+error message is appended to the safe summary after sanitization (control
+characters removed, whitespace collapsed, URL query strings dropped, capped at
+512 characters). Unrelated response fields are not forwarded. A valid request
+ID is appended when present.
 The safe summary distinguishes failed jobs from cancelled jobs.
 Recovery retains the safe operation ID and status URL, but no public uncertainty
 boolean. When the final status is unknown, the error message warns that the

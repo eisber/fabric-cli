@@ -102,7 +102,8 @@ impl fmt::Debug for JobFailureReason {
 }
 
 /// Sanitized error message with separately held job failure details for final JSON.
-/// Never wrap raw provider or HTTP diagnostics in its message.
+/// Never wrap raw provider or HTTP diagnostics in its message; service-provided
+/// error text may be included only after [`sanitize_service_message`].
 #[derive(Clone, Debug, Serialize)]
 pub struct CoreError {
     /// Machine-readable error category.
@@ -178,6 +179,57 @@ impl CoreError {
     pub fn service_code(&self) -> Option<&str> {
         self.service_code.as_deref()
     }
+}
+
+/// Maximum characters of service-provided error text forwarded to users.
+pub const MAX_SERVICE_MESSAGE_CHARS: usize = 512;
+
+/// Make service-provided error text safe to display.
+///
+/// Removes control and bidirectional-override characters (terminal injection),
+/// collapses whitespace, drops URL query strings and fragments (which can carry
+/// SAS or other signed tokens), and truncates to [`MAX_SERVICE_MESSAGE_CHARS`].
+/// Returns `None` when nothing displayable remains.
+pub fn sanitize_service_message(raw: &str) -> Option<String> {
+    let mut words = Vec::new();
+    for word in raw
+        .chars()
+        .filter(|c| !is_unsafe_display_char(*c))
+        .collect::<String>()
+        .split_whitespace()
+    {
+        let lower = word.to_ascii_lowercase();
+        match [lower.find("http://"), lower.find("https://")]
+            .into_iter()
+            .flatten()
+            .min()
+        {
+            Some(start) => {
+                let end = word[start..]
+                    .find(['?', '#'])
+                    .map_or(word.len(), |offset| start + offset);
+                words.push(&word[..end]);
+            }
+            None => words.push(word),
+        }
+    }
+    let collapsed = words.join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    if collapsed.chars().count() <= MAX_SERVICE_MESSAGE_CHARS {
+        return Some(collapsed);
+    }
+    let mut truncated: String = collapsed
+        .chars()
+        .take(MAX_SERVICE_MESSAGE_CHARS - 1)
+        .collect();
+    truncated.push('…');
+    Some(truncated)
+}
+fn is_unsafe_display_char(c: char) -> bool {
+    (c.is_control() && !c.is_whitespace())
+        || matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
 }
 impl fmt::Display for CoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -331,39 +383,54 @@ pub fn validate_url(audience: Audience, url: &Url) -> Result<(), CoreError> {
     validate_url_for_host(url, base.host_str().expect("fixed audience host"))
 }
 pub(crate) fn validate_url_for_host(url: &Url, host: &str) -> Result<(), CoreError> {
-    if url.scheme() != "https"
-        || url.host_str() != Some(host)
-        || url.port_or_known_default() != Some(443)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.as_str().len() > 16 * 1024
-    {
-        return Err(CoreError::new(
-            ErrorKind::InvalidInput,
-            "URL must use the selected service HTTPS origin without credentials or fragments",
+    let invalid = |message: &str| Err(CoreError::new(ErrorKind::InvalidInput, message));
+    if url.scheme() != "https" {
+        return invalid("URL must use https://");
+    }
+    if url.host_str() != Some(host) || url.port_or_known_default() != Some(443) {
+        return invalid(&format!(
+            "URL host does not match the selected audience; expected https://{host}"
         ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return invalid("URL must not contain embedded credentials");
+    }
+    if url.fragment().is_some() {
+        return invalid("URL must not contain a #fragment");
+    }
+    if url.as_str().len() > 16 * 1024 {
+        return invalid("URL exceeds the 16384-byte limit");
     }
     validate_path(url.path())
 }
 /// Reject encoded separators and traversal before URL normalization can hide them.
 pub fn validate_path(path: &str) -> Result<(), CoreError> {
     let lower = path.to_ascii_lowercase();
-    if path.contains('\\')
-        || lower.contains("%2f")
-        || lower.contains("%5c")
-        || lower.contains("%25")
-        || lower.split('/').any(|p| {
-            let decoded = p.replace("%2e", ".");
-            decoded == "." || decoded == ".."
-        })
-    {
-        return Err(CoreError::new(ErrorKind::InvalidInput, "Unsafe URL path"));
+    let reason = if path.contains('\\') {
+        Some("backslashes are not allowed")
+    } else if lower.contains("%2f") || lower.contains("%5c") {
+        Some("percent-encoded path separators (%2F, %5C) are not allowed")
+    } else if lower.contains("%25") {
+        Some("double percent-encoding (%25) is not allowed")
+    } else if lower.split('/').any(|p| {
+        let decoded = p.replace("%2e", ".");
+        decoded == "." || decoded == ".."
+    }) {
+        Some("'.' and '..' path segments are not allowed")
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => Err(CoreError::new(
+            ErrorKind::InvalidInput,
+            format!("Unsafe URL path: {reason}"),
+        )),
+        None => Ok(()),
     }
-    Ok(())
 }
 /// Validate custom headers, rejecting bearer and transport-control injection.
 pub fn validate_headers(headers: &BTreeMap<String, String>) -> Result<(), CoreError> {
+    const MAX_HEADER_BYTES: usize = 64 * 1024;
     let forbidden = [
         "authorization",
         "proxy-authorization",
@@ -378,20 +445,37 @@ pub fn validate_headers(headers: &BTreeMap<String, String>) -> Result<(), CoreEr
         "proxy-connection",
         "expect",
     ];
+    let invalid = |message: String| Err(CoreError::new(ErrorKind::InvalidInput, message));
     let mut total = 0usize;
     for (name, value) in headers {
         total = total.saturating_add(name.len()).saturating_add(value.len());
-        if forbidden.contains(&name.to_ascii_lowercase().as_str())
-            || name.is_empty()
-            || !name
+        if name.is_empty() {
+            return invalid("Custom HTTP header name must not be empty".to_owned());
+        }
+        let valid_name = name.len() <= 128
+            && name
                 .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
-            || value.bytes().any(|b| b < 32 && b != b'\t' || b == 127)
-            || total > 64 * 1024
-        {
-            return Err(CoreError::new(
-                ErrorKind::InvalidInput,
-                "Unsafe or oversized custom HTTP headers",
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b));
+        if !valid_name {
+            return invalid(
+                "Custom HTTP header name contains invalid characters or exceeds 128 bytes"
+                    .to_owned(),
+            );
+        }
+        // Header names are validated tokens and safe to echo; values never are.
+        if forbidden.contains(&name.to_ascii_lowercase().as_str()) {
+            return invalid(format!(
+                "Custom HTTP header '{name}' is managed by the CLI and cannot be set"
+            ));
+        }
+        if value.bytes().any(|b| b < 32 && b != b'\t' || b == 127) {
+            return invalid(format!(
+                "Value of custom HTTP header '{name}' contains control characters"
+            ));
+        }
+        if total > MAX_HEADER_BYTES {
+            return invalid(format!(
+                "Custom HTTP headers exceed the {MAX_HEADER_BYTES}-byte total limit"
             ));
         }
     }
@@ -435,7 +519,7 @@ pub fn validate_response(response: &ApiResponse) -> Result<(), CoreError> {
     if response.body.len() > MAX_RESPONSE_BYTES {
         return Err(CoreError::new(
             ErrorKind::Protocol,
-            "Response exceeds allocation bound",
+            format!("Response exceeds the {MAX_RESPONSE_BYTES}-byte size limit"),
         ));
     }
     Ok(())

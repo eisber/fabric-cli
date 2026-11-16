@@ -29,7 +29,10 @@ impl CommandError {
         let code = code.into();
         let exit_code = if code == "Unauthorized" { 4 } else { 1 };
         let kind = match code.as_str() {
-            "InvalidInput" | "InvalidJson" => ErrorKind::InvalidInput,
+            // Local input/config failures are never service failures.
+            "InvalidInput" | "InvalidJson" | "InvalidPath" | "InvalidConfig" => {
+                ErrorKind::InvalidInput
+            }
             "Unauthorized" => ErrorKind::Unauthorized,
             "Transport" => ErrorKind::Transport,
             "Protocol" => ErrorKind::Protocol,

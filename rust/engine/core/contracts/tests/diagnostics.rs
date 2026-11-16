@@ -58,3 +58,22 @@ fn diagnostic_failures_report_fixed_truthful_outcomes_without_provider_errors() 
         }
     }
 }
+
+#[test]
+fn service_messages_drop_controls_url_queries_and_excess_length() {
+    use fabric_core::{MAX_SERVICE_MESSAGE_CHARS, sanitize_service_message};
+    assert_eq!(sanitize_service_message(" \t\n\u{1b}\u{202e} "), None);
+    assert_eq!(
+        sanitize_service_message("Item\u{1b}[31m  not\r\nfound\u{200b}"),
+        Some("Item[31m not found".to_owned())
+    );
+    assert_eq!(
+        sanitize_service_message(
+            "See HTTPS://host/a?sig=SECRET-CANARY and url=https://b/c#SECRET-CANARY now"
+        ),
+        Some("See HTTPS://host/a and url=https://b/c now".to_owned())
+    );
+    let long = sanitize_service_message(&"é".repeat(MAX_SERVICE_MESSAGE_CHARS + 1)).unwrap();
+    assert_eq!(long.chars().count(), MAX_SERVICE_MESSAGE_CHARS);
+    assert!(long.ends_with('…'));
+}

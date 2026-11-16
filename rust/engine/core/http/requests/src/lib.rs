@@ -25,16 +25,32 @@ pub fn build_request(
     body: Vec<u8>,
 ) -> Result<ApiRequest, CoreError> {
     let method = method.to_ascii_uppercase();
-    if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str())
-        || endpoint.is_empty()
-        || endpoint.len() > 16 * 1024
-        || endpoint.chars().any(|c| c.is_control() || c == ' ')
-        || body.len() > MAX_REQUEST_BYTES
-    {
-        return Err(CoreError::new(
-            ErrorKind::InvalidInput,
-            "Invalid method, endpoint, or oversized request body",
+    let invalid = |message: String| CoreError::new(ErrorKind::InvalidInput, message);
+    if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
+        return Err(invalid(
+            "Unsupported HTTP method; use GET, POST, PUT, PATCH, or DELETE".to_owned(),
         ));
+    }
+    if endpoint.is_empty() {
+        return Err(invalid("Endpoint must not be empty".to_owned()));
+    }
+    if endpoint.len() > 16 * 1024 {
+        return Err(invalid(format!(
+            "Endpoint is {} bytes, exceeding the 16384-byte limit",
+            endpoint.len()
+        )));
+    }
+    if endpoint.chars().any(|c| c.is_control() || c == ' ') {
+        return Err(invalid(
+            "Endpoint must not contain spaces or control characters; percent-encode them"
+                .to_owned(),
+        ));
+    }
+    if body.len() > MAX_REQUEST_BYTES {
+        return Err(invalid(format!(
+            "Request body is {} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit",
+            body.len()
+        )));
     }
     validate_headers(&headers)?;
     validate_path(endpoint.split(['?', '#']).next().unwrap_or_default())?;
@@ -42,7 +58,10 @@ pub fn build_request(
         Url::parse(endpoint)
     } else {
         if endpoint.contains("://") || endpoint.starts_with("//") {
-            return Err(CoreError::new(ErrorKind::InvalidInput, "Unsafe endpoint"));
+            return Err(CoreError::new(
+                ErrorKind::InvalidInput,
+                "Endpoint must be a relative path or an https:// URL",
+            ));
         }
         Url::parse(&format!(
             "{}/{}",
@@ -50,7 +69,7 @@ pub fn build_request(
             endpoint.trim_start_matches('/')
         ))
     }
-    .map_err(|_| CoreError::new(ErrorKind::InvalidInput, "Invalid endpoint URL"))?;
+    .map_err(|_| CoreError::new(ErrorKind::InvalidInput, "Endpoint is not a valid URL"))?;
     validate_url(audience, &url)?;
     Ok(ApiRequest {
         method,

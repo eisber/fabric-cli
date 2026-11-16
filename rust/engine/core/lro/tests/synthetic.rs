@@ -541,8 +541,8 @@ async fn fabric_result_and_only_documented_no_result_condition() {
 }
 
 #[tokio::test]
-async fn failed_status_and_result_report_service_codes_without_exposing_messages() {
-    for (replies, expected) in [
+async fn failed_status_and_result_forward_sanitized_json_messages_only() {
+    for (replies, expected, forwarded) in [
         (
             vec![response(
                 200,
@@ -550,6 +550,7 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
                 &[],
             )],
             "DuplicateDatasetNamesInWorkspace",
+            true,
         ),
         (
             vec![response(
@@ -558,6 +559,7 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
                 &[],
             )],
             "StatusCheckFailed",
+            true,
         ),
         (
             vec![
@@ -573,6 +575,7 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
                 ),
             ],
             "ResultNotReady",
+            true,
         ),
         (
             vec![
@@ -588,6 +591,7 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
                 ),
             ],
             "ResultFailed",
+            true,
         ),
         (
             vec![
@@ -603,6 +607,7 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
                 ),
             ],
             "HeaderResultFailure",
+            false,
         ),
         (
             vec![response(
@@ -611,6 +616,7 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
                 &[("x-ms-error-code", "HeaderFailure")],
             )],
             "HeaderFailure",
+            false,
         ),
     ] {
         let expected_calls = replies.len();
@@ -627,7 +633,15 @@ async fn failed_status_and_result_report_service_codes_without_exposing_messages
         assert_eq!(error.kind, ErrorKind::Service);
         assert_eq!(error.service_code(), Some(expected));
         assert!(error.recovery.is_some());
-        assert!(!format!("{error:?}").contains("SECRET-CANARY"));
+        if forwarded {
+            assert!(
+                error.message.ends_with(": SECRET-CANARY"),
+                "{}",
+                error.message
+            );
+        } else {
+            assert!(!format!("{error:?}").contains("SECRET-CANARY"));
+        }
         assert_eq!(http.calls.lock().unwrap().len(), expected_calls);
     }
 }
@@ -1011,8 +1025,13 @@ async fn storage_status_failure_and_local_timeout_preserve_safe_recovery() {
         );
         if expected == ErrorKind::Service {
             assert_eq!(error.service_code(), Some("StorageFailure"));
+            assert!(
+                error.message.ends_with(": BODY-CANARY"),
+                "{}",
+                error.message
+            );
         }
-        assert!(!format!("{error:?}").contains("CANARY"));
+        assert!(!format!("{error:?}").contains("QUERY-CANARY"));
     }
 }
 

@@ -659,7 +659,14 @@ async fn service_error_code_reaches_json_for_status_and_result_failures() {
         assert_eq!(envelope["result"]["data"][0]["operation_id"], "op-1");
         assert!(!stdout.contains("outcome_uncertain"));
         assert!(!stdout.contains("Check status_url before retrying."));
-        assert!(!stdout.contains("SECRET-CANARY"));
+        assert_eq!(
+            envelope["result"]["message"]
+                .as_str()
+                .unwrap()
+                .ends_with(": SECRET-CANARY"),
+            expected != "Unauthorized",
+            "{stdout}"
+        );
         assert!(!stderr.contains("SECRET-CANARY"));
     }
 }

@@ -255,7 +255,16 @@ headers. As a user-approved extension, the final JSON may also include
 `result.failure_reason.message`: only a nonempty string from the job's
 `failureReason.message`. This untrusted text can contain sensitive data and is
 JSON-escaped, never written to progress/verbose logs or error Debug/Display.
-Other response fields, nested details, and non-job error messages remain hidden.
+Job failure text is never appended to the command message. For non-job
+operations and status/result HTTP failures, the service error message (from
+`error.message` or a top-level `message`) is appended to the command message
+after sanitization: control and bidirectional-override characters are removed,
+whitespace is collapsed, URL query strings and fragments are dropped, and the
+text is truncated to 512 characters. A valid `requestId` or `x-ms-request-id`
+header is appended as `(request ID: ...)`. Other response fields and nested
+details remain hidden. Local validation, transport, and size-limit failures
+name the offending option, limit, or fixed failure reason without echoing user
+input, header values, credentials, or JSON content.
 The top-level safe summary distinguishes failed jobs from cancelled jobs.
 Recovery's internal `outcome_uncertain` is false once the poller observes a terminal
 status, even if subsequent result retrieval or reporting fails; without a known

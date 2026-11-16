@@ -976,20 +976,26 @@ async fn lowercase_methods_still_reach_identity_validation_without_sending_reque
 
 #[tokio::test]
 async fn unrelated_parser_errors_do_not_receive_method_diagnostics() {
-    for args in [
-        vec!["api", "items", "--method", "post", "--audience", "POST"],
-        vec!["api", "items", "--UNKNOWN-CANARY", "--method", "POST"],
-        vec!["auth", "login", "--method", "POST"],
+    for (args, expected) in [
+        (
+            vec!["api", "items", "--method", "post", "--audience", "POST"],
+            "Invalid value for --audience <audience>. Supported values: fabric, storage, azure, powerbi. Run fab-rs api --help.",
+        ),
+        (
+            vec!["api", "items", "--UNKNOWN-CANARY", "--method", "POST"],
+            "Unrecognized argument or option. Run fab-rs api --help.",
+        ),
+        (
+            vec!["auth", "login", "--method", "POST"],
+            "Unrecognized argument or option. Run fab-rs auth login --help.",
+        ),
     ] {
         let host = FakeHost::new(vec![]);
         let (code, stdout, stderr) = run(&args, &host).await;
         assert_eq!(code, 1);
         let envelope: Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(envelope["result"]["error_code"], "InvalidInput");
-        assert_eq!(
-            envelope["result"]["message"],
-            "Invalid command arguments. Run fab-rs --help."
-        );
+        assert_eq!(envelope["result"]["message"], expected);
         assert!(!stdout.contains("CANARY"));
         assert!(stderr.is_empty());
         assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
@@ -2997,7 +3003,10 @@ mod polling_configuration {
     #[tokio::test]
     async fn invalid_config_is_rejected_before_identity_or_mutation() {
         for (config, expected) in [
-            ("invalid", "Invalid polling configuration JSON"),
+            (
+                "invalid",
+                "--polling-config is not valid JSON: syntax error at line 1, column 1",
+            ),
             ("[]", "Polling configuration must be a JSON object"),
             ("null", "Polling configuration must be a JSON object"),
             (

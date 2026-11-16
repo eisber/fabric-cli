@@ -97,13 +97,17 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
         Some("storage") => Audience::Storage,
         Some("azure") => Audience::Azure,
         Some("powerbi") => Audience::PowerBi,
-        _ => return Err(invalid("Invalid audience")),
+        _ => {
+            return Err(invalid(
+                "Invalid --audience; supported values are fabric, storage, azure, and powerbi",
+            ));
+        }
     };
     // Pinned process_nargs joins query/header tokens then strips boundary quote characters.
     let query = value("query").map(|text| text.trim_matches(['"', '\'']).to_owned());
     if let Some(query) = query.as_deref() {
         if query.len() > 16 * 1024 {
-            return Err(invalid("JMESPath expression exceeds allocation bound"));
+            return Err(invalid("JMESPath query exceeds the 16384-byte limit"));
         }
         if !query.is_empty() {
             fabric_cli_query::validate(query)
@@ -139,10 +143,14 @@ fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig,
         return Ok(fabric_sdk_api::LroConfig::default());
     };
     if text.len() > 16 * 1024 {
-        return Err(invalid("Polling configuration exceeds allocation bound"));
+        return Err(invalid("--polling-config exceeds the 16384-byte limit"));
     }
-    let json = fabric_core_json::decode(text.as_bytes())
-        .map_err(|_| invalid("Invalid polling configuration JSON"))?;
+    let json = fabric_core_json::decode(text.as_bytes()).map_err(|_| {
+        invalid(json_failure(
+            "--polling-config is not valid JSON",
+            text.as_bytes(),
+        ))
+    })?;
     let object = json
         .as_object()
         .ok_or_else(|| invalid("Polling configuration must be a JSON object"))?;
@@ -183,7 +191,7 @@ fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig,
         .map_err(Into::into)
 }
 
-fn invalid(message: &'static str) -> CommandError {
+fn invalid(message: impl Into<String>) -> CommandError {
     CommandError::new("InvalidInput", message)
 }
 
@@ -193,7 +201,7 @@ pub fn parse_headers(text: Option<&str>) -> Result<BTreeMap<String, String>, Com
     if let Some(text) = text {
         let text = text.trim_matches(['"', '\'']);
         if text.len() > 64 * 1024 {
-            return Err(invalid("Custom headers exceed allocation bound"));
+            return Err(invalid("--headers exceeds the 65536-byte limit"));
         }
         for pair in text.split(',').filter(|_| !text.is_empty()) {
             let (key, value) = pair.split_once('=').ok_or_else(|| {
@@ -215,44 +223,41 @@ fn load_input(
     };
     let text = input.trim_matches(['"', '\'']);
     if text.len() > MAX_REQUEST_BYTES {
-        return Err(invalid("API input exceeds allocation bound"));
+        return Err(invalid(format!(
+            "--input is {} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit",
+            text.len()
+        )));
     }
     if text.starts_with('{') && text.ends_with('}') {
         return json_body(text.as_bytes(), headers);
     }
     let path = Path::new(text);
     // Reject special files before open: opening a named pipe can otherwise block indefinitely.
-    let metadata = std::fs::metadata(path).map_err(|_| {
-        CommandError::new(
-            "InvalidPath",
-            "API input file does not exist or cannot be read",
-        )
-    })?;
+    let metadata = std::fs::metadata(path).map_err(|error| input_file_error(&error))?;
     if !metadata.is_file() {
-        return Err(invalid("API input must be a regular file"));
+        return Err(invalid(
+            "API input path must be a regular file, not a directory or device",
+        ));
     }
     if metadata.len() > MAX_REQUEST_BYTES as u64 {
-        return Err(invalid("API input exceeds allocation bound"));
+        return Err(input_file_too_large(metadata.len()));
     }
-    let file = std::fs::File::open(path).map_err(|_| {
-        CommandError::new(
-            "InvalidPath",
-            "API input file does not exist or cannot be read",
-        )
-    })?;
+    let file = std::fs::File::open(path).map_err(|error| input_file_error(&error))?;
     if !file
         .metadata()
-        .map_err(|_| invalid("Cannot inspect API input file"))?
+        .map_err(|_| invalid("Cannot inspect API input file after opening it"))?
         .is_file()
     {
-        return Err(invalid("API input must be a regular file"));
+        return Err(invalid(
+            "API input path must be a regular file, not a directory or device",
+        ));
     }
     let mut bytes = Vec::new();
     file.take((MAX_REQUEST_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|_| invalid("Cannot read API input file"))?;
+        .map_err(|_| invalid("Cannot read API input file: I/O error while reading"))?;
     if bytes.len() > MAX_REQUEST_BYTES {
-        return Err(invalid("API input exceeds allocation bound"));
+        return Err(input_file_too_large(bytes.len() as u64));
     }
     if path
         .extension()
@@ -263,23 +268,66 @@ fn load_input(
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| invalid("Invalid multipart filename"))?;
+        .ok_or_else(|| invalid("API input file name must be valid UTF-8 for multipart upload"))?;
     multipart(name, &bytes, headers)
+}
+
+/// Describe a JSON failure by position only; content is never echoed.
+fn json_failure(prefix: &str, bytes: &[u8]) -> String {
+    match serde_json::from_slice::<Value>(bytes) {
+        Err(error) if error.is_eof() => format!(
+            "{prefix}: unexpected end of input at line {}, column {}",
+            error.line(),
+            error.column()
+        ),
+        Err(error) if error.is_syntax() => format!(
+            "{prefix}: syntax error at line {}, column {}",
+            error.line(),
+            error.column()
+        ),
+        _ => format!(
+            "{prefix}: nesting exceeds 128 levels or a number is outside the supported range"
+        ),
+    }
+}
+
+fn input_file_error(error: &std::io::Error) -> CommandError {
+    let reason = match error.kind() {
+        std::io::ErrorKind::NotFound => "file not found",
+        std::io::ErrorKind::PermissionDenied => "permission denied",
+        _ => "the file cannot be accessed",
+    };
+    CommandError::new(
+        "InvalidPath",
+        format!("Cannot read API input file: {reason}"),
+    )
+}
+
+fn input_file_too_large(length: u64) -> CommandError {
+    invalid(format!(
+        "API input file is {length} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit"
+    ))
 }
 
 fn json_body(
     bytes: &[u8],
     headers: &mut BTreeMap<String, String>,
 ) -> Result<Vec<u8>, CommandError> {
-    let value = fabric_core_json::decode(bytes)
-        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
+    let value = fabric_core_json::decode(bytes).map_err(|_| {
+        CommandError::new(
+            "InvalidJson",
+            json_failure("API input is not valid JSON", bytes),
+        )
+    })?;
     // Pinned Python passes parsed null as input=None, so it sends no JSON body.
     if value.is_null() {
         return Ok(Vec::new());
     }
     let bytes = fabric_core_json::json_dumps(&value).into_bytes();
     if bytes.len() > MAX_REQUEST_BYTES {
-        return Err(invalid("Encoded API input exceeds allocation bound"));
+        return Err(invalid(format!(
+            "Encoded API input exceeds the {MAX_REQUEST_BYTES}-byte limit"
+        )));
     }
     headers
         .entry("content-type".into())
@@ -298,7 +346,9 @@ fn multipart(
             .chars()
             .any(|c| c.is_control() || matches!(c, '"' | '/' | '\\'))
     {
-        return Err(invalid("Invalid multipart filename"));
+        return Err(invalid(
+            "API input file name must be 1-1024 characters without quotes, slashes, or control characters",
+        ));
     }
     // Deterministic collision-free boundary for these bounded caller-owned bytes.
     let mut boundary = "fab-rs-multipart".to_owned();
@@ -308,7 +358,9 @@ fn multipart(
     {
         boundary.push('x');
         if boundary.len() > 70 {
-            return Err(invalid("Cannot frame multipart input safely"));
+            return Err(invalid(
+                "Cannot frame multipart input: file content collides with every candidate boundary",
+            ));
         }
     }
     let mut body = format!(
@@ -322,7 +374,9 @@ fn multipart(
         .and_then(|n| n.checked_add(suffix.len()))
         .is_none_or(|length| length > MAX_REQUEST_BYTES)
     {
-        return Err(invalid("Multipart API input exceeds allocation bound"));
+        return Err(invalid(format!(
+            "Multipart API input exceeds the {MAX_REQUEST_BYTES}-byte limit"
+        )));
     }
     body.extend_from_slice(content);
     body.extend_from_slice(suffix.as_bytes());
@@ -339,16 +393,24 @@ pub fn validate_response_body(body: &[u8]) -> Result<(), CommandError> {
 }
 
 fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))?;
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        CommandError::new(
+            "InvalidJson",
+            "Service response is not valid JSON: body is not valid UTF-8",
+        )
+    })?;
     if text
         .chars()
         .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
     {
         Ok(Value::String(String::new()))
     } else {
-        fabric_core_json::decode(bytes)
-            .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))
+        fabric_core_json::decode(bytes).map_err(|_| {
+            CommandError::new(
+                "InvalidJson",
+                json_failure("Service response is not valid JSON", bytes),
+            )
+        })
     }
 }
 

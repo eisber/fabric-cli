@@ -252,7 +252,10 @@ impl PollObserver for ConsoleProgress {
 }
 
 fn progress_error() -> CoreError {
-    CoreError::new(ErrorKind::Transport, "Cannot write polling progress")
+    CoreError::new(
+        ErrorKind::Transport,
+        "Cannot write polling progress to stderr; the output stream was closed or failed",
+    )
 }
 
 fn progress_line(
@@ -616,6 +619,71 @@ fn timestamp(host: &dyn Host) -> String {
     date.to_rfc3339_opts(precision, true)
 }
 
+fn parse_failure_message(command: &str, error: &clap::Error) -> String {
+    let defined_arg = || match error.get(ContextKind::InvalidArg) {
+        Some(ContextValue::String(arg)) => Some(arg.clone()),
+        Some(ContextValue::Strings(args)) if !args.is_empty() => Some(args.join(", ")),
+        _ => None,
+    };
+    let valid_values = || match error.get(ContextKind::ValidValue) {
+        Some(ContextValue::Strings(values)) if !values.is_empty() => {
+            format!(" Supported values: {}.", values.join(", "))
+        }
+        _ => String::new(),
+    };
+    let help = if command.is_empty() {
+        "Run fab-rs --help.".to_owned()
+    } else {
+        format!("Run fab-rs {command} --help.")
+    };
+    match error.kind() {
+        ParseErrorKind::InvalidValue
+            if command == "api"
+                && matches!(
+                    error.get(ContextKind::InvalidArg),
+                    Some(ContextValue::String(arg)) if arg == "--method <method>"
+                ) =>
+        {
+            "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST.".to_owned()
+        }
+        ParseErrorKind::InvalidValue | ParseErrorKind::ValueValidation => match defined_arg() {
+            Some(arg) => format!("Invalid value for {arg}.{} {help}", valid_values()),
+            None => format!("Invalid argument value. {help}"),
+        },
+        // The offending token is user input and may carry credentials; do not echo it.
+        ParseErrorKind::UnknownArgument => {
+            format!("Unrecognized argument or option. {help}")
+        }
+        ParseErrorKind::InvalidSubcommand => {
+            format!("Unrecognized command. {help}")
+        }
+        ParseErrorKind::MissingRequiredArgument => match defined_arg() {
+            Some(args) => format!("Missing required argument: {args}. {help}"),
+            None => format!("A required argument is missing. {help}"),
+        },
+        ParseErrorKind::MissingSubcommand
+        | ParseErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            format!("A subcommand is required. {help}")
+        }
+        ParseErrorKind::ArgumentConflict => match defined_arg() {
+            Some(arg) => format!("{arg} cannot be combined with another supplied option. {help}"),
+            None => format!("Conflicting options were supplied. {help}"),
+        },
+        ParseErrorKind::TooManyValues
+        | ParseErrorKind::TooFewValues
+        | ParseErrorKind::WrongNumberOfValues => match defined_arg() {
+            Some(arg) => format!("Wrong number of values for {arg}. {help}"),
+            None => format!("Wrong number of argument values. {help}"),
+        },
+        ParseErrorKind::NoEquals => match defined_arg() {
+            Some(arg) => format!("{arg} requires a value attached with '='. {help}"),
+            None => format!("An option requires a value attached with '='. {help}"),
+        },
+        ParseErrorKind::InvalidUtf8 => format!("Arguments must be valid UTF-8. {help}"),
+        _ => format!("Invalid command arguments. {help}"),
+    }
+}
+
 fn write_failure(
     host: &dyn Host,
     command: &str,
@@ -674,21 +742,13 @@ pub async fn run(
             };
         }
         Err(error) => {
-            // Clap diagnostics can echo raw input containing header credentials. Do not copy them.
-            let message = if name == "api"
-                && error.kind() == ParseErrorKind::InvalidValue
-                && matches!(
-                    error.get(ContextKind::InvalidArg),
-                    Some(ContextValue::String(arg)) if arg == "--method <method>"
-                ) {
-                "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST."
-            } else {
-                "Invalid command arguments. Run fab-rs --help."
-            };
+            // Clap diagnostics can echo raw input containing header credentials. Only
+            // argument definitions from the parser (never user-supplied values) are copied.
+            let message = parse_failure_message(name, &error);
             return write_failure(
                 host,
                 name,
-                CommandError::new("InvalidInput", message),
+                CommandError::new("InvalidInput", message.as_str()),
                 stdout,
                 stderr,
             );
@@ -921,7 +981,7 @@ async fn execute(
             }
             _ => Err(CommandError::new(
                 "InvalidInput",
-                "An auth action is required",
+                "An auth action is required; use fab-rs auth login, logout, or status",
             )),
         },
         Some(("api", api)) => {
@@ -1023,6 +1083,9 @@ async fn execute(
             }
             Ok(data)
         }
-        _ => Err(CommandError::new("InvalidInput", "A command is required")),
+        _ => Err(CommandError::new(
+            "InvalidInput",
+            "A command is required; run fab-rs --help to list commands",
+        )),
     }
 }

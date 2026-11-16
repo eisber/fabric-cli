@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use fabric_core::diagnostics::{
     DelaySource, DiagnosticDuration, DiagnosticEvent, DiagnosticOutcome, OperationOutcome,
-    PollPurpose, PollingStrategy, ResultAction,
+    PollPurpose, PollingStrategy, RequestId, ResultAction,
 };
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
@@ -138,28 +138,74 @@ fn protocol(message: &str) -> CoreError {
 
 fn body(response: &ApiResponse) -> Result<Value, CoreError> {
     if response.body.len() > MAX_RESPONSE_BYTES {
-        return Err(protocol("Operation response exceeds allocation bound"));
+        return Err(protocol(&format!(
+            "Operation response exceeds the {MAX_RESPONSE_BYTES}-byte size limit"
+        )));
     }
     fabric_core_json::decode(&response.body).map_err(|_| protocol("Malformed operation JSON"))
 }
-fn error_code(json: &Value) -> Option<&str> {
-    let error = json.get("error");
-    error
-        .and_then(|value| value.get("errorCode"))
-        .and_then(Value::as_str)
-        .or_else(|| {
-            error
-                .and_then(|value| value.get("code"))
-                .and_then(Value::as_str)
-        })
-        .or_else(|| json.get("errorCode").and_then(Value::as_str))
-        .or_else(|| json.get("code").and_then(Value::as_str))
+/// Error objects in precedence order: Fabric/ARM `error`, Fabric job `failureReason`, top level.
+fn error_objects(json: &Value) -> impl Iterator<Item = &Value> {
+    [json.get("error"), json.get("failureReason"), Some(json)]
+        .into_iter()
+        .flatten()
+        .filter(|value| value.is_object())
 }
-fn service_failure(response: &ApiResponse, code: Option<&str>, message: &str) -> CoreError {
+fn error_code(json: &Value) -> Option<&str> {
+    error_objects(json).find_map(|error| {
+        error
+            .get("errorCode")
+            .and_then(Value::as_str)
+            .or_else(|| error.get("code").and_then(Value::as_str))
+    })
+}
+fn error_message(json: &Value) -> Option<&str> {
+    error_objects(json).find_map(|error| error.get("message").and_then(Value::as_str))
+}
+fn service_failure(response: &ApiResponse, json: Option<&Value>, summary: &str) -> CoreError {
+    service_failure_parts(
+        response,
+        json.and_then(error_code),
+        json.and_then(error_message),
+        summary,
+    )
+}
+fn service_failure_parts(
+    response: &ApiResponse,
+    code: Option<&str>,
+    detail: Option<&str>,
+    summary: &str,
+) -> CoreError {
     let code = code
         .or_else(|| response.header("x-ms-public-api-error-code"))
         .or_else(|| response.header("x-ms-error-code"));
+    let mut message = summary.to_owned();
+    if let Some(detail) = detail.and_then(fabric_core::sanitize_service_message) {
+        message.push_str(": ");
+        message.push_str(&detail);
+    }
+    if let Some(request_id) = ["requestId", "x-ms-request-id"]
+        .into_iter()
+        .find_map(|name| response.header(name).and_then(RequestId::parse))
+    {
+        message.push_str(&format!(" (request ID: {request_id})"));
+    }
     CoreError::service_failure(message, code)
+}
+/// Name an unrecognized status only when it is a short identifier.
+fn unknown_status(kind: &str, status: &str) -> CoreError {
+    if !status.is_empty()
+        && status.len() <= 64
+        && status
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+    {
+        protocol(&format!("Unrecognized {kind} status '{status}'"))
+    } else {
+        protocol(&format!(
+            "Unrecognized {kind} status (value omitted because it is not a short identifier)"
+        ))
+    }
 }
 #[derive(Clone, Copy)]
 enum State {
@@ -208,7 +254,7 @@ fn state(json: &Value) -> Result<(State, &'static str), CoreError> {
         "deleting" => Ok((State::Pending, "Deleting")),
         "failed" => Ok((State::Failed, "Failed")),
         "cancelled" | "canceled" => Ok((State::Cancelled, "Cancelled")),
-        _ => Err(protocol("Unknown operation status")),
+        _ => Err(unknown_status("operation", status)),
     }
 }
 fn job_state(json: &Value) -> Result<(State, &'static str), CoreError> {
@@ -223,7 +269,7 @@ fn job_state(json: &Value) -> Result<(State, &'static str), CoreError> {
         "Deduped" => Ok((State::Success, "Deduped")),
         "Failed" => Ok((State::Failed, "Failed")),
         "Cancelled" => Ok((State::Cancelled, "Cancelled")),
-        _ => Err(protocol("Unknown job instance status")),
+        _ => Err(unknown_status("job instance", status)),
     }
 }
 fn percentage(json: &Value, clock: &dyn Clock, warned: &mut bool) -> Option<f64> {
@@ -367,31 +413,37 @@ async fn reconcile(
         bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
-            let json = body(&response);
-            let message = if json.is_ok() {
-                "Operation status request failed"
+            let json = body(&response).ok();
+            let message = if json.is_some() {
+                format!(
+                    "Operation status request failed with HTTP {}",
+                    response.status
+                )
             } else {
-                "Operation status request failed; error response was not valid JSON"
+                format!(
+                    "Operation status request failed with HTTP {}; error response was not valid JSON",
+                    response.status
+                )
             };
-            return Err(service_failure(
-                &response,
-                json.as_ref().ok().and_then(error_code),
-                message,
-            ));
+            return Err(service_failure(&response, json.as_ref(), &message));
         }
-        let (current, status, percentage, failure_code, failure_message) = match handle.kind() {
+        let (current, status, percentage, failure_json, failure_message) = match handle.kind() {
             Strategy::ArmLocation => match response.status {
                 200 => (State::Success, "Succeeded", None, None, None),
                 201 | 202 => (State::Pending, "Running", None, None, None),
                 _ => {
-                    return Err(protocol(
-                        "Unexpected Azure/Storage Location response status",
-                    ));
+                    return Err(protocol(&format!(
+                        "Unexpected HTTP {} from Azure/Storage Location status poll; expected 200, 201, or 202",
+                        response.status
+                    )));
                 }
             },
             kind => {
                 if kind == Strategy::FabricJob && response.status != 200 {
-                    return Err(protocol("Unexpected job instance response status"));
+                    return Err(protocol(&format!(
+                        "Unexpected HTTP {} from job instance status poll; expected 200",
+                        response.status
+                    )));
                 }
                 let json = body(&response)?;
                 let (current, status) = if job {
@@ -400,29 +452,22 @@ async fn reconcile(
                     state(&json)?
                 };
                 let failed = matches!(current, State::Failed | State::Cancelled);
-                let reason = if job && failed {
+                let failure_message = if job && failed {
                     json.get("failureReason")
-                } else {
-                    None
-                };
-                let failure_code = if failed {
-                    reason
-                        .and_then(error_code)
-                        .or_else(|| error_code(&json))
+                        .and_then(|value| value.get("message"))
+                        .and_then(Value::as_str)
+                        .filter(|message| !message.is_empty())
                         .map(str::to_owned)
                 } else {
                     None
                 };
+                let percentage = percentage(&json, clock, &mut warned_percentage);
                 (
                     current,
                     status,
-                    percentage(&json, clock, &mut warned_percentage),
-                    failure_code,
-                    reason
-                        .and_then(|value| value.get("message"))
-                        .and_then(Value::as_str)
-                        .filter(|message| !message.is_empty())
-                        .map(str::to_owned),
+                    percentage,
+                    failed.then_some(json),
+                    failure_message,
                 )
             }
         };
@@ -455,12 +500,21 @@ async fn reconcile(
         match current {
             State::Failed | State::Cancelled => {
                 let message = match (job, current) {
-                    (true, State::Failed) => "Backend job failed",
-                    (true, _) => "Backend job was cancelled",
-                    (false, State::Failed) => "Backend operation failed",
-                    (false, _) => "Backend operation was cancelled",
+                    (true, State::Cancelled) => "Backend job was cancelled",
+                    (true, _) => "Backend job failed",
+                    (false, State::Cancelled) => "Backend operation was cancelled",
+                    (false, _) => "Backend operation failed",
                 };
-                let mut error = service_failure(&response, failure_code.as_deref(), message);
+                if !job {
+                    return Err(service_failure(&response, failure_json.as_ref(), message));
+                }
+                // Job failure text is untrusted and is exposed only in final JSON.
+                let code = failure_json.as_ref().and_then(|json| {
+                    json.get("failureReason")
+                        .and_then(error_code)
+                        .or_else(|| error_code(json))
+                });
+                let mut error = service_failure_parts(&response, code, None, message);
                 error.failure_reason =
                     failure_message.map(|message| fabric_core::JobFailureReason { message });
                 return Err(error);
@@ -579,8 +633,8 @@ async fn reconcile(
                     .await?;
                     return Ok(result_response);
                 }
-                let error_body = body(&result_response);
-                if error_body.as_ref().ok().and_then(error_code) == Some("OperationHasNoResult") {
+                let error_body = body(&result_response).ok();
+                if error_body.as_ref().and_then(error_code) == Some("OperationHasNoResult") {
                     diagnostic(
                         observer,
                         clock,
@@ -593,15 +647,21 @@ async fn reconcile(
                     .await?;
                     return Ok(response);
                 }
-                let message = if error_body.is_ok() {
-                    "Operation result retrieval failed"
+                let message = if error_body.is_some() {
+                    format!(
+                        "Operation result retrieval failed with HTTP {}",
+                        result_response.status
+                    )
                 } else {
-                    "Operation result retrieval failed; error response was not valid JSON"
+                    format!(
+                        "Operation result retrieval failed with HTTP {}; error response was not valid JSON",
+                        result_response.status
+                    )
                 };
                 return Err(service_failure(
                     &result_response,
-                    error_body.as_ref().ok().and_then(error_code),
-                    message,
+                    error_body.as_ref(),
+                    &message,
                 ));
             }
         }

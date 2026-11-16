@@ -106,7 +106,12 @@ fn retry_after_value(value: &str, now: SystemTime) -> Result<Duration, CoreError
             .unwrap_or(Duration::MAX));
     }
     let then = http_date(value, now)
-        .ok_or_else(|| CoreError::new(ErrorKind::Protocol, "Invalid Retry-After header"))?;
+        .ok_or_else(|| {
+            CoreError::new(
+                ErrorKind::Protocol,
+                "Service returned an invalid Retry-After header; expected delay seconds or an HTTP date",
+            )
+        })?;
     Ok(then.duration_since(now).unwrap_or_default())
 }
 
@@ -334,12 +339,19 @@ impl HttpClient {
             validate_url(audience, &request.url)?;
         }
         validate_headers(&request.headers)?;
-        if request.body.len() > MAX_REQUEST_BYTES
-            || !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&request.method.as_str())
-        {
+        if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&request.method.as_str()) {
             return Err(CoreError::new(
                 ErrorKind::InvalidInput,
-                "Request body exceeds allocation bound",
+                "Unsupported HTTP method; use GET, POST, PUT, PATCH, or DELETE",
+            ));
+        }
+        if request.body.len() > MAX_REQUEST_BYTES {
+            return Err(CoreError::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "Request body is {} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit",
+                    request.body.len()
+                ),
             ));
         }
         let safe = retry_get && request.method == "GET";
@@ -455,7 +467,10 @@ impl HttpClient {
                     if (300..400).contains(&response.status) {
                         return Err(outcome.attach(CoreError::new(
                             ErrorKind::Protocol,
-                            "HTTP redirects are not followed",
+                            format!(
+                                "Service responded with HTTP {} redirect; redirects are not followed",
+                                response.status
+                            ),
                         )));
                     }
                     safe && matches!(response.status, 408 | 429 | 500 | 502 | 503 | 504)
