@@ -7,25 +7,31 @@
 //! create, pre-read/merge, server revision guard, or mutation replay is implied.
 //! The caller supplies the context, executor, deadline and cancellation.
 
-use crate::{ItemCollection, mutations::ItemMutations};
+use crate::ItemCollection;
 use contract::{
     ApprovedOperation, Availability, Binding, ContractError, Coverage, Effect, ExecutionEvidence,
     ExecutionReceipt, FailureInfo, Generation, OperationDescriptor, OperationHandle, Outcome,
     Precondition, PreparedOperation, ReceiptBuildError, ReceiptError, Registry, ResolvedTarget,
     TargetKind, Verb,
 };
-use fabric_core::{Audience, RequestContext, ServiceOrigin};
+use fabric_core::{Audience, EndpointBinding, RequestContext, ServiceOrigin};
 use fabric_sdk_operations::{
-    OperationExecutor, OperationLimits, OperationSession, OperationWarning,
+    FabricOperation, OperationErrorKind, OperationExecutor, OperationLimits, OperationSession,
+    OperationWarning,
 };
-use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceError, ResourceOutcome};
+use fabric_sdk_workspaces::mutations::{
+    CompletionPolicy, ResourceError, ResourceMethod, ResourceOperation, ResourceOutcome,
+};
 pub use fabric_v2_contracts as contract;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use std::{
     fmt,
     future::Future,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Common operation identity, independent of CLI or artifact-facade spelling.
@@ -200,7 +206,7 @@ pub struct PreparedUpdate {
     prepared: PreparedOperation,
     body: Value,
     options: UpdateOptions,
-    collection: ItemCollection,
+    operation: Mutex<Option<FabricOperation>>,
     context: Option<RequestContext>,
     limits: OperationLimits,
     executed: AtomicBool,
@@ -270,13 +276,33 @@ impl PreparedUpdate {
             return Err(UpdateError::InvalidInput);
         }
         let body = serde_json::to_value(patch).map_err(|_| UpdateError::InvalidInput)?;
+        let identity = target.identity();
+        let route = ResourceOperation::new(
+            ResourceMethod::Patch,
+            &[
+                "workspaces",
+                identity.workspace_id().ok_or(UpdateError::InvalidInput)?,
+                collection.as_str(),
+                identity.item_id().ok_or(UpdateError::InvalidInput)?,
+            ],
+            Some(body.clone()),
+            CompletionPolicy::ReturnAccepted,
+        )
+        .map_err(|_| UpdateError::InvalidInput)?;
+        let operation = FabricOperation::new(
+            route.method(),
+            route.path(),
+            bytes.to_vec(),
+            route.completion(),
+        )
+        .map_err(|_| UpdateError::InvalidInput)?;
         let limits = OperationLimits::default();
-        let prepared = prepare(target, &body, &options, None, limits)?;
+        let prepared = prepare(target, &body, &options, None, limits, &operation)?;
         Ok(Self {
             prepared,
             body,
             options,
-            collection,
+            operation: Mutex::new(Some(operation)),
             context: None,
             limits,
             executed: AtomicBool::new(false),
@@ -308,6 +334,11 @@ impl PreparedUpdate {
             &self.options,
             Some(&context),
             limits,
+            self.operation
+                .get_mut()
+                .map_err(|_| UpdateError::InvalidInput)?
+                .as_ref()
+                .ok_or(UpdateError::AlreadyExecuted)?,
         )?;
         self.context = Some(context);
         self.limits = limits;
@@ -342,6 +373,7 @@ fn prepare(
     options: &UpdateOptions,
     context: Option<&RequestContext>,
     limits: OperationLimits,
+    operation: &FabricOperation,
 ) -> Result<PreparedOperation, UpdateError> {
     let mut registry = Registry::default();
     register(&mut registry)
@@ -361,8 +393,16 @@ fn prepare(
         effects.push(Effect::LocalWrite);
         conditions.push(Precondition::LocalOutput { path: path.clone() });
     }
+    let endpoint = context
+        .map(|value| value.endpoint().clone())
+        .unwrap_or_else(|| EndpointBinding::public(ServiceOrigin::Fabric));
+    let url = endpoint
+        .url(operation.path())
+        .map_err(|_| UpdateError::InvalidInput)?;
+    let raw = std::str::from_utf8(operation.body()).map_err(|_| UpdateError::InvalidInput)?;
     let input = json!({
         "body":body,"options":options,
+        "request":{"method":"PATCH","url":url.as_str(),"body":raw,"completion":"returnAccepted"},
         "context":context.map(|value| json!({
             "account":value.selection().account(),"tenant":value.selection().tenant(),
             "audience":value.selection().audience().scope(),"endpoint":value.endpoint().base_url().as_str()
@@ -435,19 +475,39 @@ pub async fn execute<E: OperationExecutor>(
     if update.executed.swap(true, Ordering::AcqRel) {
         return Err(UpdateError::AlreadyExecuted);
     }
+    let operation = update
+        .operation
+        .lock()
+        .map_err(|_| UpdateError::InvalidInput)?
+        .take()
+        .ok_or(UpdateError::AlreadyExecuted)?;
     let identity = update.prepared.target().identity();
     let workspace = identity.workspace_id().ok_or(UpdateError::InvalidInput)?;
     let item = identity.item_id().ok_or(UpdateError::InvalidInput)?;
     let mut session = OperationSession::with_context(context, executor, update.limits, cancelled);
-    let result = ItemMutations::update_with_completion(
-        &mut session,
-        workspace,
-        update.collection,
-        item,
-        update.body.clone(),
-        CompletionPolicy::ReturnAccepted,
-    )
-    .await;
+    let result = match session.execute(operation).await {
+        Ok(response) if response.status == 202 => Ok(ResourceOutcome::Accepted {
+            operation_id: session.operation_id().map(str::to_owned),
+        }),
+        Ok(response) => {
+            let data = if response.body.is_empty() {
+                Ok(None)
+            } else {
+                serde_json::from_slice(&response.body)
+                    .map(Some)
+                    .map_err(|_| {
+                        session
+                            .evidence(OperationErrorKind::InvalidResponse)
+                            .resource_error()
+                    })
+            };
+            data.map(|data| ResourceOutcome::Completed {
+                status: response.status,
+                data,
+            })
+        }
+        Err(error) => Err(error.resource_error()),
+    };
     let handles = |id: Option<String>| {
         id.into_iter()
             .map(|id| OperationHandle::FabricOperation { id })

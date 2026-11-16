@@ -37,6 +37,7 @@ mod v2_livy_list_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
+mod v2_update_notebook_host;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {
@@ -99,7 +100,7 @@ fn finish(result: Result<u8, Failure>, stderr: &mut dyn Write) -> u8 {
 
 type Failure = (&'static str, String, Value, u8);
 
-const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
+const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch [--plan]\n\nRun a command with --help for its supported schema.\nUpdate plans are local; Notebook execution requires explicit terminal approval.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
 
 #[cfg(feature = "v2-create")]
 const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
@@ -467,6 +468,9 @@ fn run_update(args: Vec<std::ffi::OsString>) -> Result<(), Failure> {
             Err(error) => return Err(failed("InvalidArguments", error.to_string(), 2)),
         };
     if !command.plan {
+        if command.target.selection().owner_type == "Notebook" {
+            return v2_update_notebook_host::run(command);
+        }
         return Err(failed(
             "ApprovalHostRequired",
             "Metadata mutation requires a caller-injected approval host; no automatic approval or credential fallback is installed.",

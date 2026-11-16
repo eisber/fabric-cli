@@ -10,7 +10,9 @@ use azure_core::{
     credentials::{AccessToken, TokenRequestOptions},
     time::OffsetDateTime,
 };
-use fabric_core::{Audience, CredentialSelection, RequestContext, TokenCredential};
+use fabric_core::{
+    Audience, CredentialSelection, EndpointBinding, RequestContext, ServiceOrigin, TokenCredential,
+};
 use fabric_sdk_items::update::{
     self, PreparedUpdate, UpdateError, UpdateMode, UpdateOptions,
     contract::{
@@ -68,6 +70,7 @@ fn context(credential: Arc<Credential>) -> RequestContext {
 #[derive(Clone, Default)]
 struct Wire {
     calls: Arc<Mutex<Vec<(ResourceMethod, String, Value)>>>,
+    raw_bodies: Arc<Mutex<Vec<Vec<u8>>>>,
     results: Arc<Mutex<VecDeque<Result<OperationResponse, OperationExecutionError>>>>,
 }
 impl OperationExecutor for Wire {
@@ -76,6 +79,7 @@ impl OperationExecutor for Wire {
         request: OperationRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
     {
+        self.raw_bodies.lock().unwrap().push(request.body().to_vec());
         self.calls.lock().unwrap().push((
             request.method(),
             request.url().to_string(),
@@ -146,6 +150,54 @@ impl ApprovalPolicy for Policy {
             ]
         );
         if self.0 { Ok(()) } else { Err("denied") }
+    }
+}
+
+#[tokio::test]
+async fn approval_and_dispatch_share_exact_raw_patch_and_selected_endpoint_once() {
+    let raw = b" {\r\n \"description\" : \"literal\\u0020value\", \"displayName\" : \"new\"\r\n}\n";
+    for (owner, collection) in [("Notebook", "notebooks"), ("Lakehouse", "lakehouses")] {
+        let credential = Arc::new(Credential::default());
+        let context = RequestContext::with_endpoint(
+            credential.clone(),
+            CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+            EndpointBinding::with_host(ServiceOrigin::Fabric, "dailyapi.fabric.microsoft.com").unwrap(),
+        );
+        let update = PreparedUpdate::new(
+            target(owner, ITEM, "metadata"),
+            raw,
+            UpdateOptions::patch(),
+        )
+        .unwrap()
+        .with_context(context, OperationLimits::default())
+        .unwrap();
+        let expected_url =
+            format!("https://dailyapi.fabric.microsoft.com/v1/workspaces/{WS}/{collection}/{ITEM}");
+        let request = &update.prepared().input()["request"];
+        assert_eq!(request["method"], "PATCH");
+        assert_eq!(request["url"], expected_url);
+        assert_eq!(request["body"].as_str().unwrap().as_bytes(), raw);
+        assert_eq!(request["completion"], "returnAccepted");
+        assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+        let backend = Wire::default();
+        backend.results.lock().unwrap().push_back(Ok(response(
+            200,
+            json!({"id":ITEM,"workspaceId":WS,"type":owner,"displayName":"new","description":"literal value"}),
+        )));
+        let approval = update.prepared().authorize(&mut Policy(true)).unwrap();
+        let report = update::execute(&update, &approval, backend.clone(), pending())
+            .await
+            .unwrap();
+        assert!(matches!(report.receipt.outcome(), Outcome::Succeeded { .. }));
+        assert_eq!(backend.calls.lock().unwrap()[0].0, ResourceMethod::Patch);
+        assert_eq!(backend.calls.lock().unwrap()[0].1, expected_url);
+        assert_eq!(*backend.raw_bodies.lock().unwrap(), vec![raw.to_vec()]);
+        assert!(matches!(
+            update::execute(&update, &approval, backend.clone(), pending()).await,
+            Err(UpdateError::AlreadyExecuted)
+        ));
+        assert_eq!(backend.calls.lock().unwrap().len(), 1);
+        assert_eq!(credential.0.load(Ordering::SeqCst), 1);
     }
 }
 

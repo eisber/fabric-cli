@@ -14,6 +14,19 @@ Fast success is not a replacement for the three native OS qualification gates.
 
 ## Provisional v2 integration smoke
 
+The PR56 owned integration candidate additionally runs
+`scripts/integration-update-smoke.cjs` on hosted Windows only. It pins the
+original metadata UPDATE source and integration base and reuses the process,
+source-inventory and result-count guards. Strict parser, SDK, actual headless
+binary-host and process fixtures run offline, including exact raw PATCH
+approval/dispatch, selected endpoints, cancellation, protected uncertainty and
+no-clobber delivery. Existing Notebook/CREATE, shared route, HTTP and OCV
+consumers run with their explicit required features. Every registered UPDATE
+test must pass; empty, ignored or missing suites fail. The binary-host namespace
+filter is explicit and retains its actual unrelated filtered count. This
+candidate-only leaf is not rerun or claimed on postmerge pushes and is not
+live-provider, canonical frontier, three-OS or release qualification.
+
 The PR97 owned integration candidate additionally runs
 `scripts/integration-ocv-smoke.cjs` on hosted Windows only. It pins the original
 OCV source and integration base, reuses the smoke process/source-integrity guards
