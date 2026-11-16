@@ -887,6 +887,70 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
 }
 
 #[tokio::test]
+async fn semantic_model_creation_trusts_advertised_status_and_result_hosts() {
+    const RESULT: &str =
+        "https://df-msit-scus-redirect.analysis.windows.net/v1/operations/op-1/result";
+    for (status, result) in [
+        (
+            "https://api.fabric.microsoft.com/v1/operations/op-1",
+            RESULT,
+        ),
+        (
+            "https://df-msit-scus-redirect.analysis.windows.net/v1/operations/op-1",
+            RESULT,
+        ),
+        (
+            "https://service-advertised.example.test/v1/operations/op-1",
+            "https://result-service.example.test/v1/operations/op-1/result",
+        ),
+    ] {
+        let progress = "Polling operation; waiting for status\nOperation status: Succeeded\n";
+        let (code, stdout, stderr, calls) = run_script(
+            &[
+                "api",
+                "workspaces/workspace/items",
+                "--method",
+                "post",
+                "--input",
+                r#"{"displayName":"test","type":"SemanticModel"}"#,
+            ],
+            vec![
+                accepted(status),
+                response(
+                    200,
+                    json!({"status":"Succeeded","percentComplete":100,"error":null}),
+                    &[("location", result), ("x-ms-operation-id", "op-1")],
+                ),
+                response(
+                    201,
+                    json!({"id":"item","displayName":"test","type":"SemanticModel"}),
+                    &[],
+                ),
+            ],
+            false,
+            false,
+            progress,
+            &[
+                "https://api.fabric.microsoft.com/v1/workspaces/workspace/items",
+                status,
+                result,
+            ],
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(calls, 3, "one POST, one status GET and one result GET");
+        assert_eq!(stderr, progress);
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["result"]["data"][0]["status_code"], 201);
+        assert_eq!(
+            envelope["result"]["data"][0]["text"],
+            json!({"id":"item","displayName":"test","type":"SemanticModel"})
+        );
+        assert!(!stdout.contains("CANARY"));
+    }
+}
+
+#[tokio::test]
 async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_completion() {
     const STATUS: &str =
         "https://wabi-west-europe-redirect.analysis.windows.net/v1/operations/op-1";
@@ -954,7 +1018,7 @@ async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_comple
 #[tokio::test]
 async fn unsafe_fabric_origin_hints_do_not_authorize_status_gets() {
     for location in [
-        "https://evil.invalid/v1/items/item?secret=CANARY",
+        "http://evil.invalid/v1/items/item?secret=CANARY",
         "https://user:CANARY@wabi-west-europe-redirect.analysis.windows.net/v1/items/item",
         "/v1/items/%2e%2e/item?secret=CANARY",
     ] {

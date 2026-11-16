@@ -162,19 +162,20 @@ Location headers similarly select `/v1/operations/{id}/result` on their validate
 origin. Matching status/result routes retain their queries; resource-shaped
 origin hints do not contribute paths or queries to GETs. This URL-selection
 behavior follows Python main at `5b504195c63ef54c7382ca8e8a9d9759717f0ec5`,
-without adopting its arbitrary-host trust or changing the approved job/ARM
-protocols. Known contradictory operation IDs remain errors.
-Fabric operation URLs may also use an HTTPS host matching the complete
-single-label `wabi-<cluster>-redirect.analysis.windows.net` structure, with a
-nonempty ASCII alphanumeric/hyphen cluster and a valid DNS-label length.
-The exact Fabric MSIT host `msitapi.fabric.microsoft.com` is also allowed for
-these operation/job polling routes, not arbitrary Fabric subdomains. The
-`home-cluster-uri` header does not select a polling origin.
+without changing the approved job/ARM protocols. Known contradictory operation
+IDs remain errors.
+Fabric polling trusts hostnames advertised in service Location headers without
+a hostname allowlist, matching Python main's shared Fabric LRO client
+(`_handle_fab_long_running_op` and `_fetch_operation_result`). Regional and MSIT
+hosts require no per-host exceptions. This accepts the service's advertised host
+as a bearer-token destination; TLS certificate verification remains enabled.
+The `home-cluster-uri` header does not select a polling origin.
 This exception is restricted to recognized `/v1/operations/{id}` status and
 `/v1/operations/{id}/result` routes and exact job-instance routes. It does not
-allow arbitrary `analysis.windows.net` hosts, nested subdomains, suffix lookalikes,
-trailing-dot hosts, credentials/fragments, unsafe paths, non-443 ports, or
-redirects. Raw user endpoints and other audiences retain fixed-origin validation.
+allow credentials/fragments, unsafe paths, non-443 ports, or redirects.
+These URL-component guards are retained Rust safeguards, not a claim of exact
+Python URL-normalization parity.
+Raw user endpoints and other audiences retain fixed-origin validation.
 Discovery and authenticated polling share this policy; only bodyless GETs
 without custom headers may use polling execution. Tokens are freshly acquired
 for the unchanged Fabric scope, not forwarded from the mutation.

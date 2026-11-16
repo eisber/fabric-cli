@@ -282,11 +282,15 @@ async fn unlimited_wait_is_still_cancellable_without_starting_a_deadline_timer()
 }
 
 #[tokio::test]
-async fn regional_permission_is_only_for_safe_fabric_polling_before_credentials() {
+async fn advertised_hosts_are_only_for_safe_fabric_polling_before_credentials() {
     for url in [
         "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1?secret=CANARY",
         "https://msitapi.fabric.microsoft.com/v1/operations/op-1?secret=CANARY",
         "https://msitapi.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
+        "https://df-msit-scus-redirect.analysis.windows.net/v1/operations/op-1?secret=CANARY",
+        "https://df-msit-scus-redirect.analysis.windows.net/v1/operations/op-1/result",
+        "https://service-advertised.example.test/v1/operations/op-1",
+        "https://result-service.example.test/v1/operations/op-1/result",
     ] {
         assert_safe_polling_permission(url).await;
     }
@@ -322,7 +326,7 @@ async fn assert_safe_polling_permission(url: &str) {
                 .is_err()
         );
     }
-    for field in ["method", "body", "headers", "path", "host"] {
+    for field in ["method", "body", "headers", "path", "scheme"] {
         let mut invalid = regional.clone();
         match field {
             "method" => invalid.method = "POST".into(),
@@ -331,7 +335,7 @@ async fn assert_safe_polling_permission(url: &str) {
                 invalid.headers.insert("x-secret".into(), "CANARY".into());
             }
             "path" => invalid.url.set_path("/v1/items"),
-            "host" => invalid.url.set_host(Some("evil.invalid")).unwrap(),
+            "scheme" => invalid.url.set_scheme("http").unwrap(),
             _ => unreachable!(),
         }
         let error = client

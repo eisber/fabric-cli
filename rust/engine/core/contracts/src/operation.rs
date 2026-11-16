@@ -94,6 +94,7 @@ fn protocol(message: &str) -> CoreError {
 }
 
 /// Validate a status/result URL before normalization can hide unsafe paths.
+/// Fabric trusts service-advertised hostnames, matching Python's LRO client.
 pub fn validate_operation_url(audience: Audience, value: &str) -> Result<Url, CoreError> {
     let base = Url::parse(audience.base_url()).expect("fixed audience URL");
     resolve_operation_url(audience, value, &base)
@@ -137,7 +138,7 @@ fn resolve_location(audience: Audience, value: &str, base: &Url) -> Result<Url, 
 }
 fn validate_operation_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
     if audience == Audience::Fabric
-        && fabric_polling_host(url.host_str().unwrap_or_default())
+        && url.host_str() != Some("api.fabric.microsoft.com")
         && !(fabric_operation_route(url) || fabric_job(url))
     {
         return Err(protocol(
@@ -148,8 +149,7 @@ fn validate_operation_components(audience: Audience, url: &Url) -> Result<(), Co
 }
 fn validate_location_components(audience: Audience, url: &Url) -> Result<(), CoreError> {
     let host = url.host_str().unwrap_or_default();
-    let additional_host = audience == Audience::Fabric && fabric_polling_host(host);
-    let result = if additional_host {
+    let result = if audience == Audience::Fabric {
         validate_url_for_host(url, host)
     } else {
         validate_url(audience, url)
@@ -157,21 +157,6 @@ fn validate_location_components(audience: Audience, url: &Url) -> Result<(), Cor
     result.map_err(|_| {
         protocol("Unsafe operation URL: selected HTTPS origin or normalized components rejected")
     })
-}
-fn fabric_polling_host(host: &str) -> bool {
-    host == "msitapi.fabric.microsoft.com" || fabric_regional_host(host)
-}
-fn fabric_regional_host(host: &str) -> bool {
-    let Some(cluster) = host
-        .strip_suffix("-redirect.analysis.windows.net")
-        .and_then(|label| label.strip_prefix("wabi-"))
-    else {
-        return false;
-    };
-    "wabi-".len() + cluster.len() + "-redirect".len() <= 63
-        && cluster
-            .split('-')
-            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_alphanumeric()))
 }
 fn fabric_operation_route(url: &Url) -> bool {
     fabric_route_id(url).is_some()

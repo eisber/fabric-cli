@@ -39,7 +39,7 @@ fn operation_url_rejection_categories_do_not_disclose_inputs() {
             "Unsafe operation URL: unsafe path rejected",
         ),
         (
-            "https://CANARY.invalid/v1/operations/op?secret=CANARY",
+            "https://CANARY.invalid:8443/v1/operations/op?secret=CANARY",
             "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
         ),
         (
@@ -112,12 +112,12 @@ fn fabric_and_arm_safe_head_capture_redacts_queries() {
 #[test]
 fn unsafe_head_cannot_expose_an_unvalidated_url_or_erase_known_safe_id() {
     for value in [
-        "https://evil.invalid/operation?secret=synthetic",
+        "http://evil.invalid/operation?secret=synthetic",
         "http://api.fabric.microsoft.com/v1/operations/op-1",
         "https://user:synthetic@api.fabric.microsoft.com/v1/operations/op-1",
         "/v1/operations/%2e%2e/op-1",
         "/v1/operations/op-1#synthetic",
-        "https://wabi-us-redirect.analysis.windows.net.evil.invalid/v1/items/item?secret=synthetic",
+        "http://wabi-us-redirect.analysis.windows.net.evil.invalid/v1/items/item?secret=synthetic",
         "https://user:synthetic@wabi-us-redirect.analysis.windows.net/v1/items/item",
         "https://wabi-us-redirect.analysis.windows.net:444/v1/items/item",
         "https://wabi-us-redirect.analysis.windows.net/v1/items/%2e%2e/item",
@@ -137,10 +137,7 @@ fn unsafe_head_cannot_expose_an_unvalidated_url_or_erase_known_safe_id() {
         assert!(!error.to_string().contains("synthetic"));
     }
     let capture = ResponseHeadCapture::new(Audience::Fabric);
-    let fields = headers(&[(
-        "location",
-        "https://evil.invalid/operation?secret=synthetic",
-    )]);
+    let fields = headers(&[("location", "http://evil.invalid/operation?secret=synthetic")]);
     let error = operation_handle(Audience::Fabric, 202, &fields).unwrap_err();
     capture.record(202, &fields).unwrap();
     assert_eq!(error.kind, ErrorKind::Protocol);
@@ -241,7 +238,7 @@ fn job_handles_require_exact_instance_routes_and_safe_origins() {
         );
     }
     for location in [
-        "https://evil.invalid/v1/workspaces/workspace/items/item/jobs/instances/job",
+        "http://evil.invalid/v1/workspaces/workspace/items/item/jobs/instances/job",
         "https://user:CANARY@api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
         "/v1/workspaces/workspace/items/item/jobs/instances/%2e%2e/job",
         "/v1/workspaces/workspace/items/item/jobs/instances/job#CANARY",
@@ -260,6 +257,9 @@ fn regional_fabric_handles_and_relative_results_preserve_origin_and_redact_queri
         "wabi-us-central-b-primary-redirect.analysis.windows.net",
         "wabi-west-europe-redirect.analysis.windows.net",
         "msitapi.fabric.microsoft.com",
+        "df-msit-scus-redirect.analysis.windows.net",
+        "service-advertised.example.test",
+        "custom-cluster.example.test",
     ] {
         for (path, kind) in [
             ("/v1/operations/op-1", OperationKind::Fabric),
@@ -310,6 +310,8 @@ fn fabric_operation_ids_select_status_routes_from_safe_location_origins() {
         "api.fabric.microsoft.com",
         "wabi-west-europe-redirect.analysis.windows.net",
         "msitapi.fabric.microsoft.com",
+        "df-msit-scus-redirect.analysis.windows.net",
+        "service-advertised.example.test",
     ] {
         for (path, query) in [
             ("/v1/workspaces/workspace/items/item", None),
@@ -377,6 +379,10 @@ fn fabric_result_locations_select_canonical_routes_without_promoting_resource_ur
             "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/items/item?secret=CANARY",
             "https://wabi-us-central-b-primary-redirect.analysis.windows.net/v1/operations/op-1/result",
         ),
+        (
+            "https://df-msit-scus-redirect.analysis.windows.net/v1/operations/op-1/result?secret=CANARY",
+            "https://df-msit-scus-redirect.analysis.windows.net/v1/operations/op-1/result?secret=CANARY",
+        ),
     ] {
         let result = handle.fabric_result_url(location).unwrap();
         assert_eq!(result.as_str(), expected);
@@ -391,7 +397,7 @@ fn fabric_result_locations_select_canonical_routes_without_promoting_resource_ur
         "an origin hint is not permission to execute its resource path"
     );
     for location in [
-        "https://evil.invalid/v1/items/item?secret=CANARY",
+        "http://evil.invalid/v1/items/item?secret=CANARY",
         "https://user:CANARY@wabi-west-europe-redirect.analysis.windows.net/v1/items/item",
         "https://wabi-west-europe-redirect.analysis.windows.net:444/v1/items/item",
         "/v1/items/%2e%2e/item?secret=CANARY",
@@ -407,23 +413,16 @@ fn fabric_result_locations_select_canonical_routes_without_promoting_resource_ur
 }
 
 #[test]
-fn regional_operation_policy_rejects_host_lookalikes_and_unrecognized_routes() {
+fn advertised_fabric_hosts_still_reject_unsafe_components_and_unrecognized_routes() {
     for host in [
-        "analysis.windows.net",
-        "unrelated.analysis.windows.net",
-        "wabi--redirect.analysis.windows.net",
-        "wabi-us--central-redirect.analysis.windows.net",
-        "wabi-us-redirect.analysis.windows.net.evil.invalid",
-        "nested.wabi-us-redirect.analysis.windows.net",
-        "wabi-us-redirect.analysis.windows.net.",
         "wabi-us-redirect.analysis.windows.net:444",
         "user:CANARY@wabi-us-redirect.analysis.windows.net",
-        "msitapi.fabric.microsoft.com.evil.invalid",
-        "nested.msitapi.fabric.microsoft.com",
-        "msitapi.fabric.microsoft.com.",
         "msitapi.fabric.microsoft.com:444",
         "user:CANARY@msitapi.fabric.microsoft.com",
-        "df-msit-scus-redirect.analysis.windows.net",
+        "df-msit-scus-redirect.analysis.windows.net:444",
+        "user:CANARY@df-msit-scus-redirect.analysis.windows.net",
+        "service-advertised.example.test:444",
+        "user:CANARY@service-advertised.example.test",
     ] {
         let location = format!("https://{host}/v1/operations/op-1?secret=CANARY");
         let error = validate_operation_url(Audience::Fabric, &location).unwrap_err();
@@ -443,6 +442,10 @@ fn regional_operation_policy_rejects_host_lookalikes_and_unrecognized_routes() {
         let location = format!("https://wabi-us-redirect.analysis.windows.net{path}");
         assert!(validate_operation_url(Audience::Fabric, &location).is_err());
         let location = format!("https://msitapi.fabric.microsoft.com{path}");
+        assert!(validate_operation_url(Audience::Fabric, &location).is_err());
+        let location = format!("https://df-msit-scus-redirect.analysis.windows.net{path}");
+        assert!(validate_operation_url(Audience::Fabric, &location).is_err());
+        let location = format!("https://service-advertised.example.test{path}");
         assert!(validate_operation_url(Audience::Fabric, &location).is_err());
     }
 }

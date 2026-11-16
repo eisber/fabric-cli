@@ -1440,7 +1440,7 @@ async fn async_invalid_handles_remain_raw_and_conversion_only_retains_safe_evide
         for body in ["{}", "{BODY-CANARY"] {
             let mut headers = vec![(
                 "location",
-                "https://evil.invalid/operations/UNSAFE-CANARY?secret=CANARY",
+                "http://evil.invalid/operations/UNSAFE-CANARY?secret=CANARY",
             )];
             if known_id {
                 headers.push(("x-ms-operation-id", "op-1"));

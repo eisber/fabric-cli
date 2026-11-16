@@ -470,7 +470,7 @@ async fn arm_status_and_location_observe_their_existing_completion_protocols() {
 #[tokio::test]
 async fn rejected_urls_and_unknown_or_malformed_statuses_never_emit_raw_progress() {
     for location in [
-        "https://evil.invalid/v1/operations/op-1?secret=QUERY-CANARY",
+        "http://evil.invalid/v1/operations/op-1?secret=QUERY-CANARY",
         "https://user:PASS-CANARY@api.fabric.microsoft.com/v1/operations/op-1",
         "https://api.fabric.microsoft.com:444/v1/operations/op-1",
         "/v1/operations/op-1#FRAGMENT-CANARY",

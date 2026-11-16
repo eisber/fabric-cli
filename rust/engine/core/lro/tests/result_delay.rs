@@ -231,7 +231,7 @@ async fn unsafe_result_is_validated_before_the_terminal_wait() {
             200,
             r#"{"status":"Succeeded"}"#,
             &[
-                ("location", "https://evil.invalid/result?secret=synthetic"),
+                ("location", "http://evil.invalid/result?secret=synthetic"),
                 ("retry-after", "700"),
             ],
         )])),

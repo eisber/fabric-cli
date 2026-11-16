@@ -285,7 +285,7 @@ impl HttpTransport for RawAcceptedTransport {
 #[tokio::test]
 async fn raw_initial_execution_does_not_apply_reconciliation_handle_policy() {
     for fields in [
-        vec![("location", "https://evil.invalid/status?secret=synthetic")],
+        vec![("location", "http://evil.invalid/status?secret=synthetic")],
         vec![
             ("location", "/v1/operations/location-id"),
             ("x-ms-operation-id", "different-id"),

@@ -64,8 +64,11 @@ Reserved serde marker names remain ordinary object keys, including in unrelated
 metadata; returned terminal responses retain their original bytes and headers.
 
 Known operation recovery errors contain a safe operation ID/status URL (query
-omitted) and uncertainty, never arbitrary backend diagnostics. Redirects and
-cross-origin status/result URLs are rejected. Raw initial HTTP errors remain
+omitted) and uncertainty, never arbitrary backend diagnostics. Fabric trusts
+service-advertised polling/result hostnames without a hostname allowlist, matching
+Python's shared LRO client. HTTPS/TLS, URL-component and polling-route checks
+remain; raw requests and other audiences retain fixed-origin validation.
+Redirects are rejected. Raw initial HTTP errors remain
 response data. Initial requests, including GET, execute once; only status/result
 GETs may retry under the remaining operation budget.
 

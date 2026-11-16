@@ -134,7 +134,7 @@ async fn safe_head_survives_pending_body_timeout_and_cancellation() {
 #[tokio::test]
 async fn unsafe_or_conflicting_handle_is_not_followed_or_leaked_but_raw_response_survives() {
     for fields in [
-        vec![("location", "https://evil.invalid/status?secret=synthetic")],
+        vec![("location", "http://evil.invalid/status?secret=synthetic")],
         vec![
             ("location", "/v1/operations/location-id?secret=synthetic"),
             ("x-ms-operation-id", "different-id"),

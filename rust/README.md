@@ -139,19 +139,20 @@ Locations without an instance ID remain raw; no job ID or polling URL is invente
 See [Run On Demand Item Job](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/run-on-demand-item-job)
 and [Get Item Job Instance](https://learn.microsoft.com/en-us/rest/api/fabric/core/job-scheduler/get-item-job-instance).
 
-Fabric operation/job Locations may use the public API host or regional
-`wabi-<cluster>-redirect.analysis.windows.net` hosts, or the exact MSIT host
-`msitapi.fabric.microsoft.com`. Only validated HTTPS operation status/result
-and exact job-instance routes may use these additional hosts; arbitrary hosts
-and raw user-supplied endpoints on these hosts remain
-rejected. Origin-relative result Locations retain the operation's validated host.
+Fabric operation/job Locations trust service-advertised hostnames without a
+hostname allowlist, matching Python's shared Fabric LRO client. This includes
+regional and MSIT hosts without per-cluster exceptions. Only validated HTTPS
+operation status/result and exact job-instance routes may use additional hosts;
+raw user-supplied endpoints remain fixed-origin. TLS certificate verification,
+credential/fragment, port, and unsafe-path checks remain enabled.
+Origin-relative result Locations retain the operation's validated host.
 `home-cluster-uri` is not a polling target. Job polling honors `Retry-After`,
 including the initial wait before the first status/progress update.
 With a valid `x-ms-operation-id`, a safe non-status `Location` supplies only the
 origin for `/v1/operations/{id}`. Result-header Locations likewise select that
 operation's `/result` route, not an arbitrary advertised resource path.
 Queries are retained on matching status/result routes, not copied from origin
-hints. Conflicting operation IDs and unsafe origins/components still fail.
+hints. Conflicting operation IDs and unsafe URL components still fail.
 Polling uses fresh bodyless GETs with the Fabric credential scope, without
 forwarding the original request's custom headers. HTTP redirects are not followed.
 

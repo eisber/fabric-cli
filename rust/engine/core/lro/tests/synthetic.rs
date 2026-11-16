@@ -488,7 +488,7 @@ async fn unsafe_result_is_rejected_with_recovery_without_forwarding_bearer() {
     let http = Script::new(vec![response(
         200,
         r#"{"status":"Succeeded"}"#,
-        &[("location", "https://evil.invalid/result?secret=value")],
+        &[("location", "http://evil.invalid/result?secret=value")],
     )]);
     let error = complete(
         &http,
@@ -876,7 +876,7 @@ async fn conflict_and_unsafe_poll_are_rejected_before_get() {
             ("x-ms-operation-id".into(), "different".into()),
             ("location".into(), "/v1/operations/op-1".into()),
         ]),
-        BTreeMap::from([("location".into(), "https://evil.invalid/op".into())]),
+        BTreeMap::from([("location".into(), "http://evil.invalid/op".into())]),
     ] {
         let http = Script::new(vec![]);
         assert!(
