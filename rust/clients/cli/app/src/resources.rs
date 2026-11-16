@@ -38,7 +38,11 @@ pub(crate) fn command(kind: &'static str) -> Command {
             .arg(super::help_arg())
             .arg(Arg::new("query").long("query"));
         if kind == "item" {
-            leaf = leaf.arg(Arg::new("workspace").long("workspace").required(true));
+            leaf = leaf.arg(
+                Arg::new("workspace")
+                    .long("workspace")
+                    .required(matches!(verb, "list" | "create")),
+            );
         }
         if verb != "list" {
             leaf = leaf.arg(Arg::new("target").required(verb != "create"));
@@ -146,6 +150,12 @@ pub(crate) async fn execute(
     let workspace_id = match &prepared.workspace {
         Some(selector) => {
             Some(fabric_resources::resolve(client, clock, context, "workspaces", selector).await?)
+        }
+        None if prepared.kind == "item" => {
+            let Some(Selector::Id(id)) = &prepared.target else {
+                return Err(invalid("Item name requires --workspace"));
+            };
+            Some(fabric_resources::find_item_workspace(client, clock, context, id).await?)
         }
         None => None,
     };
@@ -287,6 +297,9 @@ fn finish_prepare(
     } else {
         None
     };
+    if kind == "item" && workspace.is_none() && !matches!(&target, Some(Selector::Id(_))) {
+        return Err(invalid("Item name requires --workspace"));
+    }
     let query = text("query").map(str::to_owned);
     if let Some(value) = query.as_deref().filter(|value| !value.is_empty()) {
         if value.len() > 16 * 1024 || fabric_cli_query::validate(value).is_err() {
