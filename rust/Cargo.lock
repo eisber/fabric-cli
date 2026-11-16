@@ -1157,6 +1157,7 @@ dependencies = [
  "fabric-sdk-transport",
  "fabric-sdk-workspaces",
  "futures-util",
+ "getrandom 0.4.3",
  "parquet",
  "ring",
  "rustix",
@@ -1165,6 +1166,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

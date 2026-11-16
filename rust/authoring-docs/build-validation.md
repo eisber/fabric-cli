@@ -14,6 +14,15 @@ Fast success is not a replacement for the three native OS qualification gates.
 
 ## Provisional v2 integration smoke
 
+The PR97 owned integration candidate additionally runs
+`scripts/integration-ocv-smoke.cjs` on hosted Windows only. It pins the original
+OCV source and integration base, reuses the smoke process/source-integrity guards
+and existing shared-consumer target selections, and retains actual output hashes,
+exits and nonempty test counts. Default and explicit `native-read` feedback tests,
+fake broker cleanup, Windows identity and HTTP executor tests remain offline.
+This candidate-only leaf does not run on the integration push and does not
+qualify live authentication, feedback submission or a release.
+
 The owner-approved 2026-11-12 policy reduces the premerge gate only for
 `dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli`.
 **Integration smoke (Windows, provisional)** runs in one `windows-2025` job on

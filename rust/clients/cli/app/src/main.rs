@@ -11,6 +11,7 @@ mod auth;
 mod auth_binding;
 mod batch_state;
 mod delete_host;
+mod feedback_host;
 #[cfg(feature = "headless")]
 mod headless;
 #[cfg(feature = "interactive")]
@@ -98,6 +99,9 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(&arguments);
+    if let Ok(Invocation::Feedback(command)) = &invocation {
+        return feedback_host::run(command).map(exit_status);
+    }
     if let Err(error) = &invocation
         && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
     {
@@ -159,6 +163,7 @@ fn dispatch(
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        Ok(Invocation::Feedback(command)) => return feedback_host::run(&command),
         Ok(Invocation::NativeTabular(command)) => {
             #[cfg(feature = "v2-run")]
             if matches!(

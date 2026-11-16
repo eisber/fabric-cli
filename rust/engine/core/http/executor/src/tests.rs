@@ -30,6 +30,309 @@ const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
 const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
 const ITEM: &str = "33333333-3333-3333-3333-333333333333";
 
+#[test]
+fn feedback_endpoint_scope_pairs_are_fixed() {
+    for (environment, endpoint, scope) in [
+        (
+            feedback::Environment::Production,
+            "https://petrol.office.microsoft.com/v1/feedback/authenticated",
+            "https://petrol.office.microsoft.com/Feedback.ReadWrite",
+        ),
+        (
+            feedback::Environment::Ppe,
+            "https://petrol-int.office.microsoft.com/v1/feedback/authenticated",
+            "https://petrol-int.office.microsoft.com/Feedback.ReadWrite",
+        ),
+    ] {
+        assert_eq!(environment.endpoint(), endpoint);
+        assert_eq!(environment.scope(), scope);
+    }
+}
+
+#[tokio::test]
+async fn feedback_posts_preserve_fixed_url_token_json_body_and_raw_response() {
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        let client = ScriptedClient::new([response(
+            202,
+            r#"{"receipt":"offline"}"#,
+            &[("x-test", "retained"), ("retry-after", "invalid")],
+        )]);
+        let timer = Arc::new(TestTimer::default());
+        let exec = executor(client.clone(), timer.clone())
+            .with_endpoint(EndpointBinding::public(ServiceOrigin::Arm));
+        let access_token = token();
+        let body = br#"{"feedback":"exact serialized bytes"}"#;
+        let result = exec
+            .execute_feedback(environment, &access_token, body)
+            .await
+            .unwrap();
+        assert_eq!(result.status, 202);
+        assert_eq!(result.body, br#"{"receipt":"offline"}"#);
+        assert_eq!(result.headers["x-test"], "retained");
+        assert_eq!(result.headers["retry-after"], "invalid");
+        assert_eq!(exec.endpoint().origin(), ServiceOrigin::Arm);
+        let requests = client.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method(), Method::Post);
+        assert_eq!(requests[0].url().as_str(), environment.endpoint());
+        assert_eq!(Bytes::from(requests[0].body()).as_ref(), body);
+        assert_eq!(
+            requests[0]
+                .headers()
+                .get_str(&"authorization".into())
+                .unwrap(),
+            format!("Bearer {}", access_token.token.secret())
+        );
+        assert_eq!(
+            requests[0]
+                .headers()
+                .get_str(&"content-type".into())
+                .unwrap(),
+            "application/json"
+        );
+        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+    }
+}
+
+#[tokio::test]
+async fn feedback_statuses_are_single_posts_without_retry_waits() {
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        for status in [
+            200, 202, 301, 302, 307, 308, 400, 401, 403, 413, 429, 500, 502, 503, 504,
+        ] {
+            let client = ScriptedClient::new([response(
+                status,
+                "raw response",
+                &[("retry-after", "1"), ("location", "https://evil.invalid/")],
+            )]);
+            let timer = Arc::new(TestTimer::default());
+            let exec = executor(client.clone(), timer.clone());
+            let result = exec
+                .execute_feedback(environment, &token(), b"{}")
+                .await
+                .unwrap();
+            assert_eq!(result.status, status);
+            assert_eq!(result.body, b"raw response");
+            let requests = client.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method(), Method::Post);
+            assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn feedback_invalid_body_and_token_fail_before_network_or_timer() {
+    let client = ScriptedClient::new([]);
+    let timer = Arc::new(TestTimer::default());
+    let exec = executor(client.clone(), timer.clone());
+    let oversized = vec![b'x'; 64 * 1024 + 1];
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        for body in [&[][..], oversized.as_slice()] {
+            assert_eq!(
+                exec.execute_feedback(environment, &token(), body)
+                    .await
+                    .unwrap_err(),
+                ExecutionError::InvalidInput
+            );
+        }
+        for value in [
+            "",
+            "bad\nbearer",
+            "bad\rbearer",
+            "bad\tbearer",
+            "bad\0bearer",
+        ] {
+            let invalid = AccessToken::new(value, OffsetDateTime::UNIX_EPOCH);
+            assert_eq!(
+                exec.execute_feedback(environment, &invalid, b"{}")
+                    .await
+                    .unwrap_err(),
+                ExecutionError::InvalidInput
+            );
+        }
+    }
+    assert!(client.requests.lock().unwrap().is_empty());
+    assert!(timer.waits.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn feedback_accepts_exact_request_and_response_byte_limits() {
+    let body = format!("{{}}{}", " ".repeat(64 * 1024 - 2));
+    let reply = "x".repeat(64 * 1024);
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        let client = ScriptedClient::new([response(200, &reply, &[])]);
+        let timer = Arc::new(TestTimer::default());
+        let exec = executor(client.clone(), timer.clone());
+        let result = exec
+            .execute_feedback(environment, &token(), body.as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(result.body, reply.as_bytes());
+        let requests = client.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(Bytes::from(requests[0].body()).as_ref(), body.as_bytes());
+        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+    }
+}
+
+#[tokio::test]
+async fn feedback_does_not_widen_fabric_or_bound_service_origins() {
+    let client = ScriptedClient::new([]);
+    let timer = Arc::new(TestTimer::default());
+    let exec = executor(client.clone(), timer.clone());
+    let limit = NonZeroUsize::new(1).unwrap();
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        let url = Url::parse(environment.endpoint()).unwrap();
+        assert_eq!(
+            exec.execute_fabric(Method::Post, &url, &token(), b"{}", limit)
+                .await
+                .unwrap_err(),
+            ExecutionError::InvalidInput
+        );
+        for origin in [
+            PublicOrigin::Fabric,
+            PublicOrigin::OneLake,
+            PublicOrigin::Arm,
+            PublicOrigin::PowerBi,
+        ] {
+            assert_eq!(
+                exec.execute_bound(origin, Method::Post, &url, &token(), b"{}", &[], limit)
+                    .await
+                    .unwrap_err(),
+                ExecutionError::InvalidInput
+            );
+        }
+    }
+    assert!(client.requests.lock().unwrap().is_empty());
+    assert!(timer.waits.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn feedback_transport_and_stream_failures_are_sanitized_without_replay() {
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        let stream_failure = AsyncRawResponse::new(
+            StatusCode::Ok,
+            Headers::new(),
+            Box::pin(stream::iter([
+                Ok(Bytes::from_static(b"partial response")),
+                Err(azure_core::Error::with_message(
+                    ErrorKind::Io,
+                    "secret stream diagnostic",
+                )),
+            ])),
+        );
+        for reply in [
+            Err(azure_core::Error::with_message(
+                ErrorKind::Io,
+                "secret transport diagnostic",
+            )),
+            Ok(stream_failure),
+        ] {
+            let client = ScriptedClient::new([]);
+            client.replies.lock().unwrap().push_back(reply);
+            let timer = Arc::new(TestTimer::default());
+            let exec = executor(client.clone(), timer.clone());
+            let error = exec
+                .execute_feedback(environment, &token(), b"{}")
+                .await
+                .unwrap_err();
+            assert_eq!(error, ExecutionError::Transport);
+            assert!(!error.to_string().contains("secret"));
+            let requests = client.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method(), Method::Post);
+            assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn feedback_response_limit_stops_stream_at_cap_plus_one_without_replay() {
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let raw = AsyncRawResponse::new(
+            StatusCode::Ok,
+            Headers::new(),
+            Box::pin(CountingBody {
+                polls: polls.clone(),
+                dropped: dropped.clone(),
+                pending: false,
+            }),
+        );
+        let client = ScriptedClient::new([raw]);
+        let timer = Arc::new(TestTimer::default());
+        let exec = executor(client.clone(), timer.clone());
+        assert_eq!(
+            exec.execute_feedback(environment, &token(), b"{}")
+                .await
+                .unwrap_err(),
+            ExecutionError::ResponseLimit
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 64 * 1024 + 1);
+        assert!(dropped.load(Ordering::SeqCst));
+        assert_eq!(client.requests.lock().unwrap().len(), 1);
+        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+    }
+}
+
+#[tokio::test]
+async fn feedback_deadline_drops_response_stream_without_replay() {
+    for environment in [
+        feedback::Environment::Production,
+        feedback::Environment::Ppe,
+    ] {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let raw = AsyncRawResponse::new(
+            StatusCode::Ok,
+            Headers::new(),
+            Box::pin(CountingBody {
+                polls: Arc::new(AtomicUsize::new(0)),
+                dropped: dropped.clone(),
+                pending: true,
+            }),
+        );
+        let client = ScriptedClient::new([raw]);
+        let timer = Arc::new(TestTimer::default());
+        let exec = executor(client.clone(), timer.clone());
+        let access_token = token();
+        let mut future = Box::pin(exec.execute_feedback(environment, &access_token, b"{}"));
+        assert!(
+            future
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        timer.expired.store(true, Ordering::SeqCst);
+        assert_eq!(future.await.unwrap_err(), ExecutionError::TimedOut);
+        assert!(dropped.load(Ordering::SeqCst));
+        assert_eq!(client.requests.lock().unwrap().len(), 1);
+        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+    }
+}
+
 #[tokio::test]
 async fn bound_request_limits_accept_exact_url_body_header_bytes_and_count() {
     let prefix = "https://management.azure.com/";
