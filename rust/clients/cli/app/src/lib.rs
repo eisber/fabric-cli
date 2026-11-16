@@ -50,7 +50,7 @@ struct ProgressEvent {
 
 enum ConsoleUpdate {
     Progress(ProgressUpdate),
-    Diagnostic(Box<DiagnosticEvent>, Duration),
+    Diagnostic(Box<DiagnosticEvent>, SystemTime),
 }
 
 enum ProgressUpdate {
@@ -109,10 +109,10 @@ impl ConsoleProgress {
     }
 
     async fn emit(&self, event: DiagnosticEvent) -> Result<(), CoreError> {
-        if self.timing.is_none() {
+        let Some((clock, _)) = &self.timing else {
             return Ok(());
-        }
-        self.send_update(ConsoleUpdate::Diagnostic(Box::new(event), self.elapsed()))
+        };
+        self.send_update(ConsoleUpdate::Diagnostic(Box::new(event), clock.wall_now()))
             .await
     }
 
@@ -741,9 +741,9 @@ pub async fn run(
                             heartbeat.as_mut().reset(tokio::time::Instant::now() + interval);
                             result
                         }
-                        ConsoleUpdate::Diagnostic(event, elapsed) => {
+                        ConsoleUpdate::Diagnostic(event, timestamp) => {
                             observer.remember(&event, false);
-                            let result = diagnostics::write(&event, elapsed, host.progress_color(), stderr);
+                            let result = diagnostics::write(&event, timestamp, host.progress_color(), stderr);
                             if result.is_ok() {
                                 observer.remember(&event, true);
                             }
@@ -768,7 +768,9 @@ pub async fn run(
             }
         }
     };
-    if observer.timing.is_some() && !observer.broken.load(Ordering::Relaxed) {
+    if let Some((clock, _)) = &observer.timing
+        && !observer.broken.load(Ordering::Relaxed)
+    {
         let phase = match &result {
             Ok(_) => {
                 observer
@@ -786,7 +788,7 @@ pub async fn run(
             phase,
             duration: DiagnosticDuration::from_duration(elapsed),
         };
-        if diagnostics::write(&event, elapsed, host.progress_color(), stderr).is_err() {
+        if diagnostics::write(&event, clock.wall_now(), host.progress_color(), stderr).is_err() {
             observer.broken.store(true, Ordering::Relaxed);
             let mut error = observer.reporting_error();
             if let Err(original) = &result {

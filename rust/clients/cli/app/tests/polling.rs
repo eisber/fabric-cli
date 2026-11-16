@@ -769,7 +769,7 @@ async fn verbose_events_during_credentials_do_not_postpone_single_wait_notice() 
     let progress = verbose
         .2
         .lines()
-        .filter(|line| !line.starts_with("[debug +") && !line.starts_with("    "))
+        .filter(|line| !line.starts_with("[verbose] [") && !line.starts_with("    "))
         .map(|line| format!("{line}\n"))
         .collect::<String>();
     assert_eq!(progress, plain.2);
@@ -816,7 +816,10 @@ async fn verbose_color_uses_only_renderer_sequences_and_preserves_stdout() {
         assert_eq!(calls, 2);
         assert!(!stdout.contains('\x1b'));
         assert!(!stderr.contains("CANARY"));
-        assert_eq!(stderr.contains("\x1b[2;36m[debug +"), color);
+        assert_eq!(
+            stderr.contains("\x1b[2;36m[verbose] [1970-01-01T00:00:00.000Z]"),
+            color
+        );
         if !color {
             assert!(!stderr.contains('\x1b'));
         }

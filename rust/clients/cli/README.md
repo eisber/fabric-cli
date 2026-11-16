@@ -49,6 +49,9 @@ policy and usage.
 
 The CLI injects a typed observer into the HTTP executor and the polling observer.
 Sanitizers construct safe metadata before it enters the bounded console queue.
+Each group uses `[verbose] [<timestamp>] <log>`. The timestamp is captured from the
+injected wall clock when the event is emitted and rendered as UTC RFC 3339 with
+millisecond precision. Event durations still use the monotonic clock.
 One stderr owner renders and flushes each event, so progress cannot split a
 group's indented header details. Debug events do not restart the progress
 heartbeat interval. Any live terminal progress line is cleared before a debug

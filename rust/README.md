@@ -115,7 +115,9 @@ fab-rs auth status --verbose
 ```
 
 Readable, grouped debug messages go to stderr; stdout remains the command's
-JSON result. Logs describe command stages, credential timing, HTTP attempts and
+JSON result. Each group starts with `[verbose] [<timestamp>] <log>`, using a UTC
+RFC 3339 timestamp with millisecond precision, such as `2026-11-16T15:57:50.794Z`.
+Logs describe command stages, credential timing, HTTP attempts and
 responses, retries, and polling decisions. Progress messages remain enabled
 without verbose mode. Help, version, bare `auth`, and bare `fab-rs --verbose`
 remain effect-free and produce no debug messages.

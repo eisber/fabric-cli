@@ -307,7 +307,15 @@ async fn verbose_is_global_without_changing_stdout_or_option_values() {
         let plain = run(&["api", "workspaces"], &host).await;
         assert_eq!(code, 0, "{stdout}");
         assert_eq!(stdout, plain.1);
-        assert!(stderr.starts_with("[debug +"), "{stderr}");
+        let prefix = "[verbose] [2000-01-01T00:00:00.000Z] ";
+        assert!(stderr.starts_with(prefix), "{stderr}");
+        assert!(
+            stderr
+                .lines()
+                .filter(|line| !line.starts_with("    "))
+                .all(|line| line.starts_with(prefix)),
+            "{stderr}"
+        );
         assert!(!stderr.contains('\x1b'));
         assert!(
             plain.2.is_empty(),
@@ -327,7 +335,7 @@ async fn verbose_is_global_without_changing_stdout_or_option_values() {
             serde_json::from_str::<Value>(&stdout).unwrap()["command"],
             "auth status"
         );
-        assert!(stderr.starts_with("[debug +"));
+        assert!(stderr.starts_with("[verbose] [2000-01-01T00:00:00.000Z] "));
         for secret in [TENANT, PRINCIPAL, "synthetic-token"] {
             assert!(!stderr.contains(secret));
         }

@@ -7,7 +7,7 @@ use fabric_core::{
     CoreError, ErrorKind,
     diagnostics::{DiagnosticEvent, DiagnosticPhase, Metadata, SafeHeaders},
 };
-use std::{fmt::Display, io::Write, time::Duration};
+use std::{fmt::Display, io::Write, time::SystemTime};
 
 const MAX_EVENT_BYTES: usize = 2048;
 const MAX_EVENT_LINES: usize = 8;
@@ -62,7 +62,7 @@ fn headers(block: &mut String, values: SafeHeaders) {
 
 pub(crate) fn write(
     event: &DiagnosticEvent,
-    elapsed: Duration,
+    timestamp: SystemTime,
     color: bool,
     stderr: &mut dyn Write,
 ) -> Result<(), CoreError> {
@@ -134,10 +134,10 @@ pub(crate) fn write(
         DiagnosticEvent::PollCompleted { outcome } => format!("Polling: backend {outcome}"),
         DiagnosticEvent::PollFailed { kind } => format!("Polling: stopped ({})", category(*kind)),
     };
+    let timestamp: chrono::DateTime<chrono::Utc> = timestamp.into();
     let label = format!(
-        "[debug +{}.{:03}s]",
-        elapsed.as_secs(),
-        elapsed.subsec_millis()
+        "[verbose] [{}]",
+        timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
     );
     let mut block = if color {
         format!("\x1b[2;36m{label}\x1b[0m {message}\n")
@@ -172,6 +172,35 @@ mod tests {
         ContentEncoding, ContentType, DiagnosticDuration, DiagnosticMethod, DiagnosticOrigin,
         DiagnosticRoute, RequestId, SafeUrl,
     };
+    use std::time::Duration;
+
+    #[test]
+    fn verbose_prefix_uses_utc_wall_timestamp_with_milliseconds() {
+        let event = DiagnosticEvent::PollFailed {
+            kind: ErrorKind::Cancelled,
+        };
+        for (timestamp, expected) in [
+            (
+                SystemTime::UNIX_EPOCH + Duration::from_secs(946684800),
+                "2000-01-01T00:00:00.000Z",
+            ),
+            (
+                SystemTime::UNIX_EPOCH + Duration::from_millis(946684800123),
+                "2000-01-01T00:00:00.123Z",
+            ),
+            (
+                SystemTime::UNIX_EPOCH - Duration::from_millis(1),
+                "1969-12-31T23:59:59.999Z",
+            ),
+        ] {
+            let mut output = Vec::new();
+            write(&event, timestamp, false, &mut output).unwrap();
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                format!("[verbose] [{expected}] Polling: stopped (cancelled)\n")
+            );
+        }
+    }
 
     #[test]
     fn maximum_metadata_is_bounded_and_only_renderer_adds_color() {
@@ -193,15 +222,16 @@ mod tests {
                 )),
             ),
         };
+        let timestamp = SystemTime::UNIX_EPOCH + Duration::from_millis(946684800999);
         let mut plain = Vec::new();
-        write(&event, Duration::MAX, false, &mut plain).unwrap();
+        write(&event, timestamp, false, &mut plain).unwrap();
         let text = String::from_utf8(plain).unwrap();
         assert_eq!(text.lines().count(), 8);
         assert!(text.len() <= MAX_EVENT_BYTES);
         assert!(!text.contains('\x1b'));
         assert!(text.contains("    x-ms-request-id: <omitted>\n"));
         let mut colored = Vec::new();
-        write(&event, Duration::MAX, true, &mut colored).unwrap();
+        write(&event, timestamp, true, &mut colored).unwrap();
         let colored = String::from_utf8(colored).unwrap();
         assert_eq!(
             colored.replace("\x1b[2;36m", "").replace("\x1b[0m", ""),
