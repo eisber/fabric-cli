@@ -266,7 +266,19 @@ JSON is the sole data format. Raw initial HTTP errors remain inspectable
 response data; authentication, transport, malformed-response, and LRO failures
 are command failures. Failed operation status/result responses expose a
 service error code in `result.error_code` when available and valid; otherwise
-they use `Service`. Service error messages are not forwarded. See the
+they use `Service`. Failed/cancelled Fabric jobs also read
+`failureReason.errorCode` (or `code`) and expose a nonempty string
+`failureReason.message` as `result.failure_reason.message` in the final JSON.
+This service-provided text may contain sensitive details; it is JSON-escaped
+and never copied into progress, verbose logs, or error debug formatting.
+Other service messages and unrelated response fields are not forwarded.
+The safe summary distinguishes failed jobs from cancelled jobs.
+Recovery retains the safe operation ID and status URL, but no public uncertainty
+boolean. When the final status is unknown, the error message warns that the
+operation may still be running and directs you to check `status_url` before
+retrying. A confirmed terminal status suppresses that warning, even if subsequent
+result retrieval or output processing fails.
+See the
 [complete compatibility contract](docs/authoring/compatibility.md)
 before migrating scripts.
 

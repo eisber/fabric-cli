@@ -483,7 +483,8 @@ async fn terminal_cancellation_timeout_and_http_failure_leave_no_live_line() {
         assert!(!stderr.contains('\r'));
         assert!(!stderr.contains("completed."));
         assert!(!stderr.contains("CANARY"));
-        assert!(stdout.contains("outcome_uncertain"));
+        assert!(!stdout.contains("outcome_uncertain"));
+        assert!(stdout.contains("Check status_url before retrying."));
         let error = if scenario == "cancel" {
             "Cancelled"
         } else if scenario == "timeout" {
@@ -519,7 +520,8 @@ async fn waiting_line_write_failure_stops_before_sleep_with_safe_recovery() {
     assert_eq!(calls, 1);
     assert_eq!(start.elapsed(), Duration::ZERO);
     assert!(stdout.contains("Cannot write polling progress"));
-    assert!(stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("outcome_uncertain"));
+    assert!(stdout.contains("Check status_url before retrying."));
     assert!(!stdout.contains("CANARY"));
     assert!(!stderr.contains("Checking"));
 }
@@ -545,7 +547,8 @@ async fn partial_colored_wait_failure_resets_terminal_style() {
     assert_eq!(calls, 1);
     assert_eq!(stderr, format!("{accepted_line}{partial}\x1b[0m"));
     assert!(stdout.contains("Cannot write polling progress"));
-    assert!(stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("outcome_uncertain"));
+    assert!(stdout.contains("Check status_url before retrying."));
     assert!(!stdout.contains("CANARY"));
 }
 
@@ -591,7 +594,8 @@ async fn completion_output_failure_preserves_recovery_instead_of_reporting_succe
     assert_eq!(calls, 2);
     assert!(stderr.ends_with("Job instance status: Completed\n"));
     assert!(stdout.contains("Cannot write polling progress"));
-    assert!(stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("Check status_url before retrying."));
 }
 
 #[tokio::test]
@@ -653,6 +657,8 @@ async fn service_error_code_reaches_json_for_status_and_result_failures() {
         assert_eq!(envelope["status"], "Failure");
         assert_eq!(envelope["result"]["error_code"], expected);
         assert_eq!(envelope["result"]["data"][0]["operation_id"], "op-1");
+        assert!(!stdout.contains("outcome_uncertain"));
+        assert!(!stdout.contains("Check status_url before retrying."));
         assert!(!stdout.contains("SECRET-CANARY"));
         assert!(!stderr.contains("SECRET-CANARY"));
     }
@@ -956,7 +962,8 @@ async fn waiting_output_failure_and_cancellation_stop_waits_and_inflight_request
                 envelope["result"]["error_code"],
                 if fail { "Transport" } else { "Cancelled" }
             );
-            assert!(stdout.contains("outcome_uncertain"));
+            assert!(!stdout.contains("outcome_uncertain"));
+            assert!(stdout.contains("Check status_url before retrying."));
             if fail {
                 assert!(stdout.contains("Cannot write polling progress"));
                 assert!(!stderr.contains("elapsed"));
@@ -1301,7 +1308,8 @@ async fn failure_and_unknown_statuses_are_safe_and_start_output_failure_stops_po
     );
     assert!(stderr.is_empty());
     assert!(stdout.contains("Cannot write polling progress"));
-    assert!(stdout.contains("outcome_uncertain"));
+    assert!(!stdout.contains("outcome_uncertain"));
+    assert!(stdout.contains("Check status_url before retrying."));
     assert!(!stdout.contains("CANARY"));
 }
 
@@ -1654,7 +1662,8 @@ async fn regional_job_reports_terminal_success_or_failure_without_replaying_post
         );
         assert!(!stdout.contains("QUERY-CANARY"));
         if terminal == "Failed" {
-            assert!(stdout.contains("outcome_uncertain"));
+            assert!(!stdout.contains("outcome_uncertain"));
+            assert!(!stdout.contains("Check status_url before retrying."));
         } else {
             assert_eq!(
                 serde_json::from_str::<Value>(&stdout).unwrap()["result"]["data"][0]["text"]["status"],

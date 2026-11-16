@@ -379,10 +379,10 @@ async fn reconcile(
                 message,
             ));
         }
-        let (current, status, percentage, failure_code) = match handle.kind() {
+        let (current, status, percentage, failure_code, failure_message) = match handle.kind() {
             Strategy::ArmLocation => match response.status {
-                200 => (State::Success, "Succeeded", None, None),
-                201 | 202 => (State::Pending, "Running", None, None),
+                200 => (State::Success, "Succeeded", None, None, None),
+                201 | 202 => (State::Pending, "Running", None, None, None),
                 _ => {
                     return Err(protocol(
                         "Unexpected Azure/Storage Location response status",
@@ -399,8 +399,17 @@ async fn reconcile(
                 } else {
                     state(&json)?
                 };
-                let failure_code = if matches!(current, State::Failed | State::Cancelled) {
-                    error_code(&json).map(str::to_owned)
+                let failed = matches!(current, State::Failed | State::Cancelled);
+                let reason = if job && failed {
+                    json.get("failureReason")
+                } else {
+                    None
+                };
+                let failure_code = if failed {
+                    reason
+                        .and_then(error_code)
+                        .or_else(|| error_code(&json))
+                        .map(str::to_owned)
                 } else {
                     None
                 };
@@ -409,6 +418,11 @@ async fn reconcile(
                     status,
                     percentage(&json, clock, &mut warned_percentage),
                     failure_code,
+                    reason
+                        .and_then(|value| value.get("message"))
+                        .and_then(Value::as_str)
+                        .filter(|message| !message.is_empty())
+                        .map(str::to_owned),
                 )
             }
         };
@@ -440,12 +454,16 @@ async fn reconcile(
         }
         match current {
             State::Failed | State::Cancelled => {
-                let message = if job {
-                    "Backend job failed or was cancelled"
-                } else {
-                    "Backend operation failed or was cancelled"
+                let message = match (job, current) {
+                    (true, State::Failed) => "Backend job failed",
+                    (true, _) => "Backend job was cancelled",
+                    (false, State::Failed) => "Backend operation failed",
+                    (false, _) => "Backend operation was cancelled",
                 };
-                return Err(service_failure(&response, failure_code.as_deref(), message));
+                let mut error = service_failure(&response, failure_code.as_deref(), message);
+                error.failure_reason =
+                    failure_message.map(|message| fabric_core::JobFailureReason { message });
+                return Err(error);
             }
             State::Pending => {
                 previous = response;
@@ -743,8 +761,7 @@ pub async fn complete_observed(
     } else {
         handle.attach(error)
     };
-    if error.kind == ErrorKind::Diagnostic
-        && terminal.is_some()
+    if terminal.is_some()
         && let Some(recovery) = &mut error.recovery
     {
         recovery.outcome_uncertain = false;

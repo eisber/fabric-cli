@@ -195,6 +195,9 @@ impl ConsoleProgress {
             }
             DiagnosticEvent::PollCompleted { outcome } => {
                 state.outcome = DiagnosticOutcome::Terminal(*outcome);
+                if let Some(recovery) = &mut state.recovery {
+                    recovery.outcome_uncertain = false;
+                }
             }
             _ => {}
         }
@@ -243,6 +246,7 @@ impl PollObserver for ConsoleProgress {
     }
 
     async fn diagnostic(&self, event: DiagnosticEvent) -> Result<(), CoreError> {
+        self.remember(&event, false);
         self.emit(event).await
     }
 }
@@ -968,7 +972,11 @@ async fn execute(
                 .recovery = recovery.clone();
             let attach_recovery = |mut error: CommandError| {
                 if error.recovery.is_none() {
-                    error.recovery = recovery
+                    error.recovery = observer
+                        .reporting
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .recovery
                         .as_ref()
                         .and_then(|value| serde_json::to_value(value).ok());
                 }

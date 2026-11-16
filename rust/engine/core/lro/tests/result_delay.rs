@@ -218,7 +218,7 @@ async fn cancellation_during_terminal_not_before_wait_preserves_handle_and_skips
         *clock.sleeps.lock().unwrap(),
         [2, 7].map(Duration::from_secs)
     );
-    assert!(error.recovery.unwrap().outcome_uncertain);
+    assert!(!error.recovery.unwrap().outcome_uncertain);
 }
 
 #[tokio::test]

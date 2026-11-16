@@ -21,14 +21,28 @@ pub fn success(timestamp: &str, command: &str, data: Value) -> String {
     envelope(timestamp, command, "Success", result)
 }
 
-/// Ordered Python failure envelope. Recovery evidence is an approved extension.
+/// Ordered Python failure envelope. Recovery and job failure details are approved extensions.
 pub fn failure(timestamp: &str, command: &str, error: &CommandError) -> String {
     let mut result = Map::new();
+    let mut message = error.message.clone();
     if let Some(recovery) = &error.recovery {
-        result.insert("data".into(), Value::Array(vec![recovery.clone()]));
+        let mut recovery = recovery.clone();
+        if let Some(fields) = recovery.as_object_mut()
+            && fields.remove("outcome_uncertain") == Some(Value::Bool(true))
+        {
+            message.push_str(
+                "\nThe operation's final status is unknown; it may still be running. Check status_url before retrying.",
+            );
+        }
+        result.insert("data".into(), Value::Array(vec![recovery]));
     }
     result.insert("error_code".into(), Value::String(error.code.clone()));
-    result.insert("message".into(), Value::String(error.message.clone()));
+    result.insert("message".into(), Value::String(message));
+    if let Some(reason) = &error.failure_reason {
+        let mut details = Map::new();
+        details.insert("message".into(), Value::String(reason.message.clone()));
+        result.insert("failure_reason".into(), Value::Object(details));
+    }
     envelope(timestamp, command, "Failure", result)
 }
 
@@ -43,4 +57,51 @@ fn envelope(timestamp: &str, command: &str, status: &str, result: Map<String, Va
     let mut text = fabric_core_json::encode(&Value::Object(root), Format::Pretty(Indent::Four));
     text.push('\n');
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn recovery_guidance_replaces_public_uncertainty_without_changing_internal_evidence() {
+        for uncertain in [true, false] {
+            let mut error = CommandError::new("Service", "Original failure");
+            let recovery = json!({
+                "operation_id": "op-1",
+                "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
+                "outcome_uncertain": uncertain
+            });
+            error.recovery = Some(recovery.clone());
+            let output: Value = serde_json::from_str(&failure("", "api", &error)).unwrap();
+            assert_eq!(
+                output["result"]["data"],
+                json!([{
+                    "operation_id": "op-1",
+                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1"
+                }])
+            );
+            assert_eq!(
+                output["result"]["message"],
+                if uncertain {
+                    "Original failure\nThe operation's final status is unknown; it may still be running. Check status_url before retrying."
+                } else {
+                    "Original failure"
+                }
+            );
+            assert_eq!(error.recovery, Some(recovery));
+            assert_eq!(output["result"]["error_code"], "Service");
+        }
+    }
+
+    #[test]
+    fn failures_without_an_accepted_operation_have_no_recovery_guidance() {
+        let error = CommandError::new("InvalidInput", "Invalid arguments");
+        let output: Value = serde_json::from_str(&failure("", "api", &error)).unwrap();
+        assert_eq!(
+            output["result"],
+            json!({"error_code": "InvalidInput", "message": "Invalid arguments"})
+        );
+    }
 }

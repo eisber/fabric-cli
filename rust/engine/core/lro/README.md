@@ -41,10 +41,16 @@ as Azure, never switching to ARM or an advertised host. Responses without a
 recognized handle and Power BI responses are raw.
 
 Failed status or result responses expose a bounded service error identifier when
-available, without forwarding service error messages. Codes must be nonempty,
+available. Codes must be nonempty,
 at most 128 bytes, and contain only ASCII letters, digits, `.`, `_`, or `-`;
 invalid codes are omitted with a diagnostic. When no code is supplied, the
 failure remains `Service`.
+For failed/cancelled Fabric jobs, `failureReason.errorCode` (or `code`) takes
+precedence over the other error shapes. A nonempty string
+`failureReason.message` is held separately from the safe error message for the
+CLI's final JSON only. Missing/null/nonstring messages are omitted. Debug and
+diagnostic output never contains this raw text; no other failureReason fields
+are forwarded. Non-job service error messages remain hidden.
 
 Fabric job-instance Locations use a separate JSON status protocol. Only exact
 `/v1/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}`
@@ -55,6 +61,11 @@ It shares the optional overall budget and safe GET
 executor. `NotStarted`/`InProgress` remain pending; `Completed`/`Deduped` return
 the actual terminal job response. `Failed`/`Cancelled`, unexpected HTTP statuses,
 and malformed/unknown JSON statuses fail with query-redacted job-URL recovery.
+Failed and cancelled statuses have distinct safe summary messages.
+Any observed terminal status clears recovery's internal `outcome_uncertain`, including
+when a later result request or observer fails; pre-terminal local failures
+remain uncertain. The CLI omits this boolean from public recovery data and instead
+adds check-status-before-retry guidance only when the final outcome is unknown.
 No job result URL is fetched, no mutation is replayed, and local timeout or
 cancellation never cancels the remote job. Unsupported job routes remain raw.
 

@@ -88,7 +88,21 @@ pub struct RecoveryInfo {
     /// Backend completion is not established by this error.
     pub outcome_uncertain: bool,
 }
-/// Sanitized error; never wrap raw provider or HTTP diagnostics in its message.
+/// Service-provided job failure text, for explicit final JSON output only.
+/// This can contain sensitive data and must never be copied into diagnostics.
+#[derive(Clone)]
+pub struct JobFailureReason {
+    /// Untrusted service text; serialize as JSON, never as terminal markup.
+    pub message: String,
+}
+impl fmt::Debug for JobFailureReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JobFailureReason([REDACTED])")
+    }
+}
+
+/// Sanitized error message with separately held job failure details for final JSON.
+/// Never wrap raw provider or HTTP diagnostics in its message.
 #[derive(Clone, Debug, Serialize)]
 pub struct CoreError {
     /// Machine-readable error category.
@@ -97,6 +111,9 @@ pub struct CoreError {
     pub message: String,
     /// Accepted-operation recovery evidence.
     pub recovery: Option<RecoveryInfo>,
+    /// Raw job failure message, exposed only in the final structured response.
+    #[serde(skip)]
+    pub failure_reason: Option<JobFailureReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_code: Option<String>,
     #[serde(skip)]
@@ -109,6 +126,7 @@ impl CoreError {
             kind,
             message: message.into(),
             recovery: None,
+            failure_reason: None,
             service_code: None,
             diagnostic_outcome: None,
         }

@@ -249,7 +249,20 @@ replayed. Safe GET retries remain inside the operation deadline.
 
 Failed status/result responses expose their service error identifier in
 `result.error_code` when it is a bounded ASCII identifier; otherwise the code
-remains `Service`. Raw service error messages are not emitted.
+remains `Service`. For failed/cancelled Fabric jobs, the code is read first from
+`failureReason.errorCode` (or `code`), then from the existing error shapes and
+headers. As a user-approved extension, the final JSON may also include
+`result.failure_reason.message`: only a nonempty string from the job's
+`failureReason.message`. This untrusted text can contain sensitive data and is
+JSON-escaped, never written to progress/verbose logs or error Debug/Display.
+Other response fields, nested details, and non-job error messages remain hidden.
+The top-level safe summary distinguishes failed jobs from cancelled jobs.
+Recovery's internal `outcome_uncertain` is false once the poller observes a terminal
+status, even if subsequent result retrieval or reporting fails; without a known
+terminal status, local failures remain uncertain. This does not imply rollback
+or successful result delivery. The CLI omits this boolean from public JSON;
+unknown outcomes instead append a warning to the error message that the operation
+may still be running and `status_url` should be checked before retrying.
 
 Entering validated reconciliation emits and flushes
 `Operation accepted. Polling for completion...` or `Job accepted`
@@ -287,6 +300,8 @@ the remote job. Default-enabled status/percentage reporting intentionally
 differs from Python's debug-gated shared polling logs.
 
 Timeout, local Ctrl+C, terminal failure, and uncertain transport outcomes preserve
-known safe operation ID/status URL and uncertainty in structured recovery data.
+known safe operation ID/status URL in structured recovery data. Outcome uncertainty
+is retained internally and communicated through the error message, not a public
+boolean.
 Ctrl+C does not cancel the remote operation or imply rollback. Inspect the known
 operation before deciding whether another mutation is safe.

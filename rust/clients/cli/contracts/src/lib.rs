@@ -4,7 +4,7 @@
 //! Minimal safe command failures and Python output truthiness.
 #![forbid(unsafe_code)]
 
-use fabric_core::{CoreError, ErrorKind};
+use fabric_core::{CoreError, ErrorKind, JobFailureReason};
 use serde_json::Value;
 use std::fmt;
 
@@ -17,6 +17,8 @@ pub struct CommandError {
     pub message: String,
     /// Known, sanitized accepted-operation evidence.
     pub recovery: Option<Value>,
+    /// Untrusted service message for final JSON only, never diagnostic output.
+    pub failure_reason: Option<JobFailureReason>,
     exit_code: u8,
     kind: ErrorKind,
 }
@@ -40,6 +42,7 @@ impl CommandError {
             code,
             message: message.into(),
             recovery: None,
+            failure_reason: None,
             exit_code,
             kind,
         }
@@ -77,6 +80,7 @@ impl From<CoreError> for CommandError {
         Self {
             code,
             message: error.message,
+            failure_reason: error.failure_reason,
             recovery: error
                 .recovery
                 .and_then(|value| serde_json::to_value(value).ok()),

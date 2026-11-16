@@ -673,6 +673,69 @@ async fn arm_and_job_failures_report_nested_service_codes() {
 }
 
 #[tokio::test]
+async fn job_failure_reasons_keep_valid_codes_and_separate_raw_messages() {
+    let location = "/v1/workspaces/workspace/items/item/jobs/instances/job?secret=QUERY-CANARY";
+    for (status, reason, expected_code, expected_message) in [
+        (
+            "Failed",
+            r#"{"errorCode":"RefreshFailed","message":"DETAIL-CANARY","details":[{"message":"OTHER-CANARY"}]}"#,
+            Some("RefreshFailed"),
+            Some("DETAIL-CANARY"),
+        ),
+        (
+            "Cancelled",
+            r#"{"code":"UserCancelled","message":"DETAIL-CANARY"}"#,
+            Some("UserCancelled"),
+            Some("DETAIL-CANARY"),
+        ),
+        ("Failed", "null", None, None),
+        ("Failed", r#"{"message":42,"errorCode":42}"#, None, None),
+        ("Failed", r#"{"message":""}"#, None, None),
+        (
+            "Failed",
+            r#"{"errorCode":"https://CODE-CANARY/","message":"DETAIL-CANARY"}"#,
+            None,
+            Some("DETAIL-CANARY"),
+        ),
+    ] {
+        let http = Script::new(vec![response(
+            200,
+            &format!(r#"{{"status":"{status}","failureReason":{reason}}}"#),
+            &[],
+        )]);
+        let error = complete(
+            &http,
+            &FakeClock::new(),
+            Audience::Fabric,
+            response(202, "", &[("location", location)]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Service);
+        assert_eq!(error.service_code(), expected_code);
+        assert_eq!(
+            error
+                .failure_reason
+                .as_ref()
+                .map(|reason| reason.message.as_str()),
+            expected_message
+        );
+        assert!(error.message.starts_with(if status == "Cancelled" {
+            "Backend job was cancelled"
+        } else {
+            "Backend job failed"
+        }));
+        assert!(!format!("{error} {error:?}").contains("CANARY"));
+        assert!(!serde_json::to_string(&error).unwrap().contains("CANARY"));
+        let recovery = error.recovery.unwrap();
+        assert!(!recovery.outcome_uncertain);
+        assert!(!recovery.status_url.contains('?'));
+        assert_eq!(http.calls.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn invalid_or_missing_service_codes_remain_sanitized_failures() {
     for (body, omitted) in [
         (r#"{"status":"Failed"}"#, false),
@@ -722,7 +785,7 @@ async fn unsafe_result_is_rejected_with_recovery_without_forwarding_bearer() {
     assert_eq!(error.kind, ErrorKind::Protocol);
     assert_eq!(http.calls.lock().unwrap().len(), 1);
     assert!(!format!("{error:?}").contains("secret"));
-    assert!(error.recovery.unwrap().outcome_uncertain);
+    assert!(!error.recovery.unwrap().outcome_uncertain);
 }
 #[tokio::test]
 async fn failed_cancelled_malformed_unknown_and_redirect_are_terminal() {
@@ -1219,5 +1282,5 @@ async fn final_result_cannot_escape_polling_deadline() {
     .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Timeout);
     assert_eq!(*http.count.lock().unwrap(), 2);
-    assert!(error.recovery.unwrap().outcome_uncertain);
+    assert!(!error.recovery.unwrap().outcome_uncertain);
 }

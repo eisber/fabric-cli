@@ -1666,8 +1666,7 @@ async fn malformed_initial_json_fails_before_polling_with_safe_recovery() {
                 data(&stdout),
                 json!([{
                     "operation_id": "op-1",
-                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
-                    "outcome_uncertain": true
+                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1"
                 }]),
             );
             assert!(!stdout.contains("CANARY"));
@@ -1844,20 +1843,93 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
                     "Job accepted. Polling for completion...\nWaiting for job completion; next status check in 2s...\nChecking job status...\n",
             }
         );
-        assert!(!stdout.contains("CANARY"));
+        assert!(!stdout.contains("secret=CANARY"));
+        assert!(!stderr.contains("CANARY"));
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            envelope["result"]["error_code"],
+            if terminal.contains("Unknown") {
+                "Protocol"
+            } else {
+                "Service"
+            }
+        );
+        if terminal.contains("Failed") {
+            assert_eq!(envelope["result"]["message"], "Backend job failed");
+            assert_eq!(
+                envelope["result"]["failure_reason"],
+                json!({"message":"BODY-CANARY"})
+            );
+        } else {
+            assert!(envelope["result"].get("failure_reason").is_none());
+            if terminal.contains("Cancelled") {
+                assert_eq!(envelope["result"]["message"], "Backend job was cancelled");
+            }
+        }
         assert_eq!(
             data(&stdout),
             json!([{
                 "operation_id": null,
-                "status_url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job",
-                "outcome_uncertain": true
+                "status_url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances/job"
             }])
+        );
+        assert_eq!(
+            stdout.contains("Check status_url before retrying."),
+            terminal.contains("Unknown")
         );
         let requests = host.transport.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].method, "POST");
         assert_eq!(requests[1].method, "GET");
         assert_eq!(requests[1].url.query(), Some("secret=CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn job_failure_message_is_json_only_even_with_verbose_logging() {
+    for verbose in [false, true] {
+        let host = FakeHost::new(vec![
+            response(
+                202,
+                "",
+                &[(
+                    "location",
+                    "/v1/workspaces/workspace/items/item/jobs/instances/job?sig=QUERY-CANARY",
+                )],
+            ),
+            response(
+                200,
+                r#"{"status":"Failed","failureReason":{"errorCode":"RefreshFailed","message":"DETAIL-CANARY\n\u001b[31m","details":[{"message":"OTHER-CANARY"}]},"unrelated":"BODY-CANARY"}"#,
+                &[],
+            ),
+        ]);
+        let mut args = vec!["api", "items", "--method", "post", "--input", "{}"];
+        if verbose {
+            args.push("--verbose");
+        }
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{stdout}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["status"], "Failure");
+        assert_eq!(envelope["result"]["error_code"], "RefreshFailed");
+        assert_eq!(envelope["result"]["message"], "Backend job failed");
+        assert_eq!(
+            envelope["result"]["failure_reason"],
+            json!({"message":"DETAIL-CANARY\n\u{001b}[31m"})
+        );
+        assert!(!stdout.contains("outcome_uncertain"));
+        assert!(!stdout.contains("Check status_url before retrying."));
+        assert!(!stdout.contains("QUERY-CANARY"));
+        assert!(!stdout.contains("OTHER-CANARY"));
+        assert!(!stdout.contains("BODY-CANARY"));
+        assert!(!stdout.contains('\x1b'));
+        assert!(!stderr.contains("CANARY"));
+        assert!(!stderr.contains("RefreshFailed"));
+        assert!(stderr.contains("Job instance status: Failed\n"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[1].method, "GET");
     }
 }
 
@@ -1904,7 +1976,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
 
 #[tokio::test]
 async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
-    for asynchronous in [true, false] {
+    for (asynchronous, verbose) in [(true, false), (true, true), (false, false), (false, true)] {
         for (body, query, error_code) in [
             (b"{BODY-CANARY".as_slice(), None, "InvalidJson"),
             (b"\xffBODY-CANARY".as_slice(), None, "InvalidJson"),
@@ -1954,6 +2026,9 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
             if asynchronous {
                 args.push("--async");
             }
+            if verbose {
+                args.push("--verbose");
+            }
             if let Some(query) = query {
                 args.extend(["--query", query]);
             }
@@ -1966,20 +2041,31 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
                 data(&stdout),
                 json!([{
                     "operation_id": "op-1",
-                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
-                    "outcome_uncertain": true
+                    "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1"
                 }]),
+            );
+            assert_eq!(
+                stdout.contains("Check status_url before retrying."),
+                asynchronous
             );
             assert!(!stdout.contains("CANARY"));
             assert!(!stdout.contains("synthetic-token"));
-            assert_eq!(
-                stderr,
-                if asynchronous {
-                    ""
-                } else {
-                    "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\n"
-                }
-            );
+            if !verbose {
+                assert_eq!(
+                    stderr,
+                    if asynchronous {
+                        ""
+                    } else {
+                        "Operation accepted. Polling for completion...\nWaiting for operation completion; next status check in 2s...\nChecking operation status...\nOperation status: Succeeded\n"
+                    }
+                );
+            } else {
+                assert_eq!(
+                    stderr.contains("Operation status: Succeeded\n"),
+                    !asynchronous
+                );
+                assert!(!stderr.contains("CANARY"));
+            }
             let requests = host.transport.requests.lock().unwrap();
             assert_eq!(requests.len(), if asynchronous { 1 } else { 3 });
             assert_eq!(requests[0].method, "POST");
@@ -2017,8 +2103,7 @@ async fn async_invalid_handles_remain_raw_and_conversion_only_retains_safe_evide
                         data(&stdout),
                         json!([{
                             "operation_id": "op-1",
-                            "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
-                            "outcome_uncertain": true
+                            "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1"
                         }]),
                     );
                 } else {
