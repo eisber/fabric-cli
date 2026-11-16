@@ -18,6 +18,7 @@ pub struct CommandError {
     /// Known, sanitized accepted-operation evidence.
     pub recovery: Option<Value>,
     exit_code: u8,
+    kind: ErrorKind,
 }
 
 impl CommandError {
@@ -25,17 +26,33 @@ impl CommandError {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         let code = code.into();
         let exit_code = if code == "Unauthorized" { 4 } else { 1 };
+        let kind = match code.as_str() {
+            "InvalidInput" | "InvalidJson" => ErrorKind::InvalidInput,
+            "Unauthorized" => ErrorKind::Unauthorized,
+            "Transport" => ErrorKind::Transport,
+            "Protocol" => ErrorKind::Protocol,
+            "Timeout" => ErrorKind::Timeout,
+            "Cancelled" => ErrorKind::Cancelled,
+            "Diagnostic" => ErrorKind::Diagnostic,
+            _ => ErrorKind::Service,
+        };
         Self {
             code,
             message: message.into(),
             recovery: None,
             exit_code,
+            kind,
         }
     }
 
     /// Unauthorized is exit 4; all other command failures are exit 1.
     pub fn exit_code(&self) -> u8 {
         self.exit_code
+    }
+
+    /// Local error category, independent of any service-provided error code.
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
     }
 }
 
@@ -49,6 +66,7 @@ impl From<CoreError> for CommandError {
             ErrorKind::Timeout => "Timeout",
             ErrorKind::Cancelled => "Cancelled",
             ErrorKind::Service => "Service",
+            ErrorKind::Diagnostic => "Diagnostic",
         };
         let exit_code = if error.kind == ErrorKind::Unauthorized {
             4
@@ -63,6 +81,7 @@ impl From<CoreError> for CommandError {
                 .recovery
                 .and_then(|value| serde_json::to_value(value).ok()),
             exit_code,
+            kind: error.kind,
         }
     }
 }

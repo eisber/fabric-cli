@@ -72,6 +72,7 @@ struct TestClock {
     streams: Arc<Streams>,
     first_wait: Mutex<bool>,
     real_time: bool,
+    verbose: bool,
 }
 #[async_trait]
 impl Clock for TestClock {
@@ -91,13 +92,20 @@ impl Clock for TestClock {
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         if std::mem::take(&mut *self.first_wait.lock().unwrap()) {
             let stderr = self.streams.stderr.lock().unwrap();
-            assert!(
-                stderr.as_slice() == b"Monitoring job execution...\n"
-                    || stderr.as_slice() == b"Monitoring operation execution...\n"
-                    || stderr.as_slice() == b"\x1b[36mMonitoring job execution...\x1b[0m\n",
-                "start notification must precede the first wait: {stderr:?}"
-            );
-            assert_eq!(*self.streams.flushes.lock().unwrap(), 1);
+            if self.verbose {
+                let text = String::from_utf8_lossy(&stderr);
+                assert!(text.contains("HTTP #1 received 202"));
+                assert!(text.contains("Monitoring "));
+                assert!(*self.streams.flushes.lock().unwrap() > 1);
+            } else {
+                assert!(
+                    stderr.as_slice() == b"Monitoring job execution...\n"
+                        || stderr.as_slice() == b"Monitoring operation execution...\n"
+                        || stderr.as_slice() == b"\x1b[36mMonitoring job execution...\x1b[0m\n",
+                    "start notification must precede the first wait: {stderr:?}"
+                );
+                assert_eq!(*self.streams.flushes.lock().unwrap(), 1);
+            }
             assert!(self.streams.stdout.lock().unwrap().is_empty());
         }
         if self.real_time {
@@ -111,7 +119,9 @@ impl Clock for TestClock {
 }
 
 #[derive(Debug)]
-struct Credential;
+struct Credential {
+    delay: Duration,
+}
 #[async_trait]
 impl TokenCredential for Credential {
     async fn get_token(
@@ -119,6 +129,9 @@ impl TokenCredential for Credential {
         _: &[&str],
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
+        if !self.delay.is_zero() {
+            tokio::time::sleep(self.delay).await;
+        }
         Ok(AccessToken::new(
             "TOKEN-CANARY",
             azure_core::time::OffsetDateTime::from_unix_timestamp(4102444800).unwrap(),
@@ -177,6 +190,7 @@ struct FakeHost {
     clock: Arc<TestClock>,
     transport: Arc<Transport>,
     color: bool,
+    credential_delay: Duration,
 }
 #[async_trait]
 impl Host for FakeHost {
@@ -199,7 +213,9 @@ impl Host for FakeHost {
         unreachable!()
     }
     fn credential(&self, _: Binding) -> Result<Arc<dyn TokenCredential>, CommandError> {
-        Ok(Arc::new(Credential))
+        Ok(Arc::new(Credential {
+            delay: self.credential_delay,
+        }))
     }
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError> {
         Ok(self.transport.clone())
@@ -271,6 +287,7 @@ struct RunOptions<'a> {
     color: bool,
     fail_after_flushes: Option<usize>,
     cancel_after_flushes: Option<usize>,
+    credential_delay: Duration,
 }
 
 async fn run_options(
@@ -288,6 +305,7 @@ async fn run_options(
             streams: streams.clone(),
             first_wait: Mutex::new(true),
             real_time: options.real_time,
+            verbose: args.contains(&"--verbose"),
         }),
         transport: Arc::new(Transport {
             replies: Mutex::new(replies.into()),
@@ -298,6 +316,7 @@ async fn run_options(
             response_delays: Mutex::new(options.response_delays.into()),
         }),
         color: options.color,
+        credential_delay: options.credential_delay,
     };
     let cancellation = CancellationToken::new();
     let mut stdout = Writer {
@@ -457,6 +476,88 @@ async fn heartbeats_repeat_during_server_waits_and_preserve_every_real_status() 
     let envelope: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(envelope["result"]["data"][0]["text"]["status"], "Completed");
     assert!(!stdout.contains("elapsed"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn verbose_events_during_credentials_do_not_postpone_progress_heartbeats() {
+    let replies = || {
+        vec![
+            response(202, json!({}), &[("location", JOB), ("retry-after", "1")]),
+            response(200, json!({"status":"Completed"}), &[]),
+        ]
+    };
+    let options = || RunOptions {
+        real_time: true,
+        credential_delay: Duration::from_secs(7),
+        response_delays: vec![Duration::ZERO, Duration::from_secs(25)],
+        ..Default::default()
+    };
+    let plain = run_options(
+        &["api", "items", "--method", "post"],
+        replies(),
+        false,
+        false,
+        options(),
+    )
+    .await;
+    let verbose = run_options(
+        &["--verbose", "api", "items", "--method", "post"],
+        replies(),
+        false,
+        false,
+        options(),
+    )
+    .await;
+    assert_eq!(plain.0, 0, "{}", plain.1);
+    assert_eq!(verbose.0, 0, "{}", verbose.1);
+    assert_eq!(verbose.1, plain.1);
+    assert_eq!(verbose.3, plain.3);
+    assert_eq!(verbose.3, 2);
+    let progress = verbose
+        .2
+        .lines()
+        .filter(|line| !line.starts_with("[debug +") && !line.starts_with("    "))
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
+    assert_eq!(progress, plain.2);
+    assert!(progress.contains("(11s elapsed)"));
+    assert!(progress.contains("(21s elapsed)"));
+    assert!(verbose.2.contains("Credentials: completed (7000 ms)"));
+    assert!(!verbose.2.contains("CANARY"));
+}
+
+#[tokio::test]
+async fn verbose_color_uses_only_renderer_sequences_and_preserves_stdout() {
+    let replies = || {
+        vec![
+            accepted(JOB),
+            response(200, json!({"status":"Completed"}), &[]),
+        ]
+    };
+    let mut outputs = Vec::new();
+    for color in [false, true] {
+        let (code, stdout, stderr, calls) = run_options(
+            &["--verbose", "api", "items", "--method", "post"],
+            replies(),
+            false,
+            false,
+            RunOptions {
+                color,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(calls, 2);
+        assert!(!stdout.contains('\x1b'));
+        assert!(!stderr.contains("CANARY"));
+        assert_eq!(stderr.contains("\x1b[2;36m[debug +"), color);
+        if !color {
+            assert!(!stderr.contains('\x1b'));
+        }
+        outputs.push(stdout);
+    }
+    assert_eq!(outputs[0], outputs[1]);
 }
 
 #[tokio::test(start_paused = true)]

@@ -6,6 +6,10 @@
 use async_trait::async_trait;
 use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use chrono::Datelike;
+use fabric_core::diagnostics::{
+    DelaySource, DiagnosticDuration, DiagnosticEvent, DiagnosticMethod, DiagnosticObserver,
+    DiagnosticOutcome, DiagnosticPhase, HttpStatus, RetryReason,
+};
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
     MAX_REQUEST_BYTES, OperationContext, ResponseHeadCapture, validate_headers,
@@ -13,9 +17,14 @@ use fabric_core::{
 };
 use std::{
     future::Future,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant, SystemTime},
 };
+mod diagnostics;
+use diagnostics::{safe_request_headers, safe_response_headers, safe_url};
 
 /// Production monotonic time and cancellable Tokio sleep; host owns the runtime.
 pub struct SystemClock;
@@ -86,18 +95,19 @@ pub fn retry_after(response: &ApiResponse, now: SystemTime) -> Result<Option<Dur
     let Some(value) = response.header("retry-after") else {
         return Ok(None);
     };
+    retry_after_value(value, now).map(Some)
+}
+fn retry_after_value(value: &str, now: SystemTime) -> Result<Duration, CoreError> {
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
         // An arbitrarily large valid delta must not overflow into an early retry.
-        return Ok(Some(
-            value
-                .parse::<u64>()
-                .map(Duration::from_secs)
-                .unwrap_or(Duration::MAX),
-        ));
+        return Ok(value
+            .parse::<u64>()
+            .map(Duration::from_secs)
+            .unwrap_or(Duration::MAX));
     }
     let then = http_date(value, now)
         .ok_or_else(|| CoreError::new(ErrorKind::Protocol, "Invalid Retry-After header"))?;
-    Ok(Some(then.duration_since(now).unwrap_or_default()))
+    Ok(then.duration_since(now).unwrap_or_default())
 }
 
 fn http_date(value: &str, now: SystemTime) -> Option<SystemTime> {
@@ -157,6 +167,8 @@ pub struct HttpClient {
     credential: Arc<dyn TokenCredential>,
     transport: Arc<dyn HttpTransport>,
     clock: Arc<dyn Clock>,
+    diagnostics: Option<Arc<dyn DiagnosticObserver>>,
+    next_request: AtomicU64,
 }
 impl HttpClient {
     /// Compose reusable execution without ambient discovery or global runtime setup.
@@ -169,23 +181,137 @@ impl HttpClient {
             credential,
             transport,
             clock,
+            diagnostics: None,
+            next_request: AtomicU64::new(1),
         }
+    }
+    /// Enable explicit caller-owned diagnostics. The default constructor is silent.
+    pub fn with_diagnostics(mut self, observer: Arc<dyn DiagnosticObserver>) -> Self {
+        self.diagnostics = Some(observer);
+        self
+    }
+    async fn emit(
+        &self,
+        event: DiagnosticEvent,
+        context: &OperationContext,
+        outcome: &ExecutionOutcome,
+    ) -> Result<(), CoreError> {
+        let Some(observer) = &self.diagnostics else {
+            return Ok(());
+        };
+        match bounded_with_clock(self.clock.as_ref(), context, observer.observe(event)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err(outcome.diagnostic_error()),
+            Err(error) => Err(outcome.attach(error)),
+        }
+    }
+    fn elapsed(&self, start: Instant) -> DiagnosticDuration {
+        DiagnosticDuration::from_duration(
+            self.clock
+                .now()
+                .checked_duration_since(start)
+                .unwrap_or_default(),
+        )
     }
     async fn acquire(
         &self,
         audience: Audience,
         context: &OperationContext,
+        outcome: &ExecutionOutcome,
     ) -> Result<AccessToken, CoreError> {
         context.remaining_at(self.clock.now())?;
+        self.emit(
+            DiagnosticEvent::Credential {
+                phase: DiagnosticPhase::Started,
+                duration: DiagnosticDuration::from_duration(Duration::ZERO),
+            },
+            context,
+            outcome,
+        )
+        .await?;
+        let start = self.clock.now();
         let scopes = [audience.scope()];
-        bounded_with_clock(
+        let result = bounded_with_clock(
             self.clock.as_ref(),
             context,
             self.credential.get_token(&scopes, Some(TokenRequestOptions::default())),
         )
-        .await?
-        .map_err(|_| CoreError::new(ErrorKind::Unauthorized,
-            "Credential acquisition failed; run fab-rs auth login to validate the selected session"))
+        .await
+        .and_then(|result| result.map_err(|_| CoreError::new(ErrorKind::Unauthorized,
+            "Credential acquisition failed; run fab-rs auth login to validate the selected session")))
+        .and_then(|token| {
+            let bearer = token.token.secret();
+            let now = match self.clock.wall_now().duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => duration.as_nanos() as i128,
+                Err(error) => -(error.duration().as_nanos() as i128),
+            };
+            if bearer.bytes().any(|b| b <= 32 || b >= 127)
+                || bearer.is_empty()
+                || bearer.len() > 16 * 1024
+                || token.expires_on.unix_timestamp_nanos() <= now
+            {
+                Err(CoreError::new(ErrorKind::Unauthorized, "Credential returned an invalid bearer token"))
+            } else {
+                Ok(token)
+            }
+        });
+        if result
+            .as_ref()
+            .is_err_and(|error| matches!(error.kind, ErrorKind::Cancelled | ErrorKind::Timeout))
+        {
+            return result;
+        }
+        self.emit(
+            DiagnosticEvent::Credential {
+                phase: match &result {
+                    Ok(_) => DiagnosticPhase::Completed,
+                    Err(error) => DiagnosticPhase::Failed(error.kind),
+                },
+                duration: self.elapsed(start),
+            },
+            context,
+            outcome,
+        )
+        .await?;
+        result
+    }
+}
+
+#[derive(Default)]
+struct ExecutionOutcome {
+    sent: bool,
+    status: Option<u16>,
+    recovery: Option<fabric_core::RecoveryInfo>,
+}
+impl ExecutionOutcome {
+    fn attach(&self, mut error: CoreError) -> CoreError {
+        if error.recovery.is_none() {
+            error.recovery = self.recovery.clone();
+        }
+        error
+    }
+    fn diagnostic_error(&self) -> CoreError {
+        let outcome = if let Some(status) = self.status.and_then(HttpStatus::new) {
+            DiagnosticOutcome::Received(status)
+        } else if self.sent {
+            DiagnosticOutcome::Uncertain
+        } else {
+            DiagnosticOutcome::BeforeSend
+        };
+        self.attach(CoreError::diagnostic_failure(outcome))
+    }
+    fn capture(&mut self, head: &ResponseHeadCapture, result: &Result<ApiResponse, CoreError>) {
+        self.status = head
+            .status()
+            .or_else(|| result.as_ref().ok().map(|response| response.status));
+        if let Some(recovery) = head.recovery().or_else(|| {
+            result
+                .as_ref()
+                .err()
+                .and_then(|error| error.recovery.clone())
+        }) {
+            self.recovery = Some(recovery);
+        }
     }
 }
 impl HttpClient {
@@ -218,58 +344,128 @@ impl HttpClient {
         }
         let safe = retry_get && request.method == "GET";
         let mut delay = Duration::from_secs(1);
+        let mut attempt = 0u32;
+        let mut outcome = ExecutionOutcome::default();
         loop {
-            context.remaining_at(self.clock.now())?;
-            let token = self.acquire(audience, context).await?;
+            context
+                .remaining_at(self.clock.now())
+                .map_err(|error| outcome.attach(error))?;
+            attempt = attempt.saturating_add(1);
+            let token = self
+                .acquire(audience, context, &outcome)
+                .await
+                .map_err(|error| outcome.attach(error))?;
             let bearer = token.token.secret();
-            let now = match self.clock.wall_now().duration_since(SystemTime::UNIX_EPOCH) {
-                Ok(duration) => duration.as_nanos() as i128,
-                Err(error) => -(error.duration().as_nanos() as i128),
-            };
-            if bearer.bytes().any(|b| b <= 32 || b >= 127)
-                || bearer.is_empty()
-                || bearer.len() > 16 * 1024
-                || token.expires_on.unix_timestamp_nanos() <= now
-            {
-                return Err(CoreError::new(
-                    ErrorKind::Unauthorized,
-                    "Credential returned an invalid bearer token",
-                ));
-            }
             let mut authenticated = request.clone();
             authenticated
                 .headers
                 .insert("authorization".into(), format!("Bearer {bearer}"));
-            context.remaining_at(self.clock.now())?;
+            let id = self
+                .next_request
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
+                    Some(id.saturating_add(1))
+                })
+                .expect("request counter always advances or saturates");
+            if self.diagnostics.is_some() {
+                let method = match request.method.as_str() {
+                    "GET" => DiagnosticMethod::Get,
+                    "POST" => DiagnosticMethod::Post,
+                    "PUT" => DiagnosticMethod::Put,
+                    "PATCH" => DiagnosticMethod::Patch,
+                    "DELETE" => DiagnosticMethod::Delete,
+                    _ => unreachable!("method validated before credentials"),
+                };
+                // Validation above is authoritative; sanitization cannot expand
+                // the set of destinations that execution is allowed to follow.
+                let url = safe_url(audience, request.url.as_str())
+                    .expect("validated request URL has safe metadata");
+                self.emit(
+                    DiagnosticEvent::HttpSend {
+                        id,
+                        attempt,
+                        method,
+                        url,
+                        headers: safe_request_headers(&request.headers),
+                    },
+                    context,
+                    &outcome,
+                )
+                .await?;
+            }
+            context
+                .remaining_at(self.clock.now())
+                .map_err(|error| outcome.attach(error))?;
             let head = ResponseHeadCapture::new(audience);
-            let result = bounded_with_clock(
+            let start = self.clock.now();
+            outcome.sent = true;
+            outcome.status = None;
+            let mut result = bounded_with_clock(
                 self.clock.as_ref(),
                 context,
                 self.transport
                     .send_with_observer(authenticated, context, &head),
             )
             .await
-            .map_err(|error| head.attach(error))?
+            .and_then(|result| result)
             .map_err(|error| head.attach(error));
+            if let Ok(response) = &result
+                && head.status().is_none()
+                && let Err(error) = head.record(response.status, &response.headers)
+            {
+                result = Err(head.attach(error));
+            }
+            // Evidence must outlive a failing observer. In particular a 202
+            // cannot be turned into a pre-send failure or lose its handle.
+            outcome.capture(&head, &result);
+            if result
+                .as_ref()
+                .is_err_and(|error| matches!(error.kind, ErrorKind::Cancelled | ErrorKind::Timeout))
+            {
+                return result.map_err(|error| outcome.attach(error));
+            }
             context
                 .remaining_at(self.clock.now())
-                .map_err(|error| head.attach(error))?;
+                .map_err(|error| outcome.attach(head.attach(error)))?;
+            if self.diagnostics.is_some() {
+                let event = match &result {
+                    Ok(response) => DiagnosticEvent::HttpResponse {
+                        id,
+                        status: HttpStatus::new(response.status),
+                        duration: self.elapsed(start),
+                        headers: safe_response_headers(
+                            audience,
+                            &response.headers,
+                            request.url.as_str(),
+                            self.clock.wall_now(),
+                        ),
+                    },
+                    Err(error) => DiagnosticEvent::HttpFailure {
+                        id,
+                        status: outcome.status.and_then(HttpStatus::new),
+                        kind: error.kind,
+                        duration: self.elapsed(start),
+                    },
+                };
+                self.emit(event, context, &outcome).await?;
+            }
             let retry = match &result {
                 Ok(response) => {
-                    validate_response(response).map_err(|error| head.attach(error))?;
+                    validate_response(response)
+                        .map_err(|error| outcome.attach(head.attach(error)))?;
                     if (300..400).contains(&response.status) {
-                        return Err(CoreError::new(
+                        return Err(outcome.attach(CoreError::new(
                             ErrorKind::Protocol,
                             "HTTP redirects are not followed",
-                        ));
+                        )));
                     }
                     safe && matches!(response.status, 408 | 429 | 500 | 502 | 503 | 504)
                 }
                 Err(error) => safe && error.kind == ErrorKind::Transport,
             };
             if !retry {
-                return result;
+                return result.map_err(|error| outcome.attach(error));
             }
+            let mut source = DelaySource::Client;
             let server_delay =
                 result
                     .as_ref()
@@ -277,18 +473,38 @@ impl HttpClient {
                     .and_then(|r| match retry_after(r, self.clock.wall_now()) {
                         Ok(delay) => delay,
                         Err(_) => {
+                            source = DelaySource::InvalidServerHint;
                             self.clock
                                 .diagnostic("Invalid Retry-After header; using client backoff");
                             None
                         }
                     });
-            sleep_with_budget(
-                self.clock.as_ref(),
-                delay.max(server_delay.unwrap_or_default()),
+            let wait = delay.max(server_delay.unwrap_or_default());
+            if server_delay.is_some_and(|server| server >= delay) {
+                source = DelaySource::Server;
+            }
+            self.emit(
+                DiagnosticEvent::Retry {
+                    id,
+                    attempt: attempt.saturating_add(1),
+                    delay: DiagnosticDuration::from_duration(wait),
+                    reason: if result.is_ok() {
+                        RetryReason::HttpStatus
+                    } else {
+                        RetryReason::Transport
+                    },
+                    source,
+                },
                 context,
+                &outcome,
             )
             .await?;
-            context.remaining_at(self.clock.now())?;
+            sleep_with_budget(self.clock.as_ref(), wait, context)
+                .await
+                .map_err(|error| outcome.attach(error))?;
+            context
+                .remaining_at(self.clock.now())
+                .map_err(|error| outcome.attach(error))?;
             delay = delay.saturating_mul(2);
         }
     }

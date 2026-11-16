@@ -61,7 +61,7 @@ See the [provider contract](engine/core/auth/provider/README.md) for recognition
 limits, including unknown/localized diagnostics.
 
 ```text
-fab-rs api <endpoint>
+fab-rs [--verbose] api <endpoint>
   [--method get|post|delete|put|patch]
   [--audience fabric|storage|azure|powerbi]
   [--input <inline-json-or-file>]
@@ -95,6 +95,8 @@ bare-field row shortcut: migrate `[?displayName=='rustcli']` to
 `text.value[?displayName=='rustcli']` and `displayName` to
 `text.value[].displayName`. Use `@` (or `.`) to select the whole response object.
 Headers are queryable only when `--show-headers` is supplied.
+`Authorization` and `Proxy-Authorization` response headers are always excluded
+case-insensitively, before query evaluation. This does not redact response bodies.
 
 Filters require `==`, not `=`; quote the whole expression for your shell. Missing
 fields retain `"None"` and empty projections remain empty; neither falls back
@@ -102,6 +104,44 @@ to the unselected response. This nondisclosure protection intentionally differs
 from Python's falsey-result fallback. An empty query bypasses projection. No
 automatic pagination is performed. Querying is not a universal security-redaction
 boundary: selected data can itself be sensitive.
+
+### Local debug logging
+
+Use the global `--verbose` flag before or after a command:
+
+```sh
+fab-rs --verbose api workspaces
+fab-rs auth status --verbose
+```
+
+Readable, grouped debug messages go to stderr; stdout remains the command's
+JSON result. Logs describe command stages, credential timing, HTTP attempts and
+responses, retries, and polling decisions. Progress messages remain enabled
+without verbose mode. Help, version, bare `auth`, and bare `fab-rs --verbose`
+remain effect-free and produce no debug messages.
+
+Logs never contain authorization headers (even masked), credentials, bodies,
+local paths, query strings, identity IDs, raw exceptions, or SDK/process output.
+Only parsed, allowlisted header metadata is logged. Full canonical UUIDs from
+response headers `requestId` and `x-ms-request-id` are the explicit ID exception.
+Locations and request destinations use fixed service origins and route templates;
+dynamic segments are replaced, unknown paths are redacted, and other accepted service
+hosts appear as `service-advertised`. Invalid or ambiguous metadata is omitted
+with a fixed marker.
+
+Color is used only on terminal stderr when `NO_COLOR` is absent and `TERM` is
+not `dumb`. Redirected output is plain text. Each group is flushed before work
+continues. An output failure stops local execution without replaying requests;
+remote work may already have succeeded or still be running.
+Console writes are synchronous; a blocked output stream can delay cancellation
+until its current write returns.
+
+Treat logs as potentially sensitive: request IDs, timings, and sizes expose
+operational metadata. Ordinary stdout responses and recovery details are not
+covered by diagnostic sanitization. No log files are created; file logging is
+not implemented, and `RUST_LOG` does not enable these diagnostics.
+
+### Operation polling
 
 Recognized Fabric/ARM operations and Fabric job instances poll **by default**.
 `--async` returns the actual initial response, without polling or starting background

@@ -362,6 +362,7 @@ pub struct ResponseHeadCapture {
 }
 #[derive(Debug, Default)]
 struct HeadEvidence {
+    status: Option<u16>,
     recovery: Option<RecoveryInfo>,
     problem: Option<String>,
 }
@@ -413,10 +414,12 @@ impl ResponseHeadCapture {
         };
         let evidence = match result {
             Ok(handle) => HeadEvidence {
+                status: Some(status),
                 recovery: handle.as_ref().map(OperationHandle::recovery),
                 problem: None,
             },
             Err(error) => HeadEvidence {
+                status: Some(status),
                 recovery: error.recovery,
                 problem: Some(error.message),
             },
@@ -445,6 +448,7 @@ impl ResponseHeadCapture {
             .evidence
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = HeadEvidence {
+            status: Some(status),
             recovery,
             problem: Some(error.message.clone()),
         };
@@ -458,6 +462,13 @@ impl ResponseHeadCapture {
             .recovery
             .clone()
     }
+    /// Received status, even when body decoding or diagnostic delivery failed.
+    pub fn status(&self) -> Option<u16> {
+        self.evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .status
+    }
     /// Attach captured evidence to body, decode, deadline, or cancellation errors.
     pub fn attach(&self, mut error: CoreError) -> CoreError {
         let evidence = self
@@ -467,7 +478,8 @@ impl ResponseHeadCapture {
         if let Some(recovery) = &evidence.recovery {
             error.recovery = Some(recovery.clone());
         }
-        if let Some(problem) = &evidence.problem
+        if error.kind != ErrorKind::Diagnostic
+            && let Some(problem) = &evidence.problem
             && !error.message.contains(problem.as_str())
         {
             error.message.push_str("; ");

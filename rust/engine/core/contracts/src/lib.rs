@@ -14,6 +14,7 @@ use std::{
 pub use tokio_util::sync::CancellationToken;
 use url::Url;
 
+pub mod diagnostics;
 mod operation;
 pub use operation::{
     OperationHandle, OperationKind, ResponseHeadCapture, operation_handle, resolve_operation_url,
@@ -74,6 +75,8 @@ pub enum ErrorKind {
     Cancelled,
     /// Terminal service failure.
     Service,
+    /// Local diagnostic delivery failed; never retry the HTTP request.
+    Diagnostic,
 }
 /// Safe evidence for manually recovering an already accepted operation.
 #[derive(Clone, Debug, Serialize)]
@@ -96,6 +99,8 @@ pub struct CoreError {
     pub recovery: Option<RecoveryInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_code: Option<String>,
+    #[serde(skip)]
+    diagnostic_outcome: Option<diagnostics::DiagnosticOutcome>,
 }
 impl CoreError {
     /// Construct a safe error.
@@ -105,7 +110,30 @@ impl CoreError {
             message: message.into(),
             recovery: None,
             service_code: None,
+            diagnostic_outcome: None,
         }
+    }
+
+    /// Construct a reporting failure using fixed, truthful outcome wording.
+    pub fn diagnostic_failure(outcome: diagnostics::DiagnosticOutcome) -> Self {
+        use diagnostics::{DiagnosticOutcome, OperationOutcome};
+        let message: String = match outcome {
+            DiagnosticOutcome::BeforeSend => "Diagnostic output failed before sending; no request was sent".into(),
+            DiagnosticOutcome::Uncertain => "Diagnostic output failed; a request may have been sent, its outcome is uncertain, and remote work may continue".into(),
+            DiagnosticOutcome::Received(status) => format!("Diagnostic output failed after HTTP status {status} was received; remote work was not rolled back and may continue"),
+            DiagnosticOutcome::Accepted => "Diagnostic output failed after the operation was accepted; remote work may continue".into(),
+            DiagnosticOutcome::Terminal(OperationOutcome::Succeeded) => "Diagnostic output failed after the backend operation succeeded; remote work was not rolled back".into(),
+            DiagnosticOutcome::Terminal(OperationOutcome::Failed) => "Diagnostic output failed after the backend operation failed".into(),
+            DiagnosticOutcome::Terminal(OperationOutcome::Cancelled) => "Diagnostic output failed after the backend operation was cancelled".into(),
+        };
+        let mut error = Self::new(ErrorKind::Diagnostic, message);
+        error.diagnostic_outcome = Some(outcome);
+        error
+    }
+
+    /// Known remote outcome associated with a local diagnostic failure.
+    pub fn diagnostic_outcome(&self) -> Option<diagnostics::DiagnosticOutcome> {
+        self.diagnostic_outcome
     }
 
     /// Construct a service failure with a bounded identifier instead of arbitrary response text.

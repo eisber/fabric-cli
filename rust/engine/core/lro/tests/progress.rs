@@ -5,6 +5,9 @@
 #![deny(unnameable_test_items)]
 
 use async_trait::async_trait;
+use fabric_core::diagnostics::{
+    DiagnosticEvent, DiagnosticOutcome, OperationOutcome, ResultAction,
+};
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
     HttpExecutor, OperationContext, OperationKind,
@@ -164,6 +167,312 @@ impl PollObserver for ExpiringObserver<'_> {
         *self.0.0.lock().unwrap() += Duration::from_secs(2);
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ReportPoint {
+    Strategy,
+    Wait,
+    Terminal,
+    Result,
+    Never,
+}
+struct DiagnosticRecorder {
+    events: Mutex<Vec<DiagnosticEvent>>,
+    fail: ReportPoint,
+}
+#[async_trait]
+impl PollObserver for DiagnosticRecorder {
+    async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
+        Ok(())
+    }
+    async fn diagnostic(&self, event: DiagnosticEvent) -> Result<(), CoreError> {
+        let point = match event {
+            DiagnosticEvent::Polling { .. } => ReportPoint::Strategy,
+            DiagnosticEvent::PollWait { .. } => ReportPoint::Wait,
+            DiagnosticEvent::PollCompleted { .. } => ReportPoint::Terminal,
+            DiagnosticEvent::PollResult { .. } => ReportPoint::Result,
+            _ => ReportPoint::Never,
+        };
+        self.events.lock().unwrap().push(event);
+        if self.fail != ReportPoint::Never && point == self.fail {
+            Err(CoreError::new(
+                ErrorKind::Transport,
+                "DIAGNOSTIC-SINK-CANARY",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+fn diagnostic_recorder(fail: ReportPoint) -> DiagnosticRecorder {
+    DiagnosticRecorder {
+        events: Mutex::new(Vec::new()),
+        fail,
+    }
+}
+
+#[tokio::test]
+async fn pre_poll_diagnostic_failure_preserves_accepted_recovery_without_any_get() {
+    for point in [ReportPoint::Strategy, ReportPoint::Wait] {
+        let observer = diagnostic_recorder(point);
+        let (result, calls) = observe(
+            response(
+                202,
+                "",
+                &[(
+                    "location",
+                    "/v1/operations/OPERATION-CANARY?sig=QUERY-CANARY",
+                )],
+            ),
+            vec![],
+            &observer,
+            CancellationToken::new(),
+            LroConfig::default(),
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Diagnostic);
+        assert!(error.message.contains("operation was accepted"));
+        assert!(!error.message.contains("no request was sent"));
+        assert!(!error.message.contains("DIAGNOSTIC-SINK-CANARY"));
+        assert_eq!(
+            error.recovery.unwrap().operation_id.as_deref(),
+            Some("OPERATION-CANARY")
+        );
+        assert_eq!(calls, 0);
+        let events = format!("{:?}", observer.events.lock().unwrap());
+        assert!(!events.contains("CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn terminal_diagnostic_failure_keeps_known_outcome_without_service_codes() {
+    for (status, outcome, phrase) in [
+        (
+            "Succeeded",
+            OperationOutcome::Succeeded,
+            "operation succeeded",
+        ),
+        ("Failed", OperationOutcome::Failed, "operation failed"),
+        (
+            "Cancelled",
+            OperationOutcome::Cancelled,
+            "operation was cancelled",
+        ),
+    ] {
+        let observer = diagnostic_recorder(ReportPoint::Terminal);
+        let terminal =
+            format!(r#"{{"status":"{status}","error":{{"code":"SERVICE-CODE-CANARY"}}}}"#);
+        let (result, calls) = observe(
+            response(202, "", &[("location", "/v1/operations/OPERATION-CANARY")]),
+            vec![response(200, &terminal, &[])],
+            &observer,
+            CancellationToken::new(),
+            LroConfig::default(),
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Diagnostic);
+        assert_eq!(
+            error.diagnostic_outcome(),
+            Some(DiagnosticOutcome::Terminal(outcome))
+        );
+        assert!(error.message.contains(phrase));
+        assert!(!error.message.contains("CANARY"));
+        assert!(!error.recovery.unwrap().outcome_uncertain);
+        assert_eq!(calls, 1);
+        let events = observer.events.lock().unwrap();
+        assert!(matches!(
+            events.last(),
+            Some(DiagnosticEvent::PollCompleted { .. })
+        ));
+        assert!(!format!("{events:?}").contains("CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn result_choice_failure_does_not_fetch_again_and_preserves_terminal_success() {
+    let observer = diagnostic_recorder(ReportPoint::Result);
+    let (result, calls) = observe(
+        response(202, "", &[("location", "/v1/operations/OPERATION-CANARY")]),
+        vec![response(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[("location", "/v1/operations/OPERATION-CANARY/result")],
+        )],
+        &observer,
+        CancellationToken::new(),
+        LroConfig::default(),
+    )
+    .await;
+    let error = result.unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Diagnostic);
+    assert!(error.message.contains("operation succeeded"));
+    assert_eq!(calls, 1);
+    assert!(!error.recovery.unwrap().outcome_uncertain);
+    assert!(matches!(
+        observer.events.lock().unwrap().last(),
+        Some(DiagnosticEvent::PollResult {
+            action: ResultAction::Fetch
+        })
+    ));
+}
+
+struct PreSendDiagnosticExecutor(Mutex<usize>);
+#[async_trait]
+impl HttpExecutor for PreSendDiagnosticExecutor {
+    async fn execute(
+        &self,
+        _: ApiRequest,
+        _: Audience,
+        _: &OperationContext,
+    ) -> Result<ApiResponse, CoreError> {
+        *self.0.lock().unwrap() += 1;
+        Err(CoreError::diagnostic_failure(DiagnosticOutcome::BeforeSend))
+    }
+}
+
+struct StoppingDiagnostic<'a> {
+    action: StartAction,
+    clock: &'a TestClock,
+}
+#[async_trait]
+impl PollObserver for StoppingDiagnostic<'_> {
+    async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
+        panic!("diagnostic delivery must stop before any status GET")
+    }
+    async fn diagnostic(&self, _: DiagnosticEvent) -> Result<(), CoreError> {
+        match &self.action {
+            StartAction::Fail => Err(CoreError::new(ErrorKind::Transport, "SINK-CANARY")),
+            StartAction::Cancel(cancellation) => {
+                cancellation.cancel();
+                std::future::pending().await
+            }
+            StartAction::Expire => {
+                *self.clock.0.lock().unwrap() += Duration::from_secs(2);
+                Ok(())
+            }
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn diagnostic_observation_obeys_polling_cancellation_and_deadline() {
+    for cancel in [false, true] {
+        let cancellation = CancellationToken::new();
+        let clock = TestClock(Mutex::new(Instant::now()));
+        let observer = StoppingDiagnostic {
+            action: if cancel {
+                StartAction::Cancel(cancellation.clone())
+            } else {
+                StartAction::Expire
+            },
+            clock: &clock,
+        };
+        let script = Script {
+            replies: Mutex::new(VecDeque::new()),
+            calls: Mutex::new(0),
+        };
+        let error = complete_observed(
+            &script,
+            &clock,
+            Audience::Fabric,
+            response(202, "", &[("location", "/v1/operations/accepted")]),
+            cancellation,
+            LroConfig::new(None, Some(Duration::from_secs(1))).unwrap(),
+            &observer,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error.kind,
+            if cancel {
+                ErrorKind::Cancelled
+            } else {
+                ErrorKind::Timeout
+            }
+        );
+        assert_eq!(
+            error.recovery.unwrap().operation_id.as_deref(),
+            Some("accepted")
+        );
+        assert_eq!(*script.calls.lock().unwrap(), 0);
+    }
+}
+
+#[tokio::test]
+async fn a_later_http_pre_send_failure_cannot_erase_the_original_accepted_operation() {
+    let executor = PreSendDiagnosticExecutor(Mutex::new(0));
+    let clock = TestClock(Mutex::new(Instant::now()));
+    let observer = diagnostic_recorder(ReportPoint::Never);
+    let error = complete_observed(
+        &executor,
+        &clock,
+        Audience::Fabric,
+        response(202, "", &[("location", "/v1/operations/OPERATION-CANARY")]),
+        CancellationToken::new(),
+        LroConfig::default(),
+        &observer,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Diagnostic);
+    assert_eq!(
+        error.diagnostic_outcome(),
+        Some(DiagnosticOutcome::Accepted)
+    );
+    assert!(error.message.contains("operation was accepted"));
+    assert!(!error.message.contains("no request was sent"));
+    assert_eq!(
+        error.recovery.unwrap().operation_id.as_deref(),
+        Some("OPERATION-CANARY")
+    );
+    assert_eq!(*executor.0.lock().unwrap(), 1);
+    assert!(
+        !observer
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| matches!(event, DiagnosticEvent::PollFailed { .. }))
+    );
+}
+
+#[tokio::test]
+async fn successful_diagnostics_do_not_receive_error_codes_or_recovery_data() {
+    let observer = diagnostic_recorder(ReportPoint::Never);
+    let (result, calls) = observe(
+        response(
+            202,
+            "",
+            &[(
+                "location",
+                "/v1/operations/OPERATION-CANARY?secret=QUERY-CANARY",
+            )],
+        ),
+        vec![response(
+            200,
+            r#"{"status":"Failed","error":{"code":"SERVICE-CODE-CANARY"}}"#,
+            &[],
+        )],
+        &observer,
+        CancellationToken::new(),
+        LroConfig::default(),
+    )
+    .await;
+    let error = result.unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Service);
+    assert_eq!(error.service_code(), Some("SERVICE-CODE-CANARY"));
+    assert_eq!(calls, 1);
+    let events = observer.events.lock().unwrap();
+    assert!(matches!(
+        events.last(),
+        Some(DiagnosticEvent::PollFailed {
+            kind: ErrorKind::Service
+        })
+    ));
+    assert!(!format!("{events:?}").contains("CANARY"));
 }
 
 fn response(status: u16, body: &str, headers: &[(&str, &str)]) -> ApiResponse {

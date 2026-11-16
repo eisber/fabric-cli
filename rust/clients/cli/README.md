@@ -35,6 +35,31 @@ Do not prefix expressions with `result.data`. There is no implicit unwrapping or
 bare-field row shortcut. Use `@` or `.` for the whole response object. Headers
 are queryable only with `--show-headers`. Empty/missing projections never fall
 back to the full response. No recursive traversal or pagination is performed.
+Authorization and proxy-authorization response headers are excluded before all
+query evaluation, including direct header selection and `values(headers)`.
+Body fields with those names are not removed.
+
+## Verbose diagnostics
+
+`--verbose` is a global, long-only boolean flag, off by default. It adds grouped
+stderr debug messages without changing stdout results or existing polling
+progress. Welcome/help/version remain effect-free. See
+[local debug logging](../../README.md#local-debug-logging) for the disclosure
+policy and usage.
+
+The CLI injects a typed observer into the HTTP executor and the polling observer.
+Sanitizers construct safe metadata before it enters the bounded console queue.
+One stderr owner renders and flushes each event, so progress cannot split a
+group's indented header details. Debug events do not restart the progress
+heartbeat interval. Only the renderer adds fixed terminal color sequences.
+Each event is limited to 2,048 rendered bytes and eight lines (one summary and
+up to seven header details). A failed or partial write is never replayed.
+The diagnostic vocabulary cannot carry raw requests, errors, or recovery
+objects; safe error categories are distinct from service error strings.
+
+Output failures use a nonretryable diagnostic category. Accepted-operation
+recovery remains ordinary stdout error data, not a debug field. A local
+reporting failure does not imply a failed or rolled-back remote operation.
 
 ## Host boundary
 

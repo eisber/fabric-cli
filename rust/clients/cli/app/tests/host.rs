@@ -10,13 +10,15 @@ use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions}
 use fabric_cli::{Host, SelectionFile};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
-    ApiRequest, ApiResponse, CancellationToken, Clock, CoreError, HttpTransport, OperationContext,
+    ApiRequest, ApiResponse, CancellationToken, Clock, CoreError, ErrorKind, HttpTransport,
+    OperationContext, ResponseHeadCapture,
 };
 use fabric_identity::Binding;
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
     ffi::OsString,
+    io::{self, Write},
     path::PathBuf,
     process::Command,
     sync::{
@@ -108,6 +110,8 @@ impl TokenCredential for Credential {
 struct Transport {
     requests: Mutex<Vec<ApiRequest>>,
     responses: Mutex<VecDeque<ApiResponse>>,
+    error: Option<CoreError>,
+    error_head: Option<ApiResponse>,
 }
 #[async_trait]
 impl HttpTransport for Transport {
@@ -117,12 +121,28 @@ impl HttpTransport for Transport {
         _: &OperationContext,
     ) -> Result<ApiResponse, CoreError> {
         self.requests.lock().unwrap().push(request);
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
         Ok(self
             .responses
             .lock()
             .unwrap()
             .pop_front()
             .expect("unexpected HTTP attempt"))
+    }
+
+    async fn send_with_observer(
+        &self,
+        request: ApiRequest,
+        context: &OperationContext,
+        head: &ResponseHeadCapture,
+    ) -> Result<ApiResponse, CoreError> {
+        let result = self.send(request, context).await;
+        if let Some(response) = result.as_ref().ok().or(self.error_head.as_ref()) {
+            head.record(response.status, &response.headers)?;
+        }
+        result
     }
 }
 
@@ -147,6 +167,8 @@ impl FakeHost {
             transport: Arc::new(Transport {
                 requests: Mutex::new(Vec::new()),
                 responses: Mutex::new(responses.into()),
+                error: None,
+                error_head: None,
             }),
             clock: Arc::new(TestClock {
                 now: Mutex::new(Instant::now()),
@@ -242,6 +264,14 @@ async fn root_and_subhelp_are_completely_effect_free() {
         vec!["auth", "login", "--help"],
         vec!["auth", "status", "--help"],
         vec!["auth", "logout", "--help"],
+        vec!["--verbose", "--help"],
+        vec!["--verbose", "--version"],
+        vec!["--verbose", "api", "--help"],
+        vec!["api", "--verbose", "--help"],
+        vec!["--verbose", "auth"],
+        vec!["auth", "--verbose"],
+        vec!["auth", "--verbose", "login", "--help"],
+        vec!["auth", "status", "--verbose", "--help"],
     ] {
         let host = FakeHost::new(vec![]);
         let (code, stdout, stderr) = run(&args, &host).await;
@@ -250,6 +280,513 @@ async fn root_and_subhelp_are_completely_effect_free() {
         assert!(stderr.is_empty());
         assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
     }
+}
+
+#[tokio::test]
+async fn verbose_only_welcomes_without_host_effects() {
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, stderr) = run(&["--verbose"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(stdout, WELCOME);
+    assert!(stderr.is_empty());
+    assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn verbose_is_global_without_changing_stdout_or_option_values() {
+    for args in [
+        vec!["--verbose", "api", "workspaces"],
+        vec!["api", "--verbose", "workspaces"],
+        vec!["api", "workspaces", "--verbose"],
+    ] {
+        let host = FakeHost::new(vec![
+            response(200, r#"{"value":[]}"#, &[]),
+            response(200, r#"{"value":[]}"#, &[]),
+        ]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        let plain = run(&["api", "workspaces"], &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(stdout, plain.1);
+        assert!(stderr.starts_with("[debug +"), "{stderr}");
+        assert!(!stderr.contains('\x1b'));
+        assert!(
+            plain.2.is_empty(),
+            "verbosity must not leak between invocations"
+        );
+        assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+    }
+    for args in [
+        vec!["--verbose", "auth", "status"],
+        vec!["auth", "--verbose", "status"],
+        vec!["auth", "status", "--verbose"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stdout).unwrap()["command"],
+            "auth status"
+        );
+        assert!(stderr.starts_with("[debug +"));
+        for secret in [TENANT, PRINCIPAL, "synthetic-token"] {
+            assert!(!stderr.contains(secret));
+        }
+    }
+    for args in [
+        vec!["api", "--", "--verbose"],
+        vec!["api", "items", "--query", "'--verbose'"],
+    ] {
+        let host = FakeHost::new(vec![response(200, "{}", &[])]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert!(
+            stderr.is_empty(),
+            "an option value or endpoint is not a global flag"
+        );
+    }
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, stderr) =
+        run(&["--verbose", "api", "items", "--method", "POST"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("use post instead of POST"));
+    assert!(stderr.is_empty());
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn protected_response_headers_are_removed_before_every_query_shape() {
+    for query in [
+        "",
+        "@",
+        ".",
+        "headers",
+        "values(headers)",
+        "headers.Authorization",
+        "headers.authorization",
+        "headers.\"pRoXy-AuThOrIzAtIoN\"",
+        "{all: @, extracted: values(headers)}",
+    ] {
+        let result = fabric_cli_api::response_data(
+            response(
+                200,
+                r#"{"value":"body"}"#,
+                &[
+                    ("Authorization", "AUTH-SECRET-CANARY"),
+                    ("authorization", "DUPLICATE-SECRET-CANARY"),
+                    ("Proxy-Authorization", "PROXY-SECRET-CANARY"),
+                    ("pRoXy-AuThOrIzAtIoN", "MIXED-SECRET-CANARY"),
+                    ("x-visible", "visible"),
+                ],
+            ),
+            true,
+            Some(query),
+        )
+        .unwrap();
+        let output = result.to_string();
+        assert!(!output.contains("SECRET-CANARY"), "{query}: {output}");
+        assert!(
+            !output.to_ascii_lowercase().contains("authorization"),
+            "{query}: {output}"
+        );
+        if query == "values(headers)" {
+            assert_eq!(result, json!(["visible"]));
+        }
+    }
+    let result = fabric_cli_api::response_data(
+        response(200, r#"{"Authorization":"explicit body data"}"#, &[]),
+        true,
+        Some("text.Authorization"),
+    )
+    .unwrap();
+    assert_eq!(
+        result, "explicit body data",
+        "only headers are filtered, not body fields"
+    );
+}
+
+#[tokio::test]
+async fn protected_response_headers_stay_hidden_with_and_without_verbose() {
+    for verbose in [false, true] {
+        let host = FakeHost::new(vec![response(
+            200,
+            "{}",
+            &[
+                ("aUtHoRiZaTiOn", "RESPONSE-AUTH-CANARY"),
+                ("pRoXy-AuThOrIzAtIoN", "RESPONSE-PROXY-CANARY"),
+                ("x-visible", "visible"),
+            ],
+        )]);
+        let mut args = vec![
+            "api",
+            "items",
+            "--show-headers",
+            "--query",
+            "values(headers)",
+        ];
+        if verbose {
+            args.push("--verbose");
+        }
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert_eq!(data(&stdout), json!(["visible"]));
+        for secret in ["RESPONSE-AUTH-CANARY", "RESPONSE-PROXY-CANARY"] {
+            assert!(!stdout.contains(secret));
+            assert!(!stderr.contains(secret));
+        }
+        assert!(!stderr.to_ascii_lowercase().contains("authorization"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0]
+                .headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("authorization")
+                    && value == "Bearer synthetic-token")
+        );
+    }
+}
+
+struct DiagnosticWriter {
+    bytes: Vec<u8>,
+    fail_on: &'static str,
+    fail_flush: bool,
+    partial: bool,
+    broken: bool,
+    failed_flush_pending: bool,
+    writes_after_failure: usize,
+}
+
+impl DiagnosticWriter {
+    fn new(fail_on: &'static str, fail_flush: bool) -> Self {
+        Self {
+            bytes: Vec::new(),
+            fail_on,
+            fail_flush,
+            partial: !fail_flush,
+            broken: false,
+            failed_flush_pending: false,
+            writes_after_failure: 0,
+        }
+    }
+}
+
+impl Write for DiagnosticWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.broken {
+            self.writes_after_failure += 1;
+            return Err(io::Error::other("PRIVATE-IO-CANARY"));
+        }
+        if String::from_utf8_lossy(bytes).contains(self.fail_on) {
+            if self.fail_flush {
+                self.failed_flush_pending = true;
+            } else {
+                self.broken = true;
+                if self.partial {
+                    let length = bytes.len().min(12);
+                    self.bytes.extend_from_slice(&bytes[..length]);
+                    return Ok(length);
+                }
+                return Err(io::Error::other("PRIVATE-IO-CANARY"));
+            }
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if self.failed_flush_pending {
+            self.broken = true;
+            return Err(io::Error::other("PRIVATE-FLUSH-CANARY"));
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn verbose_output_failures_stop_without_replay_and_preserve_known_outcomes() {
+    for (fail_on, expected_calls, accepted, terminal) in [
+        ("Command: started", 0, false, false),
+        ("HTTP #1 sending", 0, false, false),
+        ("HTTP #1 received 202", 1, true, false),
+        ("HTTP #2 sending", 1, true, false),
+        ("Command: completed", 2, true, true),
+    ] {
+        for fail_flush in [false, true] {
+            for asynchronous in [false, true] {
+                if asynchronous && (expected_calls == 2 || fail_on == "HTTP #2 sending") {
+                    continue;
+                }
+                let host = FakeHost::new(vec![
+                    response(202, "{}", &[("x-ms-operation-id", "RECOVERY-CANARY")]),
+                    response(200, r#"{"status":"Succeeded"}"#, &[]),
+                ]);
+                let mut stderr = DiagnosticWriter::new(fail_on, fail_flush);
+                let mut stdout = Vec::new();
+                let mut args = vec!["fab-rs", "--verbose", "api", "items", "--method", "post"];
+                if asynchronous {
+                    args.push("--async");
+                }
+                let code = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    fabric_cli::run(
+                        args.into_iter().map(OsString::from),
+                        &host,
+                        CancellationToken::new(),
+                        &mut stdout,
+                        &mut stderr,
+                    ),
+                )
+                .await
+                .expect("diagnostic acknowledgment must not deadlock");
+                let output = String::from_utf8(stdout).unwrap();
+                let logs = String::from_utf8(stderr.bytes).unwrap();
+                assert!(stderr.broken, "failure trigger missed: {fail_on}: {logs}");
+                assert_eq!(code, 1, "{fail_on}: {output}");
+                assert_eq!(
+                    host.transport.requests.lock().unwrap().len(),
+                    expected_calls,
+                    "{fail_on}"
+                );
+                assert!(output.contains("\"Diagnostic\""), "{fail_on}: {output}");
+                assert_eq!(output.contains("RECOVERY-CANARY"), accepted, "{output}");
+                assert!(!logs.contains("RECOVERY-CANARY"));
+                assert!(!logs.contains("PRIVATE-"));
+                assert!(!output.contains("PRIVATE-"));
+                assert!(stderr.writes_after_failure <= usize::from(!fail_flush));
+                if expected_calls == 0 {
+                    assert!(output.contains("no request was sent"), "{output}");
+                }
+                if terminal {
+                    assert!(output.contains("completed"), "{output}");
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn verbose_failures_preserve_raw_response_and_uncertain_send_outcomes() {
+    for (fail_on, transport_failure, status, asynchronous) in [
+        ("HTTP #1 received 200", false, 200, false),
+        ("HTTP #1 received 200", false, 200, true),
+        ("HTTP #1 failed", true, 200, false),
+        ("HTTP #1 failed", true, 200, true),
+        ("Command: completed", false, 202, true),
+    ] {
+        for fail_flush in [false, true] {
+            let mut host = FakeHost::new(vec![response(
+                status,
+                "{}",
+                &[("x-ms-operation-id", "RECOVERY-CANARY")],
+            )]);
+            if transport_failure {
+                Arc::get_mut(&mut host.transport).unwrap().error =
+                    Some(CoreError::new(ErrorKind::Transport, "TRANSPORT-CANARY"));
+            }
+            let mut stderr = DiagnosticWriter::new(fail_on, fail_flush);
+            let mut stdout = Vec::new();
+            let mut args = vec!["fab-rs", "--verbose", "api", "items", "--method", "post"];
+            if asynchronous {
+                args.push("--async");
+            }
+            let code = tokio::time::timeout(
+                Duration::from_secs(2),
+                fabric_cli::run(
+                    args.into_iter().map(OsString::from),
+                    &host,
+                    CancellationToken::new(),
+                    &mut stdout,
+                    &mut stderr,
+                ),
+            )
+            .await
+            .unwrap();
+            let output = String::from_utf8(stdout).unwrap();
+            let logs = String::from_utf8(stderr.bytes).unwrap();
+            assert_eq!(code, 1, "{output}");
+            assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+            assert!(output.contains("\"Diagnostic\""), "{output}");
+            assert!(stderr.broken, "missed {fail_on}");
+            assert!(stderr.writes_after_failure <= usize::from(!fail_flush));
+            if transport_failure {
+                assert!(output.contains("uncertain"), "{output}");
+            } else {
+                assert!(
+                    output.contains(&format!("HTTP status {status}")),
+                    "{output}"
+                );
+            }
+            assert!(!output.contains("no request was sent"));
+            for secret in ["TRANSPORT-CANARY", "PRIVATE-"] {
+                assert!(!output.contains(secret));
+                assert!(!logs.contains(secret));
+            }
+            if status == 202 {
+                assert!(output.contains("RECOVERY-CANARY"));
+                assert!(output.contains("may continue"));
+            }
+            assert!(!logs.contains("RECOVERY-CANARY"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn service_codes_and_recovery_never_become_diagnostic_categories() {
+    for service_code in ["ERROR-CODE-CANARY", "Unauthorized", "Diagnostic"] {
+        let body = json!({
+            "status": "Failed",
+            "error": { "errorCode": service_code, "message": "ERROR-MESSAGE-CANARY" },
+        })
+        .to_string();
+        let host = FakeHost::new(vec![
+            response(202, "{}", &[("x-ms-operation-id", "RECOVERY-CANARY")]),
+            response(200, &body, &[]),
+        ]);
+        let (code, stdout, stderr) =
+            run(&["--verbose", "api", "items", "--method", "post"], &host).await;
+        assert_eq!(code, 1, "{stdout}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], service_code);
+        assert!(stdout.contains("RECOVERY-CANARY"));
+        assert!(
+            stderr.contains("Command: failed (service failure)"),
+            "{stderr}"
+        );
+        assert!(!stderr.contains("CANARY"));
+        assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+    }
+}
+
+#[tokio::test]
+async fn final_diagnostic_failure_keeps_response_status_after_body_read_failure() {
+    for (status, asynchronous) in [(200, false), (202, true)] {
+        for fail_flush in [false, true] {
+            let mut host = FakeHost::new(vec![]);
+            let transport = Arc::get_mut(&mut host.transport).unwrap();
+            transport.error = Some(CoreError::new(ErrorKind::Transport, "BODY-READ-CANARY"));
+            transport.error_head = Some(response(
+                status,
+                "",
+                &[("x-ms-operation-id", "RECOVERY-CANARY")],
+            ));
+            let mut stderr = DiagnosticWriter::new("Command: failed", fail_flush);
+            let mut stdout = Vec::new();
+            let mut args = vec!["fab-rs", "--verbose", "api", "items", "--method", "post"];
+            if asynchronous {
+                args.push("--async");
+            }
+            let code = tokio::time::timeout(
+                Duration::from_secs(2),
+                fabric_cli::run(
+                    args.into_iter().map(OsString::from),
+                    &host,
+                    CancellationToken::new(),
+                    &mut stdout,
+                    &mut stderr,
+                ),
+            )
+            .await
+            .unwrap();
+            let output = String::from_utf8(stdout).unwrap();
+            let logs = String::from_utf8(stderr.bytes).unwrap();
+            assert_eq!(code, 1, "{output}");
+            assert!(stderr.broken, "final-event trigger missed: {logs}");
+            assert!(stderr.writes_after_failure <= usize::from(!fail_flush));
+            assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+            assert!(output.contains("\"Diagnostic\""), "{output}");
+            assert!(
+                output.contains(&format!("HTTP status {status}")),
+                "{output}"
+            );
+            assert!(!output.contains("no request was sent"), "{output}");
+            assert!(!output.contains("BODY-READ-CANARY"));
+            assert!(!output.contains("PRIVATE-"));
+            assert!(!logs.contains("CANARY"));
+            assert!(!logs.contains("PRIVATE-"));
+            if status == 202 {
+                assert!(output.contains("RECOVERY-CANARY"), "{output}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn both_output_streams_failing_do_not_retry_diagnostics_or_start_requests() {
+    let host = FakeHost::new(vec![]);
+    let mut stdout = DiagnosticWriter::new("", false);
+    let mut stderr = DiagnosticWriter::new("Command: started", true);
+    let code = fabric_cli::run(
+        ["fab-rs", "--verbose", "api", "items"]
+            .into_iter()
+            .map(OsString::from),
+        &host,
+        CancellationToken::new(),
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert!(stdout.broken && stderr.broken);
+    assert_eq!(stderr.writes_after_failure, 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn verbose_sanitizes_details_before_grouped_output_without_redacting_stdout() {
+    const REQUEST_ID: &str = "01234567-89ab-cdef-0123-456789abcdef";
+    let host = FakeHost::new(vec![response(
+        202,
+        r#"{"body":"BODY-CANARY"}"#,
+        &[
+            ("ReQuEsTiD", REQUEST_ID),
+            (
+                "Location",
+                "/v1/operations/OPERATION-CANARY?token=QUERY-CANARY",
+            ),
+            ("Set-Cookie", "COOKIE-CANARY"),
+            ("x-unknown", "UNKNOWN-CANARY"),
+            ("Content-Type", "application/json; boundary=BOUNDARY-CANARY"),
+        ],
+    )]);
+    let (code, stdout, stderr) = run(
+        &[
+            "--verbose",
+            "api",
+            "workspaces/WORKSPACE-CANARY/items?secret=INPUT-CANARY",
+            "--async",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stdout}");
+    assert!(
+        stdout.contains("BODY-CANARY"),
+        "ordinary stdout is not a debug sink"
+    );
+    assert!(stderr.contains(&format!("    Request ID: {REQUEST_ID}\n")));
+    assert!(
+        stderr.contains(
+            "    Location: https://api.fabric.microsoft.com/v1/operations/{operationId}\n"
+        )
+    );
+    assert!(stderr.contains("https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/items"));
+    for canary in [
+        "OPERATION-CANARY",
+        "QUERY-CANARY",
+        "COOKIE-CANARY",
+        "UNKNOWN-CANARY",
+        "BOUNDARY-CANARY",
+        "BODY-CANARY",
+        "WORKSPACE-CANARY",
+        "INPUT-CANARY",
+        "synthetic-token",
+        TENANT,
+        PRINCIPAL,
+    ] {
+        assert!(!stderr.contains(canary), "{canary}: {stderr}");
+    }
+    assert!(!stderr.to_ascii_lowercase().contains("authorization"));
+    assert!(!stderr.contains('\x1b'));
 }
 
 #[tokio::test]
@@ -263,7 +800,7 @@ async fn bare_auth_matches_explicit_help_without_host_effects() {
     assert!(bare.2.is_empty());
     for text in [
         "Bind fab-rs to an existing Azure CLI identity.",
-        "Usage: fab-rs auth <COMMAND>",
+        "Usage: fab-rs auth [OPTIONS] <COMMAND>",
         "  login",
         "  status",
         "  logout",
@@ -1550,7 +2087,12 @@ async fn login_reports_the_validated_binding_without_claiming_service_access() {
 
 #[tokio::test]
 async fn sdk_auth_failure_is_sanitized_unauthorized_and_never_sends() {
-    for args in [vec!["api", "items"], vec!["auth", "status"]] {
+    for args in [
+        vec!["api", "items"],
+        vec!["auth", "status"],
+        vec!["--verbose", "api", "items"],
+        vec!["auth", "status", "--verbose"],
+    ] {
         let mut host = FakeHost::new(vec![]);
         host.credential = Arc::new(Credential {
             calls: AtomicUsize::new(0),
@@ -1566,7 +2108,13 @@ async fn sdk_auth_failure_is_sanitized_unauthorized_and_never_sends() {
             serde_json::from_str::<Value>(&stdout).unwrap()["status"],
             "Failure"
         );
-        assert!(stderr.is_empty());
+        if args.contains(&"--verbose") {
+            assert!(stderr.contains("Command: failed (unauthorized)"));
+            assert!(!stderr.contains("SDK-ERROR-CANARY"));
+            assert!(!stderr.contains("synthetic-token"));
+        } else {
+            assert!(stderr.is_empty());
+        }
         assert!(host.transport.requests.lock().unwrap().is_empty());
     }
 }
@@ -2116,6 +2664,11 @@ fn actual_fab_rs_metadata_runs_with_empty_path_and_no_configuration() {
         vec!["auth"],
         vec!["auth", "--help"],
         vec!["auth", "login", "--help"],
+        vec!["--verbose"],
+        vec!["--verbose", "--help"],
+        vec!["--verbose", "--version"],
+        vec!["api", "--verbose", "--help"],
+        vec!["auth", "--verbose"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
             .args(args)

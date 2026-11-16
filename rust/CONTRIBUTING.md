@@ -102,6 +102,28 @@ identity; it does not sign you in to Azure or change Azure CLI state.
 
 ## Debug locally
 
+### Console diagnostics
+
+Add `--verbose` to an existing API or authentication command to see live,
+privacy-preserving stderr diagnostics. The flag is global; `fab-rs auth status
+--verbose` and `fab-rs --verbose auth status` are equivalent. Do not enable SDK
+tracing or print requests, bodies, credentials, exception chains, or recovery
+objects to investigate an issue. Use the typed diagnostic events instead.
+See the [logging policy](README.md#local-debug-logging) before sharing output:
+request IDs and other operational metadata still need care.
+
+Keep tests offline, using injected credentials, HTTP responses, clocks, and
+writable/failing console streams. Include secret canaries in disallowed fields
+and assert their absence from both event objects and captured diagnostics.
+Also check request counts and recovery when output fails after a mutation.
+
+File logging is a future design only. A later opt-in sink may consume the same
+sanitized events; it must not tee stdout or capture raw HTTP. That work must
+separately define destination, bounded retention, concurrency, and disk/flush
+failure behavior, with private files/backups (POSIX 0600/0700 and verified
+Windows ACLs). Python's restricted rotating files are a reference, not a reason
+to add log files, directories, file flags, or background writers now.
+
 ### macOS and Linux with LLDB
 
 Install LLDB separately if it is not available on your PATH. `rust-lldb` is the

@@ -367,8 +367,17 @@ pub fn response_data(
     if show_headers {
         payload.insert(
             "headers".into(),
-            serde_json::to_value(response.headers)
-                .map_err(|_| invalid("Invalid response headers"))?,
+            serde_json::to_value(
+                response
+                    .headers
+                    .into_iter()
+                    .filter(|(name, _)| {
+                        !name.eq_ignore_ascii_case("authorization")
+                            && !name.eq_ignore_ascii_case("proxy-authorization")
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            )
+            .map_err(|_| invalid("Invalid response headers"))?,
         );
     }
     payload.insert("text".into(), body);

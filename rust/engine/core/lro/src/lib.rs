@@ -4,6 +4,10 @@
 //! Fabric/ARM LRO and job reconciliation of the initial response; never repeats a mutation.
 #![forbid(unsafe_code)]
 use async_trait::async_trait;
+use fabric_core::diagnostics::{
+    DelaySource, DiagnosticDuration, DiagnosticEvent, DiagnosticOutcome, OperationOutcome,
+    PollPurpose, PollingStrategy, ResultAction,
+};
 use fabric_core::{
     ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
     HttpExecutor, MAX_RESPONSE_BYTES, OperationContext, OperationHandle as Handle,
@@ -49,6 +53,14 @@ impl PollProgress {
 /// Caller-owned observation boundary. The engine never writes console output.
 #[async_trait]
 pub trait PollObserver: Send + Sync {
+    /// Observe sanitized diagnostics independently of service progress.
+    ///
+    /// The default is silent. Diagnostic delivery is bounded by the same
+    /// cancellation/deadline and its errors never trigger HTTP retries.
+    async fn diagnostic(&self, _event: DiagnosticEvent) -> Result<(), CoreError> {
+        Ok(())
+    }
+
     /// Observe validated reconciliation before its first wait, not a service status.
     ///
     /// Uses the same cancellation, deadline and error handling as status observations.
@@ -137,11 +149,35 @@ fn service_failure(response: &ApiResponse, code: Option<&str>, message: &str) ->
         .or_else(|| response.header("x-ms-error-code"));
     CoreError::service_failure(message, code)
 }
+#[derive(Clone, Copy)]
 enum State {
     Pending,
     Success,
     Failed,
     Cancelled,
+}
+fn polling_strategy(strategy: Strategy) -> PollingStrategy {
+    match strategy {
+        Strategy::Fabric => PollingStrategy::Fabric,
+        Strategy::FabricJob => PollingStrategy::FabricJob,
+        Strategy::ArmStatus => PollingStrategy::ArmStatus,
+        Strategy::ArmLocation => PollingStrategy::ArmLocation,
+    }
+}
+async fn diagnostic(
+    observer: &dyn PollObserver,
+    clock: &dyn Clock,
+    context: &OperationContext,
+    event: DiagnosticEvent,
+    terminal: Option<OperationOutcome>,
+) -> Result<(), CoreError> {
+    bounded_with_clock(clock, context, observer.diagnostic(event))
+        .await?
+        .map_err(|_| {
+            CoreError::diagnostic_failure(
+                terminal.map_or(DiagnosticOutcome::Accepted, DiagnosticOutcome::Terminal),
+            )
+        })
 }
 fn state(json: &Value) -> Result<(State, &'static str), CoreError> {
     let status = json
@@ -240,9 +276,19 @@ async fn reconcile(
     initial: ApiResponse,
     handle: &Handle,
     context: &OperationContext,
-    settings: (LroConfig, &dyn PollObserver),
+    settings: (LroConfig, &dyn PollObserver, &mut Option<OperationOutcome>),
 ) -> Result<ApiResponse, CoreError> {
-    let (config, observer) = settings;
+    let (config, observer, terminal) = settings;
+    diagnostic(
+        observer,
+        clock,
+        context,
+        DiagnosticEvent::Polling {
+            strategy: polling_strategy(handle.kind()),
+        },
+        *terminal,
+    )
+    .await?;
     bounded_with_clock(clock, context, observer.started(handle.kind())).await??;
     let mut previous = initial.clone();
     let mut delay = INITIAL_DELAY;
@@ -259,9 +305,15 @@ async fn reconcile(
         } else {
             delay
         });
+        let mut source = if config.poll_interval.is_some() {
+            DelaySource::Configured
+        } else {
+            DelaySource::Client
+        };
         let server = match retry_after(&previous, clock.wall_now()) {
             Ok(delay) => delay,
             Err(_) => {
+                source = DelaySource::InvalidServerHint;
                 clock.diagnostic(if config.poll_interval.is_some() {
                     "Invalid Retry-After header; using configured polling interval"
                 } else if job {
@@ -278,6 +330,21 @@ async fn reconcile(
             (None, true, Some(server)) => server,
             _ => fallback.max(server.unwrap_or_default()),
         };
+        if server.is_some_and(|server| server == wait) {
+            source = DelaySource::Server;
+        }
+        diagnostic(
+            observer,
+            clock,
+            context,
+            DiagnosticEvent::PollWait {
+                delay: DiagnosticDuration::from_duration(wait),
+                purpose: PollPurpose::Status,
+                source,
+            },
+            *terminal,
+        )
+        .await?;
         sleep_with_budget(clock, wait, context).await?;
         bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
         let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
@@ -323,6 +390,12 @@ async fn reconcile(
                 )
             }
         };
+        *terminal = match current {
+            State::Pending => None,
+            State::Success => Some(OperationOutcome::Succeeded),
+            State::Failed => Some(OperationOutcome::Failed),
+            State::Cancelled => Some(OperationOutcome::Cancelled),
+        };
         bounded_with_clock(
             clock,
             context,
@@ -333,6 +406,16 @@ async fn reconcile(
             }),
         )
         .await??;
+        if let Some(outcome) = *terminal {
+            diagnostic(
+                observer,
+                clock,
+                context,
+                DiagnosticEvent::PollCompleted { outcome },
+                *terminal,
+            )
+            .await?;
+        }
         match current {
             State::Failed | State::Cancelled => {
                 let message = if job {
@@ -354,9 +437,29 @@ async fn reconcile(
             }
             State::Success => {
                 if job {
+                    diagnostic(
+                        observer,
+                        clock,
+                        context,
+                        DiagnosticEvent::PollResult {
+                            action: ResultAction::StatusResponse,
+                        },
+                        *terminal,
+                    )
+                    .await?;
                     return Ok(response);
                 }
                 if !matches!(handle.kind(), Strategy::Fabric) {
+                    diagnostic(
+                        observer,
+                        clock,
+                        context,
+                        DiagnosticEvent::PollResult {
+                            action: ResultAction::InitialResponse,
+                        },
+                        *terminal,
+                    )
+                    .await?;
                     let mut completed = initial;
                     completed.status = 200;
                     return Ok(completed);
@@ -368,6 +471,16 @@ async fn reconcile(
                 {
                     resolve_operation_url(audience, resource, handle.url())?
                 } else {
+                    diagnostic(
+                        observer,
+                        clock,
+                        context,
+                        DiagnosticEvent::PollResult {
+                            action: ResultAction::StatusResponse,
+                        },
+                        *terminal,
+                    )
+                    .await?;
                     return Ok(response);
                 };
                 if &result_url == handle.url() {
@@ -376,24 +489,68 @@ async fn reconcile(
                 // A terminal status can advertise a result before it is ready.
                 // Its Retry-After is still a not-before constraint, sharing the
                 // original reconciliation deadline (not a fresh result budget).
+                let mut source = DelaySource::Server;
                 let result_delay = match retry_after(&response, clock.wall_now()) {
                     Ok(delay) => delay.unwrap_or_default(),
                     Err(_) => {
+                        source = DelaySource::InvalidServerHint;
                         clock.diagnostic(
                             "Invalid Retry-After header; using client polling schedule",
                         );
                         INITIAL_DELAY
                     }
                 };
+                diagnostic(
+                    observer,
+                    clock,
+                    context,
+                    DiagnosticEvent::PollResult {
+                        action: ResultAction::Fetch,
+                    },
+                    *terminal,
+                )
+                .await?;
                 if !result_delay.is_zero() {
+                    diagnostic(
+                        observer,
+                        clock,
+                        context,
+                        DiagnosticEvent::PollWait {
+                            delay: DiagnosticDuration::from_duration(result_delay),
+                            purpose: PollPurpose::Result,
+                            source,
+                        },
+                        *terminal,
+                    )
+                    .await?;
                     sleep_with_budget(clock, result_delay, context).await?;
                 }
                 let result_response = fetch(executor, clock, audience, result_url, context).await?;
                 if (200..300).contains(&result_response.status) {
+                    diagnostic(
+                        observer,
+                        clock,
+                        context,
+                        DiagnosticEvent::PollResult {
+                            action: ResultAction::Retrieved,
+                        },
+                        *terminal,
+                    )
+                    .await?;
                     return Ok(result_response);
                 }
                 let error_body = body(&result_response);
                 if error_body.as_ref().ok().and_then(error_code) == Some("OperationHasNoResult") {
+                    diagnostic(
+                        observer,
+                        clock,
+                        context,
+                        DiagnosticEvent::PollResult {
+                            action: ResultAction::NoResult,
+                        },
+                        *terminal,
+                    )
+                    .await?;
                     return Ok(response);
                 }
                 let message = if error_body.is_ok() {
@@ -504,15 +661,69 @@ pub async fn complete_observed(
             })
             .transpose()?,
     };
-    reconcile(
+    let mut terminal = None;
+    let result = reconcile(
         executor,
         clock,
         audience,
         initial,
         &handle,
         &context,
-        (config, observer),
+        (config, observer, &mut terminal),
     )
-    .await
-    .map_err(|error| handle.attach(error))
+    .await;
+    let error = match result {
+        Ok(response) => return Ok(response),
+        Err(error) => error,
+    };
+    // Never attempt another event on a failed sink. Cancelled or expired
+    // contexts cannot safely await an additional diagnostic acknowledgment.
+    let error = if !matches!(
+        error.kind,
+        ErrorKind::Diagnostic | ErrorKind::Cancelled | ErrorKind::Timeout
+    ) {
+        match diagnostic(
+            observer,
+            clock,
+            &context,
+            DiagnosticEvent::PollFailed { kind: error.kind },
+            terminal,
+        )
+        .await
+        {
+            Ok(()) => error,
+            Err(error) => error,
+        }
+    } else {
+        error
+    };
+    let mut error = if error.kind == ErrorKind::Diagnostic {
+        // A pre-poll failure is not a pre-mutation failure. Retain the already
+        // accepted handle and any known response or terminal outcome.
+        let outcome = terminal.map_or_else(
+            || match error.diagnostic_outcome() {
+                Some(DiagnosticOutcome::Received(status)) => DiagnosticOutcome::Received(status),
+                _ => DiagnosticOutcome::Accepted,
+            },
+            DiagnosticOutcome::Terminal,
+        );
+        let mut reporting = CoreError::diagnostic_failure(outcome);
+        if terminal.is_some()
+            && let Some(DiagnosticOutcome::Received(status)) = error.diagnostic_outcome()
+        {
+            reporting
+                .message
+                .push_str(&format!("; result request returned HTTP status {status}"));
+        }
+        handle.attach(reporting)
+    } else {
+        handle.attach(error)
+    };
+    if error.kind == ErrorKind::Diagnostic
+        && terminal.is_some()
+        && let Some(recovery) = &mut error.recovery
+    {
+        recovery.outcome_uncertain = false;
+    }
+    Err(error)
 }

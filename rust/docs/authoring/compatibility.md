@@ -56,6 +56,18 @@ authority for implementation evidence.
 - Default method `get`; supported methods are `get`, `post`, `delete`, `put`,
   `patch`. Long API options only: no `-A`, `-X`, `-H`, or `-i`.
 - Use `--show-headers`, **not** Python's `--show_headers`; no underscore alias.
+- Rust's global `--verbose` is a diagnostic extension, not Python `get`'s
+  property-display option. It is off by default and writes only sanitized,
+  grouped stderr messages. No `-v`, `--debug`, file sink, or environment-driven
+  logging is added. Welcome/help/version and bare `auth` stay effect-free with
+  the flag. Existing progress output and stdout result contracts are unchanged.
+- Response `Authorization` and `Proxy-Authorization` headers are always removed
+  case-insensitively before `--show-headers` output or query evaluation, with or
+  without verbose mode. Outgoing authentication and response bodies are unchanged.
+  Diagnostic headers use a stricter allowlist: parsed content metadata and
+  retry delays, canonical UUID request IDs, and templated Locations. Queries,
+  resource IDs, arbitrary hosts, bodies, SDK errors, and recovery objects never
+  enter debug events. Required recovery remains in ordinary stdout failures.
 - No `--params`. Put URL-encoded query parameters in the quoted endpoint.
   Already-encoded values must not be double-encoded. `--query` instead applies
   JMESPath locally to the response object stored inside `result.data`, matching
