@@ -60,6 +60,7 @@ pub mod update;
 /// Native Report definition binding for the separately opted-in shared create host.
 #[cfg(feature = "v2-create")]
 pub mod v2_create_report;
+pub mod v2_dataagent_list_host;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
