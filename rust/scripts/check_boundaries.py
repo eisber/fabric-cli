@@ -15,6 +15,7 @@ MEMBERS = {
     "engine/core/http/executor": "fabric-sdk-http",
     "engine/core/http/transport": "fabric-sdk-transport",
     "engine/core/lro": "fabric-sdk-operations",
+    "engine/resources": "fabric-resources",
     "clients/cli/commands/api": "fabric-cli-api",
     "clients/cli/contracts": "fabric-cli-command-contracts",
     "clients/cli/output": "fabric-cli-output",
@@ -32,6 +33,7 @@ EDGES = {
     "fabric-sdk-api": {
         "fabric-core", "fabric-core-json", "fabric-sdk-http", "fabric-sdk-operations",
     },
+    "fabric-resources": {"fabric-core", "fabric-core-json", "fabric-sdk-api", "fabric-sdk-http"},
     "fabric-cli-command-contracts": {"fabric-core", "fabric-core-json"},
     "fabric-cli-query": {"fabric-core-json"},
     "fabric-cli-output": {"fabric-core", "fabric-core-json", "fabric-cli-command-contracts"},

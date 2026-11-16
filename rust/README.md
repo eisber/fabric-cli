@@ -3,9 +3,9 @@
 # Minimal Rust Fabric API CLI
 
 `fab-rs` is an independent, narrow Rust executable installed **alongside**, not
-instead of, Python `fab`. It supports only `auth login`, `auth status`,
-`auth logout`, and raw `api`. It has no REPL, resource commands, pagination,
-deployment, installer, updater, or alternative credential providers.
+instead of, Python `fab`. It supports `auth login`, `auth status`, `auth logout`,
+raw `api`, and minimal workspace/item CRUDL. It has no REPL, deployment,
+installer, updater, or alternative credential providers.
 
 This is implementation-stage source, not an official signed release. Native
 validation and minimum supported OS evidence are still required.
@@ -42,6 +42,46 @@ subscription, account, or credential-mode overrides. Rust logout clears only
 Rust's non-secret selection. API requires that selection even if Azure CLI is
 already signed in. Identity drift fails closed; select the intended identity in
 Azure CLI and run Rust login again.
+
+## Workspace and item commands
+
+```text
+fab-rs workspace list
+fab-rs workspace get <name-or-guid>
+fab-rs workspace create [display-name] [--payload <json-or-@file>]
+fab-rs workspace update <name-or-guid> --payload <json-or-@file>
+fab-rs workspace delete <name-or-guid> [--force]
+fab-rs item list --workspace <name-or-guid>
+fab-rs item get <name-or-guid> --workspace <name-or-guid>
+fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file>]
+fab-rs item update <name-or-guid> --workspace <name-or-guid> --payload <json-or-@file>
+fab-rs item delete <name-or-guid> --workspace <name-or-guid> [--force]
+```
+
+Selectors are single display names or GUIDs; GUID-shaped names are interpreted
+as IDs for existing resources. Exact name lookup scans every page and fails on
+missing or ambiguous names. Item scope is always specified using `--workspace`;
+workspace commands do not accept it.
+
+Payloads are inline JSON objects or `@` followed by a regular UTF-8 JSON file.
+Creation requires `displayName` either positionally or in the payload. If both
+are present they must match; a positional GUID is rejected. Item creation also
+requires an open-string `type` property. A GUID-shaped payload `displayName`
+is a literal name. Update payloads may rename the existing target. `id` and
+item `workspaceId` are routing information, not payload properties.
+
+Delete prompts on stderr after resolving the target. An entered blank line,
+`y`, or `yes` confirms; `n` or `no` cancels with a failure. EOF and nonterminal
+input do not confirm. `--force` bypasses only confirmation.
+
+Resource `--query` runs on the native object or complete array in `result.data`.
+Resource success envelopes use a non-indented UTF-8 JSON layout. List fetches all
+pages and fails if the complete unfiltered compact JSON array
+exceeds 32 MiB. Mutations accept `--async` or `--polling-config` with the same
+polling rules as raw API. An unresolved HTTP 202 is instead represented as
+`{"status_code":202,"status":"Accepted","body":...}` with sanitized `recovery`
+when available; it does not claim completion. A bodyless successful HTTP 204
+delete returns `null`. Raw `api` retains its existing wrapper and paging behavior.
 
 Successful login/status output retains `selected` and adds `logged_in`,
 `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id`. These are

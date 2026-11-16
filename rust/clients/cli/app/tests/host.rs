@@ -132,6 +132,8 @@ struct FakeHost {
     credential: Arc<Credential>,
     transport: Arc<Transport>,
     clock: Arc<TestClock>,
+    confirmations: Mutex<VecDeque<Result<bool, CommandError>>>,
+    confirmation_calls: AtomicUsize,
 }
 impl FakeHost {
     fn new(responses: Vec<ApiResponse>) -> Self {
@@ -153,6 +155,8 @@ impl FakeHost {
                 sleeps: AtomicUsize::new(0),
                 diagnostics: Mutex::new(Vec::new()),
             }),
+            confirmations: Mutex::new(VecDeque::new()),
+            confirmation_calls: AtomicUsize::new(0),
         }
     }
     fn hook(&self) {
@@ -190,6 +194,19 @@ impl Host for FakeHost {
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError> {
         self.hook();
         Ok(self.transport.clone())
+    }
+    async fn confirm(&self, _: CancellationToken) -> Result<bool, CommandError> {
+        self.confirmation_calls.fetch_add(1, Ordering::SeqCst);
+        self.confirmations
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(CommandError::new(
+                    "InvalidInput",
+                    "Confirmation unavailable",
+                ))
+            })
     }
     fn take_diagnostics(&self) -> Vec<&'static str> {
         std::mem::take(&mut *self.clock.diagnostics.lock().unwrap())
@@ -229,6 +246,440 @@ async fn run(args: &[&str], host: &dyn Host) -> (u8, String, String) {
 
 fn data(stdout: &str) -> Value {
     serde_json::from_str::<Value>(stdout).unwrap()["result"]["data"].clone()
+}
+
+#[tokio::test]
+async fn resources_validate_locally_before_credentials_or_http() {
+    let guid = "00000000-0000-0000-0000-000000000001";
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["workspace", "list", "--workspace", guid],
+        vec!["item", "list"],
+        vec!["workspace", "create", guid],
+        vec!["item", "create", guid, "--workspace", guid],
+        vec!["workspace", "create"],
+        vec![
+            "workspace",
+            "create",
+            "one",
+            "--payload",
+            r#"{"displayName":"two"}"#,
+        ],
+        vec!["item", "create", "one", "--workspace", guid],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","workspaceId":"x"}"#,
+        ],
+        vec![
+            "item",
+            "update",
+            guid,
+            "--workspace",
+            guid,
+            "--payload",
+            "[]",
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","definition":{},"creationPayload":{}}"#,
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","options":{}}"#,
+        ],
+        vec!["workspace", "get", guid, "--type", "x"],
+        vec!["workspace", "delete", guid, "--workspace", guid],
+        vec!["workspace", "create", "Admin monitoring"],
+        vec![
+            "workspace",
+            "create",
+            "one",
+            "--payload",
+            r#"{"capacityId":"invalid"}"#,
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","folderId":42}"#,
+        ],
+    ];
+    for args in cases {
+        let host = FakeHost::new(vec![]);
+        let (code, _, _) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+    let name = "a".repeat(257);
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(&["workspace", "create", &name], &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn resources_use_direct_ids_and_native_output() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let item = "00000000-0000-0000-0000-000000000002";
+    let host = FakeHost::new(vec![response(
+        200,
+        r#"{"id":"answer","displayName":"result"}"#,
+        &[],
+    )]);
+    let (code, stdout, _) = run(
+        &[
+            "item",
+            "get",
+            item,
+            "--workspace",
+            workspace,
+            "--query",
+            "displayName",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout), json!("result"));
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(
+        requests[0].url.path(),
+        format!("/v1/workspaces/{workspace}/items/{item}")
+    );
+}
+
+#[tokio::test]
+async fn item_selector_combinations_only_fetch_required_names() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let item = "00000000-0000-0000-0000-000000000002";
+    for (workspace_name, item_name) in [(false, false), (true, false), (false, true), (true, true)]
+    {
+        let mut replies = Vec::new();
+        if workspace_name {
+            replies.push(response(
+                200,
+                &format!(r#"{{"value":[{{"id":"{workspace}","displayName":"workspace"}}]}}"#),
+                &[],
+            ));
+        }
+        if item_name {
+            replies.push(response(
+                200,
+                &format!(r#"{{"value":[{{"id":"{item}","displayName":"item"}}]}}"#),
+                &[],
+            ));
+        }
+        replies.push(response(200, "{}", &[]));
+        let host = FakeHost::new(replies);
+        let target = if item_name { "item" } else { item };
+        let scope = if workspace_name {
+            "workspace"
+        } else {
+            workspace
+        };
+        let (code, _, _) = run(&["item", "get", target, "--workspace", scope], &host).await;
+        assert_eq!(code, 0);
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(
+            requests.len(),
+            1 + usize::from(workspace_name) + usize::from(item_name)
+        );
+        assert_eq!(
+            requests.last().unwrap().url.path(),
+            format!("/v1/workspaces/{workspace}/items/{item}")
+        );
+    }
+}
+
+#[tokio::test]
+async fn resource_page_errors_and_missing_names_do_not_mutate() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let cases = [
+        response(200, r#"{"value":[]}"#, &[]),
+        response(200, r#"{"value":[],"continuationToken":42}"#, &[]),
+        response(503, r#"{"private":"not-for-output"}"#, &[]),
+        response(200, "{", &[]),
+    ];
+    for reply in cases {
+        let host = FakeHost::new(vec![reply]);
+        let (code, stdout, _) = run(
+            &[
+                "item",
+                "delete",
+                "absent",
+                "--workspace",
+                workspace,
+                "--force",
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 1);
+        assert!(!stdout.contains("not-for-output"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "GET");
+    }
+}
+
+#[tokio::test]
+async fn resource_creation_accepts_payload_name_and_matching_names() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    for args in [
+        vec![
+            "workspace",
+            "create",
+            "--payload",
+            r#"{"displayName":"00000000-0000-0000-0000-000000000001"}"#,
+        ],
+        vec![
+            "workspace",
+            "create",
+            "ws",
+            "--payload",
+            r#"{"displayName":"ws"}"#,
+        ],
+        vec!["workspace", "create", "ws"],
+        vec![
+            "item",
+            "create",
+            "--workspace",
+            id,
+            "--payload",
+            r#"{"displayName":"item","type":"UnknownType"}"#,
+        ],
+    ] {
+        let host = FakeHost::new(vec![response(201, "{}", &[])]);
+        let (code, _, _) = run(&args, &host).await;
+        assert_eq!(code, 0, "{args:?}");
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "POST");
+    }
+}
+
+#[tokio::test]
+async fn resource_resolution_reads_all_pages_and_rejects_duplicate_names() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let first = response(200, r#"{"value":[],"continuationToken":"a+/="}"#, &[]);
+    let second = response(
+        200,
+        &format!(r#"{{"value":[{{"id":"{id}","displayName":"ws"}}]}}"#),
+        &[],
+    );
+    let item = "00000000-0000-0000-0000-000000000002";
+    let host = FakeHost::new(vec![
+        first.clone(),
+        second.clone(),
+        response(200, "{}", &[]),
+    ]);
+    let (code, _, _) = run(&["item", "get", item, "--workspace", "ws"], &host).await;
+    assert_eq!(code, 0);
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[1].url.query(),
+        Some("continuationToken=a%2B%2F%3D")
+    );
+    drop(requests);
+
+    let host = FakeHost::new(vec![
+        response(
+            200,
+            r#"{"value":[],"continuationToken":"ABCsMTAwMDAwLDA%3D&x=y"}"#,
+            &[],
+        ),
+        response(200, r#"{"value":[]}"#, &[]),
+    ]);
+    let (code, _, _) = run(&["workspace", "list"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(
+        host.transport.requests.lock().unwrap()[1].url.query(),
+        Some("continuationToken=ABCsMTAwMDAwLDA%3D%26x%3Dy")
+    );
+
+    let duplicate = response(
+        200,
+        &format!(r#"{{"value":[{{"id":"{id}","displayName":"ws"}}],"continuationToken":"next"}}"#),
+        &[],
+    );
+    let host = FakeHost::new(vec![duplicate, second]);
+    let (code, stdout, _) = run(&["workspace", "get", "ws"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("Ambiguous"));
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn resource_creation_and_patch_keep_native_payloads() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let host = FakeHost::new(vec![response(201, r#"{"id":"created"}"#, &[])]);
+    let input = r#"{"type":"FutureType","other":{"$serde_json::private::Number":"x","big":123456789012345678901234567890}}"#;
+    let (code, stdout, _) = run(
+        &[
+            "item",
+            "create",
+            "new",
+            "--workspace",
+            workspace,
+            "--payload",
+            input,
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["id"], "created");
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "POST");
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["displayName"], "new");
+    assert_eq!(body["type"], "FutureType");
+    assert_eq!(body["other"]["$serde_json::private::Number"], "x");
+    drop(requests);
+
+    let host = FakeHost::new(vec![response(200, r#"{"displayName":"new"}"#, &[])]);
+    let (code, _, _) = run(
+        &[
+            "workspace",
+            "update",
+            workspace,
+            "--payload",
+            r#"{"displayName":"new"}"#,
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0);
+    assert_eq!(host.transport.requests.lock().unwrap()[0].method, "PATCH");
+}
+
+#[tokio::test]
+async fn deletion_confirms_after_resolution_and_force_never_reads() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let lookup = response(
+        200,
+        &format!(r#"{{"value":[{{"id":"{id}","displayName":"ws"}}]}}"#),
+        &[],
+    );
+    let host = FakeHost::new(vec![lookup]);
+    host.confirmations.lock().unwrap().push_back(Ok(false));
+    let (code, stdout, stderr) = run(&["workspace", "delete", "ws"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("Cancelled"));
+    assert!(stderr.contains(id));
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+    let host = FakeHost::new(vec![response(204, "", &[])]);
+    let (code, _, stderr) = run(&["workspace", "delete", id, "--force"], &host).await;
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert_eq!(host.confirmation_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(host.transport.requests.lock().unwrap()[0].method, "DELETE");
+}
+
+#[tokio::test]
+async fn resource_empty_delete_and_accepted_mutation_are_distinct() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let host = FakeHost::new(vec![response(204, "", &[])]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout), Value::Null);
+
+    let host = FakeHost::new(vec![response(200, "", &[])]);
+    let (code, stdout, _) = run(&["workspace", "get", id], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("Empty resource response"));
+
+    let host = FakeHost::new(vec![response(202, "", &[("x-ms-operation-id", id)])]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["status_code"], 202);
+    assert_eq!(data(&stdout)["status"], "Accepted");
+    assert_eq!(data(&stdout)["recovery"]["operation_id"], id);
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+
+    let host = FakeHost::new(vec![response(202, "", &[])]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["status"], "Accepted");
+    assert!(data(&stdout).get("recovery").is_none());
+
+    let host = FakeHost::new(vec![response(
+        202,
+        "",
+        &[
+            (
+                "location",
+                "https://evil.invalid/operation?secret=synthetic",
+            ),
+            ("x-ms-operation-id", id),
+        ],
+    )]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["status"], "Accepted");
+    assert_eq!(data(&stdout)["recovery"]["operation_id"], id);
+    assert!(!stdout.contains("evil.invalid"));
+    assert!(!stdout.contains("synthetic"));
+}
+
+#[tokio::test]
+async fn resource_mutations_complete_or_preserve_operation_recovery() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    for (status, success) in [("Succeeded", true), ("Failed", false)] {
+        let host = FakeHost::new(vec![
+            response(202, "", &[("x-ms-operation-id", "operation-1")]),
+            response(200, &format!(r#"{{"status":"{status}"}}"#), &[]),
+        ]);
+        let (code, stdout, _) = run(&["workspace", "delete", id, "--force"], &host).await;
+        assert_eq!(code == 0, success);
+        if !success {
+            assert!(stdout.contains("operation-1"));
+        }
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].method, "DELETE");
+        assert_eq!(requests[1].method, "GET");
+    }
+}
+
+#[tokio::test]
+async fn resource_payload_files_are_bounded_and_read_before_auth() {
+    let directory = TempDirectory::new();
+    let path = directory.0.join("payload.json");
+    std::fs::write(&path, br#"{"displayName":"file"}"#).unwrap();
+    let argument = format!("@{}", path.display());
+    let host = FakeHost::new(vec![response(201, "{}", &[])]);
+    let (code, _, _) = run(&["workspace", "create", "--payload", &argument], &host).await;
+    assert_eq!(code, 0);
+
+    std::fs::write(&path, vec![b' '; fabric_core::MAX_REQUEST_BYTES + 1]).unwrap();
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(&["workspace", "create", "--payload", &argument], &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

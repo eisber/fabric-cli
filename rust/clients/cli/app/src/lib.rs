@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 pub mod lifecycle;
+mod resources;
 mod selection;
 
 pub use selection::SelectionFile;
@@ -26,7 +27,7 @@ use fabric_sdk_http::{HttpClient, SystemClock, bounded_with_clock};
 use serde_json::{Value, json};
 use std::{
     ffi::OsString,
-    io::Write,
+    io::{BufRead, IsTerminal, Read, Write},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
@@ -39,6 +40,31 @@ struct ProgressEvent {
 }
 
 struct ConsoleProgress(mpsc::Sender<ProgressEvent>);
+
+struct ConfirmationEvent {
+    prompt: String,
+    answered: oneshot::Sender<Result<bool, CommandError>>,
+}
+
+struct ConsoleConfirmation(mpsc::Sender<ConfirmationEvent>);
+
+impl ConsoleConfirmation {
+    async fn confirm(&self, prompt: String) -> Result<(), CommandError> {
+        let (answered, received) = oneshot::channel();
+        self.0
+            .send(ConfirmationEvent { prompt, answered })
+            .await
+            .map_err(|_| CommandError::new("Cancelled", "Confirmation unavailable"))?;
+        if received
+            .await
+            .map_err(|_| CommandError::new("Cancelled", "Confirmation unavailable"))??
+        {
+            Ok(())
+        } else {
+            Err(CommandError::new("Cancelled", "Deletion cancelled"))
+        }
+    }
+}
 #[async_trait]
 impl PollObserver for ConsoleProgress {
     async fn observe(&self, progress: PollProgress) -> Result<(), CoreError> {
@@ -53,6 +79,33 @@ impl PollObserver for ConsoleProgress {
 
 fn progress_error() -> CoreError {
     CoreError::new(ErrorKind::Transport, "Cannot write polling progress")
+}
+
+fn confirmation_answer(line: &[u8]) -> Result<bool, CommandError> {
+    if line.is_empty() {
+        return Err(CommandError::new(
+            "Cancelled",
+            "Confirmation ended without input",
+        ));
+    }
+    if line.len() > 1025
+        || !line.ends_with(b"\n")
+        || line
+            .iter()
+            .any(|byte| byte.is_ascii_control() && !matches!(*byte, b'\r' | b'\n'))
+    {
+        return Err(CommandError::new(
+            "InvalidInput",
+            "Invalid or oversized confirmation",
+        ));
+    }
+    let text = std::str::from_utf8(line)
+        .map_err(|_| CommandError::new("InvalidInput", "Invalid confirmation"))?;
+    match text.trim().to_ascii_lowercase().as_str() {
+        "" | "y" | "yes" => Ok(true),
+        "n" | "no" => Ok(false),
+        _ => Err(CommandError::new("InvalidInput", "Invalid confirmation")),
+    }
 }
 
 fn write_progress(progress: PollProgress, stderr: &mut dyn Write) -> Result<(), CoreError> {
@@ -88,6 +141,13 @@ pub trait Host: Send + Sync {
     fn credential(&self, binding: Binding) -> Result<Arc<dyn TokenCredential>, CommandError>;
     /// Construct transport only after request and selection validation.
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError>;
+    /// Obtain a single bounded interactive confirmation; never prompt in the engine.
+    async fn confirm(&self, _cancellation: CancellationToken) -> Result<bool, CommandError> {
+        Err(CommandError::new(
+            "InvalidInput",
+            "Interactive confirmation is unavailable; use --force",
+        ))
+    }
     /// Drain safe static diagnostics for the host to write to stderr, never JSON stdout.
     fn take_diagnostics(&self) -> Vec<&'static str> {
         Vec::new()
@@ -178,6 +238,35 @@ impl Host for NativeHost {
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError> {
         Ok(Arc::new(fabric_sdk_transport::NativeHttpClient::new()?))
     }
+    async fn confirm(&self, cancellation: CancellationToken) -> Result<bool, CommandError> {
+        if !std::io::stdin().is_terminal() {
+            return Err(CommandError::new(
+                "InvalidInput",
+                "Interactive confirmation requires a terminal; use --force",
+            ));
+        }
+        let (sender, receiver) = oneshot::channel();
+        std::thread::Builder::new()
+            .spawn(move || {
+                let stdin = std::io::stdin();
+                let mut reader = std::io::BufReader::new(stdin.lock().take(1026));
+                let mut line = Vec::new();
+                let result = reader.read_until(b'\n', &mut line);
+                let answer = match result {
+                    Ok(_) => confirmation_answer(&line),
+                    Err(_) => Err(CommandError::new(
+                        "InvalidInput",
+                        "Cannot read confirmation",
+                    )),
+                };
+                let _ = sender.send(answer);
+            })
+            .map_err(|_| CommandError::new("InvalidInput", "Cannot start confirmation reader"))?;
+        tokio::select! {
+            _ = cancellation.cancelled() => Err(CommandError::new("Cancelled", "Confirmation cancelled")),
+            result = receiver => result.map_err(|_| CommandError::new("InvalidInput", "Cannot read confirmation"))?,
+        }
+    }
     fn take_diagnostics(&self) -> Vec<&'static str> {
         std::mem::take(
             &mut *self
@@ -211,6 +300,8 @@ pub fn parser() -> Command {
             .subcommand(auth_leaf("status").about("Validate the selected Azure CLI identity"))
             .subcommand(auth_leaf("logout").about("Clear Rust selection only; leave Azure CLI signed in")))
         .subcommand(fabric_cli_api::command())
+        .subcommand(resources::command("workspace"))
+        .subcommand(resources::command("item"))
 }
 
 fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
@@ -231,6 +322,16 @@ fn command_name(args: &[OsString]) -> &'static str {
         (Some("auth"), Some("status")) => "auth status",
         (Some("auth"), Some("logout")) => "auth logout",
         (Some("auth"), _) => "auth",
+        (Some("workspace"), Some("list")) => "workspace list",
+        (Some("workspace"), Some("get")) => "workspace get",
+        (Some("workspace"), Some("create")) => "workspace create",
+        (Some("workspace"), Some("update")) => "workspace update",
+        (Some("workspace"), Some("delete")) => "workspace delete",
+        (Some("item"), Some("list")) => "item list",
+        (Some("item"), Some("get")) => "item get",
+        (Some("item"), Some("create")) => "item create",
+        (Some("item"), Some("update")) => "item update",
+        (Some("item"), Some("delete")) => "item delete",
         _ => "",
     }
 }
@@ -325,8 +426,11 @@ pub async fn run(
     };
     let (sender, mut events) = mpsc::channel(1);
     let observer = ConsoleProgress(sender);
+    let (sender, mut confirmations) = mpsc::channel::<ConfirmationEvent>(1);
+    let confirmer = ConsoleConfirmation(sender);
+    let confirm_cancellation = cancellation.clone();
     let result = {
-        let execution = execute(&matches, host, cancellation, &observer);
+        let execution = execute(&matches, host, cancellation, &observer, &confirmer);
         tokio::pin!(execution);
         loop {
             tokio::select! {
@@ -334,6 +438,14 @@ pub async fn run(
                     let result = write_progress(event.progress, stderr);
                     // Cancellation can drop the observer while its event is queued.
                     let _ = event.written.send(result);
+                }
+                Some(event) = confirmations.recv() => {
+                    let answer = if write!(stderr, "{}", event.prompt).and_then(|()| stderr.flush()).is_err() {
+                        Err(CommandError::new("InvalidInput", "Cannot write confirmation prompt"))
+                    } else {
+                        host.confirm(confirm_cancellation.clone()).await
+                    };
+                    let _ = event.answered.send(answer);
                 }
                 result = &mut execution => break result,
             }
@@ -344,7 +456,11 @@ pub async fn run(
     }
     match result {
         Ok(data) => {
-            let output = fabric_cli_output::success(&timestamp(host), name, data);
+            let output = if name.starts_with("workspace ") || name.starts_with("item ") {
+                fabric_cli_output::resource_success(&timestamp(host), name, data)
+            } else {
+                fabric_cli_output::success(&timestamp(host), name, data)
+            };
             if stdout.write_all(output.as_bytes()).is_ok() {
                 0
             } else {
@@ -382,8 +498,35 @@ async fn execute(
     host: &dyn Host,
     cancellation: CancellationToken,
     observer: &dyn PollObserver,
+    confirmer: &ConsoleConfirmation,
 ) -> Result<Value, CommandError> {
     match matches.subcommand() {
+        Some((kind @ ("workspace" | "item"), args)) => {
+            let kind = if kind == "workspace" {
+                "workspace"
+            } else {
+                "item"
+            };
+            let prepared = resources::prepare(kind, args)?;
+            let binding = selected(host)?;
+            let clock = host.clock();
+            let client =
+                HttpClient::new(host.credential(binding)?, host.transport()?, clock.clone());
+            let context = OperationContext {
+                deadline: Some(clock.now() + Duration::from_secs(240)),
+                cancellation: cancellation.clone(),
+            };
+            resources::execute(
+                prepared,
+                &client,
+                clock.as_ref(),
+                &context,
+                observer,
+                confirmer,
+            )
+            .await
+        }
+
         Some(("auth", auth)) => match auth.subcommand_name() {
             Some("logout") => {
                 host.clear_selection()?;
@@ -479,5 +622,24 @@ async fn execute(
             .map_err(attach_recovery)
         }
         _ => Err(CommandError::new("InvalidInput", "A command is required")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::confirmation_answer;
+
+    #[test]
+    fn confirmation_fails_closed() {
+        for line in [b"\n".as_slice(), b"y\n", b"YES\r\n"] {
+            assert!(confirmation_answer(line).unwrap());
+        }
+        for line in [b"n\n".as_slice(), b"NO\n"] {
+            assert!(!confirmation_answer(line).unwrap());
+        }
+        for line in [b"".as_slice(), b"yes", b"maybe\n", b"\xff\n", b"\t\n"] {
+            assert!(confirmation_answer(line).is_err());
+        }
+        assert!(confirmation_answer(&[b'x'; 1026]).is_err());
     }
 }
