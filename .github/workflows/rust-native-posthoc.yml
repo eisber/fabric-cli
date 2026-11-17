@@ -1,0 +1,108 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Post-hoc native request (NOT ADMITTED)
+
+# Proposal facade only. Publishing on default main would register manual/batched
+# request preparation, NOT install native coverage. No push/PR critical path,
+# schedule, repository_dispatch, native executor, or resource admission exists.
+# The driver header documents exact source/platform API and activation prerequisites.
+# A prepared request deliberately ends non-green (exit 78); never treat it as CI
+# qualification. Offline contract success is not a native pass.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full lowercase 40-hex current fixed integration head
+        required: true
+        type: string
+      base_sha:
+        description: Full lowercase ancestor SHA (NOT an inferred native baseline)
+        required: true
+        type: string
+      mode:
+        description: Requested scope only; affected requires an actual native baseline
+        required: true
+        type: choice
+        options: [full, affected]
+      route:
+        description: Genuine manual request or one coalesced named batch
+        required: true
+        type: choice
+        options: [manual, batch]
+      batch_id:
+        description: Empty for manual; 1-64 letters/digits/dot/underscore/hyphen for batch
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-native-posthoc-request
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    name: Offline request contracts (not native evidence)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test .github/scripts/rust-native-posthoc.test.cjs
+
+  prepare:
+    name: Pin and inspect only (native UNRUN)
+    needs: contracts
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
+      REQUESTED_MODE: ${{ inputs.mode }}
+      REQUESTED_ROUTE: ${{ inputs.route }}
+      REQUESTED_BATCH_ID: ${{ inputs.batch_id }}
+      POSTHOC_ARTIFACTS: ${{ runner.temp }}/rust-native-posthoc-request
+    steps:
+      - name: Check out the registered trusted main driver, not the DUT
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
+        with:
+          repository: eisber/fabric-cli
+          ref: ${{ github.sha }}
+          path: driver
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Authenticate the genuine dispatch and pin the fixed branch once
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node driver/.github/scripts/rust-native-posthoc.cjs pin
+      - name: Check out the immutable DUT in a separate clean source root
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
+        with:
+          repository: eisber/fabric-cli
+          ref: ${{ steps.pin.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Inventory bytes and retain NOT_ADMITTED with native debt unchanged
+        env:
+          # Used only by the driver's fixed read-only branch lookup. No DUT
+          # script, Cargo, test executable, or downloaded artifact is executed.
+          GH_TOKEN: ${{ github.token }}
+        run: node driver/.github/scripts/rust-native-posthoc.cjs inspect
+      - name: Retain partial guards, source inventories and UNRUN request receipt
+        if: always()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-native-posthoc-request-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rust-native-posthoc-request/*.json
+          if-no-files-found: error
+          retention-days: 7
