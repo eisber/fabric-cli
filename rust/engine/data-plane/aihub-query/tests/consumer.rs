@@ -24,7 +24,7 @@ use std::{
 use support::*;
 
 async fn observe(result: Value) -> Result<QueryOutcome, fabric_sdk_aihub_query::QueryError> {
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, result)]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, result)]));
     client(
         wire,
         Arc::new(Credential::default()),
@@ -49,6 +49,16 @@ fn mutate_text(block: &mut Value, change: impl FnOnce(&mut Value)) {
     *block = typed(&rowset.to_string(), "file:///changed.json");
 }
 
+fn compact(mut block: Value) -> Value {
+    let descriptor = &block["resource"]["_meta"]["fabric.queryResult"];
+    block["resource"]["_meta"]["fabric.queryResult"] = json!({
+        "schemaVersion":descriptor["schemaVersion"],
+        "resultId":descriptor["resultId"],
+        "format":descriptor["format"],
+    });
+    block
+}
+
 #[test]
 fn shared_json_parser_preserves_private_sentinel_keys_as_ordinary_objects() {
     let text = r#"{"$serde_json::private::RawValue":"123","other":true}"#;
@@ -64,7 +74,7 @@ fn shared_json_parser_preserves_private_sentinel_keys_as_ordinary_objects() {
 
 #[tokio::test]
 async fn real_lifecycle_opt_in_binding_and_no_export_preserve_exact_values() {
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
     let credential = Arc::new(Credential::default());
     let timer = Arc::new(Timer::default());
     let result = complete(
@@ -106,18 +116,13 @@ async fn real_lifecycle_opt_in_binding_and_no_export_preserve_exact_values() {
             .iter()
             .map(|r| r["method"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        [
-            "initialize",
-            "notifications/initialized",
-            "tools/list",
-            "tools/call"
-        ]
+        ["initialize", "notifications/initialized", "tools/call"]
     );
     assert_eq!(
-        messages[3]["params"]["arguments"]["artifactId"],
+        messages[2]["params"]["arguments"]["artifactId"],
         format!("{AGENT}/{SOURCE}")
     );
-    assert!(messages[3]["params"]["arguments"].get("language").is_none());
+    assert!(messages[2]["params"]["arguments"].get("language").is_none());
     for (index, r) in wire.requests.lock().unwrap().iter().enumerate() {
         assert!(r.headers().get_str(&"fabaihub-x-variants".into()).is_err());
         if index > 0 {
@@ -147,7 +152,7 @@ async fn sandbox_template_multiple_outputs_and_auxiliary_resources_are_retained(
     let result = json!({"content":[typed(&rowset(),"file:///one.json"),
         {"type":"resource","resource":{"uri":"https://never-download.example.invalid/template","mimeType":"text/plain","text":"synthetic template"}},
         typed(&second.to_string(),"file:///two.json")]});
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, result)]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, result)]));
     let req = QueryRequest::new(
         DataAgentTarget::new(AGENT, SOURCE, QueryStage::Sandbox).unwrap(),
         "synthetic_template(`null`)".into(),
@@ -170,7 +175,7 @@ async fn sandbox_template_multiple_outputs_and_auxiliary_resources_are_retained(
     );
     assert_eq!(result.resultsets.len(), 2);
     assert_eq!(result.resources.len(), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     for message in messages(&wire) {
         assert_eq!(
             message["params"]["_meta"]["variants"],
@@ -178,7 +183,7 @@ async fn sandbox_template_multiple_outputs_and_auxiliary_resources_are_retained(
         );
     }
     assert_eq!(
-        messages(&wire)[3]["params"]["arguments"]["language"],
+        messages(&wire)[2]["params"]["arguments"]["language"],
         "jmespath"
     );
 }
@@ -300,6 +305,224 @@ async fn native_temporal_binary_guid_boolean_signed_and_unknown_values_survive()
 }
 
 #[tokio::test]
+async fn explicit_int64_logical_representation_preserves_metadata_and_exact_signed_values() {
+    for number in [
+        "-9223372036854775808",
+        "-9007199254740993",
+        "0",
+        "9007199254740993",
+        "9223372036854775807",
+    ] {
+        let text = format!(
+            r#"{{
+            "schemaVersion":1,"resultId":"{RESULT}",
+            "columns":[{{"name":"n","engineType":"Int64","logicalType":"int64","encoding":"json-number"}}],
+            "rowCount":1,"truncated":false,"maxRows":1000,"totalRowCount":null,
+            "rows":[[{number}]]
+        }}"#
+        );
+        let result = complete(
+            observe(json!({"content":[typed(&text,"opaque:int64")]}))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(result.resultsets[0].columns[0].engine_type, "Int64");
+        assert_eq!(result.resultsets[0].columns[0].logical_type, "int64");
+        assert_eq!(
+            result.resultsets[0].rows[0][0],
+            NativeValue::Integer(number.into())
+        );
+    }
+}
+
+#[tokio::test]
+async fn explicit_int64_rejects_overflow_fractions_wrong_encodings_and_unobserved_aliases() {
+    for (number, logical, encoding) in [
+        ("9223372036854775808", "int64", "json-number"),
+        ("-9223372036854775809", "int64", "json-number"),
+        ("18446744073709551615", "int64", "json-number"),
+        ("1.5", "int64", "json-number"),
+        ("1e0", "int64", "json-number"),
+        ("1", "int64", "text"),
+        ("1", "signed64", "json-number"),
+    ] {
+        let text = format!(
+            r#"{{
+            "schemaVersion":1,"resultId":"{RESULT}",
+            "columns":[{{"name":"n","engineType":"Int64","logicalType":"{logical}","encoding":"{encoding}"}}],
+            "rowCount":1,"truncated":false,"maxRows":1000,"totalRowCount":null,
+            "rows":[[{number}]]
+        }}"#
+        );
+        assert!(
+            observe(json!({"content":[typed(&text,"opaque:int64")]}))
+                .await
+                .is_err()
+        );
+    }
+}
+
+#[tokio::test]
+async fn compact_schema1_marker_accepts_explicit_int64_empty_and_all_null_bodies() {
+    let columns =
+        json!([{"name":"n","engineType":"Int64","logicalType":"int64","encoding":"json-number"}]);
+    for (columns, rows) in [
+        (columns.clone(), json!([[9007199254740993_i64]])),
+        (columns.clone(), json!([[null]])),
+        (columns, json!([])),
+        (json!([]), json!([])),
+    ] {
+        let body = json!({"schemaVersion":1,"resultId":RESULT,"columns":columns,
+            "rowCount":rows.as_array().unwrap().len(),"truncated":false,
+            "maxRows":1,"totalRowCount":null,"rows":rows});
+        let result = complete(
+            observe(json!({"content":[compact(typed(&body.to_string(),"opaque:compact"))]}))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            result.resultsets[0].columns.len(),
+            body["columns"].as_array().unwrap().len()
+        );
+        assert_eq!(
+            result.resultsets[0].row_count,
+            body["rows"].as_array().unwrap().len()
+        );
+        assert_eq!(result.resultsets[0].total_row_count, None);
+        if body["rows"] == json!([[9007199254740993_i64]]) {
+            assert_eq!(
+                result.resultsets[0].rows[0][0],
+                NativeValue::Integer("9007199254740993".into())
+            );
+            assert_eq!(result.resultsets[0].columns[0].logical_type, "int64");
+        }
+        if body["rows"] == json!([[null]]) {
+            assert_eq!(result.resultsets[0].rows[0], [NativeValue::Null]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn compact_and_expanded_profiles_reject_missing_unknown_and_partial_metadata() {
+    let expanded = typed(&rowset(), "opaque:expanded");
+    let base = compact(expanded.clone());
+    for field in ["schemaVersion", "resultId", "format"] {
+        let mut block = base.clone();
+        block["resource"]["_meta"]["fabric.queryResult"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(
+            observe(json!({"content":[block]})).await.is_err(),
+            "missing {field}"
+        );
+    }
+    for (field, value) in [
+        ("schemaVersion", json!(2)),
+        ("schemaVersion", json!("1")),
+        ("resultId", json!(AGENT)),
+        ("format", json!("csv")),
+        ("unknown", json!(true)),
+    ] {
+        let mut block = base.clone();
+        block["resource"]["_meta"]["fabric.queryResult"][field] = value;
+        assert!(
+            observe(json!({"content":[block]})).await.is_err(),
+            "{field}"
+        );
+    }
+    for field in [
+        "columns",
+        "rowCount",
+        "truncated",
+        "maxRows",
+        "totalRowCount",
+        "nulls",
+    ] {
+        let mut partial = base.clone();
+        partial["resource"]["_meta"]["fabric.queryResult"][field] =
+            expanded["resource"]["_meta"]["fabric.queryResult"][field].clone();
+        assert!(
+            observe(json!({"content":[partial]})).await.is_err(),
+            "partial {field}"
+        );
+        let mut missing = expanded.clone();
+        missing["resource"]["_meta"]["fabric.queryResult"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(
+            observe(json!({"content":[missing]})).await.is_err(),
+            "expanded missing {field}"
+        );
+    }
+    let mut unknown = expanded.clone();
+    unknown["resource"]["_meta"]["fabric.queryResult"]["unknown"] = json!(true);
+    assert!(observe(json!({"content":[unknown]})).await.is_err());
+    let mut no_marker = base;
+    no_marker["resource"]
+        .as_object_mut()
+        .unwrap()
+        .remove("_meta");
+    assert_eq!(
+        observe(json!({"content":[no_marker]}))
+            .await
+            .unwrap_err()
+            .kind,
+        QueryErrorKind::MissingTypedJson
+    );
+}
+
+#[tokio::test]
+async fn compact_marker_never_relaxes_authoritative_body_shape_truncation_or_limits() {
+    for mutation in 0..8 {
+        let mut block = typed(&rowset(), "opaque:compact");
+        mutate_text(&mut block, |body| match mutation {
+            0 => body["schemaVersion"] = json!(2),
+            1 => body["rowCount"] = json!(0),
+            2 => body["rows"] = json!([[1]]),
+            3 => body["columns"][0]["encoding"] = json!("unknown"),
+            4 => body["totalRowCount"] = json!(2000),
+            5 => body["maxRows"] = json!(0),
+            6 => body["truncated"] = json!("false"),
+            _ => body["rows"][0][0] = json!("18446744073709551615"),
+        });
+        assert!(
+            observe(json!({"content":[compact(block)]})).await.is_err(),
+            "body mutation {mutation}"
+        );
+    }
+    let mut truncated = typed(&rowset(), "opaque:compact-truncated");
+    mutate_text(&mut truncated, |body| {
+        body["truncated"] = json!(true);
+        body["totalRowCount"] = json!(2);
+    });
+    assert!(matches!(
+        observe(json!({"content":[compact(truncated)]}))
+            .await
+            .unwrap(),
+        QueryOutcome::Incomplete(_)
+    ));
+    let wire = Wire::new(setup().into_iter().chain([rpc(
+        2,
+        json!({"content":[compact(typed(&rowset(),"opaque:cap"))]}),
+    )]));
+    let error = client(
+        wire,
+        Arc::new(Credential::default()),
+        Arc::new(Timer::default()),
+        Limits {
+            cells: 1,
+            ..Limits::default()
+        },
+    )
+    .execute_query(&request(), &deadline(), pending())
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::Limit);
+}
+
+#[tokio::test]
 async fn truncation_is_an_explicit_incomplete_outcome() {
     let mut block = typed(&rowset(), "opaque:truncated");
     mutate_text(&mut block, |r| {
@@ -327,6 +550,76 @@ async fn legacy_csv_markdown_direct_strings_and_structured_content_are_not_typed
             QueryErrorKind::MissingTypedJson
         );
     }
+}
+
+#[tokio::test]
+async fn mixed_typed_and_untyped_rowsets_cannot_hide_behind_mime_parameters_or_case() {
+    for (mime, blob) in [
+        ("text/csv", false),
+        ("text/csv; charset=utf-8", false),
+        ("TeXt/CsV; CHARSET=\"utf-8\"", false),
+        (" text/csv ; filename=\"x;y.csv\" ", false),
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            true,
+        ),
+        (
+            "APPLICATION/VND.OPENXMLFORMATS-OFFICEDOCUMENT.SPREADSHEETML.SHEET; charset=utf-8",
+            true,
+        ),
+    ] {
+        for companion_first in [false, true] {
+            let mut companion =
+                json!({"type":"resource","resource":{"uri":"opaque:untyped","mimeType":mime}});
+            if blob {
+                companion["resource"]["blob"] = json!("AAEC");
+            } else {
+                companion["resource"]["text"] = json!("synthetic,csv");
+            }
+            let typed = typed(&rowset(), "opaque:typed");
+            let content = if companion_first {
+                vec![companion, typed]
+            } else {
+                vec![typed, companion]
+            };
+            let error = observe(json!({"content":content})).await.unwrap_err();
+            assert_eq!(error.kind, QueryErrorKind::MissingTypedJson, "{mime}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_json_requires_explicit_media_and_preserves_valid_non_tabular_companions() {
+    let mut native = typed(&rowset(), "opaque:typed");
+    native["resource"]["mimeType"] = json!("Application/JSON; charset=\"utf-8\"");
+    let companion = json!({"type":"resource","resource":{"uri":"opaque:notes","mimeType":"Text/Plain; charset=utf-8","text":"Synthetic notes"}});
+    let result = complete(
+        observe(json!({"content":[native,companion]}))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(result.resultsets.len(), 1);
+    assert_eq!(result.resources[0].mime_type, "Text/Plain; charset=utf-8");
+    for mime in [
+        "text/csv; charset",
+        "text/csv; charset=\"unterminated",
+        "text/csv\r\nx-header: y",
+        "invalid",
+        "text/csv;",
+    ] {
+        let companion = json!({"type":"resource","resource":{"uri":"opaque:bad","mimeType":mime,"text":"synthetic"}});
+        assert!(
+            observe(json!({"content":[typed(&rowset(),"opaque:typed"),companion]}))
+                .await
+                .is_err()
+        );
+    }
+    let mut missing = typed(&rowset(), "opaque:missing");
+    missing["resource"]
+        .as_object_mut()
+        .unwrap()
+        .remove("mimeType");
+    assert!(observe(json!({"content":[missing]})).await.is_err());
 }
 
 #[tokio::test]
@@ -411,10 +704,10 @@ async fn tool_rpc_unknown_and_task_errors_never_return_completed_data() {
         QueryErrorKind::Protocol
     );
     for bytes in [
-        br#"{"jsonrpc":"2.0","id":3,"error":{"code":-32000,"message":"synthetic-sensitive-provider-text"}}"#.as_slice(),
+        br#"{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"synthetic-sensitive-provider-text"}}"#.as_slice(),
         br#"{"jsonrpc":"2.0","id":99,"result":{"content":[]}}"#,
-        br#"{"jsonrpc":"2.0","id":3,"result":{"content":[]},"result":{"content":[]}}"#,
-        br#"{"jsonrpc":"2.0","id":3,"result":null}"#,
+        br#"{"jsonrpc":"2.0","id":2,"result":{"content":[]},"result":{"content":[]}}"#,
+        br#"{"jsonrpc":"2.0","id":2,"result":null}"#,
     ] {
         let wire = Wire::new(setup().into_iter().chain([response(200,bytes.to_vec(),"application/json",None)]));
         let error = client(wire,Arc::new(Credential::default()),Arc::new(Timer::default()),Limits::default())
@@ -425,69 +718,52 @@ async fn tool_rpc_unknown_and_task_errors_never_return_completed_data() {
 }
 
 #[tokio::test]
-async fn discovery_requires_explicit_safe_read_annotations_before_query_dispatch() {
-    let annotations = [
-        None,
-        Some(Value::Null),
-        Some(json!({})),
-        Some(json!({"readOnlyHint":true})),
-        Some(json!({"destructiveHint":false})),
-        Some(json!({"readOnlyHint":false,"destructiveHint":false})),
-        Some(json!({"readOnlyHint":true,"destructiveHint":true})),
-        Some(json!({"readOnlyHint":"true","destructiveHint":false})),
-        Some(json!({"readOnlyHint":true,"destructiveHint":0})),
-        Some(json!({"readOnlyHint":null,"destructiveHint":false})),
-        Some(json!(["readOnlyHint", true])),
-    ];
+async fn fixed_tool_call_never_lists_tools_in_native_or_template_mode() {
     for mode in [QueryMode::Native, QueryMode::Template] {
-        for annotations in &annotations {
-            let mut advertised = tool();
-            if let Some(annotations) = annotations {
-                advertised["annotations"] = annotations.clone();
-            } else {
-                advertised.as_object_mut().unwrap().remove("annotations");
-            }
-            let wire = Wire::new([
-                initialize(),
-                response(202, vec![], "application/json", None),
-                rpc(2, json!({"tools":[advertised]})),
-            ]);
-            let error = client(
-                wire.clone(),
-                Arc::new(Credential::default()),
-                Arc::new(Timer::default()),
-                Limits::default(),
-            )
-            .execute_query(&request().with_mode(mode), &deadline(), pending())
-            .await
-            .unwrap_err();
-            assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
-            assert!(!error.query_dispatched);
-            assert_eq!(wire.requests.lock().unwrap().len(), 3);
-            assert!(
-                messages(&wire)
-                    .iter()
-                    .all(|message| message["method"] != "tools/call")
-            );
-        }
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
+        let result = client(
+            wire.clone(),
+            Arc::new(Credential::default()),
+            Arc::new(Timer::default()),
+            Limits {
+                discovery_pages: 0,
+                ..Limits::default()
+            },
+        )
+        .execute_query(&request().with_mode(mode), &deadline(), pending())
+        .await
+        .unwrap();
+        assert_eq!(complete(result).resultsets.len(), 1);
+        let sent = messages(&wire);
+        assert_eq!(sent.len(), 3);
+        assert_eq!(sent[2]["id"], 2);
+        assert_eq!(sent[2]["method"], "tools/call");
+        assert_eq!(sent[2]["params"]["name"], "execute_query");
+        assert!(sent.iter().all(|message| message["method"] != "tools/list"));
+        assert_eq!(
+            sent[2]["params"]["arguments"]
+                .get("language")
+                .and_then(Value::as_str),
+            (mode == QueryMode::Template).then_some("jmespath")
+        );
     }
 }
 
 #[tokio::test]
-async fn protocol_negotiation_discovery_and_unsupported_schema_reject_before_query() {
+async fn unsupported_protocol_or_missing_tool_capability_reject_before_query() {
     for mutation in 0..5 {
-        let mut tools = tool();
+        let mut result = json!({
+            "protocolVersion":"2025-06-18", "capabilities":{"tools":{}},
+            "serverInfo":{"name":"offline-fixture","version":"1"},
+        });
         match mutation {
-            0 => tools["name"] = json!("other"),
-            1 => tools["inputSchema"]["required"] = json!(["artifactId", "query", "unsupported"]),
-            2 => tools["inputSchema"]["properties"]["max_rows"]["maximum"] = json!(10),
-            3 => tools["inputSchema"]["properties"]["artifactId"]["type"] = json!("integer"),
-            _ => tools["execution"] = json!({"taskSupport":"required"}),
+            0 => result["protocolVersion"] = json!("unsupported-version"),
+            1 => result["capabilities"] = json!({}),
+            2 => result["capabilities"]["tools"] = json!([]),
+            3 => result["serverInfo"]["name"] = json!(""),
+            _ => result["serverInfo"]["version"] = json!(""),
         }
-        let mut replies = setup();
-        replies.pop();
-        replies.push(rpc(2, json!({"tools":[tools]})));
-        let wire = Wire::new(replies);
+        let wire = Wire::new([rpc(1, result)]);
         let error = client(
             wire.clone(),
             Arc::new(Credential::default()),
@@ -497,53 +773,45 @@ async fn protocol_negotiation_discovery_and_unsupported_schema_reject_before_que
         .execute_query(&request(), &deadline(), pending())
         .await
         .unwrap_err();
-        assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
+        assert_eq!(error.kind, QueryErrorKind::Protocol);
         assert!(!error.query_dispatched);
-        assert_eq!(wire.requests.lock().unwrap().len(), 3);
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
     }
 }
 
 #[tokio::test]
-async fn template_requires_positive_discovery_and_native_never_sends_a_dialect() {
-    let mut tools = tool();
-    tools["inputSchema"]["properties"]["language"]
-        .as_object_mut()
-        .unwrap()
-        .remove("description");
-    let mut replies = setup();
-    replies.pop();
-    replies.push(rpc(2, json!({"tools":[tools]})));
-    let wire = Wire::new(replies);
+async fn unavailable_fixed_tool_returns_the_remote_error_without_discovery_or_replay() {
+    let reply = response(
+        200,
+        br#"{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"synthetic-sensitive-missing-tool"}}"#.to_vec(),
+        "application/json",
+        None,
+    );
+    let wire = Wire::new(setup().into_iter().chain([reply]));
     let error = client(
         wire.clone(),
         Arc::new(Credential::default()),
         Arc::new(Timer::default()),
         Limits::default(),
     )
-    .execute_query(
-        &request().with_mode(QueryMode::Template),
-        &deadline(),
-        pending(),
-    )
+    .execute_query(&request(), &deadline(), pending())
     .await
     .unwrap_err();
-    assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
-    assert!(!error.query_dispatched);
+    assert_eq!(error.kind, QueryErrorKind::Rpc(-32601));
+    assert!(error.query_dispatched);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+    assert!(!format!("{error} {error:?}").contains("synthetic-sensitive"));
 }
 
 #[tokio::test]
-async fn pagination_and_sse_use_actual_ids_without_replay_or_first_page_assumption() {
-    let first = rpc(2, json!({"tools":[],"nextCursor":"opaque-cursor"}));
-    let second = rpc(3, json!({"tools":[tool()]}));
-    let data = json!({"jsonrpc":"2.0","id":4,"result":success()});
+async fn direct_call_sse_uses_the_fixed_request_id_without_discovery_or_replay() {
+    let data = json!({"jsonrpc":"2.0","id":2,"result":success()});
     let sse = format!(
         ": keepalive\n\ndata: {{\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{{}}}}\n\nevent: message\ndata: {data}\n\n"
     );
     let wire = Wire::new([
         initialize(),
         response(202, vec![], "application/json", None),
-        first,
-        second,
         response(
             200,
             sse.into_bytes(),
@@ -562,8 +830,9 @@ async fn pagination_and_sse_use_actual_ids_without_replay_or_first_page_assumpti
     .unwrap();
     assert_eq!(complete(result).resultsets.len(), 1);
     let messages = messages(&wire);
-    assert_eq!(messages[3]["params"]["cursor"], "opaque-cursor");
-    assert_eq!(messages[4]["id"], 4);
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[2]["id"], 2);
+    assert_eq!(messages[2]["method"], "tools/call");
 }
 
 #[tokio::test]
@@ -586,7 +855,7 @@ async fn http_auth_permission_redirect_accepted_and_429_are_not_replayed() {
         .unwrap_err();
         assert_eq!(error.kind, QueryErrorKind::Http(status));
         assert!(error.query_dispatched);
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
     }
     let credential = Arc::new(Credential {
         fail: true,
@@ -631,7 +900,7 @@ async fn transport_and_stream_failure_after_call_retain_unknown_dispatch_evidenc
         .unwrap_err();
         assert_eq!(error.kind, QueryErrorKind::Transport);
         assert!(error.query_dispatched);
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
     }
 }
 
@@ -666,7 +935,7 @@ async fn cancellation_deadline_and_drop_dispose_local_work_without_remote_cancel
     assert_eq!(error.kind, QueryErrorKind::Deadline);
     assert!(error.query_dispatched);
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 
     let wire = Wire::new(setup().into_iter().chain([Reply::Pending]));
     let c = client(
@@ -679,7 +948,7 @@ async fn cancellation_deadline_and_drop_dispose_local_work_without_remote_cancel
     assert!(future.as_mut().now_or_never().is_none());
     drop(future);
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
@@ -721,7 +990,7 @@ async fn pending_credentials_and_pending_body_are_dropped_on_cancellation() {
     assert!(future.as_mut().now_or_never().is_none());
     timer.expired.store(true, Ordering::SeqCst);
     assert_eq!(future.await.unwrap_err().kind, QueryErrorKind::Deadline);
-    assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 4);
+    assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]
@@ -748,7 +1017,7 @@ async fn every_resource_shape_and_body_budget_is_enforced() {
             ..Limits::default()
         },
     ] {
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
         assert!(
             client(
                 wire,
@@ -809,7 +1078,7 @@ impl Future for ReadyOnSecondPoll {
 
 #[tokio::test]
 async fn simultaneous_ready_cancellation_suppresses_success() {
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
     let error = client(
         wire,
         Arc::new(Credential::default()),
@@ -848,7 +1117,7 @@ async fn cancellation_of_dispatched_call_drops_transport_and_is_latched() {
     assert_eq!(error.kind, QueryErrorKind::Canceled);
     assert!(error.query_dispatched);
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
@@ -885,7 +1154,7 @@ async fn terminal_sse_frame_completes_without_transport_eof_at_every_byte_bounda
     result["content"][0]["text"] = json!("Synthetic \u{1f642} summary");
     let event = format!(
         "event: message\r\ndata: {}\r\n\r\n",
-        json!({"jsonrpc":"2.0","id":3,"result":result})
+        json!({"jsonrpc":"2.0","id":2,"result":result})
     );
     let chunks = event
         .bytes()
@@ -909,15 +1178,15 @@ async fn terminal_sse_frame_completes_without_transport_eof_at_every_byte_bounda
     .await
     .unwrap();
     assert_eq!(complete(result).resultsets.len(), 1);
-    assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 4);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 3);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
 async fn duplicate_and_wrong_id_sse_terminals_fail_without_waiting_for_eof() {
     let right = format!(
         "data: {}\n\n",
-        json!({"jsonrpc":"2.0","id":3,"result":success()})
+        json!({"jsonrpc":"2.0","id":2,"result":success()})
     );
     let wrong = format!(
         "data: {}\n\n",
@@ -942,6 +1211,6 @@ async fn duplicate_and_wrong_id_sse_terminals_fail_without_waiting_for_eof() {
         .unwrap_err();
         assert_eq!(error.kind, QueryErrorKind::Protocol);
         assert!(error.query_dispatched);
-        assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 4);
+        assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 3);
     }
 }

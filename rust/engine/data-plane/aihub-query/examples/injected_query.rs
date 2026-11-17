@@ -17,9 +17,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wire = Wire::new(
         setup()
             .into_iter()
-            .chain([rpc(3, success())])
+            .chain([rpc(2, success())])
             .chain(setup())
-            .chain([rpc(3, catalog)]),
+            .chain([rpc(2, catalog)]),
     );
     let credential = Arc::new(Credential::default());
     let client = client(
@@ -49,12 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|r| r["method"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        [
-            "initialize",
-            "notifications/initialized",
-            "tools/list",
-            "tools/call"
-        ]
+        ["initialize", "notifications/initialized", "tools/call"]
     );
     for request in requests {
         assert_eq!(
@@ -72,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(catalog.tool_dispatched);
     assert_eq!(catalog.content.len(), 2);
     assert_eq!(
-        messages(&wire)[7]["params"]["arguments"]["query"],
+        messages(&wire)[5]["params"]["arguments"]["query"],
         "Templates[].{Name:Name,Description:Description}"
     );
     println!(

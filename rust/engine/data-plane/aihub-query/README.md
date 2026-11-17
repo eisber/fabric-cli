@@ -20,7 +20,9 @@ cargo clippy --locked -p fabric-sdk-aihub-query --all-targets -- -D warnings
 The [example](examples/injected_query.rs) calls the real
 `AiHubQueryClient::execute_query` API over injected `HttpClient`,
 `TokenCredential`, and `ExecutionTimer` fixtures. Its HTTP exchanges initialize
-MCP, acknowledge initialization, discover `execute_query`, and call it once.
+MCP, acknowledge initialization, and call the fixed `execute_query` tool once.
+There is no `tools/list` request: each invocation has exactly three HTTP
+exchanges, eliminating one discovery round trip (and any discovery pagination).
 It asserts the actual variant metadata and exact numeric result without export.
 The host must configure its existing Azure HTTP transport for streaming,
 **no redirects and no automatic retries**. The SDK cannot undo retries inside
@@ -42,14 +44,14 @@ opt-in explicit; legacy CSV is not a typed-result mode.
 
 | Surface | Implemented behavior | Qualification |
 | --- | --- | --- |
-| MCP | Streamable HTTP POST; JSON or bounded SSE response; initialize and negotiated `2025-06-18` or `2025-03-26`; initialized notification; bounded paged tool discovery; one tool call | Synthetic HTTP fixtures; no live endpoint qualification |
+| MCP | Streamable HTTP POST; JSON or bounded SSE response; initialize and negotiated `2025-06-18` or `2025-03-26`; initialized notification; one fixed tool call, without `tools/list` | Synthetic HTTP fixtures; no live endpoint qualification |
 | Authentication | Caller-injected credential and exact scope/account/tenant labels | Labels are caller attestations, not token inspection; supported live caller contract remains unverified |
 | Production auth | No automatic user-token or broker composition | Available source evidence describes S2sObo; user CLI token compatibility is **not established** |
 | Typed execution route | Explicit DataAgent/datasource with both routing and typed-result variants | Source-snapshot contract only; opt-in is not routing eligibility or authorization |
-| Read policy | Always request the existing positive SQL/GQL policy variant; require discovery `readOnlyHint: true` and `destructiveHint: false` before query dispatch | Requested policy and an untrusted discovery contract, not cryptographic or live enforcement proof |
+| Read policy | Always request the existing positive SQL/GQL policy variant; validate the fixed arguments locally | Requested server policy, not cryptographic or live enforcement proof; no annotation discovery |
 | Direct Report/SemanticModel | Not advertised as a typed SDK route | No universal typed-result coverage claim |
 | Stage | Explicit Production (Sandbox token absent) or Sandbox (existing token present) | Never inferred from typed opt-in; no alternate-stage fallback |
-| Templates | Explicit `QueryMode::Template`, `language: "jmespath"` and existing template variant; positive tool-schema enum or quoted selector advertisement required | A selector advertisement is not evidence that a particular template exists or that the caller is eligible |
+| Templates | Explicit `QueryMode::Template`, fixed `language: "jmespath"` and existing template variant | The service validates template support and caller eligibility; errors never trigger discovery or fallback |
 | Template catalog | Separate fixed Summary or FullEntries navigation, with all native content retained as untrusted JSON blocks | Not a typed rowset, arbitrary expression API, automatic template invocation, or proof of engine inactivity |
 | Results | Embedded `application/json` **and** resource `_meta["fabric.queryResult"]`; schema version 1 | No Markdown, CSV, URI-extension, or `structuredContent` inference |
 | Source freshness | Contract derived from an available October 2026 source snapshot | Not verified current or deployed; private implementation/source material intentionally omitted |
@@ -61,7 +63,7 @@ is part of this package's evidence.
 
 ## Variants and arguments
 
-Each lifecycle/discovery/call request consistently carries the comma-separated
+Each lifecycle/call request consistently carries the comma-separated
 string at `params._meta.variants`. This is the supported primary body form; the
 SDK does **not** also send `FABAIHUB-X-Variants`, which is a server-side fallback.
 
@@ -69,7 +71,7 @@ SDK does **not** also send `FABAIHUB-X-Variants`, which is a server-side fallbac
 | --- | --- | --- |
 | `Fabric.Routing.Documents.DataAgent` | DataAgent route opt-in | Always for this explicit route |
 | `Fabric.Routing.Documents.DataAgent.TypedQueryResults` | Versioned JSON resource opt-in | Always, because typed JSON is required |
-| `Fabric.Routing.Documents.SqlReadOnlyEnforce` | One-way positive SQL/GQL read-policy request | Always, including lifecycle and discovery |
+| `Fabric.Routing.Documents.SqlReadOnlyEnforce` | One-way positive SQL/GQL read-policy request | Always, including lifecycle |
 | `Fabric.Routing.Documents.DataAgent.Sandbox` | Draft configuration stage | Only explicit Sandbox |
 | `Fabric.Routing.Documents.QueryTemplates` | Curated template selector | Only explicit Template mode |
 
@@ -79,12 +81,19 @@ permission grants, or a request to modify shared settings.
 The positive read-policy variant takes precedence over an operator disable
 flight in the available source contract, but an explicit in-process server
 override can still take precedence over it. The SQL/GQL policy does not validate
-DAX or KQL. Discovery hints are server-supplied and not an independent enforcement
-mechanism: missing, malformed, false read-only, or true destructive hints fail
-closed before query HTTP dispatch. These checks do not prove a trusted server,
-deployed policy, or safe live target; caller qualification and the documented
-authentication/source limits still apply. The SDK offers no write-approval bypass,
+DAX or KQL. The fixed tool contract deliberately does not fetch server schemas
+or annotations. This is an owner-approved latency change from the earlier
+discovery-gated contract, not evidence that discovery hints enforce read-only
+behavior. Initialization still negotiates protocol and tool capability; all
+query arguments remain locally validated. A missing tool or unsupported argument
+returns the service's JSON-RPC or tool error after dispatch; it never triggers
+discovery, retry, another provider or fabricated success. Caller qualification
+and the documented authentication/source limits still apply. The SDK offers no write-approval bypass,
 client SQL-text heuristic, disable-policy token, or alternate query provider.
+
+`Limits::discovery_pages` and `QueryErrorKind::UnsupportedTool` remain for source
+compatibility with earlier development consumers. The former is ignored
+(including zero); the direct path does not emit the latter.
 
 Tool arguments are `artifactId`, `query`, optional `filename`, optional
 `language` (only `jmespath`), and `max_rows`. Native mode omits `language`; the
@@ -114,7 +123,11 @@ optional guidance; full entries may include native queries or sensitive paramete
 metadata. All such content is **untrusted caller-owned data**, not instructions,
 safe executable queries, inferred JSON/Markdown/CSV schemas, DataFrames, or
 completed datasets. Resource URIs are never downloaded. Debug output is redacted.
-The same credential, stage, positive-policy request, safe discovery annotations,
+Native embedded catalog text resources may omit `mimeType`; their original
+blocks and metadata are retained without assigning a default. A present media
+type must be valid, and blob resources must still declare one. This catalog-only
+allowance does not relax the typed dataset's required JSON media/descriptor.
+The same credential, stage, positive-policy request, fixed tool contract,
 absolute budget, body/resource limits and no-replay transport apply. Observing
 the tool response does not prove that the engine performed no work or establish
 live read-only enforcement.
@@ -146,11 +159,35 @@ decoded HTTP response, 16 MiB combined resource text/metadata, 128 content
 blocks, 32 resultsets, 1,024 columns, 10,000 aggregate rows and 1,000,000 cells.
 Bounds may be lowered, never raised above these envelopes.
 
+Schema 1 accepts two explicit `fabric.queryResult` metadata profiles: the compact
+marker has exactly `schemaVersion`, `resultId`, and `format: "json"`; the expanded
+descriptor has those plus all six `columns`, `rowCount`, `truncated`, `maxRows`,
+`totalRowCount`, and `nulls` fields. Missing marker fields, unknown fields, or any
+partial expanded descriptor fail. Both profiles must match the body's version
+and result ID. The complete typed body always supplies the authoritative schema,
+counts, values and nulls; expanded declarations additionally must match it
+exactly, including null coordinates. Compact metadata is not a schema-less or
+inferred-data fallback, and omitted expanded fields are never fabricated.
+
 Duplicate/depth validation borrows subtrees from the bounded input instead of
 copying large payloads at every nesting level. SSE frames are parsed as chunks
 arrive; the matching terminal JSON-RPC response completes observation even if
 the transport remains open. Releasing that body is local disposal, not a remote
 cancellation request.
+
+Before any owned rowset, column, cell or descriptor vectors are deserialized,
+an order-independent borrowed-span preflight bounds both schemas, advertised and
+actual rows, actual row arity/cell totals and null-coordinate counts. Each resultset
+consumes the remaining aggregate row/cell budget before materialization, not
+after it. The early-limit regression uses a two-million-null malformed row with
+a one-cell limit and counters at the actual raw-cell ownership and owned-rowset
+deserialization boundaries; eventual rejection alone is not its oracle.
+
+Resource media types are validated and compared by case-insensitive essence.
+CSV/XLSX companions without typed descriptors are rejected even with parameters
+or mixed casing, so one typed result cannot conceal an additional untyped
+rowset. A typed dataset still requires an explicit `application/json` media type
+and its matching descriptor; neither extension nor omitted media is inferred.
 
 `NativeValue::{Integer, Decimal, Number}` holds the **original JSON number
 lexeme**, without a floating-point intermediary. Wide signed/unsigned values,
@@ -162,6 +199,12 @@ including exact text for `string`/`text`. Unsupported logical-type/encoding
 pairs, scalar mismatches and structured cells fail explicitly rather than
 being coerced.
 
+The explicit schema-1 `int64` / `json-number` logical representation is also
+supported alongside `integer`, retaining the original column metadata and exact
+numeric lexeme. It enforces the signed 64-bit range even when other engine
+metadata would permit a wider value. This narrow compatibility form does not
+enable inferred aliases or relax body/descriptor schema equality.
+
 Syntax validation uses `serde::de::IgnoredAny` and requires end of input.
 An SDK-private bounded span decoder captures original cell tokens; it does not
 enable `serde_json`'s `raw_value` or `arbitrary_precision` features. This avoids
@@ -171,7 +214,7 @@ including objects with serde-private-looking property names.
 ## Failure and lifetime contract
 
 One caller-supplied `NativeDeadline` covers credential acquisition, all MCP
-exchanges, streaming, discovery, parsing and decoding. The caller supplies
+exchanges, streaming, parsing and decoding. The caller supplies
 asynchronous time through the existing `ExecutionTimer` seam. Cancellation
 is checked around dispatch/body/decode boundaries and wins a simultaneous ready
 result. Dropping the future releases local credential/HTTP/body/timer futures.

@@ -97,7 +97,9 @@ metadata still fail closed, and all metadata consumes the existing byte budget.
 
 JSON output includes these field entries in a deterministic `metadata` object
 only when present, with `json-text` or `guid-string` encoding for logical text.
-Parquet retains the entries in its embedded Arrow schema; JSON text is not
+Parquet retains the entries in its embedded Arrow schema, including empty
+datasets and all-null logical columns; preservation does not depend on sampling
+non-null values. JSON text is not
 silently converted into a native nested Parquet type. CSV retains the original
 quoted text but has no embedded schema; callers must retain schema information
 separately. Existing unannotated JSON output is unchanged.
