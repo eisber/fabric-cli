@@ -86,8 +86,9 @@ intended plan, confirmed byte counts for both streams, and write/flush phase.
 Cancellation is not rollback; a failed write cannot turn remote acceptance into
 completion, erase partial effects, or authorize a mutation replay.
 
-Current consumers are the local v2 host's JSON/text outcomes and the explicit
-v2 DataAgent link host's native receipt/projection/delivery path. The DataAgent
+Current consumers are the local v2 host's JSON/text outcomes, the explicit
+v2 DataAgent link host's native receipt/projection/delivery path, and the existing
+declared tabular export host's CSV/JSON/Parquet encoding and JSON receipts. The DataAgent
 list host also uses shared raw JSON presentation, retaining its existing
 bounded/exclusive file and supervised stream delivery. The link `write_to` and
 local `write_outcome` APIs remain compatibility adapters with unchanged wire
