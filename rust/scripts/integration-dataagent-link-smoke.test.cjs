@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const {test} = require('node:test');
+const {plan} = require('./impact-plan.cjs');
 const dataagent = require('./integration-dataagent-smoke.cjs');
 const {ENTRY} = require('./integration-dataagent-link-smoke.cjs');
 
@@ -78,4 +79,64 @@ test('LINK selection retains shared wire, SDK, output and current combined consu
   for (const name of names) assert.ok(selected.commands.some(item => item.args.includes(name)));
   assert.throws(() => dataagent.selectedCommands({...selection,
     tests: selection.tests.slice(0, -1)}, () => '', graph, names), /leaf selection/);
+});
+
+test('real shared-input mappings preserve named leaves through Cargo reverse-consumer planning', () => {
+  const root = path.resolve(__dirname, '../..');
+  const catalog = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json')));
+  const locations = [
+    ['fabric-sdk-items', 'rust/engine/control-plane/resources/items'],
+    ['fabric-cli-mutations', 'rust/clients/cli/commands/mutations'],
+    ['fabric-cli', 'rust/clients/cli/app'],
+  ];
+  const ids = ['sdk-items', 'sdk-items-link', 'mutations', 'mutations-link', 'cli-dataagent-link'];
+  const components = catalog.components.filter(item => ids.includes(item.id)).map(item => ({
+    ...item, depends_on: (item.depends_on || []).filter(id => ids.includes(id)),
+    checks: [], profiles: item.package === 'fabric-cli' ? ['runtime-v2-native'] : [],
+  }));
+  assert.equal(components.length, ids.length);
+  const packages = locations.map(([name, directory]) => {
+    const manifest = fs.readFileSync(path.join(root, directory, 'Cargo.toml'), 'utf8');
+    const features = Object.fromEntries([...((manifest.split('[features]')[1] || '').split(/^\[/m)[0])
+      .matchAll(/^([\w-]+)\s*=/gm)].map(match => [match[1], []]));
+    const targets = [...new Set(components.flatMap(item => item.tests)
+      .filter(item => item.package === name).map(item => item.target))].map(target => {
+      const [kind, targetName] = target.split(':');
+      const section = manifest.split(`[[${kind}]]`).find(part =>
+        part.match(new RegExp(`^name = "${targetName}"$`, 'm')));
+      const source = kind === 'lib' ? 'src/lib.rs' :
+        section?.match(/^path = "([^"]+)"$/m)?.[1] || `tests/${targetName}.rs`;
+      assert.ok(fs.existsSync(path.join(root, directory, source)));
+      return {name: targetName || name, kind: [kind], test: true,
+        src_path: path.join(root, directory, source),
+        'required-features': JSON.parse(section?.match(/^required-features = (\[[^\n]+\])$/m)?.[1] || '[]')};
+    });
+    const dependencies = locations.filter(([dependency]) => dependency !== name &&
+      new RegExp(`^${dependency}(?:\\.workspace)?\\s*=`, 'm').test(manifest)).map(([dependency, location]) => ({
+      name: dependency, path: path.join(root, location), kind: null, optional: false, target: null,
+    }));
+    return {id: name, name, manifest_path: path.join(root, directory, 'Cargo.toml'),
+      dependencies, features, targets};
+  });
+  assert.ok(packages.find(item => item.name === 'fabric-cli-mutations').dependencies
+    .some(item => item.name === 'fabric-sdk-items'));
+  assert.ok(packages.find(item => item.name === 'fabric-cli').dependencies
+    .some(item => item.name === 'fabric-cli-mutations'));
+  const graph = {schema: 1, components,
+    profiles: [{...catalog.profiles.find(item => item.id === 'runtime-v2-native'), checks: []}], checks: []};
+  const metadata = {version: 1, packages, workspace_members: packages.map(item => item.id)};
+  const files = ENTRY.inputs.filter(file => /(?:v2_link(?:_wire)?|items\/tests\/links)\.rs$/.test(file));
+  assert.equal(files.length, 3);
+  const selection = plan({root, graph, metadata, files});
+  const leaves = ['v2_link_dataagent_host', 'v2_link_dataagent_process'];
+  const selected = dataagent.selectedCommands(selection, undefined, graph, leaves);
+  for (const name of leaves) assert.ok(selected.commands.some(item => item.args.includes(name)));
+  for (const packageName of ['fabric-cli', 'fabric-cli-mutations', 'fabric-sdk-items']) {
+    assert.ok(!selection.tests.some(item => item.package === packageName && item.target === 'all'));
+  }
+  const broken = structuredClone(graph);
+  for (const component of broken.components) component.inputs = component.inputs?.filter(file => !files.includes(file));
+  const fallback = plan({root, graph: broken, metadata, files});
+  assert.ok(fallback.tests.some(item => item.package === 'fabric-cli' && item.target === 'all'));
+  assert.throws(() => dataagent.selectedCommands(fallback, undefined, broken, leaves), /leaf selection/);
 });
