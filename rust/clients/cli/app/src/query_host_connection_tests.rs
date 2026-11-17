@@ -19,7 +19,7 @@ fn settings() -> Map<String, Value> {
     let value = json!({"query_connection":{
         "protocol":"mcp",
         "service_binding":"dataagent-typed-query",
-        "endpoint":"https://api.fabric.microsoft.com/caller-selected-mcp",
+        "endpoint":format!("https://api.fabric.microsoft.com{MCP_PROFILE_PATH}"),
         "audience_scope":"https://api.fabric.microsoft.com/.default",
         "data_agents":[{
             "workspace_id":WORKSPACE,"agent_id":AGENT,"datasource_id":DATASOURCE,
@@ -73,7 +73,7 @@ fn exact_trusted_endpoint_scope_and_selected_identity_are_retained_without_token
     let binding = connection.auth_binding(&context).unwrap();
     assert_eq!(
         binding.endpoint().as_str(),
-        "https://api.fabric.microsoft.com/caller-selected-mcp"
+        format!("https://api.fabric.microsoft.com{MCP_PROFILE_PATH}")
     );
     assert_eq!(binding.scope(), Audience::Fabric.scope());
     assert_eq!(binding.account(), "selected-account");
@@ -228,5 +228,24 @@ fn malformed_null_or_oversized_connection_never_becomes_an_absent_connection() {
                 .unwrap(),
             QueryConnectionError::Invalid
         );
+    }
+
+    #[test]
+    fn ordinary_rest_or_normalized_mcp_paths_are_rejected_before_credentials() {
+        for path in [
+            "/v1/workspaces",
+            "/v1/workspaces/one/items/two/jobs/instances",
+            "/v1/mcp/fabricaihub/integrations/m365/",
+            "/v1//mcp/fabricaihub/integrations/m365",
+            "/v1/mcp/fabricaihub/integrations/../integrations/m365",
+            "/v1/mcp/fabricaihub/integrations/%6d365",
+            "/v1/fabricaihub/integrations/m365/mcp",
+            "/another/mcp",
+        ] {
+            let mut settings = settings();
+            settings["query_connection"]["endpoint"] =
+                json!(format!("https://api.fabric.microsoft.com{path}"));
+            assert!(QueryConnection::from_settings(Some(&settings), &trusted()).is_err());
+        }
     }
 }

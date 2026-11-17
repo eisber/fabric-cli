@@ -159,7 +159,7 @@ fn unsupported_owner_or_query_specific_path_does_not_invent_new_grammar() {
 fn connection(stage:&str)->QueryConnection {
     let settings=json!({"query_connection":{
         "protocol":"mcp","service_binding":"dataagent-typed-query",
-        "endpoint":"https://api.fabric.microsoft.com/caller-selected-mcp",
+        "endpoint":format!("https://api.fabric.microsoft.com{}",crate::query_host::connection::MCP_PROFILE_PATH),
         "audience_scope":"https://api.fabric.microsoft.com/.default",
         "data_agents":[{"workspace_id":WS,"agent_id":ITEM,"datasource_id":SOURCE,"stage":stage}]
     }}).as_object().unwrap().clone();

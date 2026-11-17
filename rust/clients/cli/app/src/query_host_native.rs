@@ -24,9 +24,9 @@ use fabric_sdk_query_tabular::{ConversionControl, ConversionLimits};
 use fabric_sdk_tabular::OutputLimits;
 use serde_json::{Map, Value};
 use std::{
-    future::Future,
+    future::{Future, poll_fn},
     num::NonZeroUsize,
-    pin::pin,
+    pin::{Pin, pin},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -39,6 +39,10 @@ pub const KQL_ENGINE: &str = "kql";
 
 const METADATA_BYTES: usize = 4 * 1024 * 1024;
 const RESULT_BYTES: usize = 16 * 1024 * 1024;
+
+#[cfg(test)]
+#[path = "query_host_native_tests.rs"]
+mod tests;
 
 /// Original command budget and caller-owned cancellation, not a second clock.
 pub struct QueryControl<'a> {
@@ -142,94 +146,133 @@ impl NativeQueryHost {
             .deadline
             .remaining()
             .map_err(|_| NativeQueryError::Deadline)?;
-        resolution::parse_owner(&command.path)?;
-        let mut canceled = pin!(async {
-            canceled.await;
-            control.canceled.store(true, Ordering::SeqCst);
-        });
-        let metadata_budget = GetReadBudget::new(
-            &self.metadata,
-            &self.metadata,
-            &self.metadata,
-            None,
-            METADATA_BYTES,
-            32,
-        );
-        let metadata_bound =
-            NonZeroUsize::new(METADATA_BYTES).expect("positive finite metadata bound");
-        let owner = resolution::resolve_owner(
-            &command.path,
-            &self.client,
-            &metadata_budget,
-            metadata_bound,
-            canceled.as_mut(),
-        )
-        .await?;
-        let (bound, aihub, kql) = if owner.owner_type == "KQLDatabase" {
-            let bound = resolution::resolve_kql(
-                owner,
-                &self.client,
-                metadata_budget,
-                KQL_ENGINE,
-                "1",
-                metadata_bound,
-                canceled.as_mut(),
-            )
-            .await?;
-            let ResolvedRoute::Kql(route) = bound
-                .target
-                .resolve(options.engine.as_deref())
-                .map_err(QueryHostError::Preparation)?
-            else {
-                return Err(QueryHostError::Preparation(PreparationError::InvalidTarget).into());
-            };
-            let credentials = KustoCredentialContext::new(
-                self.client.credential().clone(),
-                self.client.selection().account(),
-                self.client.selection().tenant(),
-                route.binding.audience_scope(),
-            )
-            .map_err(|error| NativeQueryError::KqlBinding(Box::new(error)))?;
-            let executor = KustoQueryExecutor::new(
-                route.binding,
-                credentials,
-                self.http.clone(),
-                self.timer.clone(),
-            )
-            .map_err(|error| NativeQueryError::KqlBinding(Box::new(error)))?;
-            (bound, None, Some(executor))
-        } else {
+        let parsed = resolution::parse_owner(&command.path)?;
+        if matches!(&parsed,crate::get_target::GetTarget::Item {
+            item_type:Some(kind),..
+        } if kind=="KQLDatabase")
+            && options
+                .engine
+                .as_deref()
+                .is_some_and(|engine| engine != KQL_ENGINE)
+        {
+            return Err(QueryHostError::Preparation(PreparationError::UnsupportedEngine).into());
+        }
+        let configured_connection = if matches!(&parsed,crate::get_target::GetTarget::Item {
+            item_type:Some(kind),..
+        } if kind=="DataAgent")
+        {
+            if options.engine.is_some() {
+                return Err(
+                    QueryHostError::Preparation(PreparationError::UnsupportedEngine).into(),
+                );
+            }
             let connection = QueryConnection::from_settings(
                 self.settings.as_ref(),
                 self.client.context().endpoint(),
             )?
             .ok_or(NativeQueryError::AiHubNotConfigured)?;
-            // Validate the selected trusted origin and scope before supplying
-            // this credential to the AIHub client or acquiring a query token.
             let auth = connection.auth_binding(self.client.context())?;
-            let bound = resolution::resolve_data_agent(
-                owner,
-                &connection,
+            Some((connection, auth))
+        } else {
+            None
+        };
+        let mut canceled = pin!(async {
+            canceled.await;
+            control.canceled.store(true, Ordering::SeqCst);
+        });
+        let preparation = async {
+            let metadata_budget = GetReadBudget::new(
+                &self.metadata,
+                &self.metadata,
+                &self.metadata,
+                None,
+                METADATA_BYTES,
+                32,
+            );
+            let metadata_bound =
+                NonZeroUsize::new(METADATA_BYTES).expect("positive finite metadata bound");
+            let owner = resolution::resolve_owner(
+                &command.path,
                 &self.client,
                 &metadata_budget,
                 metadata_bound,
-                canceled.as_mut(),
+                std::future::pending(),
             )
             .await?;
-            bound
-                .target
-                .resolve(options.engine.as_deref())
-                .map_err(QueryHostError::Preparation)?;
-            let client = AiHubQueryClient::new(
-                auth,
-                self.client.credential().clone(),
-                self.http.clone(),
-                self.timer.clone(),
-                AiHubLimits::default(),
-            )
-            .map_err(NativeQueryError::AiHubBinding)?;
-            (bound, Some(client), None)
+            let (bound, aihub, kql) = if owner.owner_type == "KQLDatabase" {
+                let bound = resolution::resolve_kql(
+                    owner,
+                    &self.client,
+                    metadata_budget,
+                    KQL_ENGINE,
+                    "1",
+                    metadata_bound,
+                    std::future::pending(),
+                )
+                .await?;
+                let ResolvedRoute::Kql(route) = bound
+                    .target
+                    .resolve(options.engine.as_deref())
+                    .map_err(QueryHostError::Preparation)?
+                else {
+                    return Err(QueryHostError::Preparation(PreparationError::InvalidTarget).into());
+                };
+                let credentials = KustoCredentialContext::new(
+                    self.client.credential().clone(),
+                    self.client.selection().account(),
+                    self.client.selection().tenant(),
+                    route.binding.audience_scope(),
+                )
+                .map_err(|error| NativeQueryError::KqlBinding(Box::new(error)))?;
+                let executor = KustoQueryExecutor::new(
+                    route.binding,
+                    credentials,
+                    self.http.clone(),
+                    self.timer.clone(),
+                )
+                .map_err(|error| NativeQueryError::KqlBinding(Box::new(error)))?;
+                (bound, None, Some(executor))
+            } else {
+                let (connection, auth) = match configured_connection {
+                    Some(configured) => configured,
+                    None => {
+                        let connection = QueryConnection::from_settings(
+                            self.settings.as_ref(),
+                            self.client.context().endpoint(),
+                        )?
+                        .ok_or(NativeQueryError::AiHubNotConfigured)?;
+                        let auth = connection.auth_binding(self.client.context())?;
+                        (connection, auth)
+                    }
+                };
+                let bound = resolution::resolve_data_agent(
+                    owner,
+                    &connection,
+                    &self.client,
+                    &metadata_budget,
+                    metadata_bound,
+                    std::future::pending(),
+                )
+                .await?;
+                bound
+                    .target
+                    .resolve(options.engine.as_deref())
+                    .map_err(QueryHostError::Preparation)?;
+                let client = AiHubQueryClient::new(
+                    auth,
+                    self.client.credential().clone(),
+                    self.http.clone(),
+                    self.timer.clone(),
+                    AiHubLimits::default(),
+                )
+                .map_err(NativeQueryError::AiHubBinding)?;
+                (bound, Some(client), None)
+            };
+            Ok::<_, NativeQueryError>((bound, aihub, kql))
         };
+        let (bound, aihub, kql) = self
+            .before_query(control.deadline, canceled.as_mut(), preparation)
+            .await?;
         let prepared = super::prepare(
             command,
             bound,
@@ -266,5 +309,35 @@ impl NativeQueryHost {
             control.canceled,
             output,
         ))
+    }
+
+    async fn before_query<T>(
+        &self,
+        deadline: &NativeDeadline,
+        mut canceled: Pin<&mut (impl Future<Output = ()> + Send)>,
+        operation: impl Future<Output = Result<T, NativeQueryError>>,
+    ) -> Result<T, NativeQueryError> {
+        let remaining = deadline
+            .remaining()
+            .map_err(|_| NativeQueryError::Deadline)?;
+        let mut timeout = self.timer.sleep(remaining);
+        let mut operation = pin!(operation);
+        poll_fn(|context| {
+            if canceled.as_mut().poll(context).is_ready() {
+                return std::task::Poll::Ready(Err(NativeQueryError::Canceled));
+            }
+            if timeout.as_mut().poll(context).is_ready() || deadline.remaining().is_err() {
+                return std::task::Poll::Ready(Err(NativeQueryError::Deadline));
+            }
+            let result = operation.as_mut().poll(context);
+            if canceled.as_mut().poll(context).is_ready() {
+                return std::task::Poll::Ready(Err(NativeQueryError::Canceled));
+            }
+            if timeout.as_mut().poll(context).is_ready() || deadline.remaining().is_err() {
+                return std::task::Poll::Ready(Err(NativeQueryError::Deadline));
+            }
+            result
+        })
+        .await
     }
 }

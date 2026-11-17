@@ -32,6 +32,15 @@ pub mod connection;
 #[path = "query_host_resolution.rs"]
 pub mod resolution;
 
+/// Strict native bridge, rich encoding and standard delivery with retained evidence.
+#[path = "query_host_result.rs"]
+pub mod result;
+
+/// Real provider construction over the existing selected native dependency stack.
+#[cfg(feature = "native-host")]
+#[path = "query_host_native.rs"]
+pub mod native;
+
 #[cfg(test)]
 #[path = "query_host_tests.rs"]
 mod tests;

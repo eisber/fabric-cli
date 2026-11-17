@@ -133,7 +133,7 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
             command.operation,
             fabric_cli::native_tabular::Operation::Query(_)
         ) {
-            return write_export(fabric_cli::query_host::not_configured(command)).map(exit_status);
+            return dispatch_query(command).map(exit_status);
         }
         #[cfg(feature = "v2-run")]
         if matches!(
@@ -165,6 +165,20 @@ fn exit_status(outcome: CommandOutcome) -> ExitCode {
     }
 }
 
+#[cfg(feature = "v2-query")]
+fn dispatch_query(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    #[cfg(feature = "native-host")]
+    {
+        native_read::run_query(command)
+    }
+    #[cfg(not(feature = "native-host"))]
+    {
+        write_export(fabric_cli::query_host::not_configured(command))
+    }
+}
+
 fn dispatch(
     invocation: Result<Invocation, clap::Error>,
     local_state: &mut BatchState,
@@ -177,7 +191,7 @@ fn dispatch(
                 command.operation,
                 fabric_cli::native_tabular::Operation::Query(_)
             ) {
-                return write_export(fabric_cli::query_host::not_configured(&command));
+                return dispatch_query(&command);
             }
             #[cfg(feature = "v2-run")]
             if matches!(

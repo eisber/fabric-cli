@@ -1153,6 +1153,7 @@ dependencies = [
  "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
  "fabric-sdk-query",
+ "fabric-sdk-query-tabular",
  "fabric-sdk-relevance",
  "fabric-sdk-search",
  "fabric-sdk-tables",

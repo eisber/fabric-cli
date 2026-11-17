@@ -116,6 +116,7 @@ impl QueryObservation {
         let result: Result<(), QueryDeliveryError> = (|| {
             let native = self.result?;
             check_output_control(deadline, canceled)?;
+            validate_declared_native(&native)?;
             let converted = match native {
                 NativeQueryResult::AiHub(result) => ConvertedQuery::AiHub(Box::new(convert_aihub(
                     QueryOutcome::Complete(*result),
@@ -167,7 +168,8 @@ impl QueryObservation {
             delivery.receipt.receipt["delivery"] = json!({
                 "status":"not_started",
                 "stage":"file",
-                "file":request.output,
+                "file":request.output.to_string_lossy(),
+                "file_display_lossy":request.output.to_str().is_none(),
                 "format":format_name(format),
                 "rows":table.num_rows(),
                 "bytes":bytes.len(),
@@ -193,6 +195,26 @@ impl QueryObservation {
         }
         delivery
     }
+}
+
+fn validate_declared_native(result: &NativeQueryResult) -> Result<(), ConversionError> {
+    match result {
+        NativeQueryResult::AiHub(_) => {}
+        NativeQueryResult::Kql(result) => {
+            if !result.evidence.completed
+                || !result.evidence.http_eof
+                || result.evidence.locally_truncated
+                || !matches!(
+                    result.evidence.adapter_capability,
+                    fabric_sdk_query::QueryCapability::ScriptedOffline
+                        | fabric_sdk_query::QueryCapability::ReadOnlyKustoV2
+                )
+            {
+                return Err(ConversionError::UncleanResult);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Local output failure retaining every original query and file-delivery outcome.
@@ -254,11 +276,31 @@ impl QueryDelivery {
             .and_then(|()| stdout.flush());
         match written {
             Ok(()) => Ok(self.receipt.exit_code),
-            Err(error) => Err(QueryWriteFailure {
-                error,
-                delivery: Box::new(self),
+            Err(error) => {
+                let failure = QueryWriteFailure {
+                    error,
+                    delivery: Box::new(self),
+                };
+                // Preserve the primary typed failure even if its bounded
+                // best-effort diagnostic cannot be written either.
+                let _ = failure.report(stderr);
+                Err(failure)
+            }
+        }
+    }
+}
+
+impl QueryWriteFailure {
+    /// Reuse the standard bounded receipt diagnostic without printing table data.
+    pub fn report(&self, stderr: &mut impl Write) -> io::Result<()> {
+        crate::tabular_export::ReceiptWriteFailure {
+            error: io::Error::new(self.error.kind(), "Query output could not be written"),
+            delivery: Box::new(ExportDelivery {
+                receipt: self.delivery.receipt.receipt.clone(),
+                exit_code: self.delivery.receipt.exit_code,
             }),
         }
+        .report(stderr)
     }
 }
 
@@ -326,7 +368,11 @@ fn execution_snapshot(result: &Result<NativeQueryResult, QueryHostError>) -> Val
         }),
         Err(QueryHostError::AiHub(error)) => json!({
             "status":if error.query_dispatched { "unknown" } else { "not_started" },
-            "metadata":{"provider":"aihub","queryDispatched":error.query_dispatched}
+            "metadata":{"provider":"aihub","queryDispatched":error.query_dispatched,
+                "failureKind":format!("{:?}",error.kind),
+                "httpStatus":match error.kind {
+                    fabric_sdk_aihub_query::QueryErrorKind::Http(status)=>Some(status),_=>None
+                }}
         }),
         Err(QueryHostError::IncompleteAiHub(result)) => json!({
             "status":"partial",

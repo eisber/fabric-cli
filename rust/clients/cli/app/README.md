@@ -639,12 +639,21 @@ Normal presentation can retain multiple datasets; explicit single-file output
 requires exactly one. File format is explicit and independent of the extension.
 See the [capability matrix and integration status](../commands/query/README.md).
 
-Default builds remain unchanged. The feature alone does not configure a
-production provider: until the native host receives supported explicit target,
-endpoint, audience, and credential bindings, root execution fails with
-`NotConfigured` before input or credentials. The current development candidate
-still awaits strict bridge/native-host/presentation integration and executable
-qualification; source fixtures are not a live-service support claim.
+Default builds remain unchanged. `fab-rs` needs an existing supported native
+identity profile as well as `v2-query`; `fab-cli-v2` retains its existing headless
+selection. Both reuse their existing credential, HTTP, runtime and configuration
+factories. Native KQL resolves typed database metadata without AIHub settings.
+DataAgent queries additionally require the documented optional non-secret
+`query_connection`, verified datasource and explicit stage. Its endpoint must
+match the selected trusted service origin, exact supported MCP profile path and
+allowed audience before any query token is acquired. No connection is guessed,
+no login is added, and the feature never writes settings.
+
+The native pipeline consumes the actual SDK results through the strict bridge,
+uses normal rich JSON presentation or standard atomic file delivery, and retains
+execution evidence through output failures without replay. The development
+candidate still requires authorized executable/default/native qualification;
+offline source fixtures are not a live-service support claim.
 
 ## Native Dataflow query execution
 

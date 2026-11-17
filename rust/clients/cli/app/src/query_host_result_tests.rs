@@ -357,10 +357,11 @@ async fn late_no_clobber_failure_retains_completed_query_and_only_cleans_own_sta
 }
 
 #[tokio::test]
-async fn unsupported_native_decimal_metadata_is_typed_failure_not_a_success_file() {
+async fn unrepresentable_native_decimal_metadata_is_typed_failure_not_a_success_file() {
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("unsupported.json");
-    let content = complete_content(&rich_rowset(false, false).replace("decimal(20,4)", "decimal"));
+    let content =
+        complete_content(&rich_rowset(false, false).replace("decimal(20,4)", "decimal(39,4)"));
     let mut sink = FileSink::default();
     let deadline = deadline();
     let (observed, wire) = observe(content, Some(("json", &output)), &mut sink, &deadline).await;
@@ -378,6 +379,46 @@ async fn unsupported_native_decimal_metadata_is_typed_failure_not_a_success_file
     assert_eq!(wire.requests.lock().unwrap().len(), 4);
     drop(sink);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn plain_decimal_uses_exact_validated_output_layout_without_inventing_native_schema() {
+    for format in ["json", "csv", "parquet"] {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("plain-decimal.data");
+        let content =
+            complete_content(&rich_rowset(false, false).replace("decimal(20,4)", "Decimal"));
+        let mut sink = FileSink::default();
+        let deadline = deadline();
+        let (observed, wire) =
+            observe(content, Some((format, &output)), &mut sink, &deadline).await;
+        let delivery = finish(observed, &mut sink, &deadline);
+        assert!(delivery.error.is_none());
+        let Some(ConvertedQuery::AiHub(converted)) = &delivery.converted else {
+            panic!("native typed result expected");
+        };
+        assert_eq!(converted.datasets[0].columns[3].engine_type, "Decimal");
+        assert_eq!(
+            converted.datasets[0].table.schema().field(3).data_type(),
+            &DataType::Decimal128(20, 4)
+        );
+        assert_eq!(
+            converted.datasets[0]
+                .table
+                .schema()
+                .field(3)
+                .metadata()
+                .get(fabric_sdk_tabular::NATIVE_TYPE_METADATA_KEY)
+                .map(String::as_str),
+            Some("Decimal")
+        );
+        assert_eq!(
+            delivery.receipt.receipt["execution"]["metadata"]["resultsets"][0]["columns"][3]["engineType"],
+            "Decimal"
+        );
+        assert!(output.exists());
+        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    }
 }
 
 #[tokio::test]

@@ -44,6 +44,29 @@ mod delete;
 #[path = "native_run_notebook.rs"]
 mod run_notebook;
 
+#[cfg(all(feature = "v2-query", any(windows, feature = "headless")))]
+#[path = "native_query.rs"]
+mod query;
+
+#[cfg(feature = "v2-query")]
+pub(crate) fn run_query(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    {
+        query::run(command)
+    }
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = command;
+        write_error(failure(
+            "unsupported",
+            "Query requires a supported explicit native identity host.",
+            1,
+        ))
+    }
+}
+
 #[cfg(feature = "v2-run")]
 pub(crate) fn run_notebook(
     command: &fabric_cli::native_tabular::NativeCommand,

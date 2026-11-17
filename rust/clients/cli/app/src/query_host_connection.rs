@@ -13,6 +13,9 @@ use std::{collections::BTreeSet, io, io::Write};
 const MAX_CONNECTION_BYTES: usize = 64 * 1024;
 const MAX_AGENT_BINDINGS: usize = 128;
 
+/// Exact external MCP profile; this is validation, never a default endpoint.
+pub const MCP_PROFILE_PATH: &str = "/v1/mcp/fabricaihub/integrations/m365";
+
 #[cfg(test)]
 #[path = "query_host_connection_tests.rs"]
 mod tests;
@@ -60,6 +63,9 @@ pub enum QueryConnectionError {
     /// No arbitrary scope can be requested with the selected credential.
     #[error("The query audience does not match the selected trusted service connection")]
     UnsupportedAudience,
+    /// Trusted origin alone does not permit JSON-RPC POSTs to ordinary REST routes.
+    #[error("The query endpoint does not match the supported explicit AIHub MCP profile path")]
+    UnsupportedProfile,
     /// One DataAgent cannot resolve to multiple implicit datasource/stage choices.
     #[error("The query connection contains ambiguous DataAgent datasource bindings")]
     AmbiguousAgent,
@@ -126,6 +132,9 @@ impl QueryConnection {
         }
         let endpoint = azure_core::http::Url::parse(&raw.endpoint)
             .map_err(|_| QueryConnectionError::Invalid)?;
+        if endpoint.as_str() != raw.endpoint {
+            return Err(QueryConnectionError::Invalid);
+        }
         validate_service(trusted, &endpoint, &raw.audience_scope)?;
         let mut seen = BTreeSet::new();
         let mut agents = Vec::with_capacity(raw.data_agents.len());
@@ -206,6 +215,9 @@ fn validate_service(
     trusted
         .validate_url(endpoint)
         .map_err(|_| QueryConnectionError::UntrustedEndpoint)?;
+    if endpoint.path() != MCP_PROFILE_PATH {
+        return Err(QueryConnectionError::UnsupportedProfile);
+    }
     if scope != trusted.audience().scope() {
         return Err(QueryConnectionError::UnsupportedAudience);
     }
