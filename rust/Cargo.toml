@@ -13,6 +13,7 @@ members = [
     "clients/cli/commands/storage",
     "clients/cli/commands/tables",
     "clients/cli/commands/transfer",
+    "clients/cli/contracts",
     "clients/cli/output",
     "clients/cli/query",
     "clients/cli/repl",
@@ -87,6 +88,7 @@ default-members = [
     "engine/control-plane/acl",
     "engine/control-plane/catalog",
     "clients/cli/commands/resources",
+    "clients/cli/contracts",
     "clients/cli/commands/storage",
     "clients/cli/commands/local",
     "clients/cli/commands/transfer",
@@ -166,6 +168,7 @@ fabric-sdk-api = { path = "engine/core/http/requests" }
 fabric-sdk-access = { path = "engine/control-plane/acl" }
 fabric-sdk-catalog = { path = "engine/control-plane/catalog" }
 fabric-cli-resources = { path = "clients/cli/commands/resources" }
+fabric-cli-command-contracts = { path = "clients/cli/contracts" }
 fabric-cli-storage-files = { path = "clients/cli/commands/storage" }
 fabric-cli-local = { path = "clients/cli/commands/local" }
 fabric-cli-transfer = { path = "clients/cli/commands/transfer" }
