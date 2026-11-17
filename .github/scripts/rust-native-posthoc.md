@@ -90,17 +90,31 @@ The driver conservatively reserves full 15-minute slots even for failed prefligh
 runs. Queued/running reservations never age out. Completed runs remain reserved
 for 24 hours after the provider's completed-state update timestamp, not creation
 or dispatch time; missing or inconsistent completion evidence fails closed.
-It reads a complete bounded history
-of at most 100 dispatches; exhausted/unknown history fails closed for explicit
-policy maintenance. It does not silently forget duplicate sources after a day.
+It reads a complete bounded history of at most 100 dispatches. The declared
+`total_count` must equal the number of unique validated rows. Truncated,
+inconsistent, exhausted, or unknown history fails closed for explicit policy
+maintenance. Every current and historical run must have `run_attempt=1`;
+otherwise earlier native allocations are unknown and no new admission is made.
+It does not silently forget duplicate sources after a day.
 
 Inputs are `mode=bootstrap`, `workload_id=bootstrap-v1`, `platforms=both|linux|macos`,
-exact `source_sha`/`base_sha`, `route=manual|batch`, and a bounded `batch_id` for a
-batch (empty for manual). `repair_of` is empty initially. A GitHub rerun is refused.
-One additional attempt per platform requires a new genuine dispatch referencing
-an unsuccessful initial run, a different reviewed trusted driver SHA, and remaining
-daily reservations. Product-source repairs require their own authorized path owner;
-this driver must not modify Rust code or the common integration branch.
+exact `source_sha`/`base_sha` and `driver_sha`, `route=manual|batch`, and a bounded
+`batch_id` for a batch (empty for manual). Before dispatch the caller must verify
+the actual registered main SHA contains the reviewed implementation and identical
+driver file bytes, then supply that SHA as `driver_sha`. Every stage checks this
+explicit expected pin against the actual event/workflow/checkout SHA. A later
+main revision cannot silently replace the reviewed driver.
+
+`repair_of` must be empty. This policy deliberately disables unprovable retries:
+an unrelated new main SHA or run-wide failure is not reviewed root-cause evidence,
+and must not authorize retrying a successful platform. A future retry needs a
+separately reviewed finite repair policy bound to the genuine repair and actual
+failed-platform evidence; the unused additional-attempt ceiling is not admission.
+Both prepare and native job conditions reject GitHub reruns **before allocating
+native runners**, rather than waiting for an in-process assertion. Skipped reruns
+have no native qualification receipts. Product-source repairs require their own
+authorized path owner; this driver must not modify Rust code or the integration
+branch.
 
 The dispatching actor records the actual returned run ID and attempt. Make at
 most one acquisition checkpoint by 20 minutes, then a final provider query.

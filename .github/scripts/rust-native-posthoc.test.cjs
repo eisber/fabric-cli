@@ -471,15 +471,24 @@ test('workflow separates cheap PR contracts from genuine default-main finite par
   assert.match(workflow, /actions: read/);
   assert.match(workflow, /ref: \$\{\{ needs\.prepare\.outputs\.source_sha \}\}/);
   for (const section of workflow.split(/\n  (?:prepare|native):/).slice(1)) {
-    assert.doesNotMatch(section.split(/\n    steps:/)[0], /\$\{\{ runner\./,
+    const header = section.split(/\n    steps:/)[0];
+    assert.doesNotMatch(header, /\$\{\{ runner\./,
       'Runner context is step-only, not available in job-level env');
+    const condition = header.match(/^    if: (.+)$/m)?.[1];
+    assert.ok(condition?.includes('github.run_attempt == 1'), 'Gate before any native runner allocation');
+    const admission = new Function('github', `return (${condition});`);
+    assert.equal(admission({event_name: 'workflow_dispatch', ref: 'refs/heads/main', run_attempt: 1}), true);
+    for (const run_attempt of [2, 3]) {
+      assert.equal(admission({event_name: 'workflow_dispatch', ref: 'refs/heads/main', run_attempt}), false);
+    }
   }
 });
 
 function bootstrapFixture() {
-  const env = {...environment(), GITHUB_RUN_ATTEMPT: '1', REQUESTED_MODE: 'bootstrap'};
+  const env = {...environment(), GITHUB_RUN_ATTEMPT: '1', REQUESTED_MODE: 'bootstrap',
+    REQUESTED_DRIVER_SHA: driver};
   const ev = {...event(), inputs: {...inputs(), mode: 'bootstrap', workload_id: p.POLICY.id,
-    platforms: 'both', repair_of: ''}};
+    driver_sha: driver, platforms: 'both', repair_of: ''}};
   return {env, ev, context: p.requestContext(env, ev, driver, true)};
 }
 
@@ -497,6 +506,20 @@ test('fixed bootstrap context is a distinct policy, never affected/full or an in
   assert.throws(() => p.requestContext({...env, GITHUB_RUN_ATTEMPT: '2'}, ev, driver, true));
   const native = p.requestContext({...env, GITHUB_JOB: 'native'}, ev, driver, true);
   assert.deepEqual(p.portableContext(native), p.portableContext(c));
+});
+
+test('reviewed driver A cannot silently become dispatched default-main B in any stage', () => {
+  const {env, ev, context: c} = bootstrapFixture();
+  assert.equal(c.expected_driver, driver);
+  for (const GITHUB_JOB of ['prepare', 'native']) {
+    const moved = '8'.repeat(40);
+    assert.throws(() => p.requestContext({...env, GITHUB_JOB,
+      GITHUB_SHA: moved, GITHUB_WORKFLOW_SHA: moved}, ev, moved, true), /reviewed driver pin/);
+    assert.throws(() => p.requestContext({...env, GITHUB_JOB, REQUESTED_DRIVER_SHA: moved},
+      ev, driver, true), /driver input\/environment/);
+    assert.throws(() => p.requestContext({...env, GITHUB_JOB},
+      {...ev, inputs: {...ev.inputs, driver_sha: moved}}, driver, true));
+  }
 });
 
 test('native admission checks actual host, architecture, hosted image and never accepts Windows/cross-host', () => {
@@ -553,57 +576,93 @@ test('bounded read-only provider facts fail on errors, malformed/oversize JSON a
   }
 });
 
+function historyRun(context, now, overrides = {}) {
+  return {id: 123, head_sha: driver, display_title: p.runTitle(context), run_attempt: 1,
+    event: 'workflow_dispatch', head_branch: 'main', status: 'in_progress',
+    created_at: new Date(now - 30000).toISOString(),
+    updated_at: new Date(now - 10000).toISOString(), ...overrides};
+}
+
+function admit(context, runs, now) {
+  return p.admitHistory(context, {total_count: runs.length, workflow_runs: runs}, now);
+}
+
 test('provider history enforces durable source/platform dedupe and conservative daily finite reservations', () => {
   const {context: c} = bootstrapFixture();
   const now = Date.parse('2026-11-17T06:00:00Z');
-  const current = {id: 123, head_sha: driver, display_title: p.runTitle(c)};
-  const prior = {id: 122, head_sha: '8'.repeat(40),
+  const current = historyRun(c, now);
+  const prior = {id: 122, head_sha: '8'.repeat(40), run_attempt: 1,
     created_at: new Date(now - 7 * 3600000).toISOString(), event: 'workflow_dispatch',
     updated_at: new Date(now - 6 * 3600000).toISOString(),
     head_branch: 'main', status: 'completed', conclusion: 'failure',
     display_title: `posthoc:${base}:bootstrap-v1:both:initial`};
-  assert.equal(p.admitHistory(c, [current], now).reserved_runner_minutes_24h, 30);
-  assert.equal(p.admitHistory(c, [current, prior], now).reserved_platform_jobs_24h, 4);
+  assert.equal(admit(c, [current], now).reserved_runner_minutes_24h, 30);
+  assert.equal(admit(c, [current, prior], now).reserved_platform_jobs_24h, 4);
   for (const runs of [[], [current, current], [current, {...prior, created_at: 'malformed'}],
     [current, {...prior, created_at: new Date(now - 3600000).toISOString()}],
     [current, {...prior, display_title: p.runTitle(c)}],
     [current, prior, {...prior, id: 121}], [{...current, head_sha: base}]]) {
-    assert.throws(() => p.admitHistory(c, runs, now));
+    assert.throws(() => admit(c, runs, now));
   }
   const oldDuplicate = {...prior, display_title: p.runTitle(c),
     created_at: new Date(now - 4 * 86400000).toISOString()};
-  assert.throws(() => p.admitHistory(c, [current, oldDuplicate], now), /Duplicate/);
+  assert.throws(() => admit(c, [current, oldDuplicate], now), /Duplicate/);
   const repair = {...c, repair_of: '122'};
   const matching = {...prior, display_title: p.runTitle(c)};
-  p.admitHistory(repair, [{...current, display_title: p.runTitle(repair)}, matching], now);
-  assert.throws(() => p.admitHistory(repair, [{...current, display_title: p.runTitle(repair)},
-    {...matching, head_sha: driver}], now), /blind retry/);
+  assert.throws(() => admit(repair,
+    [{...current, display_title: p.runTitle(repair)}, matching], now), /Retries are disabled/);
+});
+
+test('truncated, inconsistent, duplicated or historical-attempt2 provider coverage fails before admission', () => {
+  const {context: c} = bootstrapFixture();
+  const now = Date.parse('2026-11-17T06:00:00Z');
+  const current = historyRun(c, now);
+  for (const history of [{total_count: 3, workflow_runs: [current]},
+    {total_count: 0, workflow_runs: [current]}, {total_count: 1, workflow_runs: []},
+    {total_count: 101, workflow_runs: [current]}, {workflow_runs: [current]},
+    {total_count: 1, workflow_runs: [null]}, {total_count: 2, workflow_runs: [current, current]}]) {
+    assert.throws(() => p.admitHistory(c, history, now));
+  }
+  const prior = historyRun(c, now, {id: 122, head_sha: '8'.repeat(40), run_attempt: 2,
+    display_title: `posthoc:${base}:bootstrap-v1:both:initial`});
+  assert.throws(() => admit(c, [current, prior], now), /Historical rerun allocation is unknown/);
+  assert.throws(() => admit(c, [{...current, run_attempt: 2}], now), /Historical rerun/);
+  assert.throws(() => admit(c, [{...current, run_attempt: undefined}], now), /Historical rerun/);
+});
+
+test('unrelated new main and a run-wide failure cannot authorize a repair or retry a successful platform', () => {
+  const {env, ev, context: c} = bootstrapFixture();
+  for (const platforms of ['both', 'linux', 'macos']) {
+    assert.throws(() => p.requestContext(env,
+      {...ev, inputs: {...ev.inputs, platforms, repair_of: '122'}}, driver, true), /Retries are disabled/);
+    assert.throws(() => p.admitHistory({...c, repair_of: '122'}, {total_count: 1,
+      workflow_runs: [historyRun(c, Date.now(), {head_sha: '8'.repeat(40), conclusion: 'failure'})]}),
+    /Retries are disabled/);
+  }
 });
 
 test('delayed acquisition retains queued reservations and24hours after provider completion, never creation', () => {
   const {context: c} = bootstrapFixture();
   const now = Date.parse('2026-11-17T06:00:00Z');
-  const current = {id: 123, head_sha: driver, display_title: p.runTitle(c)};
-  const delayed = {id: 120, head_sha: '8'.repeat(40), event: 'workflow_dispatch',
+  const current = historyRun(c, now);
+  const delayed = {id: 120, head_sha: '8'.repeat(40), run_attempt: 1, event: 'workflow_dispatch',
     head_branch: 'main', status: 'completed', conclusion: 'success',
     created_at: new Date(now - 25 * 3600000).toISOString(),
     updated_at: new Date(now - 3600000).toISOString(),
     display_title: `posthoc:${'9'.repeat(40)}:bootstrap-v1:both:initial`};
-  assert.equal(p.admitHistory(c, [current, delayed], now).reserved_platform_jobs_24h, 4);
-  assert.equal(p.admitHistory(c, [current, {...delayed, status: 'queued'}], now)
+  assert.equal(admit(c, [current, delayed], now).reserved_platform_jobs_24h, 4);
+  assert.equal(admit(c, [current, {...delayed, status: 'queued'}], now)
     .reserved_platform_jobs_24h, 4);
-  const repair = {...c, repair_of: '122'};
-  const initial = {...delayed, id: 122, conclusion: 'failure', display_title: p.runTitle(c),
+  const initial = {...delayed, id: 122, conclusion: 'failure',
     created_at: new Date(now - 7 * 3600000).toISOString(),
     updated_at: new Date(now - 6 * 3600000).toISOString()};
-  assert.throws(() => p.admitHistory(repair,
-    [{...current, display_title: p.runTitle(repair)}, initial, delayed], now), /reservation/);
+  assert.throws(() => admit(c, [current, initial, delayed], now), /reservation/);
   const expired = {...delayed, created_at: new Date(now - 30 * 3600000).toISOString(),
     updated_at: new Date(now - 25 * 3600000).toISOString()};
-  assert.equal(p.admitHistory(c, [current, expired], now).reserved_platform_jobs_24h, 2);
+  assert.equal(admit(c, [current, expired], now).reserved_platform_jobs_24h, 2);
   for (const change of [{updated_at: undefined}, {updated_at: 'malformed'},
     {updated_at: new Date(now - 26 * 3600000).toISOString()}, {status: 'unknown'}]) {
-    assert.throws(() => p.admitHistory(c, [current, {...delayed, ...change}], now));
+    assert.throws(() => admit(c, [current, {...delayed, ...change}], now));
   }
 });
 
@@ -654,6 +713,19 @@ test('native command environment is an allowlist, not a token/auth/config/identi
   for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'AZURE_CLIENT_SECRET', 'FAB_TOKEN',
     'NODE_OPTIONS', 'RUSTC_WRAPPER', 'GIT_CONFIG_COUNT', 'GITHUB_SHA']) {
     assert.equal(Object.hasOwn(env, key), false);
+  }
+});
+
+test('unexpected provider tokens are rejected without echoing their values into failure diagnostics', () => {
+  p.requireNoProviderTokens({});
+  const sentinel = 'OFFLINE_SENTINEL_NOT_A_CREDENTIAL';
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+    assert.throws(() => p.requireNoProviderTokens({[key]: sentinel}), error => {
+      assert.match(error.message, /Provider token must not enter native stage/);
+      assert.equal(error.message.includes(sentinel), false);
+      return true;
+    });
+    assert.throws(() => p.requireNoProviderTokens({[key]: ''}));
   }
 });
 

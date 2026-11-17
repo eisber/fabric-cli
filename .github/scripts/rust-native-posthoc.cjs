@@ -123,7 +123,7 @@ function requestContext(env, event, actualDriver, bootstrap = false) {
   assert.ok(inputs && typeof inputs === 'object' && !Array.isArray(inputs), 'Missing dispatch inputs');
   assert.deepEqual(Object.keys(inputs).sort(),
     ['base_sha', 'batch_id', 'mode', 'route', 'source_sha',
-      ...(bootstrap ? ['platforms', 'workload_id', 'repair_of'] : [])].sort(),
+      ...(bootstrap ? ['driver_sha', 'platforms', 'workload_id', 'repair_of'] : [])].sort(),
     'Unknown or missing dispatch input');
   for (const [input, variable] of Object.entries({source_sha: 'REQUESTED_SOURCE_SHA',
     base_sha: 'REQUESTED_BASE_SHA', mode: 'REQUESTED_MODE', route: 'REQUESTED_ROUTE',
@@ -141,10 +141,14 @@ function requestContext(env, event, actualDriver, bootstrap = false) {
   else assert.equal(inputs.batch_id, '', 'Manual requests have no batch ID');
   const extra = {};
   if (bootstrap) {
+    const expectedDriver = sha(inputs.driver_sha);
+    assert.equal(expectedDriver, env.REQUESTED_DRIVER_SHA, 'Expected driver input/environment mismatch');
+    assert.equal(actualDriver, expectedDriver, 'Dispatch differs from the explicitly reviewed driver pin');
+    extra.expected_driver = expectedDriver;
     assert.equal(inputs.workload_id, POLICY.id, 'Unknown fixed workload/policy');
     assert.ok(['both', 'linux', 'macos'].includes(inputs.platforms), 'Unknown platform selection');
-    assert.match(inputs.repair_of, /^(|[1-9][0-9]{0,19})$/, 'Invalid repair run');
-    assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'Reruns are not admitted; use a reviewed repair dispatch');
+    assert.equal(inputs.repair_of, '', 'Retries are disabled without a separately reviewed repair policy');
+    assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'Reruns are not admitted');
     extra.workload_id = inputs.workload_id;
     extra.platforms = inputs.platforms === 'both' ? ['linux', 'macos'] : [inputs.platforms];
     extra.repair_of = inputs.repair_of || null;
@@ -512,8 +516,19 @@ function runTitle(context) {
   return `posthoc:${context.source}:${POLICY.id}:${platforms}:${context.repair_of || 'initial'}`;
 }
 
-function admitHistory(context, runs, now = Date.now()) {
-  assert.ok(Array.isArray(runs) && runs.length <= 100, 'Incomplete bounded run history');
+function admitHistory(context, history, now = Date.now()) {
+  assert.equal(context.repair_of, null, 'Retries are disabled without a separately reviewed repair policy');
+  const runs = history?.workflow_runs;
+  assert.ok(Number.isSafeInteger(history?.total_count) && history.total_count > 0 &&
+    history.total_count <= 100 && Array.isArray(runs) && runs.length === history.total_count,
+  'Incomplete bounded run history: total_count must equal all returned rows');
+  for (const run of runs) {
+    assert.ok(run && Number.isSafeInteger(run.id) && run.id > 0, 'Invalid provider run row');
+    assert.equal(run.run_attempt, 1, 'Historical rerun allocation is unknown; admission refused');
+    assert.equal(run.event, 'workflow_dispatch');
+    assert.equal(run.head_branch, 'main');
+    sha(run.head_sha);
+  }
   assert.equal(new Set(runs.map(run => String(run.id))).size, runs.length, 'Duplicate run history');
   const current = runs.find(run => String(run.id) === context.run_id);
   assert.ok(current, 'Current genuine run missing from provider history');
@@ -550,17 +565,7 @@ function admitHistory(context, runs, now = Date.now()) {
   }
   const duplicates = all.filter(run => run.source === context.source &&
     run.platforms.some(platform => context.platforms.includes(platform)));
-  if (context.repair_of) {
-    const prior = duplicates.find(run => String(run.id) === context.repair_of);
-    assert.ok(prior && !prior.repair && prior.status === 'completed' &&
-      ['failure', 'cancelled', 'timed_out'].includes(prior.conclusion),
-    'Repair must reference one completed unsuccessful initial run');
-    assert.notEqual(prior.head_sha, context.driver, 'No reviewed driver root-cause repair: blind retry refused');
-    assert.ok(context.platforms.every(platform => prior.platforms.includes(platform)));
-    assert.equal(duplicates.length, 1, 'Only one repaired attempt per platform is admitted');
-  } else {
-    assert.equal(duplicates.length, 0, 'Duplicate source/platform/workload dispatch refused');
-  }
+  assert.equal(duplicates.length, 0, 'Duplicate source/platform/workload dispatch refused');
   return {observed_at: new Date(now).toISOString(), reserved_platform_jobs_24h:
     parsed.reduce((sum, run) => sum + run.platforms.length, context.platforms.length),
   reserved_runner_minutes_24h: parsed.reduce((sum, run) => sum + run.platforms.length * 15,
@@ -610,6 +615,11 @@ function commandEnvironment(env, directories) {
   CARGO_PROFILE_TEST_DEBUG: '0', RUST_TEST_THREADS: '2', NO_COLOR: '1',
   PYTHONDONTWRITEBYTECODE: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: GIT_NULL,
   GIT_ATTR_NOSYSTEM: '1', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0'};
+}
+
+function requireNoProviderTokens(env) {
+  assert.ok(env.GH_TOKEN === undefined, 'Provider token must not enter native stage');
+  assert.ok(env.GITHUB_TOKEN === undefined, 'Provider token must not enter native stage');
 }
 
 function finalizeBootstrap(report, operations) {
@@ -788,9 +798,7 @@ async function bootstrapStage(mode, driver, env) {
       matchResolved(context, await resolveHead(env.GH_TOKEN));
       const history = await providerJson(
         'actions/workflows/rust-native-posthoc.yml/runs?event=workflow_dispatch&per_page=100', env.GH_TOKEN);
-      assert.ok(Number.isSafeInteger(history.total_count) && history.total_count <= 100,
-        'Bounded run-history coverage exhausted; explicit policy maintenance required');
-      report.admission = admitHistory(context, history.workflow_runs);
+      report.admission = admitHistory(context, history);
       report.status = 'PINNED_PARTIAL_UNRUN';
       fs.appendFileSync(env.GITHUB_OUTPUT, `source_sha=${context.source}\n` +
         `matrix=${JSON.stringify({include: context.platforms.map(platform =>
@@ -857,8 +865,7 @@ async function bootstrapStage(mode, driver, env) {
           report.passed = true;
           report.status = 'COMPLETE_PARTIAL_CURRENT';
         } else {
-          assert.equal(env.GH_TOKEN, undefined, 'Provider token must not enter native stage');
-          assert.equal(env.GITHUB_TOKEN, undefined, 'Provider token must not enter native stage');
+          requireNoProviderTokens(env);
           assert.ok(context.platforms.includes(env.POSTHOC_PLATFORM));
           const refresh = readJson(path.join(directory, 'bootstrap-refresh.json'));
           assert.equal(refresh.status, 'FRESH_PARTIAL_UNRUN');
@@ -1049,7 +1056,7 @@ module.exports = {REPOSITORY, BRANCH, MAIN_BASE, ANCHOR, REFERENCE_SOURCE, WORKF
   unchanged, debt, artifactDirectory, writeJson, fixedRoots, runStage, main,
   POLICY, HOSTS, BOOTSTRAP_BLOBS, CORE_TESTS, bootstrapContext, verifyBootstrapInputs, bootstrapHost,
   providerJson, runTitle, admitHistory, portableContext, bundleBytes, verifyCoreOutput,
-  commandEnvironment, finalizeBootstrap, pipeOutput, boundedCommand, bootstrapStage};
+  commandEnvironment, requireNoProviderTokens, finalizeBootstrap, pipeOutput, boundedCommand, bootstrapStage};
 if (require.main === module) {
   main(process.argv.slice(2)).then(code => { process.exitCode = code; })
     .catch(error => { console.error(error.message); process.exitCode = 1; });

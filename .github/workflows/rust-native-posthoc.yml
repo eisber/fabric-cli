@@ -16,6 +16,10 @@ on:
       - .github/scripts/rust-native-posthoc*
   workflow_dispatch:
     inputs:
+      driver_sha:
+        description: Exact reviewed and verified registered default-main driver SHA
+        required: true
+        type: string
       source_sha:
         description: Full lowercase current fixed integration merge SHA
         required: true
@@ -50,7 +54,7 @@ on:
         default: ""
         type: string
       repair_of:
-        description: Empty initially; unsuccessful initial run ID after reviewed driver root-cause repair
+        description: Must be empty; unprovable retries are disabled by this policy
         required: false
         default: ""
         type: string
@@ -78,13 +82,14 @@ jobs:
   prepare:
     name: Admit fixed partial immutable batch
     needs: contracts
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.pin.outputs.matrix }}
       source_sha: ${{ steps.pin.outputs.source_sha }}
     env:
+      REQUESTED_DRIVER_SHA: ${{ inputs.driver_sha }}
       REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
       REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
       REQUESTED_MODE: ${{ inputs.mode }}
@@ -128,7 +133,7 @@ jobs:
   native:
     name: Fixed partial native (${{ matrix.platform }})
     needs: prepare
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -136,6 +141,7 @@ jobs:
     runs-on: ${{ matrix.image }}
     timeout-minutes: 15
     env:
+      REQUESTED_DRIVER_SHA: ${{ inputs.driver_sha }}
       REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
       REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
       REQUESTED_MODE: ${{ inputs.mode }}
