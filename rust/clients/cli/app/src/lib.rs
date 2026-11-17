@@ -16,7 +16,7 @@ use clap::{
     Arg, ArgAction, Command,
     error::{ContextKind, ContextValue, ErrorKind as ParseErrorKind},
 };
-use fabric_cli_command_contracts::CommandError;
+use fabric_cli_command_contracts::{AuthOutput, CommandError, CommandOutput};
 use fabric_core::{
     Audience, CancellationToken, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
     OperationContext, OperationKind, RecoveryInfo,
@@ -28,7 +28,6 @@ use fabric_core::{
 use fabric_identity::{AzureCliSession, Binding, BoundCredential, ProcessExecutor};
 use fabric_sdk_api::{PollObserver, PollProgress};
 use fabric_sdk_http::{HttpClient, SystemClock, bounded_with_clock};
-use serde_json::{Value, json};
 use std::{
     ffi::OsString,
     future::Future,
@@ -916,7 +915,7 @@ pub async fn run(
     }
     match result {
         Ok(data) => {
-            let output = fabric_cli_output::success(&timestamp(host), name, data);
+            let output = fabric_cli_output::success_typed(&timestamp(host), name, data);
             if stdout.write_all(output.as_bytes()).is_ok() {
                 0
             } else {
@@ -945,21 +944,12 @@ fn selected(host: &dyn Host) -> Result<Binding, CommandError> {
     })
 }
 
-fn auth_data(binding: &Binding) -> Value {
-    json!({
-        "logged_in": true,
-        "authentication_mode": "Azure CLI",
-        "tenant_id": binding.tenant,
-        "principal_id": binding.principal,
-    })
-}
-
 async fn execute(
     matches: &clap::ArgMatches,
     host: &dyn Host,
     cancellation: CancellationToken,
     observer: &Arc<ConsoleProgress>,
-) -> Result<Value, CommandError> {
+) -> Result<CommandOutput, CommandError> {
     match matches.subcommand() {
         Some(("auth", auth)) => match auth.subcommand_name() {
             Some("logout") => {
@@ -967,7 +957,7 @@ async fn execute(
                 observer
                     .finish(DiagnosticStage::Selection, started, host.clear_selection())
                     .await?;
-                Ok(json!({"selected": false}))
+                Ok(CommandOutput::Auth(AuthOutput::Logout))
             }
             Some("login") => {
                 let started = observer.start(DiagnosticStage::Authentication).await?;
@@ -991,11 +981,10 @@ async fn execute(
                         host.save_selection(&binding),
                     )
                     .await?;
-                let mut data = auth_data(&binding);
-                data["selected"] = json!(true);
-                data["mfa_evidence"] = json!("not_checked");
-                data["service_access_verified"] = json!(false);
-                Ok(data)
+                Ok(CommandOutput::Auth(AuthOutput::Login {
+                    tenant_id: binding.tenant,
+                    principal_id: binding.principal,
+                }))
             }
             Some("status") => {
                 let started = observer.start(DiagnosticStage::Selection).await?;
@@ -1027,7 +1016,10 @@ async fn execute(
                 observer
                     .finish(DiagnosticStage::Authentication, started, result)
                     .await?;
-                Ok(auth_data(&binding))
+                Ok(CommandOutput::Auth(AuthOutput::Status {
+                    tenant_id: binding.tenant,
+                    principal_id: binding.principal,
+                }))
             }
             _ => Err(CommandError::new(
                 "InvalidInput",
@@ -1137,7 +1129,7 @@ async fn execute(
                     .await
                     .map_err(|error| attach_recovery(error.into()))?;
             }
-            Ok(data)
+            Ok(CommandOutput::Api(data))
         }
         _ => Err(CommandError::new(
             "InvalidInput",
