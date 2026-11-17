@@ -90,7 +90,6 @@ jobs:
       REQUESTED_MODE: ${{ inputs.mode }}
       REQUESTED_ROUTE: ${{ inputs.route }}
       REQUESTED_BATCH_ID: ${{ inputs.batch_id }}
-      POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
     steps:
       - name: Check out trusted dispatch driver
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,6 +102,7 @@ jobs:
         id: pin
         env:
           GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
         run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-pin
       - name: Check out immutable source, never the main driver as DUT
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,6 +114,7 @@ jobs:
       - name: Verify source bytes, exact first parent, anchor and pinned workload APIs
         env:
           GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
         run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-inspect
       - name: Retain admission and failure evidence
         if: always()
@@ -142,8 +143,6 @@ jobs:
       REQUESTED_BATCH_ID: ${{ inputs.batch_id }}
       POSTHOC_PLATFORM: ${{ matrix.platform }}
       POSTHOC_IMAGE: ${{ matrix.image }}
-      POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
-      POSTHOC_PRIVATE: ${{ runner.temp }}/posthoc-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
     steps:
       - name: Check out exact trusted driver without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -168,13 +167,18 @@ jobs:
         # This separate guard never loads DUT code or forwards the provider token.
         env:
           GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
         run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-refresh
       - name: Execute frozen partial workload with no provider credentials
+        env:
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
+          POSTHOC_PRIVATE: ${{ runner.temp }}/posthoc-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
         run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap
       - name: Final read-only current-source guard and receipt audit
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
         run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-finalize
       - name: Retain native receipts and partial failure output
         if: always()

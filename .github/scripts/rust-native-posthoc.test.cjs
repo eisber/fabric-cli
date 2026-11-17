@@ -470,6 +470,10 @@ test('workflow separates cheap PR contracts from genuine default-main finite par
   assert.match(workflow, /fail-fast: false/);
   assert.match(workflow, /actions: read/);
   assert.match(workflow, /ref: \$\{\{ needs\.prepare\.outputs\.source_sha \}\}/);
+  for (const section of workflow.split(/\n  (?:prepare|native):/).slice(1)) {
+    assert.doesNotMatch(section.split(/\n    steps:/)[0], /\$\{\{ runner\./,
+      'Runner context is step-only, not available in job-level env');
+  }
 });
 
 function bootstrapFixture() {
