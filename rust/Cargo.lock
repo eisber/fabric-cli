@@ -1865,6 +1865,7 @@ dependencies = [
  "bytes",
  "flatbuffers",
  "parquet",
+ "serde",
  "serde_json",
  "thiserror",
 ]
