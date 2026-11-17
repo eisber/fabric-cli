@@ -5,6 +5,7 @@
 #![deny(unnameable_test_items)]
 
 mod aliases;
+mod int64;
 
 use std::{
     sync::atomic::AtomicBool,

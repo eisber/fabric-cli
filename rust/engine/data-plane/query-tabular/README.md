@@ -82,6 +82,11 @@ URIs are never fetched, and missing totals remain unknown.
 Mapping is from **both** declared logical type/encoding and a supported native
 type. Integer widths/signs follow the explicit Byte/SByte/Int16/UInt16/Int32/
 UInt32/Int64/UInt64 families (including the documented native SQL aliases).
+The version-1 `int64` logical type with `json-number` encoding and native
+`Int64` also maps exactly to signed Arrow Int64, preserving the original logical
+declaration and native type hint. It does not accept a mismatched native width or
+sign, fractional numeric token, overflow, or unknown alias. The existing generic
+`integer` mapping is unchanged.
 Single/Float32 and Double/Float64 are approximate numbers with their original
 declared widths. The known v1 native Kusto `real` alias with logical number and
 JSON-number encoding maps to Float64, not SQL REAL/Float32. Nonfinite overflow and

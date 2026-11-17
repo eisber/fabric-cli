@@ -362,6 +362,7 @@ fn native_type(
     }
     let native = field.engine_type.to_ascii_lowercase();
     let kind = match (field.logical_type.as_str(), field.encoding.as_str()) {
+        ("int64", "json-number") if native == "int64" => NativeType::Int64,
         ("integer", "json-number") => match native.as_str() {
             "byte" | "tinyint" | "uint8" => NativeType::UInt8,
             "sbyte" | "int8" => NativeType::Int8,
