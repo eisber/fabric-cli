@@ -20,6 +20,12 @@ serialized allocation. Stream limits and all request validation precede
 credential access. Arbitrary native, custom and non-Fabric MWC/workload origins
 remain unsupported; no bootstrap or new authorization decision is introduced.
 
+That restriction still applies to `NativeFabricStreamExecutor`. The additive
+[explicit-scope adapter](scoped-native-stream-http.md) composes a caller-selected
+HTTPS endpoint and literal audience with mandatory immutable service preflight.
+It shares the existing request/body/deadline/dispatch implementation rather than
+widening Fabric bindings or adding another transport stack.
+
 Core `RequestContext::execute` borrows the caller's `TokenCredential` and requests
 only the existing Fabric scope, with no credential discovery or implementation.
 The existing HTTP token guard and authenticated request builder are reused.
