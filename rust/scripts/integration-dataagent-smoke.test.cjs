@@ -103,6 +103,32 @@ test('failed commands retain partial suite observations without turning them int
   assert.deepEqual(dataagent.testObservations(''), []);
 });
 
+test('Report component profile enables internally gated host/process modules and requires every registered case', () => {
+  const names = [...dataagent.LEAVES, 'v2_create_report'];
+  const selection = {
+    tests: names.map(name => ({package: 'fabric-cli', target: `test:${name}`,
+      reasons: name === 'v2_create_report' ? ['Component closure: cli-report-create'] : []})),
+    target_catalog: names.map(name => ({package: 'fabric-cli', target: `test:${name}`,
+      source: `${name}.rs`, required_features: []})),
+    profiles: [{id: 'v2-create-headless', features: ['fabric-cli/v2-create', 'fabric-cli/headless']}],
+  };
+  const selected = dataagent.selectedCommands(selection, () => '#[cfg(feature = "v2-create")]\nmod host;');
+  const command = selected.commands.find(item => item.args.includes('v2_create_report'));
+  assert.ok(command.args[command.args.indexOf('--features') + 1].split(',').includes('v2-create'));
+  assert.throws(() => dataagent.selectedCommands({...selection, profiles: []}, () => ''), /component profile/);
+  const stdout = dataagent.REPORT_TESTS.map(name => `test ${name} ... ok\n`).join('') +
+    `test result: ok. ${dataagent.REPORT_TESTS.length} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n`;
+  const stderr = 'Running tests/v2_create_report.rs (target/debug/deps/test.exe)\n';
+  assert.equal(dataagent.testResults(stdout, stderr, command)[0].passed, dataagent.REPORT_TESTS.length);
+  const truncated = 'test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n';
+  assert.throws(() => dataagent.testResults(truncated, stderr, command), /Report host\/process/);
+  for (const prefix of ['host::', 'host::http::', 'host::status::', 'process::']) {
+    const name = dataagent.REPORT_TESTS.find(item => item.startsWith(prefix));
+    assert.ok(name, `No registered ${prefix} cases`);
+    assert.throws(() => dataagent.testResults(stdout.replace(name, 'missing'), stderr, command), /Report test/);
+  }
+});
+
 test('impact registration selects actual DataAgent/SDK targets and existing profile obligations', () => {
   const graph = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
   const component = graph.components.find(item => item.id === 'cli-dataagent-list');

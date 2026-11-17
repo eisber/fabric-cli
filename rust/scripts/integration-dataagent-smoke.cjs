@@ -29,8 +29,19 @@ const INPUTS = [
     .map(name => `rust/clients/cli/app/tests/${name}.rs`),
 ];
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+const REPORT_TESTS = [
+  ...update.registeredTests('rust/clients/cli/app/tests/v2_create_report.rs'),
+  ...[
+    ['host.rs', 'host::'],
+    ['http.rs', 'host::http::'],
+    ['status.rs', 'host::status::'],
+    ['process.rs', 'process::'],
+  ].flatMap(([file, prefix]) => update.registeredTests(`rust/clients/cli/app/tests/v2_create_report/${file}`)
+    .map(name => `${prefix}${name}`)),
+];
 
-function selectedCommands(selection, read = file => fs.readFileSync(path.join(ROOT, file), 'utf8')) {
+function selectedCommands(selection, read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'),
+  graph = JSON.parse(fs.readFileSync(path.join(ROOT, 'rust/validation/impact-graph.json')))) {
   const groups = new Map(), deferred = [], cliFeatures = new Set(), cliTargets = new Set();
   for (const test of selection.tests) {
     if (!test.target.startsWith('test:')) {
@@ -43,6 +54,16 @@ function selectedCommands(selection, read = file => fs.readFileSync(path.join(RO
     const guarded = [...read(target.source).matchAll(/^#!\[cfg\(([^\n]+)\)\]/gm)]
       .flatMap(match => [...match[1].matchAll(/feature\s*=\s*"([^"]+)"/g)].map(value => value[1]));
     const features = new Set([...target.required_features, ...guarded]);
+    for (const reason of test.reasons || []) {
+      const component = graph.components.find(item => reason === `Component closure: ${item.id}`);
+      for (const id of component?.profiles || []) {
+        const profile = selection.profiles.find(item => item.id === id);
+        assert.ok(profile, `Missing selected component profile ${id}`);
+        for (const feature of profile.features) {
+          if (feature.startsWith(`${test.package}/`)) features.add(feature.slice(test.package.length + 1));
+        }
+      }
+    }
     if (test.package === 'fabric-cli') {
       features.add('headless');
       features.add('runtime-v2');
@@ -77,6 +98,19 @@ function testObservations(stdout) {
     /test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out/g,
   )].map(match => ({status: match[1], passed: Number(match[2]), failed: Number(match[3]),
     ignored: Number(match[4]), measured: Number(match[5]), filtered: Number(match[6])}));
+}
+
+function testResults(stdout, stderr, command) {
+  const results = update.testResults(stdout, stderr, command);
+  if (command.args.includes('--test') && command.args.includes('v2_create_report')) {
+    const report = results.find(item => item.target === 'v2_create_report');
+    assert.ok(report, 'The actual Report target must run');
+    assert.equal(report.passed, REPORT_TESTS.length, 'Every registered Report host/process case must run');
+    for (const name of REPORT_TESTS) {
+      assert.ok(stdout.includes(`test ${name} ... ok`), `Missing registered Report test: ${name}`);
+    }
+  }
+  return results;
 }
 
 function main(output) {
@@ -165,7 +199,7 @@ function main(output) {
       }
       assert.equal(result.status, 0, `DataAgent command failed: cargo ${command.args.join(' ')}`);
       if (command.args[0] === 'test') {
-        report.commands.at(-1).tests = update.testResults(result.stdout, result.stderr, command);
+        report.commands.at(-1).tests = testResults(result.stdout, result.stderr, command);
       }
       save();
     }
@@ -193,7 +227,8 @@ function main(output) {
   }
 }
 
-module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, selectedCommands, leafCommand, testObservations};
+module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, REPORT_TESTS,
+  selectedCommands, leafCommand, testObservations, testResults};
 if (require.main === module) {
   try { assert.equal(process.argv.length, 3); main(process.argv[2]); }
   catch (error) { console.error(error.stack); process.exitCode = 1; }

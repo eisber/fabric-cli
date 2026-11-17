@@ -28,6 +28,10 @@ Named test commands retain separate manifest/source feature sets: isolated
 Eventhouse and KQL binary fixtures reject the other owner before input I/O,
 while the explicit composition target enables both. The union is used only
 for compilation/lints, never to change those process-fixture contracts.
+Explicit component profile obligations also apply to internally gated test
+modules. Report uses the existing `v2-create-headless` profile and requires
+every registered root, host, HTTP, status and process case; five ungated parser
+passes cannot stand in for the compiled-out host/process suites.
 Receipts reject zero-test, ignored, filtered or missing complete targets and
 retain argv, exits, output hashes, source/driver/lock pins, metadata and source
 inventories. Broader profile/oracle obligations are recorded, not claimed.
