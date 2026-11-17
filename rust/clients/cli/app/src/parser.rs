@@ -272,8 +272,11 @@ where
         }
     }
     let mut parser = command();
-    if root.and_then(|index| args[index].to_str()) == Some("execute") {
-        // V1's inherited last-value-wins policy must not discard v2 selectors.
+    if matches!(
+        root.and_then(|index| args[index].to_str()),
+        Some("execute" | "item")
+    ) {
+        // Explicit selectors must not inherit v1's last-value-wins policy.
         parser = parser.args_override_self(false);
     }
     if batch::has_root_option(&args) {

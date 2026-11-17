@@ -242,6 +242,19 @@ fn nested_parser_preserves_budgets_and_existing_root_commands() {
         ])
         .is_err()
     );
+    assert!(
+        parse_args([
+            "fab-rs",
+            "item",
+            "maps",
+            "current",
+            "--coordinates",
+            "0,0",
+            "--coordinates",
+            "1,1",
+        ])
+        .is_err()
+    );
     assert!(matches!(
         parse_args(["fab-rs", "get", "Demo.Workspace"]),
         Ok(Invocation::Read(_))
