@@ -103,6 +103,19 @@ refresh remains silent and native-account pinned. Metadata is historical, not a
 fresh status check. SDK credentials remain caller-injected; SDKs do not depend
 on this identity implementation.
 
+`TokenAudience::Kusto` selects exactly the public-cloud resource scope
+`https://api.kusto.windows.net/.default`. The existing
+`WindowsCredential::connect_for_audience(options, TokenAudience::Kusto)` and
+single-scope `get_token` path remain silent and pin the same selected
+account/tenant/client. They do not authorize discovery, interactive consent,
+another cloud or a cluster-derived audience. Kusto is not added to default
+login/status acquisition, and a cached Fabric token cannot satisfy the request.
+Interaction-required remains an explicit error. See the
+[provider resource contract](../provider/README.md#explicit-public-kusto-resource)
+for caller selection, compatibility and the separate authentication-team
+premerge review gate. Adding this closed enum variant does not change the
+native bridge or establish service permissions or live acceptance.
+
 `WindowsCredential::status(options)` silently checks all three login audiences
 using read-only lifecycle admission: it cannot reopen signed-out or unconfirmed
 state and rejects those states before broker work. It is not equivalent to

@@ -307,6 +307,144 @@ async fn silent_refresh_rotates_before_publication_and_reuses_memory_without_pro
 }
 
 #[tokio::test(start_paused = true)]
+async fn public_kusto_refresh_is_silent_identity_bound_and_cached_separately() {
+    let mut fabric = token(None);
+    fabric["access_token"] = "synthetic-fabric-token".into();
+    let mut kusto = token(None);
+    kusto["access_token"] = "synthetic-kusto-token".into();
+    let http = FakeHttp::new(vec![(StatusCode::Ok, fabric), (StatusCode::Ok, kusto)]);
+    let store = FakeStore::selected();
+    let credential = InteractiveCredential::connect(options(), http.clone(), store)
+        .await
+        .unwrap();
+    for (scope, expected) in [
+        (SCOPES[0], "synthetic-fabric-token"),
+        (crate::PUBLIC_KUSTO_SCOPE, "synthetic-kusto-token"),
+        (SCOPES[0], "synthetic-fabric-token"),
+        (crate::PUBLIC_KUSTO_SCOPE, "synthetic-kusto-token"),
+    ] {
+        assert_eq!(
+            credential
+                .get_token(&[scope], None)
+                .await
+                .unwrap()
+                .token
+                .secret(),
+            expected
+        );
+        assert_eq!(credential.identity(), &identity());
+    }
+    let calls = http.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    for (call, scope) in calls.iter().zip([SCOPES[0], crate::PUBLIC_KUSTO_SCOPE]) {
+        assert_eq!(
+            call.url,
+            format!("https://login.microsoftonline.com/{TENANT}/oauth2/v2.0/token")
+        );
+        assert_eq!(call.form["client_id"], CLIENT);
+        assert_eq!(call.form["grant_type"], "refresh_token");
+        assert_eq!(call.form["refresh_token"], "refresh-canary-0");
+        assert_eq!(
+            call.form["scope"],
+            format!("{scope} openid profile offline_access")
+        );
+    }
+    assert_eq!(
+        SCOPES,
+        [
+            "https://api.fabric.microsoft.com/.default",
+            "https://storage.azure.com/.default",
+            "https://management.azure.com/.default",
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_kusto_interaction_required_never_starts_device_authorization() {
+    let http = FakeHttp::new(vec![(
+        StatusCode::BadRequest,
+        json!({"error":"interaction_required","error_description":"private-canary"}),
+    )]);
+    let store = FakeStore::selected();
+    let credential = InteractiveCredential::connect(options(), http.clone(), store.clone())
+        .await
+        .unwrap();
+    let error = credential
+        .get_token(&[crate::PUBLIC_KUSTO_SCOPE], None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("Sign-in is required."));
+    assert!(!format!("{error} {error:?}").contains("canary"));
+    assert_eq!(http.calls.lock().unwrap().len(), 1);
+    assert!(http.calls.lock().unwrap()[0].url.ends_with("/token"));
+    assert_eq!(store.state.lock().unwrap().revision, 1);
+    assert!(credential.state.lock().await.tokens.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_kusto_invalid_requests_fail_before_http_work() {
+    let http = FakeHttp::new(vec![]);
+    let credential = InteractiveCredential::connect(options(), http.clone(), FakeStore::selected())
+        .await
+        .unwrap();
+    for scopes in [
+        vec![],
+        vec!["https://custom.example/.default"],
+        vec!["https://api.kusto.windows.net.evil.example/.default"],
+        vec!["https://api.kusto.windows.net/%2Edefault"],
+        vec!["https://api.kusto.windows.net/.default/"],
+        vec![" https://api.kusto.windows.net/.default"],
+        vec!["https://api.kusto.windows.net/.default "],
+        vec!["https://login.microsoftonline.com/.default"],
+        vec!["https://api.kusto.chinacloudapi.cn/.default"],
+        vec![crate::PUBLIC_KUSTO_SCOPE, crate::PUBLIC_KUSTO_SCOPE],
+        vec![SCOPES[0], crate::PUBLIC_KUSTO_SCOPE],
+    ] {
+        let error = credential.get_token(&scopes, None).await.unwrap_err();
+        assert!(error.to_string().contains("require exactly one"));
+    }
+    assert!(http.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_kusto_checks_selected_session_before_cached_tokens_and_rejects_identity_drift() {
+    let http = FakeHttp::new(vec![(StatusCode::Ok, token(None))]);
+    let store = FakeStore::selected();
+    let credential = InteractiveCredential::connect(options(), http.clone(), store.clone())
+        .await
+        .unwrap();
+    credential
+        .get_token(&[crate::PUBLIC_KUSTO_SCOPE], None)
+        .await
+        .unwrap();
+    store.compare_exchange(2, None).await.unwrap();
+    assert!(
+        credential
+            .get_token(&[crate::PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .is_err()
+    );
+    assert_eq!(http.calls.lock().unwrap().len(), 1);
+
+    let mut wrong_identity = token(None);
+    wrong_identity["id_token"] = id_token(CLIENT, OBJECT).into();
+    let http = FakeHttp::new(vec![(StatusCode::Ok, wrong_identity)]);
+    let store = FakeStore::selected();
+    let credential = InteractiveCredential::connect(options(), http.clone(), store.clone())
+        .await
+        .unwrap();
+    assert!(
+        credential
+            .get_token(&[crate::PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .is_err()
+    );
+    assert!(credential.state.lock().await.tokens.is_empty());
+    assert_eq!(store.state.lock().unwrap().revision, 1);
+    assert_eq!(http.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn failed_rotation_does_not_publish_access_token() {
     let http = FakeHttp::new(vec![(StatusCode::Ok, token(Some("rotated-canary")))]);
     let store = FakeStore::selected();
