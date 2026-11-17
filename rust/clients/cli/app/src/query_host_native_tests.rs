@@ -481,7 +481,7 @@ async fn actual_native_aihub_context_resolves_datasource_then_sends_exact_varian
         let body: Value = serde_json::from_slice(Bytes::from(request.body()).as_ref()).unwrap();
         assert_eq!(
             body["params"]["_meta"]["variants"],
-            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults"
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce"
         );
     }
     let query: Value = serde_json::from_slice(Bytes::from(requests[5].body()).as_ref()).unwrap();

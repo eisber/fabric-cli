@@ -98,7 +98,7 @@ async fn real_sdk_typed_tokens_target_scope_and_opaque_input_are_wired() {
     for message in &messages {
         assert_eq!(
             message["params"]["_meta"]["variants"],
-            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults"
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce"
         );
     }
     let arguments = &messages[3]["params"]["arguments"];
@@ -123,7 +123,7 @@ async fn sandbox_stage_is_explicit_and_independent_of_typed_result_opt_in() {
     for message in messages(&wire) {
         assert_eq!(
             message["params"]["_meta"]["variants"],
-            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.DataAgent.Sandbox"
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce,Fabric.Routing.Documents.DataAgent.Sandbox"
         );
     }
 }
@@ -177,4 +177,43 @@ async fn local_cancellation_before_credentials_is_not_remote_cancellation() {
     assert!(!error.query_dispatched);
     assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
     assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn missing_or_unsafe_discovery_annotations_never_dispatch_query() {
+    for annotations in [
+        None,
+        Some(json!({"readOnlyHint":false,"destructiveHint":false})),
+        Some(json!({"readOnlyHint":true,"destructiveHint":true})),
+        Some(json!({"readOnlyHint":true})),
+    ] {
+        let mut advertised = tool();
+        match annotations {
+            Some(annotations) => advertised["annotations"] = annotations,
+            None => {
+                advertised.as_object_mut().unwrap().remove("annotations");
+            }
+        }
+        let wire = Wire::new([
+            initialize(),
+            response(202, vec![], "application/json", None),
+            rpc(2, json!({"tools":[advertised]})),
+        ]);
+        let error = prepared(
+            wire.clone(),
+            Arc::new(Credential::default()),
+            Stage::Production,
+        )
+        .execute(&deadline(), pending())
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
+        assert!(!error.query_dispatched);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
+        assert!(
+            messages(&wire)
+                .iter()
+                .all(|message| message["method"] != "tools/call")
+        );
+    }
 }

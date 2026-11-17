@@ -40,7 +40,11 @@ credential I/O. It is not interpreted as output projection or template selection
 DataAgent datasource, requires typed JSON, and consumes a caller-configured
 `AiHubQueryClient` once. The SDK sends
 `Fabric.Routing.Documents.DataAgent` and
-`Fabric.Routing.Documents.DataAgent.TypedQueryResults` on the MCP lifecycle.
+`Fabric.Routing.Documents.DataAgent.TypedQueryResults`, plus the positive
+`Fabric.Routing.Documents.SqlReadOnlyEnforce` policy on the MCP lifecycle.
+Discovery must explicitly advertise `readOnlyHint: true` and
+`destructiveHint: false` before `execute_query` can be called; missing or unsafe
+annotations are not inferred from a tool name.
 Sandbox stage adds its separate stage token. Missing typed resources fail
 explicitly; legacy CSV, Markdown, prose, or auxiliary resource URLs are not
 queried or parsed as a fallback.
