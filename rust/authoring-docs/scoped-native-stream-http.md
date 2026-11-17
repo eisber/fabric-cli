@@ -30,7 +30,8 @@ permissions; caller credential selection and service authorization remain
 separate responsibilities.
 
 The shared native request preparation enforces safe headers, 16 KiB URL and
-header budgets, at most 64 total request headers, a 4 MiB request body budget,
+header budgets, at most 64 prepared request headers (including Accept and
+Content-Type, before the shared builder adds Authorization), a 4 MiB request body budget,
 and bounded JSON depth and node counts. Explicit body bytes are not parsed or
 reserialized. JSON bodies use the existing serializer and allocation guards.
 Authorization, cookies, host, framing and hop-by-hop overrides are rejected.
@@ -98,6 +99,11 @@ points, pre-credential rejection, post-token timeout/policy rejection,
 single-dispatch statuses and errors, pending/late operations, bounded pulls,
 EOF, disposal, cancellation and uncertainty. Existing Fabric stream and
 buffered native runtime tests remain separate regression obligations.
+
+The package is currently at `engine/core/http/executor`. Physical relocation
+to `engine/sdk/http` is a separate compatibility refactor; this adapter does not
+adopt an unqualified extraction or introduce neutral runtime aliases of its own.
+The existing package identity and compatibility imports remain stable.
 
 These are authored fixtures, not a live-service claim. Compilation, test
 execution, optional-feature consumer checks and publication require their

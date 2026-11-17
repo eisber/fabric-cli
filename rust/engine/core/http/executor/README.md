@@ -97,3 +97,24 @@ See [native streaming boundaries and evidence](../../../../authoring-docs/native
 for disposal semantics, metadata bounds, offline instrumented tests and the
 Azure header-duplicate visibility limitation. No new transport/runtime/auth
 engine, native/MWC origin policy or live-service support claim is implied.
+
+## Explicit-scope native streaming
+
+`native_stream::{NativeScopeStreamExecutor, NativeStreamPreflight}` adds a
+caller-selected HTTPS endpoint, literal HTTPS audience and immutable service
+preflight without changing the existing Fabric adapter. The same names are
+available in `scoped_native_stream`. This adapter reuses native request
+preparation and the existing streaming dispatch, deadline, metadata, body and
+uncertainty mechanics.
+
+All generic request guards and caller preflight run before credential access.
+Exactly one token request uses the literal scope, then service preflight and
+the original remaining budget are checked again immediately before the single
+HTTP send. A server timeout that no longer fits must fail without clamping or
+dispatch. The caller owns service permissions and query policy; this adapter
+does not infer them from an endpoint or parse query languages.
+
+See [explicit-scope streaming](../../../../authoring-docs/scoped-native-stream-http.md)
+for injection, redirect/retry assumptions, compatibility and unverified live
+authorization boundaries. The compatibility namespace and package identity
+remain `fabric_sdk_http::native_stream`, independently of physical SDK layout.

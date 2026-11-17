@@ -5,7 +5,7 @@
 
 use crate::{
     ExecutionFuture, ExecutionTimer,
-    native_runtime::prepare_native_request,
+    native_runtime::{MAX_URL_BYTES, prepare_native_request},
     native_stream::{DispatchState, before_deadline, response_error, send_stream, stream_response},
 };
 use azure_core::{
@@ -19,7 +19,6 @@ use fabric_sdk::runtime::{
 use std::{fmt, sync::Arc};
 
 const MAX_SCOPE_BYTES: usize = 4096;
-const MAX_URL_BYTES: usize = 16 * 1024;
 
 /// Caller-owned service policy checked before credentials and again before send.
 ///
