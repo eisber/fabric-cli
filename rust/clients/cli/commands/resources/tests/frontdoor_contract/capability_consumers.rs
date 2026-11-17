@@ -138,13 +138,14 @@ async fn focused_raw_api_dispatch_prepares_body_and_preserves_audience_before_fi
         .unwrap();
     assert_eq!(result.data, Some(json!({"id":"created"})));
     assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
-    let requests = wire.requests.lock().unwrap();
-    assert_eq!(requests[0].method().to_string(), "POST");
-    assert_eq!(
-        serde_json::from_slice::<Value>(&azure_core::Bytes::from(requests[0].body())).unwrap(),
-        json!({"name":"find"})
-    );
-    drop(requests);
+    {
+        let requests = wire.requests.lock().unwrap();
+        assert_eq!(requests[0].method().to_string(), "POST");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&azure_core::Bytes::from(requests[0].body())).unwrap(),
+            json!({"name":"find"})
+        );
+    }
 
     let matches = fabric_cli_api::parser::register(clap::Command::new("direct"))
         .try_get_matches_from([
