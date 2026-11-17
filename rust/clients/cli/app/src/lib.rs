@@ -64,6 +64,7 @@ pub mod v2_dataagent_list_host;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
+pub mod v2_link_dataagent_host;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
 /// Native TABLE composition for opt-in physical Lakehouse data-schema reads.
