@@ -123,7 +123,7 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
   fs.mkdirSync(artifacts, {recursive: false});
   const started = Date.now(), deadline = started + 570000;
   const report = {schema: 1, passed: false,
-    qualification: 'candidate-only offline Windows DataAgent and metadata-selected consumer proof',
+    qualification: entry.qualification || 'candidate-only offline Windows DataAgent and metadata-selected consumer proof',
     original_source: entry.source, integration_base: entry.base, commands: [],
     run_id: process.env.GITHUB_RUN_ID, run_attempt: process.env.GITHUB_RUN_ATTEMPT};
   const save = () => fs.writeFileSync(path.join(artifacts, 'receipt.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -181,12 +181,12 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     const graph = JSON.parse(fs.readFileSync(path.join(rust, 'validation/impact-graph.json')));
     const selected = selectedCommands(selection, undefined, graph, entry.leaves);
     report.selection = {fingerprint: selection.fingerprint, inputs: entry.inputs,
-      scope: 'explicit DataAgent entry and coupled consumer inputs, not the complete head diff',
+      scope: entry.scope || 'explicit DataAgent entry and coupled consumer inputs, not the complete head diff',
       deferred: selected.deferred, qualification_profiles: selection.profiles.map(item => item.id),
       qualification_checks: selection.checks};
     const commands = [
       {args: notebook.COMMANDS[0]},
-      ...entry.leaves.map(leafCommand),
+      ...entry.leaves.map(entry.leafCommand || leafCommand),
       ...(entry.commands || []),
       ...selected.commands,
       update.COMMANDS[4],

@@ -44,33 +44,16 @@ pub fn command() -> Command {
 /// Whether the explicit v2 head should dispatch to this bounded host.
 pub fn handles(args: &[OsString]) -> bool {
     if args.first().is_some_and(|arg| arg == "link") {
-        return match parse(args.to_vec()) {
-            Ok(command) => command
-                .path
-                .split('/')
-                .nth(2)
-                .is_some_and(|owner| owner.ends_with(".DataAgent")),
-            Err(_) => {
-                if args.len() == 2 && matches!(args[1].to_str(), Some("--help" | "-h")) {
-                    return true;
-                }
-                v2_link::link_command()
-                    .disable_help_flag(true)
-                    .ignore_errors(true)
-                    .try_get_matches_from(args)
-                    .ok()
-                    .and_then(|matches| matches.get_one::<String>("path").cloned())
-                    .is_some_and(|path| {
-                        path.split('/')
-                            .nth(2)
-                            .is_some_and(|owner| owner.ends_with(".DataAgent"))
-                    })
-            }
-        };
+        return crate::v2_link_dispatch::root_owner(args) == Some(LinkOwner::DataAgent)
+            || (args.len() == 2 && matches!(args[1].to_str(), Some("--help" | "-h")));
     }
     args.first().is_some_and(|arg| arg == "artifact")
         && args.get(1).is_some_and(|arg| arg == "data-agent")
-        && args.get(2).is_some_and(|arg| arg == "link")
+        && (args.len() == 2
+            || matches!(
+                args.get(2).and_then(|arg| arg.to_str()),
+                Some("link" | "--help" | "-h")
+            ))
 }
 
 /// Parse the constrained surface using the existing shared link argument model.

@@ -41,10 +41,26 @@ jobs:
           rust/scripts/integration-update-smoke.test.cjs
           rust/scripts/integration-dataagent-smoke.test.cjs
           rust/scripts/integration-dataagent-link-smoke.test.cjs
+          rust/scripts/integration-kql-link-smoke.test.cjs
       - name: Build two profiles once and exercise isolated offline entry points
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
         run: node rust/scripts/integration-smoke.cjs "$env:RUNNER_TEMP/integration-smoke-receipts"
+      - name: Check the PR55 candidate's KQL LINK and current consumers offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        run: >-
+          node rust/scripts/integration-kql-link-smoke.cjs
+          "$env:RUNNER_TEMP/integration-smoke-receipts/kql-link"
       - name: Check the PR52 candidate's DataAgent LINK and combined paths offline
         if: >-
           github.event_name == 'pull_request' &&

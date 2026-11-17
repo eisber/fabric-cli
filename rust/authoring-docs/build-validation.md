@@ -38,6 +38,34 @@ inventories. Broader profile/oracle obligations are recorded, not claimed.
 This candidate-only leaf is not rerun or claimed on postmerge pushes and is
 not live-provider, canonical frontier, three-OS or release qualification.
 
+The PR55 owned integration candidate additionally runs
+`scripts/integration-kql-link-smoke.cjs` on hosted Windows only, pinned to source
+`e1baaee16dc6eb4917c5310224c27fcd258564ef` and integration base
+`61c8221914152e231e5e64f7bd38418f66264999`. The small entry wrapper reuses the
+DataAgent runner's actual locked/offline Cargo metadata, impact planner,
+570-second budget, output/exit receipts and before/after source inventories.
+The KQL host suite explicitly enables `headless,v2-link-kql`, including its
+headless executable case; generic headless-only zero tests cannot satisfy it.
+KQL and current DataAgent binary-host unit namespaces use qualified test names
+derived from the current registered source tests, not frozen counts, under both
+`headless,v2-link-kql` and the combined refresh profile. Original
+DataAgent LINK host/process and LIST targets remain selected alongside the shared
+mutation wire and SDK link contracts and metadata-selected current consumers.
+The entry also runs actual all-target check and strict Clippy for default,
+headless-only, KQL registration-only, and combined
+`headless,runtime-v2,v2-link-kql,v2-refresh` profiles. Selected consumer tests retain
+their own features: isolated Eventhouse/KQL CREATE process suites never acquire
+the other owner's feature; explicit composition remains separate. Report retains
+its complete qualified root/host/HTTP/status/process inventory.
+The input set explicitly includes coupled shared LINK, the common typed-owner
+dispatch module and current main-module consumers; it is not the complete
+candidate diff. Broader reverse-consumer,
+profile and contract obligations remain in the receipt as deferred, not passed
+qualification. Cheap synthetic-metadata regressions test the real scoped path
+mappings and fail when their removal drops the KQL leaf; those fixtures are not
+Cargo or native evidence. Configuring this candidate-only leaf is not a recorded
+native pass, postmerge-push proof, live-service, three-OS or release qualification.
+
 The PR56 owned integration candidate additionally runs
 `scripts/integration-update-smoke.cjs` on hosted Windows only. It pins the
 original metadata UPDATE source and integration base and reuses the process,
