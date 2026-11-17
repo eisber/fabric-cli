@@ -1,0 +1,197 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Post-hoc native bootstrap (partial)
+run-name: posthoc:${{ inputs.source_sha }}:${{ inputs.workload_id }}:${{ inputs.platforms }}:${{ inputs.repair_of || 'initial' }}
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/rust-native-posthoc.yml
+      - .github/scripts/rust-native-posthoc*
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/rust-native-posthoc.yml
+      - .github/scripts/rust-native-posthoc*
+  workflow_dispatch:
+    inputs:
+      driver_sha:
+        description: Exact reviewed and verified registered default-main driver SHA
+        required: true
+        type: string
+      source_sha:
+        description: Full lowercase current fixed integration merge SHA
+        required: true
+        type: string
+      base_sha:
+        description: Exact first merge parent (not a native baseline)
+        required: true
+        type: string
+      mode:
+        description: Fixed partial workload only, not affected or full qualification
+        required: true
+        type: choice
+        options: [bootstrap]
+      workload_id:
+        description: Frozen driver policy and workload
+        required: true
+        type: choice
+        options: [bootstrap-v1]
+      platforms:
+        description: Allowlisted native hosts, at most two jobs
+        required: true
+        type: choice
+        options: [both, linux, macos]
+      route:
+        description: Manual or one coalesced immutable controller batch
+        required: true
+        type: choice
+        options: [manual, batch]
+      batch_id:
+        description: Empty for manual; bounded immutable batch identifier otherwise
+        required: false
+        default: ""
+        type: string
+      repair_of:
+        description: Must be empty; unprovable retries are disabled by this policy
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rust-native-posthoc-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    name: Offline post-hoc contracts (not native evidence)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: node --test .github/scripts/rust-native-posthoc.test.cjs .github/scripts/integration-smoke-recovery.test.cjs
+
+  prepare:
+    name: Admit fixed partial immutable batch
+    needs: contracts
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.pin.outputs.matrix }}
+      source_sha: ${{ steps.pin.outputs.source_sha }}
+    env:
+      REQUESTED_DRIVER_SHA: ${{ inputs.driver_sha }}
+      REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
+      REQUESTED_MODE: ${{ inputs.mode }}
+      REQUESTED_ROUTE: ${{ inputs.route }}
+      REQUESTED_BATCH_ID: ${{ inputs.batch_id }}
+    steps:
+      - name: Check out trusted dispatch driver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: driver
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify genuine main driver, source freshness and finite history
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
+        run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-pin
+      - name: Check out immutable source, never the main driver as DUT
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.pin.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source bytes, exact first parent, anchor and pinned workload APIs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
+        run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-inspect
+      - name: Retain admission and failure evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: posthoc-request-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posthoc-request/
+          if-no-files-found: error
+          retention-days: 7
+
+  native:
+    name: Fixed partial native (${{ matrix.platform }})
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 15
+    env:
+      REQUESTED_DRIVER_SHA: ${{ inputs.driver_sha }}
+      REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      REQUESTED_BASE_SHA: ${{ inputs.base_sha }}
+      REQUESTED_MODE: ${{ inputs.mode }}
+      REQUESTED_ROUTE: ${{ inputs.route }}
+      REQUESTED_BATCH_ID: ${{ inputs.batch_id }}
+      POSTHOC_PLATFORM: ${{ matrix.platform }}
+      POSTHOC_IMAGE: ${{ matrix.image }}
+    steps:
+      - name: Check out exact trusted driver without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: driver
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore only this run and attempt's admission evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: posthoc-request-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posthoc-request
+      - name: Check out exact admitted DUT separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check current source again on the acquired native host
+        # This separate guard never loads DUT code or forwards the provider token.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
+        run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-refresh
+      - name: Execute frozen partial workload with no provider credentials
+        env:
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
+          POSTHOC_PRIVATE: ${{ runner.temp }}/posthoc-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+        run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap
+      - name: Final read-only current-source guard and receipt audit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POSTHOC_ARTIFACTS: ${{ runner.temp }}/posthoc-request
+        run: node driver/.github/scripts/rust-native-posthoc.cjs bootstrap-finalize
+      - name: Retain native receipts and partial failure output
+        if: always()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: posthoc-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posthoc-request/
+          if-no-files-found: error
+          retention-days: 7
