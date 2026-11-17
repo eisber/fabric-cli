@@ -30,6 +30,13 @@ default-account fallback or plaintext token storage is introduced. SDK service
 clients still receive a caller-injected credential and do not depend on these
 identity implementations.
 
+For both supported managed hosts, the existing metadata HTTP guard also accepts
+the exact resource `https://api.kusto.windows.net` produced by the official
+credential for this scope. The metadata endpoint, API version, selected
+system-assigned or client-ID binding and App Service platform-header checks are
+unchanged. Isolated child-process fixtures cover VM and App Service with both
+identity selectors using fake HTTP; they never contact a live metadata endpoint.
+
 The added Windows `TokenAudience::Kusto` variant is an additive resource API, but
 callers exhaustively matching that enum must handle the new variant. It changes
 no native interop, authority validation, account selection or token-cache format.
