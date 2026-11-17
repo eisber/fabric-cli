@@ -112,7 +112,7 @@ impl ExportSink for Output {
 async fn real_root_query_without_export_executes_actual_sdk_and_retains_native_data() {
     let command = command(&["--text", "opaque inline text"]);
     assert!(command.export.is_none());
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
     let credential = Arc::new(Credential::default());
     let client = client(
         wire.clone(),
@@ -159,7 +159,7 @@ async fn real_root_query_without_export_executes_actual_sdk_and_retains_native_d
     assert_eq!(result.resultsets[0].columns[0].name, "value");
     assert_eq!(result.resultsets[0].columns[1].name, "value");
     assert_eq!(
-        messages(&wire)[3]["params"]["arguments"]["query"],
+        messages(&wire)[2]["params"]["arguments"]["query"],
         "opaque inline text"
     );
 }
@@ -168,7 +168,7 @@ async fn real_root_query_without_export_executes_actual_sdk_and_retains_native_d
 async fn actual_root_file_stdin_and_explicit_engine_are_preserved() {
     for path in ["-", "private-statement.kql"] {
         let command = command(&["--file", path, "--engine", "advertised-agent"]);
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
         let client = client(
             wire.clone(),
             Arc::new(Credential::default()),
@@ -197,7 +197,7 @@ async fn actual_root_file_stdin_and_explicit_engine_are_preserved() {
         assert_eq!(inputs.reads, 1);
         assert_eq!(inputs.stdin, path == "-");
         assert_eq!(
-            messages(&wire)[3]["params"]["arguments"]["query"],
+            messages(&wire)[2]["params"]["arguments"]["query"],
             "exact\r\nstatement"
         );
     }
@@ -338,7 +338,7 @@ async fn truncated_or_missing_typed_results_retain_identity_without_success() {
             json!({"content":[{"type":"resource","resource":{
                 "uri":"file:///legacy.csv","mimeType":"text/csv","text":"n\n1"}}]})
         };
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, result)]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, result)]));
         let client = client(
             wire.clone(),
             Arc::new(Credential::default()),
@@ -374,7 +374,7 @@ async fn truncated_or_missing_typed_results_retain_identity_without_success() {
             assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
                 if error.kind == QueryErrorKind::MissingTypedJson && error.query_dispatched));
         }
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
     }
 }
 
@@ -483,7 +483,7 @@ async fn root_lost_query_response_retains_uncertain_dispatch_and_never_replays()
     assert_eq!(observed.identity.execution_artifact.item, EXECUTION);
     assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
         if error.kind == QueryErrorKind::Transport && error.query_dispatched));
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[test]
@@ -556,7 +556,7 @@ fn root_cancel_after_query_dispatch_retains_target_and_releases_local_http() {
     let deadline = deadline();
     let mut observation = Box::pin(prepared.execute(&deadline, cancel));
     assert!(observation.as_mut().now_or_never().is_none());
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     canceled.store(true, Ordering::SeqCst);
     let observed = observation
         .as_mut()
@@ -567,7 +567,7 @@ fn root_cancel_after_query_dispatch_retains_target_and_releases_local_http() {
     assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
         if error.kind == QueryErrorKind::Canceled && error.query_dispatched));
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     assert_eq!(output.preflights, 1);
     assert_eq!(output.publishes, 0);
 }

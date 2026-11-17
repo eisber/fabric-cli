@@ -124,7 +124,7 @@ async fn observe(
     deadline: &NativeDeadline,
 ) -> (QueryObservation, Arc<Wire>) {
     let command = root_command(export);
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, content)]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, content)]));
     let client = client(
         wire.clone(),
         Arc::new(Credential::default()),
@@ -186,7 +186,7 @@ async fn actual_root_sdk_bridge_json_csv_and_parquet_preserve_declared_values() 
         assert_eq!(delivery.receipt.exit_code, 0);
         assert_eq!(delivery.receipt.receipt["execution"]["status"], "succeeded");
         assert_eq!(delivery.receipt.receipt["delivery"]["status"], "succeeded");
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
         let Some(ConvertedQuery::AiHub(converted)) = &delivery.converted else {
             panic!("actual Q3a AIHub conversion expected");
         };
@@ -288,7 +288,7 @@ async fn no_export_renders_all_actual_native_sets_and_retains_auxiliary_resource
     };
     assert_eq!(converted.datasets.len(), 2);
     assert_eq!(converted.resources.len(), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         delivery.write_to_streams(&mut stdout, &mut stderr).unwrap(),
@@ -323,7 +323,7 @@ async fn multiple_sets_fail_single_file_without_selecting_or_publishing_first() 
     };
     assert_eq!(converted.datasets.len(), 2);
     assert!(!output.exists());
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     drop(sink);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
@@ -349,7 +349,7 @@ async fn late_no_clobber_failure_retains_completed_query_and_only_cleans_own_sta
     assert_eq!(delivery.receipt.receipt["execution"]["status"], "succeeded");
     assert_eq!(delivery.receipt.receipt["delivery"]["status"], "failed");
     assert!(delivery.converted.is_some());
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     assert_eq!(std::fs::read(&output).unwrap(), b"other-writer");
     drop(sink);
     assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
@@ -376,7 +376,7 @@ async fn unrepresentable_native_decimal_metadata_is_typed_failure_not_a_success_
         RESULT
     );
     assert!(!output.exists());
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     drop(sink);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
@@ -417,7 +417,7 @@ async fn plain_decimal_uses_exact_validated_output_layout_without_inventing_nati
             "Decimal"
         );
         assert!(output.exists());
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
     }
 }
 
@@ -488,5 +488,5 @@ async fn receipt_writer_failure_keeps_actual_published_file_and_query_evidence()
         "succeeded"
     );
     assert_eq!(std::fs::read(&output).unwrap(), expected);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }

@@ -76,7 +76,7 @@ fn prepared(wire: Arc<Wire>, credential: Arc<Credential>, stage: Stage) -> Prepa
 
 #[tokio::test]
 async fn real_sdk_typed_tokens_target_scope_and_opaque_input_are_wired() {
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
     let credential = Arc::new(Credential::default());
     let result = prepared(wire.clone(), credential.clone(), Stage::Production)
         .execute(&deadline(), pending())
@@ -94,14 +94,23 @@ async fn real_sdk_typed_tokens_target_scope_and_opaque_input_are_wired() {
     assert_eq!(result.resultsets[0].columns[1].name, "value");
     assert_eq!(credential.scopes.lock().unwrap().as_slice(), [SCOPE]);
     let messages = messages(&wire);
-    assert_eq!(messages.len(), 4);
+    assert_eq!(messages.len(), 3);
+    assert_eq!(
+        messages
+            .iter()
+            .map(|message| message["method"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["initialize", "notifications/initialized", "tools/call"]
+    );
+    assert_eq!(messages[2]["id"], 2);
+    assert_eq!(messages[2]["params"]["name"], "execute_query");
     for message in &messages {
         assert_eq!(
             message["params"]["_meta"]["variants"],
             "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce"
         );
     }
-    let arguments = &messages[3]["params"]["arguments"];
+    let arguments = &messages[2]["params"]["arguments"];
     assert_eq!(arguments["artifactId"], format!("{AGENT}/{SOURCE}"));
     assert_eq!(arguments["query"], "opaque synthetic query\n");
     assert_eq!(arguments["max_rows"], 500);
@@ -111,7 +120,7 @@ async fn real_sdk_typed_tokens_target_scope_and_opaque_input_are_wired() {
 
 #[tokio::test]
 async fn sandbox_stage_is_explicit_and_independent_of_typed_result_opt_in() {
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, success())]));
     prepared(
         wire.clone(),
         Arc::new(Credential::default()),
@@ -131,7 +140,7 @@ async fn sandbox_stage_is_explicit_and_independent_of_typed_result_opt_in() {
 #[tokio::test]
 async fn missing_typed_resource_has_no_csv_fallback_or_second_query() {
     let wire = Wire::new(setup().into_iter().chain([rpc(
-        3,
+        2,
         json!({"content":[{"type":"resource","resource":{
             "uri":"file:///legacy.csv","mimeType":"text/csv","text":"n\r\n1\r\n"}}]}),
     )]));
@@ -145,7 +154,7 @@ async fn missing_typed_resource_has_no_csv_fallback_or_second_query() {
     .unwrap_err();
     assert_eq!(error.kind, QueryErrorKind::MissingTypedJson);
     assert!(error.query_dispatched);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
@@ -180,25 +189,19 @@ async fn local_cancellation_before_credentials_is_not_remote_cancellation() {
 }
 
 #[tokio::test]
-async fn missing_or_unsafe_discovery_annotations_never_dispatch_query() {
-    for annotations in [
-        None,
-        Some(json!({"readOnlyHint":false,"destructiveHint":false})),
-        Some(json!({"readOnlyHint":true,"destructiveHint":true})),
-        Some(json!({"readOnlyHint":true})),
-    ] {
-        let mut advertised = tool();
-        match annotations {
-            Some(annotations) => advertised["annotations"] = annotations,
-            None => {
-                advertised.as_object_mut().unwrap().remove("annotations");
-            }
-        }
-        let wire = Wire::new([
-            initialize(),
-            response(202, vec![], "application/json", None),
-            rpc(2, json!({"tools":[advertised]})),
-        ]);
+async fn fixed_tool_remote_missing_tool_or_argument_errors_keep_dispatch_evidence_without_replay() {
+    for code in [-32601, -32602] {
+        let error = serde_json::to_vec(&json!({
+            "jsonrpc":"2.0","id":2,
+            "error":{"code":code,"message":"synthetic-private-provider-text"}
+        }))
+        .unwrap();
+        let wire = Wire::new(setup().into_iter().chain([response(
+            200,
+            error,
+            "application/json",
+            None,
+        )]));
         let error = prepared(
             wire.clone(),
             Arc::new(Credential::default()),
@@ -207,13 +210,19 @@ async fn missing_or_unsafe_discovery_annotations_never_dispatch_query() {
         .execute(&deadline(), pending())
         .await
         .unwrap_err();
-        assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
-        assert!(!error.query_dispatched);
+        assert_eq!(error.kind, QueryErrorKind::Rpc(code));
+        assert!(error.query_dispatched);
+        assert!(
+            !error
+                .to_string()
+                .contains("synthetic-private-provider-text")
+        );
         assert_eq!(wire.requests.lock().unwrap().len(), 3);
         assert!(
             messages(&wire)
                 .iter()
-                .all(|message| message["method"] != "tools/call")
+                .all(|message| message["method"] != "tools/list")
         );
+        assert_eq!(messages(&wire)[2]["params"]["name"], "execute_query");
     }
 }

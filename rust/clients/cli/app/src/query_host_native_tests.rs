@@ -12,6 +12,11 @@ use crate::{
     query_host::result::ConvertedQuery,
     tabular_export::FileSink,
 };
+use arrow_array::{
+    Array, BooleanArray, Decimal128Array, Float64Array, Int64Array, StringArray,
+    TimestampNanosecondArray,
+};
+use arrow_schema::{DataType, TimeUnit};
 use async_trait::async_trait;
 use azure_core::{
     Bytes,
@@ -309,12 +314,6 @@ fn settings() -> Map<String, Value> {
     }}).as_object().unwrap().clone()
 }
 fn aihub_replies() -> Vec<Reply> {
-    let mut initialize = rpc(
-        1,
-        json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},
-        "serverInfo":{"name":"offline-native-fixture","version":"1"}}),
-    );
-    initialize.session = true;
     let text = format!(
         r#"{{"schemaVersion":1,"resultId":"{RESULT}","columns":[
         {{"name":"wide","engineType":"uint64","logicalType":"integer","encoding":"json-number"}},
@@ -322,6 +321,16 @@ fn aihub_replies() -> Vec<Reply> {
         "rows":[[18446744073709551615,""],[null,null]],"rowCount":2,"truncated":false,
         "maxRows":1000,"totalRowCount":null}}"#
     );
+    aihub_replies_with_content(json!({"content":[support::typed(&text,"opaque:actual-result")]}))
+}
+
+fn aihub_replies_with_content(content: Value) -> Vec<Reply> {
+    let mut initialize = rpc(
+        1,
+        json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},
+        "serverInfo":{"name":"offline-native-fixture","version":"1"}}),
+    );
+    initialize.session = true;
     vec![
         owner("DataAgent"),
         reply(json!({"value":[{"id":SOURCE,"displayName":"actual-source",
@@ -332,11 +341,7 @@ fn aihub_replies() -> Vec<Reply> {
             body: Vec::new(),
             session: false,
         },
-        rpc(2, json!({"tools":[support::tool()]})),
-        rpc(
-            3,
-            json!({"content":[support::typed(&text,"opaque:actual-result")]}),
-        ),
+        rpc(2, content),
     ]
 }
 
@@ -471,7 +476,19 @@ async fn actual_native_aihub_context_resolves_datasource_then_sends_exact_varian
         json!(["18446744073709551615", ""])
     );
     let requests = http.requests.lock().unwrap();
-    assert_eq!(requests.len(), 6);
+    assert_eq!(requests.len(), 5);
+    let mcp = requests[2..]
+        .iter()
+        .map(|request| {
+            serde_json::from_slice::<Value>(Bytes::from(request.body()).as_ref()).unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        mcp.iter()
+            .map(|message| message["method"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["initialize", "notifications/initialized", "tools/call"]
+    );
     for request in &requests[2..] {
         assert_eq!(
             request.url().path(),
@@ -484,7 +501,9 @@ async fn actual_native_aihub_context_resolves_datasource_then_sends_exact_varian
             "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce"
         );
     }
-    let query: Value = serde_json::from_slice(Bytes::from(requests[5].body()).as_ref()).unwrap();
+    let query: Value = serde_json::from_slice(Bytes::from(requests[4].body()).as_ref()).unwrap();
+    assert_eq!(query["id"], 2);
+    assert_eq!(query["params"]["name"], "execute_query");
     assert_eq!(
         query["params"]["arguments"]["artifactId"],
         format!("{ITEM}/{SOURCE}")
@@ -494,6 +513,236 @@ async fn actual_native_aihub_context_resolves_datasource_then_sends_exact_varian
         credential.scopes.lock().unwrap().as_slice(),
         [Audience::Fabric.scope(); 3]
     );
+}
+
+#[tokio::test]
+async fn actual_root_compact_schema1_typed_constants_roundtrip_json_csv_and_parquet() {
+    let text = format!(
+        r#"{{"schemaVersion":1,"resultId":"{RESULT}","columns":[
+        {{"name":"wide","engineType":"Int64","logicalType":"int64","encoding":"json-number"}},
+        {{"name":"amount","engineType":"Decimal","logicalType":"decimal","encoding":"json-number"}},
+        {{"name":"fraction","engineType":"Double","logicalType":"number","encoding":"json-number"}},
+        {{"name":"enabled","engineType":"Boolean","logicalType":"boolean","encoding":"json-boolean"}},
+        {{"name":"text","engineType":"String","logicalType":"string","encoding":"text"}},
+        {{"name":"absent","engineType":"Int64","logicalType":"int64","encoding":"json-number"}},
+        {{"name":"instant","engineType":"DateTime","logicalType":"datetime","encoding":"iso8601"}}],
+        "rows":[[9007199254740993,1.25,0.125,true,"constant",null,"1970-01-01T00:00:00.0000001"]],
+        "rowCount":1,"truncated":false,"maxRows":1000,"totalRowCount":null}}"#
+    );
+    let content = json!({"content":[{"type":"resource","resource":{
+        "uri":"opaque:public-synthetic-constants","mimeType":"application/json","text":text,
+        "_meta":{"fabric.queryResult":{"schemaVersion":1,"resultId":RESULT,"format":"json"}}
+    }}]});
+    for format in [Some("json"), Some("csv"), Some("parquet"), None] {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("constants.explicit-format");
+        let http = Http::new(aihub_replies_with_content(content.clone()));
+        let credential = Arc::new(Credential::default());
+        let host = host(http.clone(), credential.clone(), Some(settings()));
+        let deadline = NativeDeadline::new(Duration::from_secs(120)).unwrap();
+        let canceled = AtomicBool::new(false);
+        let mut sink = FileSink::default();
+        let delivery = host
+            .dispatch(
+                &command("DataAgent", format.map(|format| (format, output.as_path()))),
+                QueryControl {
+                    deadline: &deadline,
+                    end: Instant::now() + Duration::from_secs(120),
+                    canceled: &canceled,
+                    request_id: "query;compact-typed-constants",
+                },
+                &mut NoInput,
+                &mut sink,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert!(delivery.error.is_none());
+        assert_eq!(delivery.receipt.exit_code, 0);
+        assert_eq!(delivery.receipt.receipt["execution"]["status"], "succeeded");
+        let Some(ConvertedQuery::AiHub(converted)) = &delivery.converted else {
+            panic!("actual SDK result through strict bridge expected");
+        };
+        assert_eq!(converted.datasets.len(), 1);
+        let dataset = &converted.datasets[0];
+        assert_eq!(dataset.result_id, RESULT);
+        assert_eq!(dataset.schema_version, 1);
+        assert_eq!(dataset.columns[0].engine_type, "Int64");
+        assert_eq!(dataset.columns[0].logical_type, "int64");
+        assert_eq!(dataset.columns[1].engine_type, "Decimal");
+        assert_eq!(dataset.columns[5].logical_type, "int64");
+        let table = &dataset.table;
+        assert_eq!(table.num_rows(), 1);
+        assert_eq!(
+            table
+                .schema()
+                .fields()
+                .iter()
+                .map(|field| field.data_type().clone())
+                .collect::<Vec<_>>(),
+            [
+                DataType::Int64,
+                DataType::Decimal128(3, 2),
+                DataType::Float64,
+                DataType::Boolean,
+                DataType::Utf8,
+                DataType::Int64,
+                DataType::Timestamp(TimeUnit::Nanosecond, None)
+            ]
+        );
+        assert_eq!(
+            table.schema().field(1).metadata()[fabric_sdk_tabular::NATIVE_TYPE_METADATA_KEY],
+            "Decimal"
+        );
+        let bytes = match format {
+            Some(_) => {
+                assert!(delivery.presentation.is_none());
+                assert_eq!(delivery.receipt.receipt["delivery"]["status"], "succeeded");
+                std::fs::read(&output).unwrap()
+            }
+            None => {
+                assert!(!output.exists());
+                delivery.presentation.as_ref().unwrap().clone()
+            }
+        };
+        match format {
+            Some("json") | None => {
+                let json: Value = serde_json::from_slice(&bytes).unwrap();
+                let json = if format.is_none() {
+                    &json["resultsets"][0]
+                } else {
+                    &json
+                };
+                assert_eq!(json["schema"].as_array().unwrap().len(), 7);
+                assert_eq!(
+                    json["rows"],
+                    json!([[
+                        "9007199254740993",
+                        "1.25",
+                        0.125,
+                        true,
+                        "constant",
+                        null,
+                        "100"
+                    ]])
+                );
+                assert_eq!(
+                    json["schema"][0]["metadata"][fabric_sdk_tabular::NATIVE_TYPE_METADATA_KEY],
+                    "Int64"
+                );
+            }
+            Some("csv") => assert_eq!(
+                String::from_utf8(bytes).unwrap(),
+                "\"wide\",\"amount\",\"fraction\",\"enabled\",\"text\",\"absent\",\"instant\"\r\n\
+                \"9007199254740993\",\"1.25\",\"0.125\",\"true\",\"constant\",,\"100\"\r\n"
+            ),
+            Some("parquet") => {
+                assert_eq!(&bytes[..4], b"PAR1");
+                let builder = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(bytes)).unwrap();
+                assert_eq!(builder.schema().as_ref(), table.schema().as_ref());
+                let batches = builder
+                    .build()
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+                assert_eq!(batches.as_slice(), table.batches());
+                let batch = &batches[0];
+                assert_eq!(
+                    batch
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .value(0),
+                    9_007_199_254_740_993_i64
+                );
+                assert_eq!(
+                    batch
+                        .column(1)
+                        .as_any()
+                        .downcast_ref::<Decimal128Array>()
+                        .unwrap()
+                        .value(0),
+                    125
+                );
+                assert_eq!(
+                    batch
+                        .column(2)
+                        .as_any()
+                        .downcast_ref::<Float64Array>()
+                        .unwrap()
+                        .value(0),
+                    0.125
+                );
+                assert!(
+                    batch
+                        .column(3)
+                        .as_any()
+                        .downcast_ref::<BooleanArray>()
+                        .unwrap()
+                        .value(0)
+                );
+                assert_eq!(
+                    batch
+                        .column(4)
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .unwrap()
+                        .value(0),
+                    "constant"
+                );
+                assert!(
+                    batch
+                        .column(5)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .is_null(0)
+                );
+                assert_eq!(
+                    batch
+                        .column(6)
+                        .as_any()
+                        .downcast_ref::<TimestampNanosecondArray>()
+                        .unwrap()
+                        .value(0),
+                    100
+                );
+            }
+            Some(_) => unreachable!(),
+        }
+        let requests = http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 5);
+        let methods = requests[2..]
+            .iter()
+            .map(|request| {
+                serde_json::from_slice::<Value>(Bytes::from(request.body()).as_ref()).unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            methods
+                .iter()
+                .map(|message| message["method"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["initialize", "notifications/initialized", "tools/call"]
+        );
+        assert_eq!(methods[2]["id"], 2);
+        assert_eq!(methods[2]["params"]["name"], "execute_query");
+        assert_eq!(
+            methods[2]["params"]["arguments"]["artifactId"],
+            format!("{ITEM}/{SOURCE}")
+        );
+        assert_eq!(
+            credential.scopes.lock().unwrap().as_slice(),
+            [Audience::Fabric.scope(); 3]
+        );
+        drop(delivery);
+        drop(sink);
+        assert_eq!(
+            std::fs::read_dir(directory.path()).unwrap().count(),
+            usize::from(format.is_some())
+        );
+    }
 }
 
 #[tokio::test]
@@ -673,7 +922,7 @@ async fn native_aihub_permission_failure_retains_status_without_data_or_kql_fall
             .contains("synthetic-private-provider-text")
     );
     assert!(!output.exists());
-    assert_eq!(http.requests.lock().unwrap().len(), 6);
+    assert_eq!(http.requests.lock().unwrap().len(), 5);
     assert_eq!(
         credential.scopes.lock().unwrap().as_slice(),
         [Audience::Fabric.scope(); 3]

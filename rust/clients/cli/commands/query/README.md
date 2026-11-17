@@ -42,12 +42,20 @@ DataAgent datasource, requires typed JSON, and consumes a caller-configured
 `Fabric.Routing.Documents.DataAgent` and
 `Fabric.Routing.Documents.DataAgent.TypedQueryResults`, plus the positive
 `Fabric.Routing.Documents.SqlReadOnlyEnforce` policy on the MCP lifecycle.
-Discovery must explicitly advertise `readOnlyHint: true` and
-`destructiveHint: false` before `execute_query` can be called; missing or unsafe
-annotations are not inferred from a tool name.
+The fixed `execute_query` contract uses initialize (ID 1), initialized
+notification, and one tool call (ID 2): three HTTP exchanges. It does not list
+tools, discover a schema, inspect annotation hints, or retry a missing tool.
+This intentionally removes discovery latency while retaining local argument
+validation and the positive read-policy variant. Remote missing-tool or argument
+errors retain dispatched/uncertain execution evidence and never cause fallback.
 Sandbox stage adds its separate stage token. Missing typed resources fail
 explicitly; legacy CSV, Markdown, prose, or auxiliary resource URLs are not
 queried or parsed as a fallback.
+Schema version 1 accepts either the full validated resource marker or its compact
+`schemaVersion`/`resultId`/`format` marker with authoritative schema, counts and
+positional rows in the JSON body. Explicit signed `int64` logical declarations
+retain their native identity and exact values, including values beyond the
+JavaScript safe-integer range; unknown aliases and inconsistent metadata fail.
 
 ## Typed output capability matrix
 
