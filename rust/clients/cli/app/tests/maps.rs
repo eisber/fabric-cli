@@ -299,6 +299,71 @@ async fn run(
 }
 
 #[test]
+fn global_options_between_item_and_maps_cannot_bypass_input_budgets() {
+    let oversized_path = "x".repeat(4097);
+    assert!(
+        parse_args([
+            "fab-rs",
+            "item",
+            "--output_format",
+            "json",
+            "maps",
+            "current",
+            "--coordinates",
+            "0,0",
+            "--offline-fixture",
+            &oversized_path,
+        ])
+        .is_err()
+    );
+    let mut args = vec![
+        "fab-rs",
+        "item",
+        "--output_format",
+        "json",
+        "maps",
+        "current",
+        "--coordinates",
+        "0,0",
+    ];
+    args.extend(std::iter::repeat_n("--experimental-private-contract", 301));
+    assert!(parse_args(args).is_err());
+}
+
+#[test]
+fn namespace_selection_is_pure_and_handles_global_option_placement() {
+    for args in [
+        vec!["fab-rs", "item", "maps", "--help"],
+        vec![
+            "fab-rs",
+            "item",
+            "--output_format",
+            "json",
+            "maps",
+            "--help",
+        ],
+        vec![
+            "fab-rs",
+            "--output_format",
+            "text",
+            "item",
+            "maps",
+            "invalid",
+        ],
+    ] {
+        assert!(fabric_cli::parser::is_maps_invocation(
+            &args.into_iter().map(OsString::from).collect::<Vec<_>>()
+        ));
+    }
+    assert!(!fabric_cli::parser::is_maps_invocation(
+        &["fab-rs", "--output_format", "item", "get", "Demo.Workspace"]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+    ));
+}
+
+#[test]
 fn all_options_validate_before_any_host_or_transport_effects() {
     for args in [
         vec!["current", "--coordinates", "NaN,40"],

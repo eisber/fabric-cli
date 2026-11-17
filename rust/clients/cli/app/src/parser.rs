@@ -253,11 +253,8 @@ where
     #[cfg(feature = "maps")]
     if let Some(index) = root
         && args[index] == "item"
-        && args
-            .get(index + 1)
-            .is_some_and(|argument| argument == "maps")
     {
-        crate::maps::validate_arguments(&args[index + 2..])?;
+        crate::maps::validate_arguments(&args[index + 1..], 301)?;
     }
     if root.and_then(|index| args[index].to_str()) == Some("delete") {
         args = delete::normalize(&args, root.expect("selected delete root"));
@@ -461,6 +458,12 @@ where
         force: !list && values.get_flag("force"),
         output_format: matches.get_one::<String>("output_format").cloned(),
     })))
+}
+
+/// Whether argv selects the feature-owned item namespace, without accessing state.
+#[cfg(feature = "maps")]
+pub fn is_maps_invocation(args: &[OsString]) -> bool {
+    root_argument(args).is_some_and(|index| args[index] == "item")
 }
 
 fn root_argument(args: &[OsString]) -> Option<usize> {

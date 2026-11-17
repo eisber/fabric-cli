@@ -137,15 +137,18 @@ fn points(args: &ArgMatches, name: &str) -> Result<Vec<Coordinate>, clap::Error>
 /// Parse and validate every option before credentials, filesystem or networking.
 pub fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<MapsCommand, clap::Error> {
     let arguments: Vec<_> = arguments.into_iter().take(301).collect();
-    validate_arguments(&arguments)?;
+    validate_arguments(&arguments, 300)?;
     let matches = maps_command()
         .bin_name("fab-rs item maps")
         .try_get_matches_from(std::iter::once(OsString::from("maps")).chain(arguments))?;
     from_matches(&matches)
 }
 
-pub(crate) fn validate_arguments(arguments: &[OsString]) -> Result<(), clap::Error> {
-    if arguments.len() > 300 || arguments.iter().any(|a| a.len() > 4096) {
+pub(crate) fn validate_arguments(
+    arguments: &[OsString],
+    maximum_count: usize,
+) -> Result<(), clap::Error> {
+    if arguments.len() > maximum_count || arguments.iter().any(|a| a.len() > 4096) {
         return Err(invalid());
     }
     Ok(())

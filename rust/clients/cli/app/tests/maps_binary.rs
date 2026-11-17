@@ -9,9 +9,12 @@ use serde_json::{Value, json};
 use std::process::{Command, Output};
 
 fn run(args: &[&str]) -> Output {
+    let config = tempfile::tempdir().unwrap();
     Command::new(env!("CARGO_BIN_EXE_fab-rs"))
         .args(args)
         .env("FAB_RUST_AUTH_MODE", "invalid-offline-test-mode")
+        .env("FAB_RUST_CONFIG_ROOT", config.path())
+        .env_remove("FAB_RUST_CONTEXT")
         .output()
         .unwrap()
 }
@@ -247,9 +250,33 @@ fn nested_maps_fixture_uses_the_same_dispatch_in_batch_mode() {
             "item maps current --coordinates 0,0 --offline-fixture weather.json",
         ])
         .env("FAB_RUST_AUTH_MODE", "invalid-offline-test-mode")
+        .env("FAB_RUST_CONFIG_ROOT", temp.path().join("config"))
+        .env_remove("FAB_RUST_CONTEXT")
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     let document: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["data"], payload);
+}
+
+#[test]
+fn nested_global_options_reject_oversized_input_before_opening_a_fixture() {
+    let output = run(&[
+        "item",
+        "--output_format",
+        "json",
+        "maps",
+        "current",
+        "--coordinates",
+        "0,0",
+        "--offline-fixture",
+        &"x".repeat(4097),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("invalid_arguments")
+    );
 }

@@ -101,8 +101,26 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     }
     let invocation = parse_args(&arguments);
     #[cfg(feature = "maps")]
-    if let Ok(Invocation::Maps(command)) = &invocation {
-        return maps_main::run(command).map(ExitCode::from);
+    if fabric_cli::parser::is_maps_invocation(&arguments) {
+        match &invocation {
+            Ok(Invocation::Maps(command)) => {
+                return maps_main::run(command).map(ExitCode::from);
+            }
+            Ok(Invocation::Display(text)) => {
+                write!(io::stdout().lock(), "{text}")?;
+                return Ok(ExitCode::SUCCESS);
+            }
+            Err(error) => {
+                return write_error(
+                    CommandError {
+                        code: "invalid_arguments",
+                        message: invalid_arguments_message(error),
+                    },
+                    2,
+                );
+            }
+            _ => {}
+        }
     }
     if let Err(error) = &invocation
         && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
