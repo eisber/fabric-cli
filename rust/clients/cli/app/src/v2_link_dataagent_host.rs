@@ -11,6 +11,13 @@ use fabric_cli_mutations::{
         PreparedLink, ResolvedLinkTarget,
     },
 };
+use fabric_cli_output::{
+    OutputStream,
+    outcome::Recovery,
+    presentation::{
+        FlushPolicy, PreparedOutput, PresentationError, PresentationSource, RenderFailure, render,
+    },
+};
 use fabric_sdk_workspaces::mutations::{
     CompletionPolicy, ResourceError, ResourceMethod, ResourceOperation, ResourceOperations,
     ResourceOutcome,
@@ -329,33 +336,47 @@ impl Dispatch {
         u8::from(self.result.is_err())
     }
 
+    /// Render the host-selected raw JSON projection without delivery or replay.
+    ///
+    /// Native link receipt/failure evidence is retained independently of its
+    /// presentation. Arbitrary JSON is never classified as tabular output.
+    pub fn render(
+        self,
+    ) -> Result<PreparedOutput<Self>, Box<RenderFailure<Self, PresentationError>>> {
+        let rendered = render(
+            PresentationSource::Json(&self.value),
+            OutputStream::Stdout,
+            self.exit_code(),
+        );
+        PreparedOutput::new(self, rendered, Recovery::DoNotReplay)
+    }
+
     /// Deliver once, preserving the original dispatch even after a partial write.
     ///
     /// # Errors
     /// Retains bytes written and native evidence; callers must not replay the POST.
     pub fn write_to(self, writer: &mut dyn Write) -> Result<Self, Box<DeliveryFailure>> {
-        let mut written = 0;
-        let result = (|| {
-            let mut bytes = serde_json::to_vec(&self.value).map_err(io::Error::other)?;
-            bytes.push(b'\n');
-            while written < bytes.len() {
-                match writer.write(&bytes[written..]) {
-                    Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
-                    Ok(count) => written += count,
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(error) => return Err(error),
-                }
-            }
-            writer.flush()
-        })();
-        match result {
-            Ok(()) => Ok(self),
-            Err(error) => Err(Box::new(DeliveryFailure {
-                dispatch: self,
-                written,
-                error,
-            })),
-        }
+        let prepared = self.render().map_err(|failure| {
+            Box::new(DeliveryFailure {
+                dispatch: failure.outcome,
+                written: 0,
+                error: io::Error::other(failure.error),
+            })
+        })?;
+        prepared
+            .deliver(
+                writer,
+                &mut io::sink(),
+                FlushPolicy::Stream(OutputStream::Stdout),
+            )
+            .map(|delivered| delivered.outcome)
+            .map_err(|failure| {
+                Box::new(DeliveryFailure {
+                    dispatch: failure.prepared.outcome,
+                    written: failure.stdout_written,
+                    error: failure.error,
+                })
+            })
     }
 }
 
