@@ -24,6 +24,14 @@ use fabric_sdk_aihub_query::{
 use fabric_sdk_query::{EngineExecutor, QueryError as KqlError, QueryLimits, QueryResult};
 use std::{future::Future, time::Duration};
 
+/// Optional non-secret query connection bound to the existing trusted service.
+#[path = "query_host_connection.rs"]
+pub mod connection;
+
+/// Existing SDK metadata and path resolution for supported real query owners.
+#[path = "query_host_resolution.rs"]
+pub mod resolution;
+
 #[cfg(test)]
 #[path = "query_host_tests.rs"]
 mod tests;
@@ -65,8 +73,8 @@ pub struct QueryIdentity {
     pub requested_artifact: Artifact,
     /// Actual execution artifact, including an authoritative datasource binding.
     pub execution_artifact: Artifact,
-    /// Selected advertised engine, not inferred from query text.
-    pub engine: String,
+    /// Selected advertised engine, absent when a DataAgent advertises no override.
+    pub engine: Option<String>,
     /// Exact selected provider binding, retaining DataAgent datasource and stage.
     pub route: ResolvedRoute,
 }
@@ -89,9 +97,9 @@ enum PreparedProvider<'a> {
 /// resultset is introduced. Every dataset and native metadata remains available.
 pub enum NativeQueryResult {
     /// Complete explicitly typed AIHub resources and auxiliary evidence.
-    AiHub(TypedQueryResult),
+    AiHub(Box<TypedQueryResult>),
     /// Complete native KQL tables and terminal evidence.
-    Kql(QueryResult),
+    Kql(Box<QueryResult>),
 }
 
 /// Native observation retained independently of success, encoding or delivery.
@@ -192,7 +200,7 @@ pub fn prepare<'a>(
     let identity = QueryIdentity {
         requested_artifact: bound.target.requested_artifact,
         execution_artifact: bound.target.execution_artifact,
-        engine: route.engine().to_owned(),
+        engine: route.engine().map(str::to_owned),
         route: route.clone(),
     };
     let operation = match route {
@@ -249,15 +257,17 @@ impl PreparedQuery<'_> {
             Ok(match self.operation {
                 PreparedProvider::AiHub(operation) => {
                     match operation.execute(deadline, cancelled).await? {
-                        QueryOutcome::Complete(result) => NativeQueryResult::AiHub(result),
+                        QueryOutcome::Complete(result) => {
+                            NativeQueryResult::AiHub(Box::new(result))
+                        }
                         QueryOutcome::Incomplete(result) => {
                             return Err(QueryHostError::IncompleteAiHub(Box::new(result)));
                         }
                     }
                 }
-                PreparedProvider::Kql(operation, executor) => {
-                    NativeQueryResult::Kql(operation.execute(executor, deadline, cancelled).await?)
-                }
+                PreparedProvider::Kql(operation, executor) => NativeQueryResult::Kql(Box::new(
+                    operation.execute(executor, deadline, cancelled).await?,
+                )),
             })
         }
         .await;

@@ -41,7 +41,7 @@ fn prepared(wire: Arc<Wire>, credential: Arc<Credential>, stage: Stage) -> Prepa
         requested_artifact: agent.clone(),
         execution_artifact: artifact.clone(),
         data_agent: Some(DataAgentRoute {
-            engine: "advertised-agent".into(),
+            engine: Some("advertised-agent".into()),
             agent,
             datasource: SOURCE.into(),
             bound_artifact: artifact,

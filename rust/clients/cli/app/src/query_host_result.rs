@@ -28,9 +28,9 @@ mod tests;
 /// Every converted native dataset and its unchanged identities and metadata.
 pub enum ConvertedQuery {
     /// Strictly typed DataAgent resources, auxiliary resources and protocol data.
-    AiHub(AihubTabularResult),
+    AiHub(Box<AihubTabularResult>),
     /// Native KQL tables, diagnostics, metadata, terminal frame and evidence.
-    Kql(KqlTabularResult),
+    Kql(Box<KqlTabularResult>),
 }
 
 impl ConvertedQuery {
@@ -117,14 +117,16 @@ impl QueryObservation {
             let native = self.result?;
             check_output_control(deadline, canceled)?;
             let converted = match native {
-                NativeQueryResult::AiHub(result) => ConvertedQuery::AiHub(convert_aihub(
-                    QueryOutcome::Complete(result),
+                NativeQueryResult::AiHub(result) => ConvertedQuery::AiHub(Box::new(convert_aihub(
+                    QueryOutcome::Complete(*result),
                     conversion_limits,
                     conversion,
-                )?),
-                NativeQueryResult::Kql(result) => {
-                    ConvertedQuery::Kql(convert_kql(result, conversion_limits, conversion)?)
-                }
+                )?)),
+                NativeQueryResult::Kql(result) => ConvertedQuery::Kql(Box::new(convert_kql(
+                    *result,
+                    conversion_limits,
+                    conversion,
+                )?)),
             };
             delivery.converted = Some(converted);
             let tables = delivery

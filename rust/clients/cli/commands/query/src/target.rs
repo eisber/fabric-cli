@@ -43,8 +43,8 @@ pub enum Stage {
 /// An actual resolved DataAgent datasource, not a fabricated wrapper artifact.
 #[derive(Clone)]
 pub struct DataAgentRoute {
-    /// Exact advertised engine/capability identifier.
-    pub engine: String,
+    /// Exact advertised engine, or none when this datasource advertises no override.
+    pub engine: Option<String>,
     /// DataAgent whose configuration owns this datasource.
     pub agent: Artifact,
     /// Exact datasource identifier within that DataAgent.
@@ -111,10 +111,10 @@ impl ResolvedRoute {
     }
 
     /// Selected advertised engine ID, without inventing public grammar.
-    pub fn engine(&self) -> &str {
+    pub fn engine(&self) -> Option<&str> {
         match self {
-            Self::AiHub(route) => &route.engine,
-            Self::Kql(route) => &route.engine,
+            Self::AiHub(route) => route.engine.as_deref(),
+            Self::Kql(route) => Some(&route.engine),
         }
     }
 }
@@ -133,7 +133,10 @@ impl QueryTarget {
             return Err(PreparationError::InvalidTarget);
         }
         if let Some(route) = &self.data_agent
-            && (!identifier(&route.engine)
+            && (route
+                .engine
+                .as_deref()
+                .is_some_and(|engine| !identifier(engine))
                 || !route.agent.valid()
                 || !guid(&route.datasource)
                 || !route.bound_artifact.same_identity(&self.execution_artifact)
@@ -152,7 +155,7 @@ impl QueryTarget {
             .cloned()
             .map(ResolvedRoute::AiHub)
             .chain(self.native_kql.iter().cloned().map(ResolvedRoute::Kql))
-            .filter(|route| engine.is_none_or(|engine| route.engine() == engine));
+            .filter(|route| engine.is_none_or(|engine| route.engine() == Some(engine)));
         if engine.is_none()
             && let Some(route) = &self.data_agent
         {

@@ -50,7 +50,7 @@ fn bound() -> BoundTarget {
             requested_artifact: agent.clone(),
             execution_artifact: artifact.clone(),
             data_agent: Some(DataAgentRoute {
-                engine: "advertised-agent".into(),
+                engine: Some("advertised-agent".into()),
                 agent,
                 datasource: SOURCE.into(),
                 bound_artifact: artifact,
@@ -140,7 +140,10 @@ async fn real_root_query_without_export_executes_actual_sdk_and_retains_native_d
     let observed = prepared.execute(&deadline(), pending()).await;
     assert_eq!(observed.identity.requested_artifact.item, AGENT);
     assert_eq!(observed.identity.execution_artifact.item, EXECUTION);
-    assert_eq!(observed.identity.engine, "advertised-agent");
+    assert_eq!(
+        observed.identity.engine.as_deref(),
+        Some("advertised-agent")
+    );
     let ResolvedRoute::AiHub(route) = &observed.identity.route else {
         panic!("AIHub route evidence expected");
     };
@@ -288,7 +291,7 @@ fn wrong_path_snapshot_and_unadvertised_engine_fail_before_input() {
         if wrong_path {
             target.path = "/another/path".into();
         } else {
-            target.target.data_agent.as_mut().unwrap().engine = "another-engine".into();
+            target.target.data_agent.as_mut().unwrap().engine = Some("another-engine".into());
         }
         let mut inputs = Inputs::default();
         let mut output = Output::default();
