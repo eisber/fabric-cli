@@ -14,6 +14,30 @@ Fast success is not a replacement for the three native OS qualification gates.
 
 ## Provisional v2 integration smoke
 
+The PR51 owned integration candidate additionally runs
+`scripts/integration-dataagent-smoke.cjs` on hosted Windows only. It pins the
+original DataAgent source and integration base, records actual Cargo metadata
+and the dependency-impact selection, and runs both original DataAgent targets
+with `headless` (including the supervised output case), then combined routing
+and affected consumer targets with their actual required features. SDK
+DataAgent/representation cases, shared read/output, Notebook CREATE/UPDATE,
+Report/KQL/Eventhouse, Livy, schema, workspace and ML consumers retain their
+existing assertions. The one combined-help assertion preserves Livy ownership
+of unqualified help while checking typed DataAgent/facade equality.
+Named test commands retain separate manifest/source feature sets: isolated
+Eventhouse and KQL binary fixtures reject the other owner before input I/O,
+while the explicit composition target enables both. The union is used only
+for compilation/lints, never to change those process-fixture contracts.
+Explicit component profile obligations also apply to internally gated test
+modules. Report uses the existing `v2-create-headless` profile and requires
+every registered root, host, HTTP, status and process case; five ungated parser
+passes cannot stand in for the compiled-out host/process suites.
+Receipts reject zero-test, ignored, filtered or missing complete targets and
+retain argv, exits, output hashes, source/driver/lock pins, metadata and source
+inventories. Broader profile/oracle obligations are recorded, not claimed.
+This candidate-only leaf is not rerun or claimed on postmerge pushes and is
+not live-provider, canonical frontier, three-OS or release qualification.
+
 The PR56 owned integration candidate additionally runs
 `scripts/integration-update-smoke.cjs` on hosted Windows only. It pins the
 original metadata UPDATE source and integration base and reuses the process,

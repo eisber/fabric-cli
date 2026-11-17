@@ -753,6 +753,7 @@
     {
       "id": "cli-report-create",
       "package": "fabric-cli",
+      "profiles": ["v2-create-headless"],
       "inputs": [
         "rust/clients/cli/app/src/v2_create_report.rs",
         "rust/clients/cli/app/tests/v2_create_report.rs",
@@ -2970,6 +2971,28 @@
         {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
       ],
       "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-dataagent-list",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_dataagent_list_host.rs",
+        "rust/clients/cli/app/src/v2_dataagent_list_main.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/dataagent_list.rs",
+        "rust/clients/cli/app/tests/v2_dataagent_list_binary.rs",
+        "rust/authoring-docs/dataagent-reads.md",
+        ".changes/unreleased/added-20261112-dataagent-datasource-list.yaml"
+      ],
+      "depends_on": ["sdk", "cli-get", "cli-headless", "query", "output", "storage-files"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:dataagents"},
+        {"package": "fabric-sdk", "target": "test:representations"},
+        {"package": "fabric-cli", "target": "test:dataagent_list"},
+        {"package": "fabric-cli", "target": "test:v2_dataagent_list_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph", "headless", "combined"]
     },
     {
       "id": "cli-search-v2",

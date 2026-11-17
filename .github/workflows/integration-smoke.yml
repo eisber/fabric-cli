@@ -39,10 +39,26 @@ jobs:
           node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-notebook-smoke.test.cjs
           rust/scripts/integration-ocv-smoke.test.cjs
           rust/scripts/integration-update-smoke.test.cjs
+          rust/scripts/integration-dataagent-smoke.test.cjs
       - name: Build two profiles once and exercise isolated offline entry points
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
         run: node rust/scripts/integration-smoke.cjs "$env:RUNNER_TEMP/integration-smoke-receipts"
+      - name: Check the PR51 candidate's DataAgent and combined read paths offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/integrate-explicit-stage-dataagent-reads-tomcl2'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        run: >-
+          node rust/scripts/integration-dataagent-smoke.cjs
+          "$env:RUNNER_TEMP/integration-smoke-receipts/dataagent"
       - name: Check the PR56 candidate's Notebook UPDATE and shared paths offline
         if: >-
           github.event_name == 'pull_request' &&
