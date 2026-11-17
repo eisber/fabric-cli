@@ -19,7 +19,7 @@ use fabric_sdk::{
     notebooks::{NotebookExecutionError, NotebookExecutor, NotebookRequest, NotebookResponse},
     workspaces::{WorkspaceExecutionError, WorkspaceExecutor, WorkspaceRequest, WorkspaceResponse},
 };
-use std::{num::NonZeroUsize, ops::Deref, sync::Arc, time::Duration};
+use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 
 #[cfg(test)]
 use std::{
@@ -95,6 +95,83 @@ impl HttpExecutor {
         self
     }
 
+    /// Return the immutable endpoint selected for pre-send origin validation.
+    pub fn endpoint(&self) -> &EndpointBinding {
+        self.inner.endpoint()
+    }
+
+    /// Execute a bounded Fabric request using the unchanged shared policy.
+    ///
+    /// # Errors
+    /// Returns origin/token, transport, response-bound, deadline or retry errors.
+    pub async fn execute_fabric(
+        &self,
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+        limit: NonZeroUsize,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
+        self.inner
+            .execute_fabric(method, url, token, body, limit)
+            .await
+    }
+
+    /// Execute against an explicitly selected origin, never an inferred audience.
+    ///
+    /// # Errors
+    /// Returns validation, transport, response-bound, deadline or retry errors.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Retains the existing public adapter signature."
+    )]
+    pub async fn execute_bound(
+        &self,
+        origin: PublicOrigin,
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+        headers: &[(String, String)],
+        limit: NonZeroUsize,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
+        self.inner
+            .execute_bound(origin, method, url, token, body, headers, limit)
+            .await
+    }
+
+    /// Execute with bounded partial response evidence and no mutation replay.
+    ///
+    /// # Errors
+    /// Returns the original execution or recorder failure.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Retains the existing public adapter signature."
+    )]
+    pub async fn execute_bound_with_progress(
+        &self,
+        origin: PublicOrigin,
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+        headers: &[(String, String)],
+        limit: NonZeroUsize,
+        progress: Option<&dyn ResponseProgress>,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
+        self.inner
+            .execute_bound_with_progress(origin, method, url, token, body, headers, limit, progress)
+            .await
+    }
+
+    /// Wait using the caller's existing bounded asynchronous timer.
+    ///
+    /// # Errors
+    /// Returns delay-bound or deadline failures without extending a service budget.
+    pub async fn wait_for(&self, delay: Duration) -> Result<(), ExecutionError> {
+        self.inner.wait_for(delay).await
+    }
+
     async fn execute(
         &self,
         method: Method,
@@ -127,14 +204,6 @@ impl HttpExecutor {
         limit: NonZeroUsize,
     ) -> Result<HttpResponse, ExecutionError> {
         self.inner.execute_prepared(request, limit).await
-    }
-}
-
-impl Deref for HttpExecutor {
-    type Target = fabric_http::HttpExecutor;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 

@@ -923,6 +923,10 @@
         {
           "package": "fabric-sdk-http",
           "target": "test:native_stream"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:public_api"
         }
       ],
       "checks": [

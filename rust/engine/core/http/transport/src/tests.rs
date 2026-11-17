@@ -7,7 +7,7 @@ use azure_core::{
     Bytes,
     http::{HttpClient, Method, Request, Url},
 };
-use fabric_http::ExecutionTimer;
+use fabric_http::{ExecutionOptions, ExecutionTimer, HttpExecutor};
 use flate2::{Compression, write::GzEncoder};
 use futures_util::StreamExt;
 use std::{
@@ -28,6 +28,20 @@ mod provenance_tests;
 mod framing_tests;
 
 const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
+const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
+const ITEM: &str = "33333333-3333-3333-3333-333333333333";
+
+fn executor(client: NativeHttpClient, timeout: Duration) -> HttpExecutor {
+    HttpExecutor::new(
+        Arc::new(client),
+        Arc::new(TokioTimer),
+        ExecutionOptions {
+            timeout,
+            max_delay: Duration::from_secs(5),
+        },
+    )
+    .unwrap()
+}
 
 fn options(roots: Vec<RootCertificate>) -> TransportOptions {
     TransportOptions {
