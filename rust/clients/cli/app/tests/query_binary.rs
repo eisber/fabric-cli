@@ -135,3 +135,27 @@ fn v2_root_help_advertises_actual_opted_in_typed_query_entrypoint() {
     assert!(help.contains("query_connection"));
     assert!(help.contains("native KQL"));
 }
+
+#[test]
+fn opaque_unbound_paths_keep_the_existing_receipt_before_config_identity_or_stdin() {
+    let directory = tempfile::tempdir().unwrap();
+    for binary in binaries() {
+        let output = Command::new(binary)
+            .env_clear()
+            .env(
+                "FAB_RUST_CONFIG_ROOT",
+                directory.path().join("must-not-initialize"),
+            )
+            .env("FAB_RUST_AUTH_MODE", "invalid")
+            .args(["query", "arbitrary-table", "--file", "-"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stderr.is_empty());
+        let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(receipt["delivery"]["error"]["code"], "NotConfigured");
+        assert_eq!(receipt["execution"]["status"], "not_started");
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("arbitrary-table"));
+    }
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}

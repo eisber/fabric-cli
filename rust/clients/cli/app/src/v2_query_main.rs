@@ -86,8 +86,19 @@ pub(crate) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             2,
         ));
     }
-    let parsed = fabric_cli::query_host::resolution::parse_owner(&command.path)
-        .map_err(|error| failed("InvalidTarget", error.to_string(), 2))?;
+    let parsed = match fabric_cli::query_host::resolution::parse_owner(&command.path) {
+        Ok(parsed) => parsed,
+        Err(
+            fabric_cli::query_host::resolution::QueryResolutionError::Path(_)
+            | fabric_cli::query_host::resolution::QueryResolutionError::UnsupportedOwner
+            | fabric_cli::query_host::resolution::QueryResolutionError::OwnerMismatch,
+        ) => {
+            return fabric_cli::query_host::not_configured(&command)
+                .write_to_streams(&mut io::stdout().lock(), &mut io::stderr().lock())
+                .map_err(|_| failed("OutputFailed", "Unbound query receipt output failed.", 1));
+        }
+        Err(error) => return Err(failed("QueryTargetFailed", error.to_string(), 1)),
+    };
     let timeout = fabric_sdk_http::ExecutionOptions::default().timeout;
     let deadline = NativeDeadline::new(timeout)
         .map_err(|_| failed("InvalidConfiguration", "Invalid finite query deadline.", 2))?;

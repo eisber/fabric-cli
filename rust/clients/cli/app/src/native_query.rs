@@ -34,8 +34,20 @@ pub(super) fn run(command: &NativeCommand) -> io::Result<CommandOutcome> {
     }
     let parsed = match fabric_cli::query_host::resolution::parse_owner(&command.path) {
         Ok(parsed) => parsed,
+        Err(
+            fabric_cli::query_host::resolution::QueryResolutionError::Path(_)
+            | fabric_cli::query_host::resolution::QueryResolutionError::UnsupportedOwner
+            | fabric_cli::query_host::resolution::QueryResolutionError::OwnerMismatch,
+        ) => {
+            // The frozen parser accepts opaque provider-owned paths. A path
+            // with no native binding remains the existing unbound frontdoor.
+            let exit = fabric_cli::query_host::not_configured(command)
+                .write_to_streams(&mut io::stdout().lock(), &mut io::stderr().lock())
+                .map_err(|error| error.into_io_error())?;
+            return Ok(CommandOutcome::Returned(exit));
+        }
         Err(error) => {
-            return super::write_error(failure("invalid_arguments", error.to_string(), 2));
+            return super::write_error(failure("query_target_failed", error.to_string(), 1));
         }
     };
     let timeout = fabric_sdk_http::ExecutionOptions::default().timeout;
