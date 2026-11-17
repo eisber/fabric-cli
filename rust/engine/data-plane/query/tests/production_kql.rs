@@ -49,7 +49,6 @@ struct Credential {
     pending: bool,
     failed: bool,
     delay: Option<Duration>,
-    expire: Option<Arc<AtomicBool>>,
     drops: AtomicUsize,
 }
 
@@ -71,9 +70,6 @@ impl TokenCredential for Credential {
         }
         if let Some(delay) = self.delay {
             std::thread::sleep(delay);
-        }
-        if let Some(expired) = &self.expire {
-            expired.store(true, Ordering::SeqCst);
         }
         if self.failed {
             return Err(private_error());
@@ -628,14 +624,12 @@ async fn cancellation_before_credentials_and_pending_credential_open_or_body_dis
 }
 
 #[tokio::test]
-async fn one_deadline_enforces_pending_credential_open_and_body_and_late_credentials_never_dispatch()
- {
+async fn one_deadline_enforces_pending_credential_open_and_body() {
     let binding = binding();
-    for phase in 0..4 {
+    for phase in 0..3 {
         let timer = Arc::new(Timer::default());
         let credential = Arc::new(Credential {
             pending: phase == 0,
-            expire: (phase == 3).then(|| timer.expired.clone()),
             ..Default::default()
         });
         let (mut wire, probe) = response(200, Some("application/json"), [Chunk::Pending]);
@@ -651,10 +645,8 @@ async fn one_deadline_enforces_pending_credential_open_and_body_and_late_credent
             &deadline,
             pending()
         ));
-        if phase != 3 {
-            assert!(poll(future.as_mut()).is_pending());
-            timer.expired.store(true, Ordering::SeqCst);
-        }
+        assert!(poll(future.as_mut()).is_pending());
+        timer.expired.store(true, Ordering::SeqCst);
         let Poll::Ready(Err(error)) = poll(future.as_mut()) else {
             panic!("deadline must finish pending I/O")
         };
@@ -663,13 +655,35 @@ async fn one_deadline_enforces_pending_credential_open_and_body_and_late_credent
             QueryErrorKind::Native(NativeError::TimedOut | NativeError::OutcomeUnknown)
         ));
         assert!(!error.evidence.unwrap().completed);
-        if phase == 0 || phase == 3 {
+        if phase == 0 {
             assert!(wire.requests.lock().unwrap().is_empty());
         }
         if phase == 2 {
             assert_eq!(probe.drops.load(Ordering::SeqCst), 1);
         }
     }
+}
+
+#[tokio::test]
+async fn credential_returning_after_absolute_deadline_never_dispatches() {
+    let binding = binding();
+    let credential = Arc::new(Credential {
+        delay: Some(Duration::from_millis(150)),
+        ..Default::default()
+    });
+    let (wire, _) = response(200, Some("application/json"), chunks(&frames()));
+    let executor = configured(&binding, credential.clone(), wire.clone(), Arc::default());
+    let query = KqlQuery::new("T", "query;expired")
+        .unwrap()
+        .with_server_timeout(Duration::from_millis(1))
+        .unwrap();
+    let deadline = NativeDeadline::new(Duration::from_millis(100)).unwrap();
+    let error = query_kql(&binding, &executor, &query, limits(), &deadline, pending())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::Native(NativeError::TimedOut));
+    assert_eq!(credential.scopes.lock().unwrap().len(), 1);
+    assert!(wire.requests.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

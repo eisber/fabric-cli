@@ -1,9 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{EngineBinding, QueryError, QueryErrorKind};
+use crate::{EngineBinding, EngineExecutor, QueryCapability, QueryError, QueryErrorKind, policy};
 use azure_core::{credentials::TokenCredential, http::HttpClient};
-use fabric_sdk_http::ExecutionTimer;
+use fabric_sdk::runtime::{
+    NativeDeadline, NativeError, NativeFuture, NativeRequest, NativeStreamExecutor,
+    NativeStreamLimits, NativeStreamResponse,
+};
+use fabric_sdk_http::{
+    ExecutionTimer,
+    native_stream::{NativeScopeStreamExecutor, NativeStreamPreflight},
+};
 use std::{fmt, sync::Arc};
 
 const PUBLIC_KUSTO_SCOPE: &str = "https://api.kusto.windows.net/.default";
@@ -71,9 +78,7 @@ impl fmt::Debug for KustoCredentialContext {
 #[derive(Clone)]
 pub struct KustoQueryExecutor {
     binding: EngineBinding,
-    credentials: KustoCredentialContext,
-    client: Arc<dyn HttpClient>,
-    timer: Arc<dyn ExecutionTimer>,
+    stream: NativeScopeStreamExecutor,
 }
 
 impl KustoQueryExecutor {
@@ -100,12 +105,53 @@ impl KustoQueryExecutor {
         {
             return Err(QueryError::new(QueryErrorKind::InvalidBinding));
         }
-        Ok(Self {
-            binding,
-            credentials,
+        let stream = NativeScopeStreamExecutor::new(
+            binding.endpoint().clone(),
+            credentials.audience_scope,
+            credentials.credential,
             client,
             timer,
-        })
+            Arc::new(KustoPreflight {
+                binding: binding.clone(),
+            }),
+        )
+        .map_err(|error| QueryError::new(QueryErrorKind::Native(error)))?;
+        Ok(Self { binding, stream })
+    }
+}
+
+struct KustoPreflight {
+    binding: EngineBinding,
+}
+
+impl NativeStreamPreflight for KustoPreflight {
+    fn validate(
+        &self,
+        request: &NativeRequest,
+        deadline: &NativeDeadline,
+    ) -> Result<(), NativeError> {
+        policy::validate_request(&self.binding, request, deadline)
+    }
+}
+
+impl NativeStreamExecutor for KustoQueryExecutor {
+    fn open<'a>(
+        &'a self,
+        request: &'a NativeRequest,
+        limits: NativeStreamLimits,
+        deadline: &'a NativeDeadline,
+    ) -> NativeFuture<'a, Result<NativeStreamResponse, NativeError>> {
+        self.stream.open(request, limits, deadline)
+    }
+}
+
+impl EngineExecutor for KustoQueryExecutor {
+    fn binding(&self) -> &EngineBinding {
+        &self.binding
+    }
+
+    fn query_capability(&self) -> QueryCapability {
+        QueryCapability::ReadOnlyKustoV2
     }
 }
 
