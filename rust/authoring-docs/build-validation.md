@@ -24,6 +24,10 @@ DataAgent/representation cases, shared read/output, Notebook CREATE/UPDATE,
 Report/KQL/Eventhouse, Livy, schema, workspace and ML consumers retain their
 existing assertions. The one combined-help assertion preserves Livy ownership
 of unqualified help while checking typed DataAgent/facade equality.
+Named test commands retain separate manifest/source feature sets: isolated
+Eventhouse and KQL binary fixtures reject the other owner before input I/O,
+while the explicit composition target enables both. The union is used only
+for compilation/lints, never to change those process-fixture contracts.
 Receipts reject zero-test, ignored, filtered or missing complete targets and
 retain argv, exits, output hashes, source/driver/lock pins, metadata and source
 inventories. Broader profile/oracle obligations are recorded, not claimed.

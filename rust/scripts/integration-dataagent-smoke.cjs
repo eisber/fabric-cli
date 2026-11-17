@@ -24,13 +24,14 @@ const INPUTS = [
   'rust/clients/cli/app/src/v2_main.rs',
   ...LEAVES.map(name => `rust/clients/cli/app/tests/${name}.rs`),
   ...['get_backend', 'explicit_get', 'output_contract_audit', 'workspace_v2',
-    'ml_endpoint', 'v2_schema_native', 'livy_list_entry']
+    'ml_endpoint', 'v2_schema_native', 'livy_list_entry', 'create_host',
+    'v2_create_report', 'kql_database_create_binary']
     .map(name => `rust/clients/cli/app/tests/${name}.rs`),
 ];
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function selectedCommands(selection, read = file => fs.readFileSync(path.join(ROOT, file), 'utf8')) {
-  const groups = new Map(), deferred = [];
+  const groups = new Map(), deferred = [], cliFeatures = new Set(), cliTargets = new Set();
   for (const test of selection.tests) {
     if (!test.target.startsWith('test:')) {
       deferred.push({...test, disposition: 'broader qualification; not claimed by provisional named-target proof'});
@@ -41,29 +42,41 @@ function selectedCommands(selection, read = file => fs.readFileSync(path.join(RO
     assert.ok(target, `Missing metadata target ${test.package}/${test.target}`);
     const guarded = [...read(target.source).matchAll(/^#!\[cfg\(([^\n]+)\)\]/gm)]
       .flatMap(match => [...match[1].matchAll(/feature\s*=\s*"([^"]+)"/g)].map(value => value[1]));
-    const key = test.package;
-    if (!groups.has(key)) groups.set(key, {targets: new Set(), features: new Set()});
+    const features = new Set([...target.required_features, ...guarded]);
+    if (test.package === 'fabric-cli') {
+      features.add('headless');
+      features.add('runtime-v2');
+      cliTargets.add(test.target.slice(5));
+      for (const feature of features) cliFeatures.add(feature);
+    }
+    // Keep isolated owner profiles distinct: enabling another create owner
+    // changes wrong-owner admission before input I/O in its process fixtures.
+    const orderedFeatures = [...features].sort();
+    const key = JSON.stringify([test.package, orderedFeatures]);
+    if (!groups.has(key)) groups.set(key, {package: test.package, targets: new Set(), features: orderedFeatures});
     const group = groups.get(key);
     group.targets.add(test.target.slice(5));
-    for (const feature of [...target.required_features, ...guarded]) group.features.add(feature);
   }
-  const cli = groups.get('fabric-cli');
-  assert.ok(cli && LEAVES.every(name => cli.targets.has(name)), 'Actual DataAgent leaf selection is required');
-  // Exercise the existing ambiguous root help and typed Livy routing together.
-  cli.features.add('headless');
-  cli.features.add('runtime-v2');
-  const commands = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([pkg, group]) => ({
-    args: ['test', '--offline', '--locked', '-p', pkg, '--no-default-features',
-      ...(group.features.size ? ['--features', [...group.features].sort().join(',')] : []),
+  assert.ok(LEAVES.every(name => cliTargets.has(name)), 'Actual DataAgent leaf selection is required');
+  const commands = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([, group]) => ({
+    args: ['test', '--offline', '--locked', '-p', group.package, '--no-default-features',
+      ...(group.features.length ? ['--features', group.features.join(',')] : []),
       ...[...group.targets].sort().flatMap(name => ['--test', name])],
   }));
-  return {commands, deferred, cli_features: [...cli.features].sort()};
+  return {commands, deferred, cli_features: [...cliFeatures].sort()};
 }
 
 function leafCommand(name) {
   return {args: ['test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
     '--features', 'headless', '--test', name],
   required: update.registeredTests(`rust/clients/cli/app/tests/${name}.rs`), exhaustive: true};
+}
+
+function testObservations(stdout) {
+  return [...stdout.matchAll(
+    /test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out/g,
+  )].map(match => ({status: match[1], passed: Number(match[2]), failed: Number(match[3]),
+    ignored: Number(match[4]), measured: Number(match[5]), filtered: Number(match[6])}));
 }
 
 function main(output) {
@@ -146,6 +159,10 @@ function main(output) {
     ];
     for (const command of commands) {
       const result = run('cargo', command.args, {cwd: rust, timeout: 8 * 60 * 1000});
+      if (command.args[0] === 'test') {
+        report.commands.at(-1).test_observations = testObservations(result.stdout);
+        save();
+      }
       assert.equal(result.status, 0, `DataAgent command failed: cargo ${command.args.join(' ')}`);
       if (command.args[0] === 'test') {
         report.commands.at(-1).tests = update.testResults(result.stdout, result.stderr, command);
@@ -176,7 +193,7 @@ function main(output) {
   }
 }
 
-module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, selectedCommands, leafCommand};
+module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, selectedCommands, leafCommand, testObservations};
 if (require.main === module) {
   try { assert.equal(process.argv.length, 3); main(process.argv[2]); }
   catch (error) { console.error(error.stack); process.exitCode = 1; }

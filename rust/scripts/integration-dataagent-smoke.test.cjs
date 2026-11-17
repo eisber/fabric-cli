@@ -58,13 +58,49 @@ test('metadata-selected targets retain manifest and source feature guards withou
     source: `${name}.rs`, required_features: name === 'optional_consumer' ? ['v2-discovery'] : []}))};
   const selected = dataagent.selectedCommands(selection, () => '#![cfg(feature = "native-host")]\n');
   assert.deepEqual(selected.cli_features, ['headless', 'native-host', 'runtime-v2', 'v2-discovery']);
-  const args = selected.commands[0].args;
-  for (const name of names) assert.ok(args.includes(name));
-  assert.ok(!args.includes('--workspace') && !args.includes('--all-features') && !args.includes('--all-targets'));
+  for (const name of names) assert.ok(selected.commands.some(command => command.args.includes(name)));
+  for (const {args} of selected.commands) {
+    assert.ok(!args.includes('--workspace') && !args.includes('--all-features') && !args.includes('--all-targets'));
+  }
   assert.equal(selected.deferred.length, 1);
   assert.match(selected.deferred[0].disposition, /not claimed/);
   assert.throws(() => dataagent.selectedCommands({tests: [], target_catalog: []}), /leaf selection/);
   assert.throws(() => dataagent.selectedCommands({...selection, target_catalog: []}), /metadata target/);
+});
+
+test('isolated Eventhouse and KQL process profiles are not broadened into a different owner contract', () => {
+  const targets = [
+    ...dataagent.LEAVES.map(name => [name, []]),
+    ['eventhouse_create_binary', ['headless', 'v2-create-eventhouse']],
+    ['kql_database_create_binary', ['headless', 'v2-kql-database-create']],
+    ['create_binding_composition', ['headless', 'v2-create-eventhouse', 'v2-kql-database-create']],
+  ];
+  const selection = {
+    tests: targets.map(([name]) => ({package: 'fabric-cli', target: `test:${name}`})),
+    target_catalog: targets.map(([name, features]) => ({package: 'fabric-cli',
+      target: `test:${name}`, source: `${name}.rs`, required_features: features})),
+  };
+  const selected = dataagent.selectedCommands(selection, () => '');
+  const featuresFor = name => {
+    const args = selected.commands.find(command => command.args.includes(name)).args;
+    return args[args.indexOf('--features') + 1].split(',');
+  };
+  assert.ok(!featuresFor('eventhouse_create_binary').includes('v2-kql-database-create'));
+  assert.ok(!featuresFor('kql_database_create_binary').includes('v2-create-eventhouse'));
+  for (const feature of ['headless', 'runtime-v2', 'v2-create-eventhouse', 'v2-kql-database-create']) {
+    assert.ok(featuresFor('create_binding_composition').includes(feature));
+    assert.ok(selected.cli_features.includes(feature));
+  }
+});
+
+test('failed commands retain partial suite observations without turning them into successful proof', () => {
+  assert.deepEqual(dataagent.testObservations(
+    'test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n' +
+    'test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n'), [
+    {status: 'ok', passed: 11, failed: 0, ignored: 0, measured: 0, filtered: 0},
+    {status: 'FAILED', passed: 5, failed: 1, ignored: 0, measured: 0, filtered: 0},
+  ]);
+  assert.deepEqual(dataagent.testObservations(''), []);
 });
 
 test('impact registration selects actual DataAgent/SDK targets and existing profile obligations', () => {
