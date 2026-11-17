@@ -18,7 +18,6 @@ fabric-sdk.workspace = true
 fabric-sdk-aihub-query.workspace = true
 fabric-sdk-query.workspace = true
 fabric-sdk-tabular.workspace = true
-fabric-v2-contracts.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

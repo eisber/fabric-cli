@@ -128,6 +128,13 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         );
     }
     if let Ok(Invocation::NativeTabular(command)) = &invocation {
+        #[cfg(feature = "v2-query")]
+        if matches!(
+            command.operation,
+            fabric_cli::native_tabular::Operation::Query(_)
+        ) {
+            return write_export(fabric_cli::query_host::not_configured(command)).map(exit_status);
+        }
         #[cfg(feature = "v2-run")]
         if matches!(
             command.operation,
@@ -165,6 +172,13 @@ fn dispatch(
     let (error, exit) = match invocation {
         Ok(Invocation::Feedback(command)) => return feedback_host::run(&command),
         Ok(Invocation::NativeTabular(command)) => {
+            #[cfg(feature = "v2-query")]
+            if matches!(
+                command.operation,
+                fabric_cli::native_tabular::Operation::Query(_)
+            ) {
+                return write_export(fabric_cli::query_host::not_configured(&command));
+            }
             #[cfg(feature = "v2-run")]
             if matches!(
                 command.operation,

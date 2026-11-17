@@ -10,6 +10,7 @@ use super::*;
 use crate::parser::{Invocation, parse_args};
 use fabric_cli_query_commands::{DataAgentRoute, InputSource, Stage};
 use fabric_sdk_aihub_query::{Limits, NativeValue, QueryErrorKind};
+use futures_util::FutureExt;
 use serde_json::json;
 use std::{
     future::{pending, ready},
@@ -140,6 +141,11 @@ async fn real_root_query_without_export_executes_actual_sdk_and_retains_native_d
     assert_eq!(observed.identity.requested_artifact.item, AGENT);
     assert_eq!(observed.identity.execution_artifact.item, EXECUTION);
     assert_eq!(observed.identity.engine, "advertised-agent");
+    let ResolvedRoute::AiHub(route) = &observed.identity.route else {
+        panic!("AIHub route evidence expected");
+    };
+    assert_eq!(route.datasource, SOURCE);
+    assert_eq!(route.stage, Stage::Production);
     let NativeQueryResult::AiHub(result) = observed.result.unwrap() else {
         panic!("wrong provider");
     };
@@ -351,6 +357,11 @@ async fn truncated_or_missing_typed_results_retain_identity_without_success() {
         .execute(&deadline(), pending())
         .await;
         assert_eq!(observed.identity.requested_artifact.item, AGENT);
+        let ResolvedRoute::AiHub(route) = &observed.identity.route else {
+            panic!("AIHub route evidence expected");
+        };
+        assert_eq!(route.datasource, SOURCE);
+        assert_eq!(route.stage, Stage::Production);
         if truncated {
             assert!(matches!(
                 observed.result,
@@ -390,8 +401,170 @@ async fn local_cancel_retains_exact_target_and_does_not_dispatch() {
     .execute(&deadline(), ready(()))
     .await;
     assert_eq!(observed.identity.execution_artifact.item, EXECUTION);
+    assert!(matches!(
+        &observed.identity.route,
+        ResolvedRoute::AiHub(route) if route.datasource == SOURCE && route.stage == Stage::Production
+    ));
     assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
         if error.kind == QueryErrorKind::Canceled && !error.query_dispatched));
     assert!(wire.requests.lock().unwrap().is_empty());
     assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn root_authentication_and_deadline_failure_preserve_identity_without_dispatch() {
+    for auth_failure in [true, false] {
+        let command = command(&["--text", "query"]);
+        let wire = Wire::new([]);
+        let credential = Arc::new(Credential {
+            fail: auth_failure,
+            ..Credential::default()
+        });
+        let timer = Arc::new(Timer::default());
+        timer.expired.store(!auth_failure, Ordering::SeqCst);
+        let client = client(wire.clone(), credential.clone(), timer, Limits::default());
+        let observed = prepare(
+            &command,
+            bound(),
+            Providers {
+                aihub: Some(&client),
+                kql: None,
+            },
+            policy(),
+            &mut Inputs::default(),
+            &mut Output::default(),
+        )
+        .unwrap()
+        .execute(&deadline(), pending())
+        .await;
+        assert_eq!(observed.identity.requested_artifact.item, AGENT);
+        let expected = if auth_failure {
+            QueryErrorKind::Authentication
+        } else {
+            QueryErrorKind::Deadline
+        };
+        assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
+            if error.kind == expected && !error.query_dispatched));
+        assert!(wire.requests.lock().unwrap().is_empty());
+        assert_eq!(
+            credential.calls.load(Ordering::SeqCst),
+            usize::from(auth_failure)
+        );
+    }
+}
+
+#[tokio::test]
+async fn root_lost_query_response_retains_uncertain_dispatch_and_never_replays() {
+    let command = command(&["--text", "query"]);
+    let wire = Wire::new(setup().into_iter().chain([Reply::Failure]));
+    let client = client(
+        wire.clone(),
+        Arc::new(Credential::default()),
+        Arc::new(Timer::default()),
+        Limits::default(),
+    );
+    let observed = prepare(
+        &command,
+        bound(),
+        Providers {
+            aihub: Some(&client),
+            kql: None,
+        },
+        policy(),
+        &mut Inputs::default(),
+        &mut Output::default(),
+    )
+    .unwrap()
+    .execute(&deadline(), pending())
+    .await;
+    assert_eq!(observed.identity.execution_artifact.item, EXECUTION);
+    assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
+        if error.kind == QueryErrorKind::Transport && error.query_dispatched));
+    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+}
+
+#[test]
+fn root_drop_during_credential_wait_releases_local_work_without_dispatch() {
+    let command = command(&["--text", "query"]);
+    let wire = Wire::new([]);
+    let credential = Arc::new(Credential {
+        suspend: true,
+        ..Credential::default()
+    });
+    let client = client(
+        wire.clone(),
+        credential.clone(),
+        Arc::new(Timer::default()),
+        Limits::default(),
+    );
+    let prepared = prepare(
+        &command,
+        bound(),
+        Providers {
+            aihub: Some(&client),
+            kql: None,
+        },
+        policy(),
+        &mut Inputs::default(),
+        &mut Output::default(),
+    )
+    .unwrap();
+    let deadline = deadline();
+    let mut observation = Box::pin(prepared.execute(&deadline, pending()));
+    assert!(observation.as_mut().now_or_never().is_none());
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
+    drop(observation);
+    assert_eq!(credential.dropped.load(Ordering::SeqCst), 1);
+    assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn root_cancel_after_query_dispatch_retains_target_and_releases_local_http() {
+    use std::{future::poll_fn, sync::atomic::AtomicBool, task::Poll};
+    let command = command(&["--text", "query", "--format", "csv", "--output", "new.data"]);
+    let wire = Wire::new(setup().into_iter().chain([Reply::Pending]));
+    let client = client(
+        wire.clone(),
+        Arc::new(Credential::default()),
+        Arc::new(Timer::default()),
+        Limits::default(),
+    );
+    let mut output = Output::default();
+    let prepared = prepare(
+        &command,
+        bound(),
+        Providers {
+            aihub: Some(&client),
+            kql: None,
+        },
+        policy(),
+        &mut Inputs::default(),
+        &mut output,
+    )
+    .unwrap();
+    let canceled = AtomicBool::new(false);
+    let cancel = poll_fn(|_| {
+        if canceled.load(Ordering::SeqCst) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    });
+    let deadline = deadline();
+    let mut observation = Box::pin(prepared.execute(&deadline, cancel));
+    assert!(observation.as_mut().now_or_never().is_none());
+    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    canceled.store(true, Ordering::SeqCst);
+    let observed = observation
+        .as_mut()
+        .now_or_never()
+        .expect("ready local cancel");
+    drop(observation);
+    assert_eq!(observed.identity.requested_artifact.item, AGENT);
+    assert!(matches!(observed.result, Err(QueryHostError::AiHub(error))
+        if error.kind == QueryErrorKind::Canceled && error.query_dispatched));
+    assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
+    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(output.preflights, 1);
+    assert_eq!(output.publishes, 0);
 }

@@ -8,8 +8,8 @@ use fabric_cli_query_commands::{
     Artifact, DataAgentRoute, InputReader, InputSource, KqlRoute, PreparationError, QueryInput,
     QueryTarget, ResolvedRoute, Stage, TextSource, prepare_input,
 };
+use fabric_sdk::v2::ItemIdentity;
 use fabric_sdk_query::EngineBinding;
-use fabric_v2_contracts::ItemIdentity;
 use std::io;
 
 const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";

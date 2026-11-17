@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 use crate::PreparationError;
+use fabric_sdk::v2::ItemIdentity;
 use fabric_sdk_query::EngineBinding;
-use fabric_v2_contracts::ItemIdentity;
 use std::fmt;
 
 /// An authoritative Fabric artifact identity; no identity is inferred from text.

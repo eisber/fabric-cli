@@ -51,6 +51,9 @@ queried or parsed as a fallback.
 the legacy CLI table model. It delegates to `fabric-sdk-tabular` directly.
 Single-file outputs require exactly one resultset; none is silently selected.
 The host retains all native datasets, identities, metadata, and execution evidence.
+`encode_presentation` renders all datasets through the same rich JSON codec for
+normal no-export output. Its aggregate row, batch, and envelope-inclusive byte
+limits fail without returning a clipped prefix.
 
 | Output | Preserved representation | Explicit limitations |
 |---|---|---|
@@ -65,14 +68,17 @@ Local cancellation and dropping a future do not claim remote cancellation.
 ## Integration status
 
 The package currently provides local route/input preparation, one-shot actual
-AIHub and native KQL SDK dispatch, and rich single-dataset encoding. The corrected
+AIHub and native KQL SDK dispatch, rich single-dataset encoding, and bounded
+multi-dataset normal presentation encoding. The corrected
 AIHub SDK source is integrated from immutable development commit
 `50683fa52cd029ef84df0f26bc6ced479b099e1c`; this is source integration, not
 compiled or live qualification. The strict native result bridges are separate
 dependencies awaiting their approved immutable development release.
-Actual root executable dispatch, native host binding,
-normal no-export presentation, and standard atomic file delivery remain
-integration work; this package alone does not establish command completion.
+The app's additive `v2-query` feature registers the thin query host and both
+query-only root dispatch hooks, while preserving default-disabled behavior.
+Native provider binding, strict bridge composition, normal presentation delivery,
+and standard atomic file finalization remain integration work; this package alone
+does not establish command completion.
 
 No live query, endpoint/auth acceptance, caller identity discovery, login,
 consent, or production provider enablement is implied. AIHub requires an
@@ -81,7 +87,7 @@ development authentication flow is not production evidence. Typed DataAgent
 results are not universal direct-artifact AIHub support.
 
 The offline tests exercise preparation boundaries, actual SDK AIHub and KQL
-requests and native-result preservation, and shared JSON/CSV/Parquet encoding with Parquet
-readback. Qualification still requires authorized compilation and tests,
+requests and native-result preservation, and shared JSON/CSV/Parquet encoding
+with Parquet readback. Qualification still requires authorized compilation and tests,
 executable-boundary provider fixtures, affected reverse consumers, and the
 unchanged Dataflow execution regressions.

@@ -67,6 +67,8 @@ pub struct QueryIdentity {
     pub execution_artifact: Artifact,
     /// Selected advertised engine, not inferred from query text.
     pub engine: String,
+    /// Exact selected provider binding, retaining DataAgent datasource and stage.
+    pub route: ResolvedRoute,
 }
 
 /// A real prepared native query, consumed once without another target lookup.
@@ -191,6 +193,7 @@ pub fn prepare<'a>(
         requested_artifact: bound.target.requested_artifact,
         execution_artifact: bound.target.execution_artifact,
         engine: route.engine().to_owned(),
+        route: route.clone(),
     };
     let operation = match route {
         route @ ResolvedRoute::AiHub(_) => PreparedProvider::AiHub(PreparedAiHub::new(
@@ -218,6 +221,18 @@ pub fn prepare<'a>(
         export: command.export.clone(),
         operation,
     })
+}
+
+/// Truthful root/binary result until a supported native provider is injected.
+///
+/// The additive Rust feature never invents an endpoint, requests credentials, or
+/// promotes a development authentication contract into a production provider.
+pub fn not_configured(command: &NativeCommand) -> crate::tabular_export::ExportDelivery {
+    let mut delivery = crate::native_tabular::not_configured(command);
+    delivery.receipt["delivery"]["error"]["message"] = serde_json::json!(
+        "Query requires an explicitly configured supported DataAgent typed or artifact-native KQL provider; no endpoint, audience, identity or datasource is inferred."
+    );
+    delivery
 }
 
 impl PreparedQuery<'_> {

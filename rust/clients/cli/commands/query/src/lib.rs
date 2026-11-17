@@ -16,7 +16,7 @@ mod target;
 pub use aihub::{AiHubPreparationError, PreparedAiHub};
 pub use input::{InputReader, InputSource, PreparedInput, QueryInput, TextSource, prepare_input};
 pub use kql::{KqlPreparationError, PreparedKql};
-pub use output::{QueryEncodingError, encode_single};
+pub use output::{QueryEncodingError, encode_presentation, encode_single};
 pub use target::{Artifact, DataAgentRoute, KqlRoute, QueryTarget, ResolvedRoute, Stage};
 
 /// Sanitized local preparation failures, before credentials or native dispatch.

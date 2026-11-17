@@ -8,7 +8,7 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use bytes::Bytes;
-use fabric_cli_query_commands::{QueryEncodingError, encode_single};
+use fabric_cli_query_commands::{QueryEncodingError, encode_presentation, encode_single};
 use fabric_sdk_tabular::{OutputLimits, ResultFormat, TabularResult};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::{Value, json};
@@ -146,5 +146,67 @@ fn unsupported_parquet_duplicate_names_remain_explicit_codec_failure() {
     assert!(matches!(
         encode_single(&[&table], ResultFormat::Parquet, limits()),
         Err(QueryEncodingError::Codec(_))
+    ));
+}
+
+#[test]
+fn normal_presentation_retains_every_rich_dataset_without_reinference() {
+    let first = table(true, false);
+    let second = table(false, true);
+    let bytes = encode_presentation(&[&first, &second], limits()).unwrap();
+    assert_eq!(bytes.last(), Some(&b'\n'));
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["resultsets"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        value["resultsets"][0]["rows"][0],
+        json!(["9007199254740993", "", "AP8=", "1234567890"])
+    );
+    assert_eq!(value["resultsets"][1]["rows"], json!([]));
+    assert_eq!(
+        value["resultsets"][1]["schema"].as_array().unwrap().len(),
+        4
+    );
+    assert_eq!(
+        value["resultsets"][0]["schema"][0]["name"],
+        value["resultsets"][0]["schema"][1]["name"]
+    );
+}
+
+#[test]
+fn normal_presentation_checks_exact_envelope_inclusive_byte_threshold() {
+    let value = "\"".repeat(4096);
+    let schema = Arc::new(Schema::new(vec![Field::new("text", DataType::Utf8, true)]));
+    let batch = RecordBatch::try_new(
+        Arc::clone(&schema),
+        vec![Arc::new(StringArray::from(vec![value.as_str()]))],
+    )
+    .unwrap();
+    let table = TabularResult::try_new(schema, vec![batch], limits()).unwrap();
+    let expected = encode_presentation(&[&table], limits()).unwrap();
+    let exact = OutputLimits::new(100, expected.len(), 8).unwrap();
+    assert_eq!(encode_presentation(&[&table], exact).unwrap(), expected);
+    let short = OutputLimits::new(100, expected.len() - 1, 8).unwrap();
+    assert!(matches!(
+        encode_presentation(&[&table], short),
+        Err(QueryEncodingError::OutputLimit(max)) if max == expected.len() - 1
+    ));
+}
+
+#[test]
+fn normal_presentation_applies_aggregate_rows_and_batches_across_sets() {
+    let table = table(false, false);
+    assert!(matches!(
+        encode_presentation(
+            &[&table, &table],
+            OutputLimits::new(3, 1024 * 1024, 8).unwrap()
+        ),
+        Err(QueryEncodingError::AggregateRows(3))
+    ));
+    assert!(matches!(
+        encode_presentation(
+            &[&table, &table],
+            OutputLimits::new(100, 1024 * 1024, 1).unwrap()
+        ),
+        Err(QueryEncodingError::AggregateBatches(1))
     ));
 }

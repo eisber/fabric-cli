@@ -612,6 +612,40 @@ caller's blocking executor. Deferred path selection preserves classification
 order and limits local authority to explicit arguments or trusted local
 configuration documents.
 
+## Typed native root queries
+
+The additive Rust feature `v2-query` registers `query_host` without changing the
+existing root query grammar:
+
+```text
+fab-rs query PATH --text TEXT [--engine ENGINE]
+fab-rs query PATH --file FILE|- [--engine ENGINE]
+fab-rs query PATH --text TEXT --format json|csv|parquet --output NEW_FILE
+```
+
+`--parameters` remains recognized but the current native providers reject it
+before input or credential I/O because neither exposes a supported native
+parameter schema. No provider, resultset, or language selector is introduced.
+The host binds the exact parsed path to one authoritative target snapshot.
+Supported DataAgent datasource targets select the typed AIHub route by default;
+an explicitly advertised artifact-native KQL engine remains available.
+Bare artifacts do not become fictitious DataAgents, query text never selects
+an engine, and provider failures never cause fallback or replay.
+
+The query command capability calls the real SDKs and retains native declared
+schemas, every dataset, selected datasource/stage, and execution evidence.
+Rich output uses `fabric-sdk-tabular`, not legacy JSON row-object inference.
+Normal presentation can retain multiple datasets; explicit single-file output
+requires exactly one. File format is explicit and independent of the extension.
+See the [capability matrix and integration status](../commands/query/README.md).
+
+Default builds remain unchanged. The feature alone does not configure a
+production provider: until the native host receives supported explicit target,
+endpoint, audience, and credential bindings, root execution fails with
+`NotConfigured` before input or credentials. The current development candidate
+still awaits strict bridge/native-host/presentation integration and executable
+qualification; source fixtures are not a live-service support claim.
+
 ## Native Dataflow query execution
 
 The additive v2 `execute` root binds an explicit

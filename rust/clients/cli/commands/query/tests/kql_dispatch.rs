@@ -12,10 +12,10 @@ use fabric_sdk::runtime::{
     NativeDeadline, NativeEffect, NativeError, NativeFuture, NativeMethod, NativeRequest,
     NativeStreamBody, NativeStreamExecutor, NativeStreamLimits, NativeStreamResponse,
 };
+use fabric_sdk::v2::ItemIdentity;
 use fabric_sdk_query::{
     EngineBinding, EngineExecutor, QueryCapability, QueryErrorKind, QueryLimits,
 };
-use fabric_v2_contracts::ItemIdentity;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
