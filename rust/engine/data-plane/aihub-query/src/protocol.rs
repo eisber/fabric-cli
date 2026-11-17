@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{QueryErrorKind, QueryMode, QueryRequest, json::RawValue};
+use crate::{QueryErrorKind, json::RawValue};
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(crate) use crate::json::parse;
 
@@ -157,134 +157,4 @@ pub(crate) fn negotiate(raw: &RawValue) -> Result<String, QueryErrorKind> {
         return Err(QueryErrorKind::Limit);
     }
     Ok(init.protocol_version)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ToolList {
-    pub(crate) tools: Vec<Tool>,
-    pub(crate) next_cursor: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Tool {
-    pub(crate) name: String,
-    input_schema: Box<RawValue>,
-    execution: Option<ToolExecution>,
-    annotations: Option<Box<RawValue>>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ToolAnnotations {
-    read_only_hint: bool,
-    destructive_hint: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ToolExecution {
-    task_support: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct Schema {
-    #[serde(rename = "type")]
-    kind: String,
-    properties: BTreeMap<String, Property>,
-    #[serde(default)]
-    required: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct Property {
-    #[serde(rename = "type")]
-    kind: Option<Box<RawValue>>,
-    #[serde(rename = "enum")]
-    values: Option<Vec<serde_json::Value>>,
-    description: Option<String>,
-    minimum: Option<u32>,
-    maximum: Option<u32>,
-}
-
-impl Property {
-    fn supports(&self, expected: &str) -> bool {
-        self.kind.as_ref().is_some_and(|kind| {
-            serde_json::from_str::<String>(kind.get()).is_ok_and(|s| s == expected)
-                || serde_json::from_str::<Vec<String>>(kind.get()).is_ok_and(|kinds| {
-                    kinds.iter().any(|s| s == expected)
-                        && kinds.iter().all(|s| s == expected || s == "null")
-                })
-        })
-    }
-}
-
-pub(crate) fn validate_tool(tool: &Tool, request: &QueryRequest) -> Result<(), QueryErrorKind> {
-    let unsupported = QueryErrorKind::UnsupportedTool;
-    let annotations: ToolAnnotations =
-        parse(tool.annotations.as_ref().ok_or(unsupported)?.get()).map_err(|_| unsupported)?;
-    if !annotations.read_only_hint || annotations.destructive_hint {
-        return Err(unsupported);
-    }
-    if tool
-        .execution
-        .as_ref()
-        .and_then(|e| e.task_support.as_deref())
-        == Some("required")
-    {
-        return Err(unsupported);
-    }
-    let schema: Schema = parse(tool.input_schema.get()).map_err(|_| unsupported)?;
-    if schema.kind != "object"
-        || !["artifactId", "query"].into_iter().all(|name| {
-            schema.required.iter().any(|s| s == name)
-                && schema
-                    .properties
-                    .get(name)
-                    .is_some_and(|p| p.supports("string"))
-        })
-    {
-        return Err(unsupported);
-    }
-    let supplied: BTreeSet<&str> = ["artifactId", "query", "max_rows"]
-        .into_iter()
-        .chain(request.filename.as_ref().map(|_| "filename"))
-        .chain((request.mode == QueryMode::Template).then_some("language"))
-        .collect();
-    if schema
-        .required
-        .iter()
-        .any(|name| !supplied.contains(name.as_str()))
-    {
-        return Err(unsupported);
-    }
-    let cap = schema.properties.get("max_rows").ok_or(unsupported)?;
-    if !cap.supports("integer")
-        || cap.minimum.is_some_and(|min| request.max_rows < min)
-        || cap.maximum.is_some_and(|max| request.max_rows > max)
-        || (request.filename.is_some()
-            && !schema
-                .properties
-                .get("filename")
-                .is_some_and(|p| p.supports("string")))
-    {
-        return Err(unsupported);
-    }
-    if request.mode == QueryMode::Template {
-        let language = schema.properties.get("language").ok_or(unsupported)?;
-        let advertised = language.values.as_ref().map_or_else(
-            || {
-                language
-                    .description
-                    .as_ref()
-                    .is_some_and(|s| s.contains("'jmespath'") || s.contains("`jmespath`"))
-            },
-            |values| values.iter().any(|s| s.as_str() == Some("jmespath")),
-        );
-        if !language.supports("string") || !advertised {
-            return Err(unsupported);
-        }
-    }
-    Ok(())
 }

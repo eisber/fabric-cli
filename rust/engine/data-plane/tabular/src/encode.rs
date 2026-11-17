@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Write};
 
 use arrow_array::{
@@ -200,12 +200,21 @@ fn write_json(result: &TabularResult, output: &mut BoundedBuffer) -> Result<(), 
         if column != 0 {
             output.write_all(b",").map_err(encoding)?;
         }
-        let descriptor = serde_json::json!({
+        let mut descriptor = serde_json::json!({
             "name": field.name(),
             "type": field.data_type().to_string(),
             "nullable": field.is_nullable(),
-            "encoding": json_encoding(field.data_type()),
+            "encoding": crate::metadata::encoding(field)
+                .unwrap_or_else(|| json_encoding(field.data_type())),
         });
+        let metadata: BTreeMap<_, _> = field
+            .metadata()
+            .iter()
+            .filter(|(key, value)| !key.is_empty() || !value.is_empty())
+            .collect();
+        if !metadata.is_empty() {
+            descriptor["metadata"] = serde_json::to_value(metadata).map_err(encoding)?;
+        }
         serde_json::to_writer(&mut *output, &descriptor).map_err(encoding)?;
     }
     output.write_all(b"],\"rows\":[").map_err(encoding)?;
