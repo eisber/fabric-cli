@@ -50,6 +50,7 @@ opt-in explicit; legacy CSV is not a typed-result mode.
 | Direct Report/SemanticModel | Not advertised as a typed SDK route | No universal typed-result coverage claim |
 | Stage | Explicit Production (Sandbox token absent) or Sandbox (existing token present) | Never inferred from typed opt-in; no alternate-stage fallback |
 | Templates | Explicit `QueryMode::Template`, `language: "jmespath"` and existing template variant; positive tool-schema enum or quoted selector advertisement required | A selector advertisement is not evidence that a particular template exists or that the caller is eligible |
+| Template catalog | Separate fixed Summary or FullEntries navigation, with all native content retained as untrusted JSON blocks | Not a typed rowset, arbitrary expression API, automatic template invocation, or proof of engine inactivity |
 | Results | Embedded `application/json` **and** resource `_meta["fabric.queryResult"]`; schema version 1 | No Markdown, CSV, URI-extension, or `structuredContent` inference |
 | Source freshness | Contract derived from an available October 2026 source snapshot | Not verified current or deployed; private implementation/source material intentionally omitted |
 | Files/CLI/Arrow | No local export or CLI composition | Other consumers explicitly convert the public native result model |
@@ -92,6 +93,31 @@ exposed. Filename bases are restricted to 1..=50 ASCII letters, digits, hyphens
 and underscores. The default row cap is 1,000; callers can explicitly request
 1..=10,000. Invalid bounds are rejected, not silently clamped.
 **An output row cap is not a server compute, cost, or read-only enforcement bound.**
+
+## Template catalog versus invocation
+
+`execute_query` with `QueryMode::Template` executes an explicit caller-supplied
+template expression and still **requires typed JSON**. A catalog-only response
+to that API fails `MissingTypedJson`; discovery is never a rowset fallback.
+
+Use the separate `discover_query_templates(target, deadline, canceled)` for
+fixed summary navigation. `discover_query_templates_view` accepts only
+`CatalogView::Summary` (`Templates[].{Name:Name,Description:Description}`) or
+`CatalogView::FullEntries` (`Templates[]`). The closed enum cannot interpolate
+functions or accept arbitrary caller expressions. No navigation result is
+automatically invoked, repaired, or converted into a query.
+
+`NativeCatalogResponse` preserves every native content block, its original JSON
+and top-level result JSON, negotiated protocol, and actual tool HTTP dispatch
+evidence. Source-backed catalog responses contain native text followed by
+optional guidance; full entries may include native queries or sensitive parameter
+metadata. All such content is **untrusted caller-owned data**, not instructions,
+safe executable queries, inferred JSON/Markdown/CSV schemas, DataFrames, or
+completed datasets. Resource URIs are never downloaded. Debug output is redacted.
+The same credential, stage, positive-policy request, safe discovery annotations,
+absolute budget, body/resource limits and no-replay transport apply. Observing
+the tool response does not prove that the engine performed no work or establish
+live read-only enforcement.
 
 ## Native result contract
 

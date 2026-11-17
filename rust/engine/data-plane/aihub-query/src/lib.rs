@@ -7,12 +7,14 @@
 //! discovered. Endpoint/auth compatibility must be qualified by the caller.
 //! Dropping a future stops local observation, not remote execution or billing.
 
+mod catalog;
 mod client;
 mod contract;
 mod decode;
 mod json;
 mod protocol;
 
+pub use catalog::{CatalogView, NativeCatalogContent, NativeCatalogResponse};
 pub use client::{AiHubQueryClient, AuthBinding};
 pub use contract::{
     Completeness, DataAgentTarget, Limits, QueryError, QueryErrorKind, QueryMode, QueryOutcome,

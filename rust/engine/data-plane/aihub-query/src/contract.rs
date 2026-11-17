@@ -275,7 +275,7 @@ pub enum QueryErrorKind {
 pub struct QueryError {
     /// Sanitized cause; do not infer completion from an HTTP 2xx alone.
     pub kind: QueryErrorKind,
-    /// The query call was handed to HTTP; its remote outcome may be unknown.
+    /// The query or catalog tool call reached HTTP; its remote outcome may be unknown.
     pub query_dispatched: bool,
 }
 
