@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const LOADED_SOURCE_DIGEST = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
 const {spawnSync} = require('node:child_process');
 const {executeOwned} = require('./validation-process.cjs');
 
@@ -37,7 +38,7 @@ function profileTests(plan, profile) {
   return profile.tests || plan.tests.filter(test => profile.packages.includes(test.package));
 }
 
-function testCommands(tests, features = [], label = 'default') {
+function testGroups(tests, features = []) {
   const grouped = new Map();
   for (const test of tests) {
     requireThat(!test.filter, 'Impact tests must select complete Cargo targets, not name filters');
@@ -45,28 +46,33 @@ function testCommands(tests, features = [], label = 'default') {
     targets.add(test.target);
     grouped.set(test.package, targets);
   }
-  const commands = [];
+  const groups = [];
   const all = [...grouped].filter(([, targets]) => targets.has('all')).map(([name]) => name);
-  const command = (packages, selectors) => ({
-    id: `${label}:test:${packages.join(',')}`,
-    program: 'cargo',
-    args: ['test', '--offline', '--locked', ...packageArgs(packages),
-      ...(features.length ? ['--features', features.join(',')] : []), ...selectors],
-    test: true,
-  });
-  if (all.length) commands.push(command(all.sort(), ['--all-targets']));
+  if (all.length) groups.push({packages: all.sort(), targets: ['all'], features: [...features]});
   for (const [name, targets] of [...grouped].sort(([a], [b]) => a.localeCompare(b))) {
-    if (targets.has('all')) continue;
-    const selectors = [...targets].sort().flatMap(target => {
+    if (!targets.has('all')) groups.push({packages: [name], targets: [...targets].sort(), features: [...features]});
+  }
+  return groups;
+}
+
+function testCommands(tests, features = [], label = 'default') {
+  return testGroups(tests, features).map(({packages, targets, features}) => {
+    const selectors = targets.flatMap(target => {
+      if (target === 'all') return ['--all-targets'];
       if (target === 'lib') return ['--lib'];
       const match = /^(bin|test|example):([a-zA-Z0-9_-]+)$/.exec(target);
       requireThat(match, `Unsupported Cargo test target: ${target}`);
       return [`--${match[1]}`, match[2]];
     });
-    requireThat(selectors.length, `No test targets selected for ${name}`);
-    commands.push(command([name], selectors));
-  }
-  return commands;
+    requireThat(selectors.length, `No test targets selected for ${packages.join(',')}`);
+    return {
+      id: `${label}:test:${packages.join(',')}`,
+      program: 'cargo',
+      args: ['test', '--offline', '--locked', ...packageArgs(packages),
+        ...(features.length ? ['--features', features.join(',')] : []), ...selectors],
+      test: true,
+    };
+  });
 }
 
 function coreCommands(plan, platform) {
@@ -808,7 +814,7 @@ async function main(argv, execute) {
   if (failure) throw failure;
 }
 
-module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
+module.exports = {LOADED_SOURCE_DIGEST, packageArgs, ownFeatures, defaultTests, profileTests, testGroups, testCommands, coreCommands, commandResult,
   sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter, oracleVersions,
   restoreOracleDependencies, runContracts, options, buildEnvironment,
   commandIdentity, reusableCoreCommand, coreReuseKey, runCoreCommands, executionSummary,
