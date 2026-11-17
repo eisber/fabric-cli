@@ -128,6 +128,8 @@ test('Neutral foundations exclude transitive service implementations but retain 
   assert.ok(report.inventory.packages.find(pkg => pkg.name === 'models').reverse_consumers.includes('deploy'));
   const models = input.metadata.packages.find(pkg => pkg.name === 'models');
   models.dependencies.push({name: 'unrelated', path: absolute('rust/engine/unrelated'), kind: 'dev'});
+  const measured = dependencyInventory(input).packages.find(pkg => pkg.name === 'models');
+  assert.deepEqual(measured.entry_kind_closures, {normal: [], build: [], dev: ['unrelated']});
   assert.throws(() => contractReport(input), /Foundation models requires non-core packages: unrelated/);
   assert.throws(() => contractReport({...input, foundations: ['absent']}), /Unknown foundation/);
 });
@@ -181,6 +183,9 @@ test('Contract measurements expand all-target selectors and retain isolated feat
   assert.equal(selected.platforms.linux.profiles, 0);
   assert.equal(selected.platforms.windows.profiles, 1);
   assert.equal(selected.platforms.windows.profile_targets, 3);
+  const profile = report.inventory.profiles.find(profile => profile.id === 'windows-native');
+  assert.deepEqual(profile.feature_path_dependencies, []);
+  assert.deepEqual(profile.conservative_compile_dependencies, ['adapter', 'cli', 'deploy', 'models']);
   assert.equal(report.build_executed, false);
   assert.equal(report.latency_claim, false);
   assert.equal(report.native_qualification, false);

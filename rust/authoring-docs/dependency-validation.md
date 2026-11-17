@@ -178,6 +178,11 @@ than maintaining a second package list. It records:
 - Every workspace package and default member, direct dependency declarations
   (including renamed, development, build, optional and platform-specific edges),
   and conservative transitive forward dependencies and reverse consumers.
+  `entry_kind_closures` separates normal/build/dev entry edges, then follows
+  their conservative transitive dependency union. Profile inventories separately
+  expose feature-path dependencies and conservative compile dependencies. These
+  are not feature-resolved `cargo tree` output; the foundation assertion checks
+  the complete union, including service dependencies reachable only through tests.
 - Recursively discovered engine/client manifests, rejecting unregistered or
   missing crates before a heavy build. This supplements, not replaces, the
   existing Rust architecture contract.

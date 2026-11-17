@@ -531,6 +531,9 @@ function dependencyInventory({metadata, graph, root, files, manifests}) {
         cargo_targets: declarations.get(name).targets.length,
         default_member: defaults.has(pkg.id), dependencies,
         forward_dependencies: sorted(closure([name], id => packages.get(id).deps)).filter(id => id !== name),
+        entry_kind_closures: Object.fromEntries(['normal', 'build', 'dev'].map(kind => [kind,
+          sorted(closure(dependencies.filter(dep => dep.internal && dep.kind === kind).map(dep => dep.package),
+            id => packages.get(id).deps))])),
         reverse_consumers: sorted(closure([name], id => consumers.get(id))).filter(id => id !== name),
         probe: [...pkg.targets.values()].find(target => target.name === 'lib')?.src ??
           [...pkg.targets.values()].find(target => target.name.startsWith('bin:'))?.src ??
@@ -541,6 +544,12 @@ function dependencyInventory({metadata, graph, root, files, manifests}) {
       const component = rules.components.get(id);
       return {id, package: component.package, coverage: component.coverage,
         files: files.filter(file => component.inputs.some(input => input.match.test(file)))};
+    }),
+    profiles: sorted(rules.profiles.keys()).map(id => {
+      const profile = rules.profiles.get(id);
+      return {id, packages: profile.packages, features: profile.features, platforms: profile.platforms,
+        feature_path_dependencies: sorted(featureDependencies(packages, profile)),
+        conservative_compile_dependencies: sorted(closure(profile.packages, name => packages.get(name).deps))};
     }),
   };
 }
