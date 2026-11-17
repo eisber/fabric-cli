@@ -36,6 +36,15 @@ diagnostics. Both current providers lack an accepted native parameter schema:
 `--parameters` remains parseable but is explicitly rejected before input or
 credential I/O. It is not interpreted as output projection or template selection.
 
+`PreparedAiHub` constructs the real AIHub SDK request from that resolved
+DataAgent datasource, requires typed JSON, and consumes a caller-configured
+`AiHubQueryClient` once. The SDK sends
+`Fabric.Routing.Documents.DataAgent` and
+`Fabric.Routing.Documents.DataAgent.TypedQueryResults` on the MCP lifecycle.
+Sandbox stage adds its separate stage token. Missing typed resources fail
+explicitly; legacy CSV, Markdown, prose, or auxiliary resource URLs are not
+queried or parsed as a fallback.
+
 ## Typed output capability matrix
 
 `encode_single` takes native Arrow tables, never JSON row-object inference or
@@ -55,10 +64,13 @@ Local cancellation and dropping a future do not claim remote cancellation.
 
 ## Integration status
 
-The package currently provides local route/input preparation, one-shot native
-KQL SDK dispatch, and rich single-dataset encoding. The AIHub SDK and strict native
-result bridges are separate dependencies awaiting their approved immutable
-development releases. Actual root executable dispatch, native host binding,
+The package currently provides local route/input preparation, one-shot actual
+AIHub and native KQL SDK dispatch, and rich single-dataset encoding. The corrected
+AIHub SDK source is integrated from immutable development commit
+`50683fa52cd029ef84df0f26bc6ced479b099e1c`; this is source integration, not
+compiled or live qualification. The strict native result bridges are separate
+dependencies awaiting their approved immutable development release.
+Actual root executable dispatch, native host binding,
 normal no-export presentation, and standard atomic file delivery remain
 integration work; this package alone does not establish command completion.
 
@@ -68,8 +80,8 @@ explicitly supported caller endpoint, audience, and identity context; a cached
 development authentication flow is not production evidence. Typed DataAgent
 results are not universal direct-artifact AIHub support.
 
-The offline tests exercise preparation boundaries, actual SDK KQL request and
-native-result preservation, and shared JSON/CSV/Parquet encoding with Parquet
+The offline tests exercise preparation boundaries, actual SDK AIHub and KQL
+requests and native-result preservation, and shared JSON/CSV/Parquet encoding with Parquet
 readback. Qualification still requires authorized compilation and tests,
 executable-boundary provider fixtures, affected reverse consumers, and the
 unchanged Dataflow execution regressions.

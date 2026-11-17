@@ -7,11 +7,13 @@
 //! failure selects a different route. The existing CLI parser owns the grammar.
 //! Inputs are bounded and resolved once before credentials or query dispatch.
 
+mod aihub;
 mod input;
 mod kql;
 mod output;
 mod target;
 
+pub use aihub::{AiHubPreparationError, PreparedAiHub};
 pub use input::{InputReader, InputSource, PreparedInput, QueryInput, TextSource, prepare_input};
 pub use kql::{KqlPreparationError, PreparedKql};
 pub use output::{QueryEncodingError, encode_single};
