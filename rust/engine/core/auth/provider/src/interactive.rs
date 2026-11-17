@@ -33,7 +33,10 @@ pub mod macos;
 
 const BODY_LIMIT: usize = 128 * 1024;
 const MAX_LIFETIME: u64 = 86_400;
-/// The three explicitly supported public-cloud resource scopes.
+/// The three public-cloud scopes acquired by explicit login and status.
+///
+/// SDK refresh additionally accepts [`crate::PUBLIC_KUSTO_SCOPE`] without
+/// changing this default sequence or authorizing device-code interaction.
 pub const SCOPES: [&str; 3] = [
     "https://api.fabric.microsoft.com/.default",
     "https://storage.azure.com/.default",
@@ -86,7 +89,9 @@ pub enum InteractiveError {
     #[error("Device-code persistence requires Windows, macOS or Linux Secret Service.")]
     Unsupported,
     /// Only one known resource scope is accepted.
-    #[error("Device-code credentials require exactly one Fabric, OneLake or ARM scope.")]
+    #[error(
+        "Device-code credentials require exactly one Fabric, OneLake, ARM or public Kusto scope."
+    )]
     Scope,
     /// The caller could not present the safe challenge.
     #[error("Cannot display the device-code sign-in instructions.")]
@@ -414,7 +419,7 @@ impl InteractiveCredential {
         &self.identity
     }
 
-    /// Silently validates/acquires every supported resource, returning no secrets.
+    /// Silently validates/acquires the three login resources, returning no secrets.
     ///
     /// # Errors
     /// Any resource/rotation/storage failure prevents a successful status result.
@@ -493,6 +498,7 @@ impl TokenCredential for InteractiveCredential {
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
         let scope = match scopes {
+            [crate::PUBLIC_KUSTO_SCOPE] => Some(crate::PUBLIC_KUSTO_SCOPE),
             [scope] => SCOPES.into_iter().find(|known| known == scope),
             _ => None,
         }
