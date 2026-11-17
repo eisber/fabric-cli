@@ -528,6 +528,143 @@ async fn direct_open_cannot_bypass_origin_route_or_policy_preflight() {
 }
 
 #[tokio::test]
+async fn direct_open_requires_objects_at_every_policy_level_before_any_credential_or_http() {
+    let binding = binding();
+    let credential = Arc::new(Credential::default());
+    let (wire, _) = response(200, Some("application/json"), chunks(&frames()));
+    let executor = configured(&binding, credential.clone(), wire.clone(), Arc::default());
+    let valid = query().request(&binding, limits()).unwrap();
+    let body: Value = serde_json::from_slice(valid.bytes().unwrap()).unwrap();
+    let properties = &body["properties"];
+    let options = &properties["Options"];
+    let positional_options = json!([
+        "kql",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        "00:00:01.000"
+    ]);
+    let mut invalid: Vec<Vec<u8>> = [
+        json!([body["db"], body["csl"], properties]),
+        json!({"db":body["db"],"csl":body["csl"],"properties":[options]}),
+        json!({"db":body["db"],"csl":body["csl"],"properties":{"Options":positional_options}}),
+        Value::Null,
+        json!({"db":body["db"],"csl":body["csl"],"properties":null}),
+        json!({"db":body["db"],"csl":body["csl"],"properties":{"Options":null}}),
+        json!({"db":body["db"],"csl":body["csl"],"properties":{}}),
+        json!({"db":body["db"],"csl":body["csl"],"properties":{"Options":{}}}),
+        json!({"db":body["db"],"csl":body["csl"],"properties":properties,"unknown":true}),
+        json!({"db":body["db"],"csl":body["csl"],"properties":{"Options":options,"unknown":true}}),
+    ]
+    .iter()
+    .map(|value| serde_json::to_vec(value).unwrap())
+    .collect();
+    let mut unknown_option = body.clone();
+    unknown_option["properties"]["Options"]["unknown"] = json!(true);
+    invalid.push(serde_json::to_vec(&unknown_option).unwrap());
+    let text = String::from_utf8(valid.bytes().unwrap().to_vec()).unwrap();
+    invalid.extend([
+        text.replace(
+            "\"db\":\"exact-db\"",
+            "\"db\":\"exact-db\",\"db\":\"exact-db\"",
+        )
+        .into_bytes(),
+        format!(
+            r#"{{"db":{},"csl":{},"properties":{},"properties":{}}}"#,
+            body["db"], body["csl"], properties, properties
+        )
+        .into_bytes(),
+        format!(
+            r#"{{"db":{},"csl":{},"properties":{{"Options":{},"Options":{}}}}}"#,
+            body["db"], body["csl"], options, options
+        )
+        .into_bytes(),
+        text.replace(
+            "\"request_readonly\":true",
+            "\"request_readonly\":true,\"request_readonly\":true",
+        )
+        .into_bytes(),
+        format!("{text} null").into_bytes(),
+        b"{malformed".to_vec(),
+        vec![0xff],
+    ]);
+    for bytes in invalid {
+        let request = binding
+            .endpoint()
+            .request(
+                NativeMethod::Post,
+                &["v2", "rest", "query"],
+                &[],
+                None,
+                NativeEffect::Read,
+            )
+            .unwrap()
+            .with_bytes(bytes, "application/json; charset=utf-8", 1024 * 1024)
+            .unwrap()
+            .with_header("x-ms-client-request-id", "query;synthetic")
+            .unwrap();
+        assert_eq!(
+            executor
+                .open(&request, stream_limits(), &deadline())
+                .await
+                .unwrap_err(),
+            NativeError::InvalidInput
+        );
+        assert!(credential.scopes.lock().unwrap().is_empty());
+        assert!(wire.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn direct_open_object_validation_never_reserializes_original_request_bytes() {
+    let binding = binding();
+    let credential = Arc::new(Credential::default());
+    let (wire, _) = response(200, Some("application/json"), chunks(&frames()));
+    let executor = configured(&binding, credential.clone(), wire.clone(), Arc::default());
+    let valid = query().request(&binding, limits()).unwrap();
+    let original = format!(
+        " \n{}\n ",
+        String::from_utf8(valid.bytes().unwrap().to_vec()).unwrap()
+    )
+    .into_bytes();
+    let request = binding
+        .endpoint()
+        .request(
+            NativeMethod::Post,
+            &["v2", "rest", "query"],
+            &[],
+            None,
+            NativeEffect::Read,
+        )
+        .unwrap()
+        .with_bytes(
+            original.clone(),
+            "application/json; charset=utf-8",
+            1024 * 1024,
+        )
+        .unwrap()
+        .with_header("x-ms-client-request-id", "query;synthetic")
+        .unwrap();
+    let response = executor
+        .open(&request, stream_limits(), &deadline())
+        .await
+        .unwrap();
+    assert_eq!(credential.scopes.lock().unwrap().len(), 1);
+    let requests = wire.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        Bytes::from(requests[0].body()).as_ref(),
+        original.as_slice()
+    );
+    drop(response);
+}
+
+#[tokio::test]
 async fn http_errors_redirects_and_transients_are_not_replayed_or_completed() {
     for status in [202, 301, 307, 400, 401, 403, 429, 500, 503] {
         let binding = binding();
