@@ -217,6 +217,37 @@ test('Report comparison distinguishes added/removed scenarios and changed inputs
   assert.throws(() => compareReports({}, after), /schema-1/);
 });
 
+test('Fresh graph comparisons expose platform feature losses even when every aggregate count is unchanged', () => {
+  const input = contractFixture();
+  const cli = input.metadata.packages.find(pkg => pkg.name === 'cli');
+  cli.features.native = [];
+  cli.targets.push(target('native', 'test', 'rust/clients/cli/app/tests/native.rs', ['native']));
+  input.graph.profiles.push({id: 'native', packages: ['cli'],
+    features: ['cli/native'], platforms: ['windows']});
+  const before = contractReport(input);
+  input.graph.profiles[0].platforms = ['linux'];
+  const after = contractReport(input);
+  const comparison = compareReports(before, after).scenarios.find(item => item.id === 'package:cli');
+  assert.equal(comparison.comparable_inputs, true);
+  assert.ok(Object.values(comparison.delta).every(value => value === 0));
+  assert.equal(comparison.platforms.windows.delta.profiles, -1);
+  assert.equal(comparison.platforms.windows.delta.profile_targets, -3);
+  assert.equal(comparison.platforms.linux.delta.profile_targets, 3);
+  assert.deepEqual(comparison.profile_changes[0].before.platforms, ['windows']);
+  assert.deepEqual(comparison.profile_changes[0].after.platforms, ['linux']);
+});
+
+test('Fresh equal-count graph comparisons retain changed target identities, not just totals', () => {
+  const input = contractFixture();
+  const before = contractReport(input);
+  input.graph.components[0].tests[0].target = 'test:spark';
+  const after = contractReport(input);
+  const comparison = compareReports(before, after).scenarios.find(item => item.id === 'component:notebook');
+  assert.ok(Object.values(comparison.delta).every(value => value === 0));
+  assert.deepEqual(comparison.membership.default_targets,
+    {added: ['deploy/test:spark'], removed: ['deploy/test:notebook']});
+});
+
 test('Contract CLI rejects invalid paths/options before running commands', () => {
   const hooks = {exec: () => { throw new Error('Must not execute'); }};
   for (const args of [[], ['--output', 'relative.json'], ['--unknown', 'value'],

@@ -31,7 +31,7 @@ function discoverManifests(root) {
 
 function selectionInventory(selection) {
   const targets = tests => sorted(tests.flatMap(test => selection.target_catalog
-    .filter(target => target.package === test.package && target.test &&
+    .filter(target => target.package === test.package &&
       (test.target === 'all' || test.target === target.target))
     .map(target => `${target.package}/${target.target}`)));
   const defaults = targets(selection.tests.filter(test => test.default_available))
@@ -104,16 +104,34 @@ function compareReports(baseline, current) {
   'Expected a schema-1 capability selection contract baseline');
   const before = new Map(baseline.scenarios.map(scenario => [scenario.id, scenario]));
   const after = new Map(current.scenarios.map(scenario => [scenario.id, scenario]));
+  const membership = (previous = [], next = []) => ({
+    added: next.filter(value => !previous.includes(value)),
+    removed: previous.filter(value => !next.includes(value)),
+  });
+  const deltas = (previous, next) => previous && next ?
+    Object.fromEntries(Object.keys(previous).map(key => [key, next[key] - previous[key]])) : null;
   return {
     baseline_head: baseline.source?.head ?? null, current_head: current.source?.head ?? null,
     graph: {before: baseline.inventory.counts, after: current.inventory.counts},
     scenarios: sorted([...before.keys(), ...after.keys()]).map(id => {
       const previous = before.get(id), next = after.get(id);
+      const oldProfiles = new Map(previous?.selection.profiles.map(profile => [profile.id, profile]) || []);
+      const newProfiles = new Map(next?.selection.profiles.map(profile => [profile.id, profile]) || []);
       return {id, status: !previous ? 'added' : !next ? 'removed' : 'matched',
         comparable_inputs: !!previous && !!next && JSON.stringify(previous.files) === JSON.stringify(next.files),
         before: previous?.selection.counts ?? null, after: next?.selection.counts ?? null,
-        delta: previous && next ? Object.fromEntries(Object.keys(previous.selection.counts).map(key =>
-          [key, next.selection.counts[key] - previous.selection.counts[key]])) : null};
+        delta: deltas(previous?.selection.counts, next?.selection.counts),
+        platforms: Object.fromEntries(PLATFORMS.map(platform => {
+          const oldCounts = previous?.selection.platforms[platform] ?? null;
+          const newCounts = next?.selection.platforms[platform] ?? null;
+          return [platform, {before: oldCounts, after: newCounts, delta: deltas(oldCounts, newCounts)}];
+        })),
+        membership: Object.fromEntries(['packages', 'components', 'checks', 'default_targets'].map(key =>
+          [key, membership(previous?.selection[key], next?.selection[key])])),
+        profile_changes: sorted([...oldProfiles.keys(), ...newProfiles.keys()]).filter(id =>
+          JSON.stringify(oldProfiles.get(id)) !== JSON.stringify(newProfiles.get(id))).map(id =>
+          ({id, before: oldProfiles.get(id) ?? null, after: newProfiles.get(id) ?? null})),
+      };
     }),
   };
 }

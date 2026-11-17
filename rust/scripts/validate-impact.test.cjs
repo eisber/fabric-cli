@@ -58,13 +58,14 @@ test('Measured target inventories agree with executor default/feature commands w
     ],
     target_catalog: [
       {package: 'cli', target: 'lib', test: true, default_available: true, profiles: ['native']},
+      {package: 'cli', target: 'example:safe_consumer', test: false, default_available: true, profiles: ['native']},
       {package: 'cli', target: 'test:native', test: true, default_available: false, profiles: ['native']},
     ],
     profiles: [{id: 'native', packages: ['cli'], features: ['cli/native'], platforms: ['windows'],
       test_features: {cli: ['cli/native']}, tests: [{package: 'cli', target: 'all'}]}]};
   const measured = selectionInventory(selected);
-  assert.deepEqual(measured.default_targets, ['cli/lib']);
-  assert.deepEqual(measured.profiles[0].targets, ['cli/lib', 'cli/test:native']);
+  assert.deepEqual(measured.default_targets, ['cli/example:safe_consumer', 'cli/lib']);
+  assert.deepEqual(measured.profiles[0].targets, ['cli/example:safe_consumer', 'cli/lib', 'cli/test:native']);
   for (const platform of ['linux', 'macos', 'windows']) {
     const actual = coreCommands(selected, platform);
     const tests = actual.filter(command => command.test && !command.args.includes('--doc'));
@@ -72,6 +73,15 @@ test('Measured target inventories agree with executor default/feature commands w
     assert.ok(tests[0].args.includes('--all-targets'));
     if (platform === 'windows') assert.ok(tests[1].args.includes('cli/native'));
     assert.equal(measured.platforms[platform].profiles, platform === 'windows' ? 1 : 0);
+  }
+  selected.tests = [{package: 'cli', target: 'example:safe_consumer', default_available: true}];
+  selected.profiles[0].tests = selected.tests;
+  assert.deepEqual(selectionInventory(selected).default_targets, ['cli/example:safe_consumer']);
+  assert.deepEqual(selectionInventory(selected).profiles[0].targets, ['cli/example:safe_consumer']);
+  for (const command of coreCommands(selected, 'windows').filter(command => command.test &&
+    !command.args.includes('--doc'))) {
+    assert.ok(command.args.includes('--example'));
+    assert.ok(command.args.includes('safe_consumer'));
   }
 });
 

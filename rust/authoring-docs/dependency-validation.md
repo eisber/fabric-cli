@@ -194,6 +194,8 @@ than maintaining a second package list. It records:
   checks, and native-platform applicability. `all` is expanded through the
   planner's target catalog; feature-gated targets are not counted as default
   targets, and unavailable profiles are not counted as executed obligations.
+  Explicit selectors and `--all-targets` include targets marked `test = false`,
+  including examples, just as the validator's generated Cargo commands do.
 - The exact HEAD/tree, dirty status, source-inventory digest, metadata/graph/tool
   digests and Cargo version. Source or HEAD mutation during collection fails.
 
@@ -206,7 +208,10 @@ Forward/reverse closures conservatively include optional and platform edges;
 they are not Cargo's feature-resolved graph for one particular host.
 
 Baseline comparisons retain added/removed scenarios, full before/after graph
-counts, and selection-count deltas. `comparable_inputs: false` identifies
+counts, aggregate and per-platform selection-count deltas, target/check
+membership changes, and changed profile features, targets and applicability.
+Equal aggregate counts do not hide a platform losing a feature composition or
+one complete test target being replaced by another. `comparable_inputs: false` identifies
 scenarios whose source paths changed; do not present those as an identical-input
 benchmark. A smaller count alone is not a speedup or permission to drop checks.
 Unknown/shared inputs, uncovered reverse consumers, source oracles and native
