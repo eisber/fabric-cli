@@ -3271,6 +3271,13 @@
   ],
   "profiles": [
     {
+      "id": "query-tabular-aihub",
+      "packages": ["fabric-sdk-query-tabular"],
+      "features": ["fabric-sdk-query-tabular/aihub"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "runtime-v2-native",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/runtime-v2", "fabric-cli/headless"],
