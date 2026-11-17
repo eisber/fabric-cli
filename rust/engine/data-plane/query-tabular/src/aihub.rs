@@ -297,6 +297,8 @@ enum NativeType {
     Float32,
     Float64,
     Decimal(u8, i8),
+    Money,
+    SmallMoney,
     Boolean,
     Text,
     Date,
@@ -322,6 +324,8 @@ impl NativeType {
             Self::Float32 => DataType::Float32,
             Self::Float64 => DataType::Float64,
             Self::Decimal(p, s) => DataType::Decimal128(p, s),
+            Self::Money => DataType::Decimal128(19, 4),
+            Self::SmallMoney => DataType::Decimal128(10, 4),
             Self::Boolean => DataType::Boolean,
             Self::Text | Self::Guid => DataType::Utf8,
             Self::Date => DataType::Date32,
@@ -374,6 +378,12 @@ fn native_type(
             }
         },
         ("decimal", "json-number") => {
+            if native == "money" {
+                return Ok(NativeType::Money);
+            }
+            if native == "smallmoney" {
+                return Ok(NativeType::SmallMoney);
+            }
             let (precision, scale) = if matches!(native.as_str(), "decimal" | "numeric") {
                 // Canonical output for schema-only columns, not native p/s.
                 (1, 0)
@@ -384,15 +394,19 @@ fn native_type(
         }
         ("number", "json-number") => match native.as_str() {
             "single" | "float32" => NativeType::Float32,
-            "double" | "float64" => NativeType::Float64,
+            "double" | "float64" | "real" => NativeType::Float64,
             _ => return Err(unsupported("approximate numeric width is not explicit")),
         },
-        ("boolean", "json-boolean") if matches!(native.as_str(), "boolean" | "bool") => {
+        ("boolean", "json-boolean") if matches!(native.as_str(), "boolean" | "bool" | "bit") => {
             NativeType::Boolean
         }
         ("string", "text") => NativeType::Text,
         ("date", "iso8601") if matches!(native.as_str(), "date" | "dateonly") => NativeType::Date,
-        ("datetime", "iso8601") if native == "datetime" => NativeType::DateTime,
+        ("datetime", "iso8601")
+            if matches!(native.as_str(), "datetime" | "datetime2" | "smalldatetime") =>
+        {
+            NativeType::DateTime
+        }
         ("datetimeoffset", "iso8601") if native == "datetimeoffset" => {
             NativeType::OffsetDateTime(0)
         }
@@ -557,6 +571,16 @@ fn array(
         NativeType::Decimal(p, s) => Arc::new(
             typed!(Decimal128Array, |value| scalar::decimal(value, p, s))
                 .with_precision_and_scale(p, s)
+                .map_err(ConversionError::Arrow)?,
+        ),
+        NativeType::Money => Arc::new(
+            typed!(Decimal128Array, |value| scalar::money::<i64>(value, 19))
+                .with_precision_and_scale(19, 4)
+                .map_err(ConversionError::Arrow)?,
+        ),
+        NativeType::SmallMoney => Arc::new(
+            typed!(Decimal128Array, |value| scalar::money::<i32>(value, 10))
+                .with_precision_and_scale(10, 4)
                 .map_err(ConversionError::Arrow)?,
         ),
         NativeType::Boolean => Arc::new(typed!(BooleanArray, scalar::boolean)),

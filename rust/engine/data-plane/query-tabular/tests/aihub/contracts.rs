@@ -4,6 +4,8 @@
 //! Actual public Q1 native model through the conversion and shared codec boundary.
 #![deny(unnameable_test_items)]
 
+mod aliases;
+
 use std::{
     sync::atomic::AtomicBool,
     time::{Duration, Instant},

@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use fabric_sdk_query::QueryCapability;
 use fabric_sdk_query_tabular::{ConversionControl, ConversionLimits, convert_kql};
 use fabric_sdk_tabular::{OutputLimits, ResultFormat, encode};
 use serde_json::json;
@@ -50,6 +51,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     assert!(converted.evidence.completed);
+    assert!(converted.evidence.http_eof);
+    assert_eq!(
+        converted.evidence.adapter_capability,
+        QueryCapability::ScriptedOffline
+    );
     assert!(!converted.evidence.production_verified);
     Ok(())
 }

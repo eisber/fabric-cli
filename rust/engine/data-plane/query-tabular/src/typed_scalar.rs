@@ -311,6 +311,15 @@ pub(crate) fn decimal_layout(value: &NativeValue) -> Result<(i64, usize), &'stat
     Ok((parts.scale()?, parts.coefficient_digits()))
 }
 
+pub(crate) fn money<T: TryFrom<i128>>(
+    value: &NativeValue,
+    precision: u8,
+) -> Result<i128, &'static str> {
+    let coefficient = decimal(value, precision, 4)?;
+    T::try_from(coefficient).map_err(|_| "monetary value exceeds declared scaled integer range")?;
+    Ok(coefficient)
+}
+
 pub(crate) fn decimal(value: &NativeValue, precision: u8, scale: i8) -> Result<i128, &'static str> {
     let parts = decimal_parts(value)?;
     if parts.coefficient_digits() == 0 {

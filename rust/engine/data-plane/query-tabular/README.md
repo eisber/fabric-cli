@@ -19,11 +19,14 @@ vector means no resultset; a dataset with zero rows retains its declared schema.
 There is no silent first-dataset selection. Select a dataset explicitly before
 calling the existing `fabric_sdk_tabular::encode` or `encode_to_writer`.
 
-Only clean completed, untruncated results with a successful terminal frame and
-no diagnostics are consumable. Partial failures, completion warnings, cancelled
-responses, local truncation and missing completion fail; forensic partial rows
+Only clean completed, untruncated results with actual `http_eof` evidence, a
+successful terminal frame and no diagnostics are consumable. The completed flag
+cannot substitute for independently observed HTTP EOF. Partial failures,
+completion warnings, cancelled responses, local truncation and missing completion fail; forensic partial rows
 are not promoted into completed exports. Conversion does not establish live
-provider or read-enforcement proof.
+provider or read-enforcement proof. The original `adapter_capability` is retained,
+and `production_verified` is not a conversion gate: honest offline fixtures and
+structurally enforced production adapters both remain live-unverified.
 
 | Native declaration | Arrow type | Value contract |
 | --- | --- | --- |
@@ -80,8 +83,12 @@ Mapping is from **both** declared logical type/encoding and a supported native
 type. Integer widths/signs follow the explicit Byte/SByte/Int16/UInt16/Int32/
 UInt32/Int64/UInt64 families (including the documented native SQL aliases).
 Single/Float32 and Double/Float64 are approximate numbers with their original
-declared widths; nonfinite overflow and underflow to zero fail. A service's
-unknown integer/number engine type never defaults to Int64 or Float64.
+declared widths. The known v1 native Kusto `real` alias with logical number and
+JSON-number encoding maps to Float64, not SQL REAL/Float32. Nonfinite overflow and
+underflow to zero fail. Bare `float` has no proven width in this wire contract and
+remains unsupported; an unknown integer/number type never defaults to Int64 or
+Float64. Logical boolean/JSON-boolean also accepts the known `bit` alias as
+Boolean, without coercing integer or text cells.
 
 `decimal(p,s)` and `numeric(p,s)` declarations explicitly supplying supported
 precision (1-38) and scale (0 through precision) map to Decimal128. Coefficient
@@ -104,8 +111,21 @@ decimal columns use canonical **output** Decimal128(1,0); no native parameter
 claim is made. Original native `Column` declarations and `native_type` metadata
 remain unchanged. Explicit native `decimal(p,s)` still takes precedence.
 
+Known SQL `money` and `smallmoney` aliases with logical decimal/JSON-number use
+their [documented fixed contracts](https://learn.microsoft.com/en-us/sql/t-sql/data-types/money-and-smallmoney-transact-sql):
+Decimal128(19,4) with a signed 64-bit scaled
+coefficient, and Decimal128(10,4) with a signed 32-bit scaled coefficient,
+respectively. Both precision/scale **and** scaled integer bounds are enforced.
+The exact ranges are -922337203685477.5808 through 922337203685477.5807 and
+-214748.3648 through 214748.3647. Extra nonzero fractional digits or out-of-range
+values fail instead of rounding; unknown monetary labels do not inherit these
+contracts. Original native type hints are retained.
+
 Date/DateOnly maps to Date32; Time/TimeOnly to nanosecond time; TimeSpan/duration
-to nanosecond duration. For DateTime/DateTimeOffset, the bridge validates
+to nanosecond duration. Known `datetime2` and `smalldatetime` aliases with logical
+datetime/ISO8601 use the same exact representation as DateTime; this does not
+assert a missing native SQL precision or expand the Arrow nanosecond range.
+For DateTime/DateTimeOffset, the bridge validates
 **every** non-null value before choosing the output timezone. Uniform naive
 DateTime values map to timestamp without timezone. Uniform explicit `Z` or
 `+00:00` values map to timestamp with UTC; uniform nonzero offsets map to a fixed
