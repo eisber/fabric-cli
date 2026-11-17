@@ -783,7 +783,9 @@ fn managed_identity_official_providers_use_isolated_explicit_host_environments()
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("managed-provider-exercised"));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("managed-provider-exercised"));
+        assert_eq!(stdout.matches("managed-kusto-resource-isolated").count(), 2);
     }
 }
 
@@ -799,12 +801,26 @@ async fn managed_identity_process_child() {
     };
     for client_id in [None, Some(CLIENT.to_owned())] {
         let expires = azure_core::time::OffsetDateTime::now_utc().unix_timestamp() + 3600;
-        let http = FakeHttp::new([response(
-            200,
-            format!(
-                r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"https://api.fabric.microsoft.com"}}"#
+        let http = FakeHttp::new([
+            response(
+                200,
+                format!(
+                    r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"https://api.fabric.microsoft.com"}}"#
+                ),
             ),
-        )]);
+            response(
+                200,
+                format!(
+                    r#"{{"access_token":"synthetic-managed-kusto-token","expires_on":"{expires}","token_type":"Bearer","resource":"https://api.kusto.windows.net"}}"#
+                ),
+            ),
+            response(
+                200,
+                format!(
+                    r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"https://api.fabric.microsoft.com"}}"#
+                ),
+            ),
+        ]);
         let credential = HeadlessCredential::new(
             HeadlessInput::ManagedIdentity {
                 host: host.clone(),
@@ -817,32 +833,105 @@ async fn managed_identity_process_child() {
         let token = credential.get_token(&[FABRIC], None).await.unwrap();
         assert_eq!(token.token.secret(), "synthetic-managed-token");
         credential.get_token(&[FABRIC], None).await.unwrap();
-        let requests = http.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        let request = &requests[0];
-        assert_eq!(request.method(), Method::Get);
-        let query = request.url().query_pairs().collect::<Vec<_>>();
-        assert!(
-            query
-                .iter()
-                .any(|(name, value)| name == "resource"
+        {
+            let requests = http.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            let request = &requests[0];
+            assert_eq!(request.method(), Method::Get);
+            let query = request.url().query_pairs().collect::<Vec<_>>();
+            assert!(
+                query.iter().any(|(name, value)| name == "resource"
                     && value == "https://api.fabric.microsoft.com")
-        );
-        assert_eq!(
-            query
-                .iter()
-                .find(|(name, _)| name == "client_id")
-                .map(|(_, value)| value.as_ref()),
-            client_id.as_deref()
-        );
-        let header = request.headers().get_str(&"x-identity-header".into()).ok();
-        if matches!(host, ManagedHost::AppService { .. }) {
-            assert_eq!(request.url().host_str(), Some("127.0.0.1"));
-            assert_eq!(header, Some("synthetic-platform-header"));
-        } else {
-            assert_eq!(request.url().host_str(), Some("169.254.169.254"));
-            assert!(header.is_none());
+            );
+            assert_eq!(
+                query
+                    .iter()
+                    .find(|(name, _)| name == "client_id")
+                    .map(|(_, value)| value.as_ref()),
+                client_id.as_deref()
+            );
+            let header = request.headers().get_str(&"x-identity-header".into()).ok();
+            if matches!(host, ManagedHost::AppService { .. }) {
+                assert_eq!(request.url().host_str(), Some("127.0.0.1"));
+                assert_eq!(header, Some("synthetic-platform-header"));
+            } else {
+                assert_eq!(request.url().host_str(), Some("169.254.169.254"));
+                assert!(header.is_none());
+            }
         }
+        for (scope, expected) in [
+            (PUBLIC_KUSTO_SCOPE, "synthetic-managed-kusto-token"),
+            (FABRIC, "synthetic-managed-token"),
+        ] {
+            for _ in 0..2 {
+                assert_eq!(
+                    credential
+                        .get_token(&[scope], None)
+                        .await
+                        .unwrap()
+                        .token
+                        .secret(),
+                    expected
+                );
+            }
+        }
+        let requests_before_rejection = http.requests.lock().unwrap().len();
+        for scopes in [
+            vec!["https://custom.example/.default"],
+            vec!["https://api.kusto.windows.net.evil.example/.default"],
+            vec!["https://api.kusto.windows.net/%2Edefault"],
+            vec!["https://api.kusto.windows.net/.default/"],
+            vec![" https://api.kusto.windows.net/.default"],
+            vec!["https://api.kusto.windows.net/.default "],
+            vec!["https://api.kusto.chinacloudapi.cn/.default"],
+            vec![PUBLIC_KUSTO_SCOPE, FABRIC],
+            vec![PUBLIC_KUSTO_SCOPE, PUBLIC_KUSTO_SCOPE],
+        ] {
+            let error = credential.get_token(&scopes, None).await.unwrap_err();
+            assert_eq!(error.to_string(), "unsupported headless credential scope");
+        }
+        let requests = http.requests.lock().unwrap();
+        assert_eq!(requests.len(), requests_before_rejection);
+        assert!((2..=3).contains(&requests.len()));
+        for (request, resource) in requests.iter().zip([
+            "https://api.fabric.microsoft.com",
+            "https://api.kusto.windows.net",
+            "https://api.fabric.microsoft.com",
+        ]) {
+            assert_eq!(request.method(), Method::Get);
+            assert_eq!(request.url().origin(), host.endpoint().origin());
+            assert_eq!(request.url().path(), host.endpoint().path());
+            let query = request.url().query_pairs().collect::<Vec<_>>();
+            assert_eq!(query.len(), if client_id.is_some() { 3 } else { 2 });
+            assert_eq!(
+                query.iter().filter(|(name, _)| name == "resource").count(),
+                1
+            );
+            assert!(
+                query
+                    .iter()
+                    .any(|(name, value)| name == "resource" && value == resource)
+            );
+            assert!(
+                query
+                    .iter()
+                    .any(|(name, value)| name == "api-version" && value == "2019-08-01")
+            );
+            assert_eq!(
+                query
+                    .iter()
+                    .find(|(name, _)| name == "client_id")
+                    .map(|(_, value)| value.as_ref()),
+                client_id.as_deref()
+            );
+            let header = request.headers().get_str(&"x-identity-header".into()).ok();
+            if matches!(host, ManagedHost::AppService { .. }) {
+                assert_eq!(header, Some("synthetic-platform-header"));
+            } else {
+                assert!(header.is_none());
+            }
+        }
+        println!("managed-kusto-resource-isolated");
     }
     println!("managed-provider-exercised");
 }
