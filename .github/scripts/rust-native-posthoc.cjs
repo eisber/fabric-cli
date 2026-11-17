@@ -50,7 +50,7 @@ const REQUIRED_INPUTS = ['rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolch
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 const POLICY = Object.freeze({id: 'bootstrap-v1', qualification: 'PARTIAL_FIXED_WORKLOAD',
   maxParallel: 2, maxTests: 2048, outputBytes: 16 * 1024 ** 2,
-  bundleBytes: 64 * 1024 ** 2, metadataReserve: 8 * 1024 ** 2,
+  bundleBytes: 64 * 1024 ** 2, metadataReserve: 16 * 1024 ** 2,
   maxDailyPlatformJobs: 4, maxDailyBatches: 2, batchIntervalSeconds: 21600,
   nativeBaseline: null});
 const HOSTS = Object.freeze({
@@ -524,14 +524,21 @@ function admitHistory(context, runs, now = Date.now()) {
       'Malformed provider reservation time');
     assert.equal(run.event, 'workflow_dispatch');
     assert.equal(run.head_branch, 'main');
+    assert.ok(['queued', 'requested', 'waiting', 'pending', 'in_progress', 'completed']
+      .includes(run.status), 'Unknown provider run state');
+    if (run.status === 'completed') {
+      assert.ok(Number.isFinite(Date.parse(run.updated_at)) &&
+        Date.parse(run.updated_at) >= Date.parse(run.created_at) &&
+        Date.parse(run.updated_at) <= now, 'Missing verified provider completion timestamp');
+    }
     const match = /^posthoc:([a-f0-9]{40}):bootstrap-v1:(both|linux|macos):(initial|[1-9][0-9]{0,19})$/
       .exec(run.display_title);
     assert.ok(match, 'Unclassifiable recent workload history; admission is unknown');
     return {...run, source: match[1], platforms: match[2] === 'both' ? ['linux', 'macos'] : [match[2]],
       repair: match[3] !== 'initial'};
   });
-  const parsed = all.filter(run => Date.parse(run.created_at) >=
-    now - (86400 + LIMITS.nativeJobSeconds) * 1000);
+  const parsed = all.filter(run => run.status !== 'completed' ||
+    Date.parse(run.updated_at) >= now - 86400000);
   assert.ok(parsed.length + 1 <= POLICY.maxDailyBatches, 'Daily dispatch reservation exhausted');
   assert.ok(parsed.reduce((sum, run) => sum + run.platforms.length, context.platforms.length) <=
     POLICY.maxDailyPlatformJobs, 'Daily native job reservation exhausted');
@@ -603,6 +610,24 @@ function commandEnvironment(env, directories) {
   CARGO_PROFILE_TEST_DEBUG: '0', RUST_TEST_THREADS: '2', NO_COLOR: '1',
   PYTHONDONTWRITEBYTECODE: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: GIT_NULL,
   GIT_ATTR_NOSYSTEM: '1', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0'};
+}
+
+function finalizeBootstrap(report, operations) {
+  const errors = [];
+  for (const [phase, operation] of operations) {
+    try { operation(); }
+    catch (error) {
+      errors.push({phase, message: error.message.slice(0, 8192),
+        message_sha256: hash(error.message)});
+    }
+  }
+  if (errors.length) {
+    report.passed = false;
+    report.status = 'SOURCE_OR_ARTIFACT_INTEGRITY_FAILURE';
+    report.finalization_errors = errors;
+    report.integrity_error = errors[0].message;
+  }
+  return errors.length === 0;
 }
 
 function pipeOutput(pipe, retained, limit, abort) {
@@ -741,7 +766,11 @@ async function bootstrapStage(mode, driver, env) {
     watermark: null, commands: [], started_at: new Date().toISOString(),
     remaining_debt: 'All other CLI/feature/SDK/native obligations; no affected/full qualification'};
   const output = path.join(directory, `${mode}.json`);
-  const save = () => fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const save = () => {
+    const body = `${JSON.stringify(report, null, 2)}\n`;
+    assert.ok(Buffer.byteLength(body) <= LIMITS.artifactBytes, 'Receipt exceeds byte budget');
+    fs.writeFileSync(output, body);
+  };
   const controller = new AbortController();
   const cancel = () => controller.abort();
   assert.equal(fs.existsSync(output), false, 'Stage receipt already exists; no replay');
@@ -955,40 +984,45 @@ async function bootstrapStage(mode, driver, env) {
           last.id.startsWith('build:') ? 'SOURCE_BUILD_FAILURE' :
             last.id === 'fabric-core:lib' ? 'SOURCE_TEST_FAILURE' :
               last.id.startsWith('fab-') ? 'SOURCE_CLI_FAILURE' : 'TOOLCHAIN_OR_SETUP_FAILURE';
-    report.error = error.message;
+    report.error = error.message.slice(0, 8192);
+    report.error_sha256 = hash(error.message);
+    report.error_truncated = error.message.length > report.error.length;
     console.error(`${report.status}: ${error.message}`);
     exit = 1;
   } finally {
     process.removeListener('SIGINT', cancel);
     process.removeListener('SIGTERM', cancel);
-    try {
-      if (before) {
+    const finalized = finalizeBootstrap(report, [
+      ['source_integrity', () => { if (before) {
         const after = snapshot(root);
         unchanged(before, after);
         report.source_after = after.sha256;
         if (mode === 'bootstrap') writeJson(path.join(directory, 'bootstrap-source-after.json'), after);
-      }
-      if (context) {
+      }}],
+      ['driver_integrity', () => { if (context) {
         clean(driver);
         assert.equal(git(driver, ['rev-parse', 'HEAD']), context.driver);
-      }
-      if (privateCreated && fs.existsSync(privateRoot)) {
-        fs.rmSync(privateRoot, {recursive: true, force: false});
-        report.private_cleanup = {confirmed: !fs.existsSync(privateRoot),
-          target_cache: 'cold private target/cargo/rustup removed; no save or restore'};
+      }}],
+      ['private_cleanup', () => {
+        report.private_cleanup = {created: privateCreated, confirmed: false,
+          target_cache: 'cold private target/cargo/rustup only; no save or restore'};
+        if (privateCreated && fs.existsSync(privateRoot)) {
+          fs.rmSync(privateRoot, {recursive: true, force: false});
+        }
+        report.private_cleanup.confirmed = !privateCreated || !fs.existsSync(privateRoot);
         assert.equal(report.private_cleanup.confirmed, true);
-      }
-      assert.ok(bundleBytes(directory) <= POLICY.bundleBytes, 'Artifact bundle exceeds finite byte policy');
-    } catch (error) {
-      report.passed = false;
-      report.status = 'SOURCE_OR_ARTIFACT_INTEGRITY_FAILURE';
-      report.integrity_error = error.message;
-      exit = 1;
-    }
+      }],
+      ['artifact_budget', () => {
+        assert.ok(bundleBytes(directory) <= POLICY.bundleBytes, 'Artifact bundle exceeds finite byte policy');
+      }],
+      ['driver_hashes', () => {
+        report.driver_files = Object.fromEntries([WORKFLOW, '.github/scripts/rust-native-posthoc.cjs',
+          '.github/scripts/integration-smoke-recovery.cjs'].map(file =>
+          [file, hash(fs.readFileSync(path.join(driver, file)))]));
+      }],
+    ]);
+    if (!finalized) exit = 1;
     report.finished_at = new Date().toISOString();
-    report.driver_files = Object.fromEntries([WORKFLOW, '.github/scripts/rust-native-posthoc.cjs',
-      '.github/scripts/integration-smoke-recovery.cjs'].map(file =>
-      [file, hash(fs.readFileSync(path.join(driver, file)))]));
     save();
   }
   return exit;
@@ -1015,7 +1049,7 @@ module.exports = {REPOSITORY, BRANCH, MAIN_BASE, ANCHOR, REFERENCE_SOURCE, WORKF
   unchanged, debt, artifactDirectory, writeJson, fixedRoots, runStage, main,
   POLICY, HOSTS, BOOTSTRAP_BLOBS, CORE_TESTS, bootstrapContext, verifyBootstrapInputs, bootstrapHost,
   providerJson, runTitle, admitHistory, portableContext, bundleBytes, verifyCoreOutput,
-  commandEnvironment, pipeOutput, boundedCommand, bootstrapStage};
+  commandEnvironment, finalizeBootstrap, pipeOutput, boundedCommand, bootstrapStage};
 if (require.main === module) {
   main(process.argv.slice(2)).then(code => { process.exitCode = code; })
     .catch(error => { console.error(error.message); process.exitCode = 1; });

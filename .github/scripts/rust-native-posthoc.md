@@ -61,7 +61,7 @@ write to those pipes, not unbounded files. The driver drains into strictly cappe
 files and aborts through the existing supervisor on overflow; no process-tree
 handling is copied. Such output is explicitly CENSORED, retained at no more than
 16 MiB/stream, and can never pass. The artifact budget is 64 MiB with
-8 MiB reserved for metadata. More than 2,048 reported cases is not admitted.
+16 MiB reserved for metadata. More than 2,048 reported cases is not admitted.
 Timeout, cancellation, supervisor/cleanup failure, empty tests, source mutation,
 stale final head, malformed or missing receipts fail explicitly.
 Always-upload steps preserve partial failure evidence.
@@ -87,7 +87,10 @@ at most one new immutable source batch per six hours, two dispatches and four
 platform jobs/60 allocated native runner minutes per rolling 24 hours, including
 initial restoration attempts. Older queued batches are not replayed.
 The driver conservatively reserves full 15-minute slots even for failed preflight
-runs and retains a 15-minute boundary margin. It reads a complete bounded history
+runs. Queued/running reservations never age out. Completed runs remain reserved
+for 24 hours after the provider's completed-state update timestamp, not creation
+or dispatch time; missing or inconsistent completion evidence fails closed.
+It reads a complete bounded history
 of at most 100 dispatches; exhausted/unknown history fails closed for explicit
 policy maintenance. It does not silently forget duplicate sources after a day.
 

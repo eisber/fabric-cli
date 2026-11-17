@@ -559,6 +559,7 @@ test('provider history enforces durable source/platform dedupe and conservative 
   const current = {id: 123, head_sha: driver, display_title: p.runTitle(c)};
   const prior = {id: 122, head_sha: '8'.repeat(40),
     created_at: new Date(now - 7 * 3600000).toISOString(), event: 'workflow_dispatch',
+    updated_at: new Date(now - 6 * 3600000).toISOString(),
     head_branch: 'main', status: 'completed', conclusion: 'failure',
     display_title: `posthoc:${base}:bootstrap-v1:both:initial`};
   assert.equal(p.admitHistory(c, [current], now).reserved_runner_minutes_24h, 30);
@@ -577,6 +578,68 @@ test('provider history enforces durable source/platform dedupe and conservative 
   p.admitHistory(repair, [{...current, display_title: p.runTitle(repair)}, matching], now);
   assert.throws(() => p.admitHistory(repair, [{...current, display_title: p.runTitle(repair)},
     {...matching, head_sha: driver}], now), /blind retry/);
+});
+
+test('delayed acquisition retains queued reservations and24hours after provider completion, never creation', () => {
+  const {context: c} = bootstrapFixture();
+  const now = Date.parse('2026-11-17T06:00:00Z');
+  const current = {id: 123, head_sha: driver, display_title: p.runTitle(c)};
+  const delayed = {id: 120, head_sha: '8'.repeat(40), event: 'workflow_dispatch',
+    head_branch: 'main', status: 'completed', conclusion: 'success',
+    created_at: new Date(now - 25 * 3600000).toISOString(),
+    updated_at: new Date(now - 3600000).toISOString(),
+    display_title: `posthoc:${'9'.repeat(40)}:bootstrap-v1:both:initial`};
+  assert.equal(p.admitHistory(c, [current, delayed], now).reserved_platform_jobs_24h, 4);
+  assert.equal(p.admitHistory(c, [current, {...delayed, status: 'queued'}], now)
+    .reserved_platform_jobs_24h, 4);
+  const repair = {...c, repair_of: '122'};
+  const initial = {...delayed, id: 122, conclusion: 'failure', display_title: p.runTitle(c),
+    created_at: new Date(now - 7 * 3600000).toISOString(),
+    updated_at: new Date(now - 6 * 3600000).toISOString()};
+  assert.throws(() => p.admitHistory(repair,
+    [{...current, display_title: p.runTitle(repair)}, initial, delayed], now), /reservation/);
+  const expired = {...delayed, created_at: new Date(now - 30 * 3600000).toISOString(),
+    updated_at: new Date(now - 25 * 3600000).toISOString()};
+  assert.equal(p.admitHistory(c, [current, expired], now).reserved_platform_jobs_24h, 2);
+  for (const change of [{updated_at: undefined}, {updated_at: 'malformed'},
+    {updated_at: new Date(now - 26 * 3600000).toISOString()}, {status: 'unknown'}]) {
+    assert.throws(() => p.admitHistory(c, [current, {...delayed, ...change}], now));
+  }
+});
+
+test('source and driver integrity failures cannot bypass private cleanup or artifact budget finalization', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'posthoc-finalize-'));
+  t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  const privateRoot = path.join(directory, 'owned-private');
+  fs.mkdirSync(privateRoot);
+  fs.writeFileSync(path.join(privateRoot, 'cold-fixture'), 'offline only');
+  const report = {passed: false, status: 'FAIL_OR_CENSORED_PARTIAL', error: 'original command failure'};
+  const calls = [];
+  assert.equal(p.finalizeBootstrap(report, [
+    ['source_integrity', () => { calls.push('source'); throw new Error('injected source mutation'); }],
+    ['driver_integrity', () => { calls.push('driver'); throw new Error('injected driver failure'); }],
+    ['private_cleanup', () => {
+      calls.push('cleanup');
+      fs.rmSync(privateRoot, {recursive: true});
+      report.private_cleanup = {confirmed: !fs.existsSync(privateRoot)};
+    }],
+    ['artifact_budget', () => { calls.push('budget'); throw new Error('injected budget failure'); }],
+    ['driver_hashes', () => { calls.push('hashes'); }],
+  ]), false);
+  assert.deepEqual(calls, ['source', 'driver', 'cleanup', 'budget', 'hashes']);
+  assert.equal(report.private_cleanup.confirmed, true);
+  assert.equal(report.error, 'original command failure');
+  assert.equal(report.passed, false);
+  assert.deepEqual(report.finalization_errors.map(error => error.phase),
+    ['source_integrity', 'driver_integrity', 'artifact_budget']);
+  const cleanupFailure = {};
+  const continued = [];
+  assert.equal(p.finalizeBootstrap(cleanupFailure, [
+    ['private_cleanup', () => { throw new Error('cleanup refused'); }],
+    ['artifact_budget', () => { continued.push('budget'); }],
+  ]), false);
+  assert.deepEqual(continued, ['budget']);
+  assert.equal(cleanupFailure.finalization_errors[0].phase, 'private_cleanup');
 });
 
 test('native command environment is an allowlist, not a token/auth/config/identity fallback', () => {
