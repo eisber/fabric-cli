@@ -1449,7 +1449,8 @@ test('Production engine query keeps its contract and structural consumers withou
   assert.deepEqual(result.changed_packages, ['fabric-sdk-query']);
   assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-v2', 'fabric-sdk-query']);
   assert.deepEqual(result.components, ['engine-query', 'workspace-architecture']);
-  assert.deepEqual(testKeys(result), ['fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
+  assert.deepEqual(testKeys(result), ['fabric-cli/test:http_architecture',
+    'fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
   assert.deepEqual(result.profiles, []);
   assert.deepEqual(result.checks, ['command-inventory', 'dependency-graph', 'selector-tests']);
   assert.ok(!testKeys(result).some(key => /fabric-deploy|fabric-cli-transfer|\/all$/.test(key)));
