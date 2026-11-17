@@ -103,7 +103,7 @@ than only the SDK request object. The offline TLS regression uses synthetic
 credentials and a loopback peer that rejects requests without Content-Length:
 
 ```text
-cargo test --offline --locked -p fabric-sdk-transport --features hyper-rustls --lib framing_tests -- --nocapture
+cargo test --offline --locked -p fabric-http-transport --features hyper-rustls --lib framing_tests -- --nocapture
 ```
 
 Its JSON diagnostic allowlists the method, logical route, body byte count,
