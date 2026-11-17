@@ -26,7 +26,7 @@ pub enum TypedJson {
 pub enum QueryMode {
     /// Omit `language`; the selected datasource owns the engine language.
     Native,
-    /// Send `jmespath` only when discovery positively advertises it.
+    /// Send the fixed `jmespath` selector and request the template variant.
     Template,
 }
 
@@ -101,7 +101,7 @@ impl QueryRequest {
         })
     }
 
-    /// Select native execution or advertised curated templates, not SQL/DAX/KQL.
+    /// Select native execution or curated templates, not SQL/DAX/KQL.
     pub fn with_mode(mut self, mode: QueryMode) -> Self {
         self.mode = mode;
         self
@@ -156,7 +156,9 @@ pub struct Limits {
     pub rows: usize,
     /// Maximum cells across all resultsets (default 1,000,000).
     pub cells: usize,
-    /// Maximum discovery pages (default 8).
+    /// Legacy discovery-page setting, retained for source compatibility.
+    ///
+    /// Ignored: the fixed `execute_query` path never lists tools or pages.
     pub discovery_pages: usize,
 }
 
@@ -186,7 +188,6 @@ impl Limits {
             self.columns,
             self.rows,
             self.cells,
-            self.discovery_pages,
         ];
         let maxima = [
             defaults.response_bytes,
@@ -196,7 +197,6 @@ impl Limits {
             defaults.columns,
             defaults.rows,
             defaults.cells,
-            defaults.discovery_pages,
         ];
         if supplied
             .into_iter()
@@ -250,13 +250,16 @@ pub enum QueryErrorKind {
     Deadline,
     /// Local observation was canceled; remote cancellation is not claimed.
     Canceled,
-    /// A finite byte, discovery or shape budget was exceeded.
+    /// A finite byte, resource or shape budget was exceeded.
     Limit,
     /// Unsupported negotiation, lifecycle, content or malformed protocol.
     Protocol,
     /// The server returned a JSON-RPC error, without exposing its message/data.
     Rpc(i64),
-    /// Tool discovery did not advertise the required supported call shape.
+    /// Legacy discovery failure, retained for source compatibility.
+    ///
+    /// The fixed tool path does not emit this variant. A remote JSON-RPC
+    /// method/tool error is returned as [`Self::Rpc`] or [`Self::ToolError`].
     UnsupportedTool,
     /// MCP `isError` is true; no content is accepted as completed data.
     ToolError,
@@ -275,7 +278,7 @@ pub enum QueryErrorKind {
 pub struct QueryError {
     /// Sanitized cause; do not infer completion from an HTTP 2xx alone.
     pub kind: QueryErrorKind,
-    /// The query call was handed to HTTP; its remote outcome may be unknown.
+    /// The query or catalog tool call reached HTTP; its remote outcome may be unknown.
     pub query_dispatched: bool,
 }
 
@@ -314,9 +317,7 @@ impl fmt::Display for QueryError {
                 "unsupported or malformed AIHub MCP protocol/lifecycle response"
             }
             QueryErrorKind::Rpc(_) => "AIHub returned a JSON-RPC error; no completed query data",
-            QueryErrorKind::UnsupportedTool => {
-                "AIHub discovery does not advertise the required execute_query arguments or template selector"
-            }
+            QueryErrorKind::UnsupportedTool => "AIHub execute_query contract is unsupported",
             QueryErrorKind::ToolError => {
                 "AIHub execute_query returned isError; no completed query data"
             }

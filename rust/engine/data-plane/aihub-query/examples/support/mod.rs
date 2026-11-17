@@ -240,23 +240,10 @@ pub fn initialize() -> Reply {
     )
 }
 
-pub fn tool() -> Value {
-    json!({"name":"execute_query","inputSchema":{
-        "type":"object","required":["artifactId","query"],
-        "properties":{
-            "artifactId":{"type":"string"}, "query":{"type":"string"},
-            "language":{"type":["string","null"],"description":"Supported selector: 'jmespath'"},
-            "filename":{"type":["string","null"]},
-            "max_rows":{"type":["integer","null"],"minimum":1,"maximum":10000}
-        }
-    }})
-}
-
 pub fn setup() -> Vec<Reply> {
     vec![
         initialize(),
         response(202, vec![], "application/json", None),
-        rpc(2, json!({"tools":[tool()]})),
     ]
 }
 

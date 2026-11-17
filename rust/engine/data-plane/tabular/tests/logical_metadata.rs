@@ -6,7 +6,9 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use arrow_array::{ArrayRef, Int64Array, LargeStringArray, RecordBatch, StringArray};
+use arrow_array::{
+    ArrayRef, Int64Array, LargeStringArray, RecordBatch, StringArray, new_null_array,
+};
 use arrow_ipc::writer::StreamWriter;
 use arrow_schema::{DataType, Field, Schema};
 use bytes::Bytes;
@@ -34,6 +36,18 @@ fn result(field: Field, values: ArrayRef) -> Result<TabularResult, TabularError>
     TabularResult::try_new(schema, vec![batch], limits())
 }
 
+fn assert_parquet_round_trip(table: &TabularResult) {
+    let bytes = encode(table, ResultFormat::Parquet, limits()).unwrap();
+    let builder = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(bytes)).unwrap();
+    assert_eq!(builder.schema().as_ref(), table.schema().as_ref());
+    let batches = builder
+        .build()
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(batches.as_slice(), table.batches());
+}
+
 #[test]
 fn logical_json_preserves_exact_text_nulls_and_metadata_in_every_format() {
     let exact = r#"{"wide":18446744073709551616,"decimal":1.2300,"huge":1e9999}"#;
@@ -57,19 +71,11 @@ fn logical_json_preserves_exact_text_nulls_and_metadata_in_every_format() {
     assert!(csv.contains("\"\"wide\"\":18446744073709551616"));
     assert!(csv.ends_with("\"null\"\r\n\r\n"));
 
-    let bytes = encode(&table, ResultFormat::Parquet, limits()).unwrap();
-    let builder = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(bytes)).unwrap();
-    assert_eq!(builder.schema().as_ref(), table.schema().as_ref());
-    let batches = builder
-        .build()
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert_eq!(batches[0], table.batches()[0]);
+    assert_parquet_round_trip(&table);
 }
 
 #[test]
-fn guid_text_is_validated_without_reformatting() {
+fn guid_text_is_validated_without_reformatting_in_every_format() {
     let original = "ABCDEF01-2345-6789-ABCD-EF0123456789";
     let table = result(
         field(DataType::LargeUtf8, "guid"),
@@ -80,6 +86,34 @@ fn guid_text_is_validated_without_reformatting() {
         serde_json::from_slice(&encode(&table, ResultFormat::Json, limits()).unwrap()).unwrap();
     assert_eq!(json["schema"][0]["encoding"], "guid-string");
     assert_eq!(json["rows"][0][0], original);
+    let csv = String::from_utf8(encode(&table, ResultFormat::Csv, limits()).unwrap()).unwrap();
+    assert!(csv.ends_with(&format!("\"{original}\"\r\n\r\n")));
+    assert_parquet_round_trip(&table);
+}
+
+#[test]
+fn empty_logical_schemas_round_trip_through_parquet_without_value_inference() {
+    for data_type in [DataType::Utf8, DataType::LargeUtf8] {
+        for logical_type in ["json", "guid"] {
+            let schema = Arc::new(Schema::new(vec![field(data_type.clone(), logical_type)]));
+            let table = TabularResult::try_new(schema, Vec::new(), limits()).unwrap();
+            assert_parquet_round_trip(&table);
+        }
+    }
+}
+
+#[test]
+fn all_null_logical_columns_round_trip_through_parquet_without_value_inference() {
+    for data_type in [DataType::Utf8, DataType::LargeUtf8] {
+        for logical_type in ["json", "guid"] {
+            let table = result(
+                field(data_type.clone(), logical_type),
+                new_null_array(&data_type, 3),
+            )
+            .unwrap();
+            assert_parquet_round_trip(&table);
+        }
+    }
 }
 
 #[test]

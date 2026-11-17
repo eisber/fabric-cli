@@ -19,6 +19,16 @@ type Result<T> = std::result::Result<T, Error>;
 
 pub(crate) struct RawValue(Box<str>);
 
+#[cfg(test)]
+std::thread_local! {
+    static RAW_MATERIALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn raw_materializations() -> usize {
+    RAW_MATERIALIZATIONS.get()
+}
+
 impl RawValue {
     pub(crate) fn get(&self) -> &str {
         &self.0
@@ -34,6 +44,8 @@ impl<'de> Deserialize<'de> for RawValue {
                 f.write_str("an SDK-private exact JSON span")
             }
             fn visit_str<E: de::Error>(self, value: &str) -> std::result::Result<RawValue, E> {
+                #[cfg(test)]
+                RAW_MATERIALIZATIONS.set(RAW_MATERIALIZATIONS.get() + 1);
                 Ok(RawValue(value.into()))
             }
         }
@@ -42,16 +54,88 @@ impl<'de> Deserialize<'de> for RawValue {
 }
 
 pub(crate) fn parse<T: DeserializeOwned>(text: &str) -> std::result::Result<T, QueryErrorKind> {
+    borrowed(text)?.deserialize()
+}
+
+pub(crate) fn borrowed(text: &str) -> std::result::Result<BorrowedValue<'_>, QueryErrorKind> {
     let mut syntax = serde_json::Deserializer::from_str(text);
     de::IgnoredAny::deserialize(&mut syntax).map_err(|_| QueryErrorKind::Protocol)?;
     syntax.end().map_err(|_| QueryErrorKind::Protocol)?;
     let text = text.trim();
     validate(Span(text), 0, &mut 0)?;
-    T::deserialize(Span(text)).map_err(|_| QueryErrorKind::Protocol)
+    Ok(BorrowedValue(Span(text)))
 }
 
 #[derive(Clone, Copy)]
 struct Span<'a>(&'a str);
+
+#[derive(Clone, Copy)]
+pub(crate) struct BorrowedValue<'a>(Span<'a>);
+
+impl<'a> BorrowedValue<'a> {
+    pub(crate) fn object_len(self) -> std::result::Result<usize, QueryErrorKind> {
+        if !self.0.0.starts_with('{') {
+            return Err(QueryErrorKind::Protocol);
+        }
+        let mut fields = Mapping {
+            remaining: &self.0.0[1..self.0.0.len() - 1],
+            value: None,
+        };
+        let mut count = 0;
+        while fields
+            .next_pair()
+            .map_err(|_| QueryErrorKind::Protocol)?
+            .is_some()
+        {
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    pub(crate) fn field(self, name: &str) -> std::result::Result<Option<Self>, QueryErrorKind> {
+        if !self.0.0.starts_with('{') {
+            return Err(QueryErrorKind::Protocol);
+        }
+        let mut fields = Mapping {
+            remaining: &self.0.0[1..self.0.0.len() - 1],
+            value: None,
+        };
+        while let Some((key, value)) = fields.next_pair().map_err(|_| QueryErrorKind::Protocol)? {
+            let key: String = serde_json::from_str(key.0).map_err(|_| QueryErrorKind::Protocol)?;
+            if key == name {
+                return Ok(Some(Self(value)));
+            }
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn elements(self) -> std::result::Result<BorrowedArray<'a>, QueryErrorKind> {
+        if !self.0.0.starts_with('[') {
+            return Err(QueryErrorKind::Protocol);
+        }
+        Ok(BorrowedArray(Sequence {
+            remaining: &self.0.0[1..self.0.0.len() - 1],
+        }))
+    }
+
+    pub(crate) fn deserialize<T: DeserializeOwned>(self) -> std::result::Result<T, QueryErrorKind> {
+        T::deserialize(self.0).map_err(|_| QueryErrorKind::Protocol)
+    }
+}
+
+pub(crate) struct BorrowedArray<'a>(Sequence<'a>);
+
+impl<'a> Iterator for BorrowedArray<'a> {
+    type Item = std::result::Result<BorrowedValue<'a>, QueryErrorKind>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0
+            .next_span()
+            .map(|value| value.map(BorrowedValue))
+            .map_err(|_| QueryErrorKind::Protocol)
+            .transpose()
+    }
+}
 
 fn invalid() -> Error {
     de::Error::custom("invalid exact JSON shape")

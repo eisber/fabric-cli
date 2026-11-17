@@ -2,9 +2,10 @@
 // Licensed under the MIT License.
 
 use crate::{
-    DATA_AGENT_VARIANT, Limits, NativeDeadline, QueryError, QueryErrorKind, QueryMode,
-    QueryOutcome, QueryRequest, QueryStage, SANDBOX_VARIANT, TEMPLATE_VARIANT,
-    TYPED_RESULTS_VARIANT, decode, json::RawValue, protocol,
+    CatalogView, DATA_AGENT_VARIANT, DataAgentTarget, Limits, NativeCatalogResponse,
+    NativeDeadline, QueryError, QueryErrorKind, QueryMode, QueryOutcome, QueryRequest, QueryStage,
+    READ_ONLY_VARIANT, SANDBOX_VARIANT, TEMPLATE_VARIANT, TYPED_RESULTS_VARIANT, TypedJson,
+    catalog, decode, json::RawValue, protocol,
 };
 use azure_core::{
     credentials::{AccessToken, TokenCredential},
@@ -14,7 +15,6 @@ use fabric_sdk_http::ExecutionTimer;
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeSet,
     fmt,
     future::{Future, poll_fn},
     pin::{Pin, pin},
@@ -100,7 +100,8 @@ impl fmt::Debug for AuthBinding {
 ///
 /// Supply the existing Azure HTTP transport configured for streaming, no
 /// redirects and no automatic retries. A complete call initializes a fresh MCP
-/// session, acknowledges initialization, discovers the tool and calls it once.
+/// session, acknowledges initialization and calls the fixed `execute_query` tool
+/// once. No `tools/list` request or server-schema discovery is performed.
 /// Only negotiated session IDs are propagated; no Tasks/reconnect/polling API
 /// is invented. No embedded resource URI is ever fetched.
 #[derive(Clone)]
@@ -147,6 +148,53 @@ impl AiHubQueryClient {
         deadline: &NativeDeadline,
         canceled: impl Future<Output = ()> + Send,
     ) -> Result<QueryOutcome, QueryError> {
+        self.invoke(request, deadline, canceled, |raw, version| {
+            decode::decode(raw, self.limits, request.max_rows as usize, version)
+        })
+        .await
+    }
+
+    /// Navigate the fixed template summary catalog, without invoking templates.
+    ///
+    /// Returns untrusted native MCP content, not a typed dataset. Errors retain
+    /// actual tool dispatch evidence in [`QueryError::query_dispatched`].
+    pub async fn discover_query_templates(
+        &self,
+        target: DataAgentTarget,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+    ) -> Result<NativeCatalogResponse, QueryError> {
+        self.discover_query_templates_view(target, CatalogView::Summary, deadline, canceled)
+            .await
+    }
+
+    /// Navigate one closed catalog view; arbitrary expressions are not accepted.
+    ///
+    /// Uses the same credential, negotiation, requested read policy, absolute
+    /// budget and fixed single-call HTTP path as queries.
+    /// This does not prove remote engine inactivity or live read-only enforcement.
+    pub async fn discover_query_templates_view(
+        &self,
+        target: DataAgentTarget,
+        view: CatalogView,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+    ) -> Result<NativeCatalogResponse, QueryError> {
+        let request = QueryRequest::new(target, view.expression().into(), TypedJson::Required)?
+            .with_mode(QueryMode::Template);
+        self.invoke(&request, deadline, canceled, |raw, version| {
+            catalog::decode(raw, self.limits, version)
+        })
+        .await
+    }
+
+    async fn invoke<T>(
+        &self,
+        request: &QueryRequest,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+        decode_result: impl FnOnce(&RawValue, String) -> Result<T, QueryErrorKind> + Send,
+    ) -> Result<T, QueryError> {
         let dispatched = AtomicBool::new(false);
         let remaining = deadline.remaining().unwrap_or(Duration::ZERO);
         let mut timeout = self.timer.sleep(remaining);
@@ -154,7 +202,13 @@ impl AiHubQueryClient {
             future: Mutex::new(Box::pin(canceled)),
             latched: AtomicBool::new(false),
         };
-        let mut operation = pin!(self.run(request, deadline, &dispatched, &canceled));
+        let mut operation = pin!(async {
+            let (raw, version) = self.run(request, deadline, &dispatched, &canceled).await?;
+            let result = decode_result(&raw, version)?;
+            canceled.check().await?;
+            deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
+            Ok(result)
+        });
         let result = poll_fn(|cx| {
             if canceled.poll(cx) {
                 return Poll::Ready(Err(QueryErrorKind::Canceled));
@@ -184,7 +238,7 @@ impl AiHubQueryClient {
         deadline: &NativeDeadline,
         dispatched: &AtomicBool,
         canceled: &Cancellation<'_>,
-    ) -> Result<QueryOutcome, QueryErrorKind> {
+    ) -> Result<(RawValue, String), QueryErrorKind> {
         canceled.check().await?;
         let token = self
             .credential
@@ -195,7 +249,7 @@ impl AiHubQueryClient {
         if secret.is_empty() || secret.len() > 32 * 1024 || secret.chars().any(char::is_control) {
             return Err(QueryErrorKind::Authentication);
         }
-        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT];
+        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT, READ_ONLY_VARIANT];
         if request.target.stage == QueryStage::Sandbox {
             variants.push(SANDBOX_VARIANT);
         }
@@ -233,56 +287,6 @@ impl AiHubQueryClient {
             canceled,
         )
         .await?;
-        let mut cursor = None::<String>;
-        let mut cursors = BTreeSet::new();
-        let mut selected = None;
-        let mut next_id = 2_u64;
-        for page in 0..self.limits.discovery_pages {
-            let mut params = json!({"_meta":meta});
-            if let Some(cursor) = &cursor {
-                params["cursor"] = json!(cursor);
-            }
-            let list = json!({"jsonrpc":"2.0","id":next_id,"method":"tools/list","params":params});
-            let response = self
-                .exchange(
-                    &list,
-                    &token,
-                    session.as_deref(),
-                    Some(&version),
-                    deadline,
-                    false,
-                    dispatched,
-                    canceled,
-                )
-                .await?;
-            let raw = response.result.ok_or(QueryErrorKind::Protocol)?;
-            next_id += 1;
-            let tools: protocol::ToolList = protocol::parse(raw.get())?;
-            if tools.tools.len() > 1024 {
-                return Err(QueryErrorKind::Limit);
-            }
-            for tool in tools.tools {
-                if tool.name == "execute_query" && selected.replace(tool).is_some() {
-                    return Err(QueryErrorKind::UnsupportedTool);
-                }
-            }
-            cursor = tools.next_cursor;
-            match &cursor {
-                None => break,
-                Some(cursor)
-                    if cursor.is_empty()
-                        || cursor.len() > 4096
-                        || !cursors.insert(cursor.clone()) =>
-                {
-                    return Err(QueryErrorKind::Protocol);
-                }
-                Some(_) if page + 1 == self.limits.discovery_pages => {
-                    return Err(QueryErrorKind::Limit);
-                }
-                _ => {}
-            }
-        }
-        protocol::validate_tool(&selected.ok_or(QueryErrorKind::UnsupportedTool)?, request)?;
         let mut args = json!({"artifactId":request.target.artifact_id, "query":request.query, "max_rows":request.max_rows});
         if let Some(filename) = &request.filename {
             args["filename"] = json!(filename);
@@ -290,7 +294,7 @@ impl AiHubQueryClient {
         if request.mode == QueryMode::Template {
             args["language"] = json!("jmespath");
         }
-        let call = json!({"jsonrpc":"2.0","id":next_id,"method":"tools/call",
+        let call = json!({"jsonrpc":"2.0","id":2,"method":"tools/call",
             "params":{"name":"execute_query","arguments":args,"_meta":meta}});
         let response = self
             .exchange(
@@ -305,10 +309,9 @@ impl AiHubQueryClient {
             )
             .await?;
         let raw = response.result.ok_or(QueryErrorKind::Protocol)?;
-        let result = decode::decode(&raw, self.limits, request.max_rows as usize, version)?;
         canceled.check().await?;
         deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
-        Ok(result)
+        Ok((*raw, version))
     }
 
     #[allow(

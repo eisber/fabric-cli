@@ -7,12 +7,15 @@
 //! discovered. Endpoint/auth compatibility must be qualified by the caller.
 //! Dropping a future stops local observation, not remote execution or billing.
 
+mod catalog;
 mod client;
 mod contract;
 mod decode;
 mod json;
+mod media;
 mod protocol;
 
+pub use catalog::{CatalogView, NativeCatalogContent, NativeCatalogResponse};
 pub use client::{AiHubQueryClient, AuthBinding};
 pub use contract::{
     Completeness, DataAgentTarget, Limits, QueryError, QueryErrorKind, QueryMode, QueryOutcome,
@@ -26,6 +29,8 @@ pub use fabric_sdk_http::ExecutionTimer;
 pub const DATA_AGENT_VARIANT: &str = "Fabric.Routing.Documents.DataAgent";
 /// Existing typed-result wire variant; it does not select a stage or datasource.
 pub const TYPED_RESULTS_VARIANT: &str = "Fabric.Routing.Documents.DataAgent.TypedQueryResults";
+/// Existing one-way SQL/GQL read-policy request; not live enforcement proof.
+pub const READ_ONLY_VARIANT: &str = "Fabric.Routing.Documents.SqlReadOnlyEnforce";
 /// Existing explicit draft-stage wire variant.
 pub const SANDBOX_VARIANT: &str = "Fabric.Routing.Documents.DataAgent.Sandbox";
 /// Existing curated-template wire variant, used only for template requests.
