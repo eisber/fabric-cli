@@ -437,6 +437,79 @@ async fn streaming_deadline_cancellation_and_body_drop_release_connections() {
 }
 
 #[tokio::test]
+async fn public_sdk_transport_empty_post_preserves_zero_length_over_connect_without_replay() {
+    for explicit_length in [false, true] {
+        let (tls, root) = test_tls();
+        let server = Server::proxy(vec![Reply::RequireContentLength], tls).await;
+        let client = client(&server, vec![root]);
+        let mut pending = request(Method::Post, "/v1/sdk-empty-post");
+        pending.set_body(Vec::new());
+        if explicit_length {
+            pending.insert_header("content-length", "0");
+        }
+        let response = client.execute_request(&pending).await.unwrap();
+        assert_eq!(u16::from(response.status()), 202);
+        assert!(bytes(response).await.is_empty());
+        let requests = server.requests();
+        assert_eq!(requests.len(), 2, "one CONNECT and one POST, without replay");
+        let connect = std::str::from_utf8(&requests[0])
+            .unwrap()
+            .to_ascii_lowercase();
+        assert!(connect.starts_with("connect api.fabric.microsoft.com:443 http/1.1\r\n"));
+        assert!(!connect.contains("authorization"));
+        let origin = std::str::from_utf8(&requests[1]).unwrap();
+        let (head, body) = origin.split_once("\r\n\r\n").unwrap();
+        assert!(head.starts_with("POST /v1/sdk-empty-post HTTP/1.1\r\n"));
+        let head = head.to_ascii_lowercase();
+        let lengths = head
+            .lines()
+            .filter(|line| line.starts_with("content-length:"))
+            .collect::<Vec<_>>();
+        assert_eq!(lengths, ["content-length: 0"]);
+        assert!(!head.contains("\r\ntransfer-encoding:"));
+        assert!(body.is_empty());
+        assert_eq!(server.state.connections.load(Ordering::SeqCst), 1);
+        drop(client);
+        server.wait_closed().await;
+        assert_eq!(server.state.closed.load(Ordering::SeqCst), 1);
+        server.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn public_sdk_transport_rejected_connect_releases_socket_without_origin_bearer_or_request() {
+    const TOKEN: &str = "sdk-proxy-denial-synthetic-only";
+    let server = test_server::Server::start(vec![Reply::body(407, Vec::new())], None).await;
+    let mut configuration = options(Vec::new());
+    configuration.proxy = ProxyPolicy::StaticHttp(
+        StaticHttpProxy::new(&format!("http://{}", server.address)).unwrap(),
+    );
+    let client = NativeHttpClient::new(configuration).unwrap();
+    let mut pending = request(Method::Post, "/v1/sdk-proxy-denied");
+    pending.insert_header("authorization", format!("Bearer {TOKEN}"));
+    pending.set_body(b"origin-only".to_vec());
+    let result = tokio::time::timeout(Duration::from_secs(3), client.execute_request(&pending))
+        .await
+        .expect("proxy rejection must finish within its deadline");
+    assert!(result.is_err(), "a denied CONNECT must not become a response");
+    server.wait_closed().await;
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1, "only CONNECT, no origin request or replay");
+    let connect = std::str::from_utf8(&requests[0])
+        .unwrap()
+        .to_ascii_lowercase();
+    assert!(connect.starts_with("connect api.fabric.microsoft.com:443 http/1.1\r\n"));
+    assert!(!connect.contains("authorization"));
+    assert!(!connect.contains(TOKEN));
+    assert!(!connect.contains("/v1/sdk-proxy-denied"));
+    assert!(!connect.contains("origin-only"));
+    assert_eq!(server.state.connections.load(Ordering::SeqCst), 1);
+    assert_eq!(server.state.closed.load(Ordering::SeqCst), 1);
+    drop(client);
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn configured_static_http_proxy_tunnels_tls_without_forwarding_bearer_to_connect() {
     let (tls, root) = test_tls();
     let server = Server::proxy(vec![Reply::body(200, br#"{"value":[]}"#.to_vec())], tls).await;
