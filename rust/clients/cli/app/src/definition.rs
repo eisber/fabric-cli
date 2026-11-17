@@ -9,6 +9,7 @@ use fabric_core::MAX_REQUEST_BYTES;
 use serde_json::{Map, Value};
 use std::{
     collections::HashSet,
+    ffi::OsString,
     fs::{self, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -26,7 +27,10 @@ fn io_error(action: &str, path: &str) -> CommandError {
 }
 
 /// Expand a leading `~` like Python `os.path.expanduser`; `~user` stays literal.
-pub(crate) fn expand_home(raw: &str) -> Result<PathBuf, CommandError> {
+pub(crate) fn expand_home(
+    raw: &str,
+    home: &dyn Fn() -> Option<PathBuf>,
+) -> Result<PathBuf, CommandError> {
     if raw.is_empty() {
         return Err(invalid("Path must not be empty"));
     }
@@ -42,7 +46,9 @@ pub(crate) fn expand_home(raw: &str) -> Result<PathBuf, CommandError> {
     let Some(rest) = rest else {
         return Ok(PathBuf::from(raw));
     };
-    let home = home_directory().ok_or_else(|| invalid("Cannot expand ~: home is unknown"))?;
+    let home = home()
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| invalid("Cannot expand ~: home directory is unknown"))?;
     Ok(if rest.is_empty() {
         home
     } else {
@@ -50,21 +56,21 @@ pub(crate) fn expand_home(raw: &str) -> Result<PathBuf, CommandError> {
     })
 }
 
-fn home_directory() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let home = std::env::var_os("USERPROFILE")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            let drive = std::env::var_os("HOMEDRIVE")?;
-            let path = std::env::var_os("HOMEPATH")?;
-            let mut joined = PathBuf::from(drive);
-            joined.push(path);
-            Some(joined)
-        });
-    #[cfg(not(windows))]
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    home.filter(|path| path.is_absolute())
+/// Resolve home like Python `os.path.expanduser`: `HOME` on Unix; on Windows
+/// `USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH`. Empty values count as unset.
+pub(crate) fn home_from_env(
+    windows: bool,
+    var: impl Fn(&str) -> Option<OsString>,
+) -> Option<PathBuf> {
+    let get = |name: &str| var(name).filter(|value| !value.is_empty());
+    if !windows {
+        return get("HOME").map(PathBuf::from);
+    }
+    get("USERPROFILE").map(PathBuf::from).or_else(|| {
+        let mut joined = get("HOMEDRIVE")?;
+        joined.push(get("HOMEPATH")?);
+        Some(PathBuf::from(joined))
+    })
 }
 
 const RESERVED: [&str; 22] = [
@@ -436,8 +442,57 @@ mod tests {
     }
 
     #[test]
-    fn leaves_other_user_home_literal() {
-        assert_eq!(expand_home("~other/x").unwrap(), PathBuf::from("~other/x"));
-        assert_eq!(expand_home("/abs").unwrap(), PathBuf::from("/abs"));
+    fn expands_home_from_host() {
+        let base = std::env::temp_dir();
+        let home = || Some(base.clone());
+        assert_eq!(expand_home("~", &home).unwrap(), base);
+        assert_eq!(expand_home("~/a/b", &home).unwrap(), base.join("a/b"));
+        assert_eq!(
+            expand_home("~other/x", &home).unwrap(),
+            PathBuf::from("~other/x")
+        );
+        assert_eq!(expand_home("rel", &home).unwrap(), PathBuf::from("rel"));
+        let absolute = base.join("abs");
+        assert_eq!(
+            expand_home(absolute.to_str().unwrap(), &home).unwrap(),
+            absolute
+        );
+        assert!(expand_home("~", &|| None).is_err());
+        assert!(expand_home("~/x", &|| Some(PathBuf::from("relative"))).is_err());
+        assert!(expand_home("", &home).is_err());
+    }
+
+    #[test]
+    fn resolves_home_like_python() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| OsString::from(value))
+            }
+        };
+        assert_eq!(
+            home_from_env(false, env(&[("HOME", "/home/u"), ("USERPROFILE", "/x")])),
+            Some(PathBuf::from("/home/u"))
+        );
+        assert_eq!(home_from_env(false, env(&[("HOME", "")])), None);
+        assert_eq!(
+            home_from_env(true, env(&[("USERPROFILE", r"C:\Users\u"), ("HOME", "/h")])),
+            Some(PathBuf::from(r"C:\Users\u"))
+        );
+        assert_eq!(
+            home_from_env(
+                true,
+                env(&[
+                    ("USERPROFILE", ""),
+                    ("HOMEDRIVE", "D:"),
+                    ("HOMEPATH", r"\Users\u")
+                ])
+            ),
+            Some(PathBuf::from(r"D:\Users\u"))
+        );
+        assert_eq!(home_from_env(true, env(&[("HOMEDRIVE", "D:")])), None);
+        assert_eq!(home_from_env(true, env(&[("HOME", "/h")])), None);
     }
 }

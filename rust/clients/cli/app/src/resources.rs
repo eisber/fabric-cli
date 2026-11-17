@@ -179,7 +179,11 @@ fn payload(text: Option<&str>) -> Result<Map<String, Value>, CommandError> {
     }
 }
 
-pub(crate) fn prepare(kind: &'static str, matches: &ArgMatches) -> Result<Prepared, CommandError> {
+pub(crate) fn prepare(
+    kind: &'static str,
+    matches: &ArgMatches,
+    home: &dyn Fn() -> Option<PathBuf>,
+) -> Result<Prepared, CommandError> {
     let (verb, args) = matches
         .subcommand()
         .ok_or_else(|| invalid("A resource action is required"))?;
@@ -200,7 +204,7 @@ pub(crate) fn prepare(kind: &'static str, matches: &ArgMatches) -> Result<Prepar
     if verb == "create" && matches!(&target, Some(Selector::Id(_))) {
         return Err(invalid("A creation name must not be a GUID"));
     }
-    finish_prepare(kind, args, verb, target)
+    finish_prepare(kind, args, verb, target, home)
 }
 
 pub(crate) async fn execute(
@@ -512,8 +516,10 @@ fn finish_prepare(
     args: &ArgMatches,
     verb: &'static str,
     target: Option<Selector>,
+    home: &dyn Fn() -> Option<PathBuf>,
 ) -> Result<Prepared, CommandError> {
     let text = |key| args.get_one::<String>(key).map(String::as_str);
+    let expand = |raw: &str| definition::expand_home(raw, home);
     let workspace = if kind == "item" {
         text("workspace").map(Selector::parse).transpose()?
     } else {
@@ -533,9 +539,7 @@ fn finish_prepare(
     }
     let polling = fabric_cli_api::parse_polling_config(polling_text)?;
     let destination = if verb == "get" {
-        text("destination")
-            .map(definition::expand_home)
-            .transpose()?
+        text("destination").map(expand).transpose()?
     } else {
         None
     };
@@ -544,7 +548,7 @@ fn finish_prepare(
     }
     let sourced = verb == "update" || (verb == "create" && kind == "item");
     let source = if sourced {
-        text("source").map(definition::expand_home).transpose()?
+        text("source").map(expand).transpose()?
     } else {
         None
     };

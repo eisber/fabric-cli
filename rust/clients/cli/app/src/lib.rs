@@ -149,6 +149,10 @@ pub trait Host: Send + Sync {
             "Interactive confirmation is unavailable; use --force",
         ))
     }
+    /// Absolute home directory for `~` path expansion; `None` makes `~` paths fail.
+    fn home_directory(&self) -> Option<PathBuf> {
+        None
+    }
     /// Drain safe static diagnostics for the host to write to stderr, never JSON stdout.
     fn take_diagnostics(&self) -> Vec<&'static str> {
         Vec::new()
@@ -267,6 +271,9 @@ impl Host for NativeHost {
             _ = cancellation.cancelled() => Err(CommandError::new("Cancelled", "Confirmation cancelled")),
             result = receiver => result.map_err(|_| CommandError::new("InvalidInput", "Cannot read confirmation"))?,
         }
+    }
+    fn home_directory(&self) -> Option<PathBuf> {
+        definition::home_from_env(cfg!(windows), |name| std::env::var_os(name))
     }
     fn take_diagnostics(&self) -> Vec<&'static str> {
         std::mem::take(
@@ -578,7 +585,7 @@ async fn execute(
             } else {
                 "item"
             };
-            let prepared = resources::prepare(kind, args)?;
+            let prepared = resources::prepare(kind, args, &|| host.home_directory())?;
             let binding = selected(host)?;
             let clock = host.clock();
             let client =
