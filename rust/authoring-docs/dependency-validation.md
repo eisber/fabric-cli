@@ -118,6 +118,13 @@ not passed to isolated tests; production defaults and target requirements remain
 unchanged. Both planner command descriptors and the validation executor consume
 this same metadata-derived selection.
 
+For `--all-targets` selections, required-feature propagation also includes
+examples and binaries marked `test = false`: explicit Cargo target flags
+override their default test selection. A feature enabled through another
+profile root must reach the isolated package test command too. This preserves
+the selected composition, rather than counting a feature-gated example that
+the actual command would skip.
+
 ## Conservative boundaries
 
 Unclassified package inputs select the package and its transitive Cargo
@@ -250,7 +257,10 @@ profiles and 30 checks. These are measurements, not fixed growth limits.
 | `fabric-cli-resources` | 29 | 2 | 38 | 25 | 45 | 17 |
 | `fabric-cli-output` | 1 | 11 | 44 | 123 | 47 | 24 |
 
-This tooling-only change leaves those graph and selection counts unchanged.
+This tooling-focused change leaves those graph and selection counts unchanged.
+Its tightly coupled all-target required-feature forwarding correction also
+leaves every actual pinned profile's package test features unchanged; a
+synthetic cross-root example proves the previously missing edge case.
 The neutral HTTP, command-adapter and output refactors are separate dependent
 changes, not included or claimed merged here. After the integration owner
 releases their immutable combined source, rerun the report with the retained

@@ -191,6 +191,30 @@ test('Contract measurements expand all-target selectors and retain isolated feat
   assert.equal(report.native_qualification, false);
 });
 
+test('All-target feature propagation includes test:false examples enabled through another profile root', () => {
+  const input = contractFixture();
+  const models = input.metadata.packages.find(pkg => pkg.name === 'models');
+  models.features.extra = [];
+  const example = target('safe_consumer', 'example', 'rust/engine/models/examples/safe_consumer.rs', ['extra']);
+  example.test = false;
+  models.targets.push(example);
+  const cli = input.metadata.packages.find(pkg => pkg.name === 'cli');
+  cli.features.native = ['models/extra'];
+  cli.dependencies.push({name: 'models', path: absolute('rust/engine/models')});
+  input.graph.profiles.push({id: 'forwarded', packages: ['cli', 'models'],
+    features: ['cli/native'], platforms: ['windows']});
+  const selected = plan({...input, files: ['rust/engine/models/src/lib.rs']});
+  const profile = selected.profiles.find(profile => profile.id === 'forwarded');
+  assert.deepEqual(profile.test_features.models, ['models/extra']);
+  const executable = commands(selected, 'windows').commands.find(command =>
+    command.kind === 'test' && command.profile === 'forwarded' && command.package === 'models');
+  assert.ok(executable.args.includes('--all-targets'));
+  assert.ok(executable.args.includes('models/extra'));
+  const measured = contractReport(input).scenarios.find(item => item.id === 'package:models');
+  assert.ok(measured.selection.profiles.find(profile => profile.id === 'forwarded')
+    .targets.includes('models/example:safe_consumer'));
+});
+
 test('Component measurements select real external fixture inputs and complete target consumers', () => {
   const report = contractReport(contractFixture());
   const notebook = report.scenarios.find(scenario => scenario.id === 'component:notebook');

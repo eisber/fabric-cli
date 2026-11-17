@@ -769,7 +769,7 @@ function plan({metadata, baseMetadata, graph, files, root, full = false, reason}
     ![...testSelections.values()].some(other => other.package === test.package && other.target === 'all'));
   tests = tests.map(test => {
     const pkg = packages.get(test.package);
-    const targets = test.target === 'all' ? [...pkg.targets.values()].filter(target => target.test) :
+    const targets = test.target === 'all' ? [...pkg.targets.values()] :
       [pkg.targets.get(test.target)];
     const required = sorted(targets.flatMap(target => target.required));
     const missing = targets.filter(target =>

@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 kind: optimization
-body: Add metadata-only Rust capability dependency and target-selection measurements with neutral-foundation contracts, without changing validation scope or claiming build-time improvements.
+body: Add metadata-only Rust capability dependency and target-selection measurements with neutral-foundation contracts and complete all-target required-feature forwarding, without claiming build-time improvements.
 time: 2026-11-17T11:14:00Z
 custom:
   Author: eisber
