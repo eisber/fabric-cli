@@ -49,11 +49,15 @@ terminal facts across its clones. Existing `NativeDeadline::new` remains the
 production compatibility boundary using `std::Instant` and a caller-supplied
 alarm; it is not virtual-time evidence. Injected consumers must schedule their
 alarms on `NativeDeadline::clock()`, not on an unrelated runtime clock.
+The native Notebook driver's channel and sink supervision now does exactly
+that; its `DeadlineAlarm` argument remains the legacy-constructor fallback.
+Its stalled send/receive/sink, close and original-expiry tests advance virtual
+time instead of waiting for system timers.
 
 The separately owned HTTP engine/transport extraction and CLI command/output
 ownership migration are coordinated follow-up seams. Until their exact released
 commits are adopted, the legacy HTTP `ExecutionTimer` is sleep-only, native
-streaming and Notebook alarms retain external timer adapters, and CLI native
+streaming retains an external timer adapter, and CLI native
 entrypoints retain host-specific `Instant`/Tokio supervision. These are explicit
 remaining seams, not a universal clock-injection claim.
 
