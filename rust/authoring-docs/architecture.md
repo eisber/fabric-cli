@@ -41,6 +41,8 @@ unchanged names and logical layers:
 | `clients/cli/app/` | `fab-rs` executable, central composition and CLI deployment handling |
 | `clients/cli/v2/` | Distinct six-leaf local host and `fab-cli` executable |
 | `clients/cli/commands/` | Resource, resource-mutation, job, file, table, local and transfer adapters |
+| `clients/cli/commands/access/`, `api/`, `catalog/` | Capability-owned ACL/label, raw API and catalog grammars, typed conversion and execution |
+| `clients/cli/contracts/` | Existing CLI command values, errors, confirmation, parser conventions and presentation; no capability execution |
 | `clients/cli/state/`, `query/`, `output/` | CLI-specific context, query and presentation (all paths under `clients/cli/`) |
 | `clients/cli/repl/` | Removable shell loop and opt-in Reedline terminal adapter |
 | `clients/cli/update/` | Pinned-trust release verification and optional standalone updater |
@@ -56,6 +58,17 @@ provide their own input, confirmation and output adapters; they must not launch
 the CLI or depend on CLI-specific types simply to reuse service operations.
 Extracting additional front-end-neutral workflows requires separate interface
 review, not relabeling CLI crates or relaxing the layer rules below.
+
+`fabric-cli-resources` is now the compatibility facade for access, API and
+catalog. Its original public types, host layout and registration entry points
+delegate to those focused packages; it retains no request preparation or service
+implementation. The app directly composes their schemas and execution adapters,
+while keeping startup, runtime, credential selection and shared command-local
+metadata hydration. The new leaves depend on `fabric-cli-command-contracts`,
+never back on the facade or app. These are CLI-only contracts, not an SDK
+dependency or a second typed-output model. Existing independent oracle fixtures
+and consumers remain unchanged; direct capability consumers and workspace
+architecture tests additionally enforce the extraction.
 
 The optional semantic-model BPA boundary is isolated in
 `engine/data-plane/semantic-model/dotnet`. Only its explicit

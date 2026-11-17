@@ -60,7 +60,11 @@ pub fn leaf(name: &'static str) -> Command {
 /// Source boolean flag with an optional short spelling.
 pub fn flag(name: &'static str, short: Option<char>) -> Arg {
     let arg = Arg::new(name).long(name).action(ArgAction::SetTrue);
-    if let Some(short) = short { arg.short(short) } else { arg }
+    if let Some(short) = short {
+        arg.short(short)
+    } else {
+        arg
+    }
 }
 
 /// Source scalar or token-joined query argument.
@@ -95,7 +99,11 @@ pub fn values(args: &ArgMatches, name: &str) -> Vec<String> {
 
 /// Source flag; absent or foreign-schema flags remain false.
 pub fn boolean(args: &ArgMatches, name: &str) -> bool {
-    args.try_get_one::<bool>(name).ok().flatten().copied().unwrap_or(false)
+    args.try_get_one::<bool>(name)
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false)
 }
 
 /// Joins source tokens and strips edge quotes, preserving present-empty values.
@@ -103,5 +111,12 @@ pub fn joined(args: &ArgMatches, name: &str) -> Option<String> {
     args.try_get_many::<String>(name)
         .ok()
         .flatten()
-        .map(|values| values.cloned().collect::<Vec<_>>().join(" ").trim_matches(['"', '\'']).to_owned())
+        .map(|values| {
+            values
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim_matches(['"', '\''])
+                .to_owned()
+        })
 }
