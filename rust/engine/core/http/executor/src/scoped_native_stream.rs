@@ -66,8 +66,9 @@ impl NativeScopeStreamExecutor {
     /// as token claims. Scope syntax does not establish service permissions.
     ///
     /// # Errors
-    /// Rejects non-HTTPS endpoints, excessive URLs, and empty, nonliteral,
-    /// whitespace-containing or excessive scopes without accessing credentials.
+    /// Rejects non-HTTPS endpoints, ambiguous repeated trailing path separators,
+    /// excessive URLs, and empty, nonliteral, whitespace-containing or excessive
+    /// scopes without accessing credentials.
     pub fn new(
         endpoint: NativeEndpoint,
         audience_scope: String,
@@ -76,7 +77,7 @@ impl NativeScopeStreamExecutor {
         timer: Arc<dyn ExecutionTimer>,
         preflight: Arc<dyn NativeStreamPreflight>,
     ) -> Result<Self, NativeError> {
-        if endpoint.base().scheme() != "https" {
+        if endpoint.base().scheme() != "https" || endpoint.base().path().ends_with("//") {
             return Err(NativeError::InvalidInput);
         }
         if endpoint.base().as_str().len() > MAX_URL_BYTES {
@@ -99,7 +100,7 @@ impl NativeScopeStreamExecutor {
             return Err(NativeError::Limit);
         }
         let base = self.endpoint.base();
-        let prefix = base.path().trim_end_matches('/');
+        let prefix = base.path().strip_suffix('/').unwrap_or(base.path());
         if url.scheme() != "https"
             || url.origin() != base.origin()
             || !url.username().is_empty()

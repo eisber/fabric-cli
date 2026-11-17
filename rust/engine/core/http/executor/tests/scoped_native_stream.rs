@@ -412,6 +412,13 @@ fn construction_rejects_unsafe_or_unbounded_literal_scopes_without_io() {
         failure(fixture.at("http://localhost:4444", SCOPE)),
         NativeError::InvalidInput
     );
+    for base in [
+        "https://cluster.example.test//",
+        "https://cluster.example.test/owner//",
+        "https://cluster.example.test/owner///",
+    ] {
+        assert_eq!(failure(fixture.at(base, SCOPE)), NativeError::InvalidInput);
+    }
     assert_eq!(
         failure(fixture.at(&format!("{BASE}/{}", "x".repeat(16 * 1024)), SCOPE)),
         NativeError::Limit

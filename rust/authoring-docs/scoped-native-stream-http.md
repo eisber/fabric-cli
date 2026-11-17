@@ -18,7 +18,8 @@ All are retained immutably. Construction performs no I/O. There is no ambient
 credential discovery, identity fallback, interactive consent, mutable auth
 policy, token-injection API, CLI process, logger or runtime installation.
 
-The endpoint must be HTTPS, including for injected offline clients. Requests
+The endpoint must be HTTPS, including for injected offline clients, and cannot
+end in repeated path separators. Requests
 must retain its exact origin, including its selected port, and remain within
 its base path at a segment boundary. The audience is supplied independently,
 never inferred from the host. A scope is at most 4,096 bytes and must be a
