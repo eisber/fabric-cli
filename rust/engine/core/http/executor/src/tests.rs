@@ -1,1719 +1,209 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+#![deny(unnameable_test_items)]
+
 use super::*;
 use async_trait::async_trait;
 use azure_core::{
     Bytes,
-    credentials::TokenRequestOptions,
     error::ErrorKind,
     http::{AsyncRawResponse, StatusCode, headers::Headers},
-    time::{Duration as AzureDuration, OffsetDateTime},
+    time::OffsetDateTime,
 };
-use fabric_sdk::{
-    Client, CredentialSelection, TokenCredential,
-    notebooks::{DefinitionPart, NotebookDefinition, NotebookErrorKind, NotebookLimits},
-    workspaces::{WorkspaceListErrorKind, WorkspaceListLimits},
-};
-use futures_util::{Stream, stream};
-use std::{
-    collections::VecDeque,
-    future::pending,
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
-    task::{Context, Waker},
-};
+use futures_util::{future::pending, stream};
+use std::{collections::VecDeque, sync::Mutex};
 
-const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
-const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
-const ITEM: &str = "33333333-3333-3333-3333-333333333333";
+struct Timer;
 
-#[test]
-fn feedback_endpoint_scope_pairs_are_fixed() {
-    for (environment, endpoint, scope) in [
-        (
-            feedback::Environment::Production,
-            "https://petrol.office.microsoft.com/v1/feedback/authenticated",
-            "https://petrol.office.microsoft.com/Feedback.ReadWrite",
-        ),
-        (
-            feedback::Environment::Ppe,
-            "https://petrol-int.office.microsoft.com/v1/feedback/authenticated",
-            "https://petrol-int.office.microsoft.com/Feedback.ReadWrite",
-        ),
-    ] {
-        assert_eq!(environment.endpoint(), endpoint);
-        assert_eq!(environment.scope(), scope);
-    }
-}
-
-#[tokio::test]
-async fn feedback_posts_preserve_fixed_url_token_json_body_and_raw_response() {
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        let client = ScriptedClient::new([response(
-            202,
-            r#"{"receipt":"offline"}"#,
-            &[("x-test", "retained"), ("retry-after", "invalid")],
-        )]);
-        let timer = Arc::new(TestTimer::default());
-        let exec = executor(client.clone(), timer.clone())
-            .with_endpoint(EndpointBinding::public(ServiceOrigin::Arm));
-        let access_token = token();
-        let body = br#"{"feedback":"exact serialized bytes"}"#;
-        let result = exec
-            .execute_feedback(environment, &access_token, body)
-            .await
-            .unwrap();
-        assert_eq!(result.status, 202);
-        assert_eq!(result.body, br#"{"receipt":"offline"}"#);
-        assert_eq!(result.headers["x-test"], "retained");
-        assert_eq!(result.headers["retry-after"], "invalid");
-        assert_eq!(exec.endpoint().origin(), ServiceOrigin::Arm);
-        let requests = client.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].method(), Method::Post);
-        assert_eq!(requests[0].url().as_str(), environment.endpoint());
-        assert_eq!(Bytes::from(requests[0].body()).as_ref(), body);
-        assert_eq!(
-            requests[0]
-                .headers()
-                .get_str(&"authorization".into())
-                .unwrap(),
-            format!("Bearer {}", access_token.token.secret())
-        );
-        assert_eq!(
-            requests[0]
-                .headers()
-                .get_str(&"content-type".into())
-                .unwrap(),
-            "application/json"
-        );
-        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-    }
-}
-
-#[tokio::test]
-async fn feedback_statuses_are_single_posts_without_retry_waits() {
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        for status in [
-            200, 202, 301, 302, 307, 308, 400, 401, 403, 413, 429, 500, 502, 503, 504,
-        ] {
-            let client = ScriptedClient::new([response(
-                status,
-                "raw response",
-                &[("retry-after", "1"), ("location", "https://evil.invalid/")],
-            )]);
-            let timer = Arc::new(TestTimer::default());
-            let exec = executor(client.clone(), timer.clone());
-            let result = exec
-                .execute_feedback(environment, &token(), b"{}")
-                .await
-                .unwrap();
-            assert_eq!(result.status, status);
-            assert_eq!(result.body, b"raw response");
-            let requests = client.requests.lock().unwrap();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].method(), Method::Post);
-            assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-        }
-    }
-}
-
-#[tokio::test]
-async fn feedback_invalid_body_and_token_fail_before_network_or_timer() {
-    let client = ScriptedClient::new([]);
-    let timer = Arc::new(TestTimer::default());
-    let exec = executor(client.clone(), timer.clone());
-    let oversized = vec![b'x'; 64 * 1024 + 1];
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        for body in [&[][..], oversized.as_slice()] {
-            assert_eq!(
-                exec.execute_feedback(environment, &token(), body)
-                    .await
-                    .unwrap_err(),
-                ExecutionError::InvalidInput
-            );
-        }
-        for value in [
-            "",
-            "bad\nbearer",
-            "bad\rbearer",
-            "bad\tbearer",
-            "bad\0bearer",
-        ] {
-            let invalid = AccessToken::new(value, OffsetDateTime::UNIX_EPOCH);
-            assert_eq!(
-                exec.execute_feedback(environment, &invalid, b"{}")
-                    .await
-                    .unwrap_err(),
-                ExecutionError::InvalidInput
-            );
-        }
-    }
-    assert!(client.requests.lock().unwrap().is_empty());
-    assert!(timer.waits.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn feedback_accepts_exact_request_and_response_byte_limits() {
-    let body = format!("{{}}{}", " ".repeat(64 * 1024 - 2));
-    let reply = "x".repeat(64 * 1024);
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        let client = ScriptedClient::new([response(200, &reply, &[])]);
-        let timer = Arc::new(TestTimer::default());
-        let exec = executor(client.clone(), timer.clone());
-        let result = exec
-            .execute_feedback(environment, &token(), body.as_bytes())
-            .await
-            .unwrap();
-        assert_eq!(result.body, reply.as_bytes());
-        let requests = client.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(Bytes::from(requests[0].body()).as_ref(), body.as_bytes());
-        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-    }
-}
-
-#[tokio::test]
-async fn feedback_does_not_widen_fabric_or_bound_service_origins() {
-    let client = ScriptedClient::new([]);
-    let timer = Arc::new(TestTimer::default());
-    let exec = executor(client.clone(), timer.clone());
-    let limit = NonZeroUsize::new(1).unwrap();
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        let url = Url::parse(environment.endpoint()).unwrap();
-        assert_eq!(
-            exec.execute_fabric(Method::Post, &url, &token(), b"{}", limit)
-                .await
-                .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-        for origin in [
-            PublicOrigin::Fabric,
-            PublicOrigin::OneLake,
-            PublicOrigin::Arm,
-            PublicOrigin::PowerBi,
-        ] {
-            assert_eq!(
-                exec.execute_bound(origin, Method::Post, &url, &token(), b"{}", &[], limit)
-                    .await
-                    .unwrap_err(),
-                ExecutionError::InvalidInput
-            );
-        }
-    }
-    assert!(client.requests.lock().unwrap().is_empty());
-    assert!(timer.waits.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn feedback_transport_and_stream_failures_are_sanitized_without_replay() {
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        let stream_failure = AsyncRawResponse::new(
-            StatusCode::Ok,
-            Headers::new(),
-            Box::pin(stream::iter([
-                Ok(Bytes::from_static(b"partial response")),
-                Err(azure_core::Error::with_message(
-                    ErrorKind::Io,
-                    "secret stream diagnostic",
-                )),
-            ])),
-        );
-        for reply in [
-            Err(azure_core::Error::with_message(
-                ErrorKind::Io,
-                "secret transport diagnostic",
-            )),
-            Ok(stream_failure),
-        ] {
-            let client = ScriptedClient::new([]);
-            client.replies.lock().unwrap().push_back(reply);
-            let timer = Arc::new(TestTimer::default());
-            let exec = executor(client.clone(), timer.clone());
-            let error = exec
-                .execute_feedback(environment, &token(), b"{}")
-                .await
-                .unwrap_err();
-            assert_eq!(error, ExecutionError::Transport);
-            assert!(!error.to_string().contains("secret"));
-            let requests = client.requests.lock().unwrap();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].method(), Method::Post);
-            assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-        }
-    }
-}
-
-#[tokio::test]
-async fn feedback_response_limit_stops_stream_at_cap_plus_one_without_replay() {
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let raw = AsyncRawResponse::new(
-            StatusCode::Ok,
-            Headers::new(),
-            Box::pin(CountingBody {
-                polls: polls.clone(),
-                dropped: dropped.clone(),
-                pending: false,
-            }),
-        );
-        let client = ScriptedClient::new([raw]);
-        let timer = Arc::new(TestTimer::default());
-        let exec = executor(client.clone(), timer.clone());
-        assert_eq!(
-            exec.execute_feedback(environment, &token(), b"{}")
-                .await
-                .unwrap_err(),
-            ExecutionError::ResponseLimit
-        );
-        assert_eq!(polls.load(Ordering::SeqCst), 64 * 1024 + 1);
-        assert!(dropped.load(Ordering::SeqCst));
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-    }
-}
-
-#[tokio::test]
-async fn feedback_deadline_drops_response_stream_without_replay() {
-    for environment in [
-        feedback::Environment::Production,
-        feedback::Environment::Ppe,
-    ] {
-        let dropped = Arc::new(AtomicBool::new(false));
-        let raw = AsyncRawResponse::new(
-            StatusCode::Ok,
-            Headers::new(),
-            Box::pin(CountingBody {
-                polls: Arc::new(AtomicUsize::new(0)),
-                dropped: dropped.clone(),
-                pending: true,
-            }),
-        );
-        let client = ScriptedClient::new([raw]);
-        let timer = Arc::new(TestTimer::default());
-        let exec = executor(client.clone(), timer.clone());
-        let access_token = token();
-        let mut future = Box::pin(exec.execute_feedback(environment, &access_token, b"{}"));
-        assert!(
-            future
-                .as_mut()
-                .poll(&mut Context::from_waker(Waker::noop()))
-                .is_pending()
-        );
-        timer.expired.store(true, Ordering::SeqCst);
-        assert_eq!(future.await.unwrap_err(), ExecutionError::TimedOut);
-        assert!(dropped.load(Ordering::SeqCst));
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-    }
-}
-
-#[tokio::test]
-async fn bound_request_limits_accept_exact_url_body_header_bytes_and_count() {
-    let prefix = "https://management.azure.com/";
-    let url = Url::parse(&format!("{prefix}{}", "x".repeat(16 * 1024 - prefix.len()))).unwrap();
-    assert_eq!(url.as_str().len(), 16 * 1024);
-    let body = vec![0_u8; 4 * 1024 * 1024];
-    let name = "x-bound";
-    let headers = [(name.into(), "v".repeat(16 * 1024 - name.len() - 4))];
-    let client = ScriptedClient::new([response(200, "", &[]), response(200, "", &[])]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    exec.execute_bound(
-        PublicOrigin::Arm,
-        Method::Put,
-        &url,
-        &token(),
-        &body,
-        &headers,
-        NonZeroUsize::new(1).unwrap(),
-    )
-    .await
-    .unwrap();
-    let headers: Vec<_> = (0..64)
-        .map(|index| (format!("x-{index}"), "v".into()))
-        .collect();
-    exec.execute_bound(
-        PublicOrigin::Arm,
-        Method::Get,
-        &url,
-        &token(),
-        &[],
-        &headers,
-        NonZeroUsize::new(1).unwrap(),
-    )
-    .await
-    .unwrap();
-    let requests = client.requests.lock().unwrap();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(Bytes::from(requests[0].body()).len(), 4 * 1024 * 1024);
-    assert_eq!(requests[1].headers().get_str(&"x-63".into()).unwrap(), "v");
-}
-
-#[tokio::test]
-async fn bound_requests_preserve_explicit_origin_scope_headers_body_and_status() {
-    for (origin, endpoint, audience) in [
-        (
-            PublicOrigin::Fabric,
-            "https://api.fabric.microsoft.com/v1/workspaces",
-            fabric_sdk::Audience::Fabric,
-        ),
-        (
-            PublicOrigin::OneLake,
-            "https://onelake.dfs.fabric.microsoft.com/ws/item/Files/source.csv",
-            fabric_sdk::Audience::OneLake,
-        ),
-        (
-            PublicOrigin::Arm,
-            "https://management.azure.com/subscriptions/test?api-version=1",
-            fabric_sdk::Audience::Arm,
-        ),
-        (
-            PublicOrigin::PowerBi,
-            "https://api.powerbi.com/v1.0/myorg/groups",
-            fabric_sdk::Audience::Fabric,
-        ),
-    ] {
-        assert_eq!(origin.audience(), audience);
-        let client = ScriptedClient::new([response(202, "", &[("x-test", "retained")])]);
-        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-        let url = Url::parse(endpoint).unwrap();
-        let body = b"exact binary \x00\xff";
-        let result = exec
-            .execute_bound(
-                origin,
-                Method::Post,
-                &url,
-                &token(),
-                body,
-                &[
-                    ("X-Test".into(), "first".into()),
-                    ("x-test".into(), "last".into()),
-                    ("Content-Type".into(), "application/octet-stream".into()),
-                ],
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.status, 202);
-        assert_eq!(result.headers["x-test"], "retained");
-        let requests = client.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].url(), &url);
-        assert_eq!(Bytes::from(requests[0].body()).as_ref(), body);
-        assert_eq!(
-            requests[0].headers().get_str(&"x-test".into()).unwrap(),
-            "last"
-        );
-        assert_eq!(
-            requests[0]
-                .headers()
-                .get_str(&"content-type".into())
-                .unwrap(),
-            "application/octet-stream"
-        );
-        assert_eq!(
-            requests[0]
-                .headers()
-                .get_str(&"authorization".into())
-                .unwrap(),
-            format!("Bearer {}", token().token.secret())
-        );
-    }
-}
-
-#[tokio::test]
-async fn bound_origin_and_header_failures_occur_before_transport_io() {
-    let client = ScriptedClient::new([]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    let limit = NonZeroUsize::new(1).unwrap();
-    for (origin, url) in [
-        (
-            PublicOrigin::Fabric,
-            "https://onelake.dfs.fabric.microsoft.com/ws",
-        ),
-        (
-            PublicOrigin::OneLake,
-            "https://api.fabric.microsoft.com/v1/workspaces",
-        ),
-        (PublicOrigin::Arm, "https://management.azure.com.invalid/"),
-        (PublicOrigin::PowerBi, "https://user@api.powerbi.com/"),
-        (
-            PublicOrigin::OneLake,
-            "http://onelake.dfs.fabric.microsoft.com/",
-        ),
-        (PublicOrigin::Arm, "https://management.azure.com:444/"),
-        (PublicOrigin::PowerBi, "https://api.powerbi.com/#fragment"),
-    ] {
-        assert_eq!(
-            exec.execute_bound(
-                origin,
-                Method::Get,
-                &Url::parse(url).unwrap(),
-                &token(),
-                &[],
-                &[],
-                limit
-            )
-            .await
-            .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-    }
-    for (name, value) in [
-        ("Authorization", "replacement"),
-        ("hOsT", "evil.invalid"),
-        ("Proxy-Authorization", "replacement"),
-        ("Proxy-Authenticate", "replacement"),
-        ("Cookie", "private"),
-        ("Set-Cookie", "private"),
-        ("Content-Length", "0"),
-        ("Connection", "x-test"),
-        ("Transfer-Encoding", "chunked"),
-        ("Upgrade", "protocol"),
-        ("TE", "trailers"),
-        ("Trailer", "x-test"),
-        ("x invalid", "invalid"),
-        ("", "invalid"),
-        ("x-test", "injected\r\nAuthorization: private"),
-        ("x-test", "bad\tvalue"),
-    ] {
-        assert_eq!(
-            exec.execute_bound(
-                PublicOrigin::Fabric,
-                Method::Get,
-                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces").unwrap(),
-                &token(),
-                &[],
-                &[(name.into(), value.into())],
-                limit
-            )
-            .await
-            .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-    }
-    let url = Url::parse("https://management.azure.com/subscriptions/test").unwrap();
-    for headers in [
-        vec![("x-test".into(), "x".repeat(16 * 1024))],
-        vec![("x-test".into(), "x".into()); 65],
-    ] {
-        assert_eq!(
-            exec.execute_bound(
-                PublicOrigin::Arm,
-                Method::Get,
-                &url,
-                &token(),
-                &[],
-                &headers,
-                limit
-            )
-            .await
-            .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-    }
-    let body = vec![0; 4 * 1024 * 1024 + 1];
-    assert_eq!(
-        exec.execute_bound(
-            PublicOrigin::Arm,
-            Method::Post,
-            &url,
-            &token(),
-            &body,
-            &[],
-            limit
-        )
-        .await
-        .unwrap_err(),
-        ExecutionError::InvalidInput
-    );
-    let long = Url::parse(&format!(
-        "https://management.azure.com/{}",
-        "x".repeat(16 * 1024)
-    ))
-    .unwrap();
-    assert_eq!(
-        exec.execute_bound(
-            PublicOrigin::Arm,
-            Method::Get,
-            &long,
-            &token(),
-            &[],
-            &[],
-            limit
-        )
-        .await
-        .unwrap_err(),
-        ExecutionError::InvalidInput
-    );
-    for text in ["", "bad\nbearer"] {
-        let invalid = AccessToken::new(text, OffsetDateTime::UNIX_EPOCH);
-        assert_eq!(
-            exec.execute_bound(
-                PublicOrigin::Arm,
-                Method::Get,
-                &url,
-                &invalid,
-                &[],
-                &[],
-                limit
-            )
-            .await
-            .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-    }
-    assert!(client.requests.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn bound_non_get_requests_are_never_replayed_and_response_caps_remain_enforced() {
-    let url = Url::parse("https://onelake.dfs.fabric.microsoft.com/ws/item/file").unwrap();
-    for method in [
-        Method::Head,
-        Method::Post,
-        Method::Patch,
-        Method::Put,
-        Method::Delete,
-    ] {
-        let client = ScriptedClient::new([response(429, "", &[("Retry-After", "1")])]);
-        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-        let result = exec
-            .execute_bound(
-                PublicOrigin::OneLake,
-                method,
-                &url,
-                &token(),
-                &[],
-                &[],
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.status, 429);
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-    }
-    let client = ScriptedClient::new([response(200, "ab", &[])]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    assert_eq!(
-        exec.execute_bound(
-            PublicOrigin::OneLake,
-            Method::Get,
-            &url,
-            &token(),
-            &[],
-            &[],
-            NonZeroUsize::new(1).unwrap()
-        )
-        .await
-        .unwrap_err(),
-        ExecutionError::ResponseLimit
-    );
-    assert_eq!(client.requests.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn bound_gets_reuse_existing_retries_but_original_fabric_adapters_stay_restricted() {
-    let url = Url::parse("https://management.azure.com/subscriptions/test").unwrap();
-    let client = ScriptedClient::new([response(503, "", &[]), response(200, "ok", &[])]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    assert_eq!(
-        exec.execute_bound(
-            PublicOrigin::Arm,
-            Method::Get,
-            &url,
-            &token(),
-            &[],
-            &[],
-            NonZeroUsize::new(2).unwrap()
-        )
-        .await
-        .unwrap()
-        .body,
-        b"ok"
-    );
-    assert_eq!(client.requests.lock().unwrap().len(), 2);
-    assert_eq!(
-        exec.execute_fabric(
-            Method::Get,
-            &url,
-            &token(),
-            &[],
-            NonZeroUsize::new(2).unwrap()
-        )
-        .await
-        .unwrap_err(),
-        ExecutionError::InvalidInput
-    );
-    assert_eq!(client.requests.lock().unwrap().len(), 2);
-}
-
-#[derive(Default)]
-pub(super) struct TestTimer {
-    waits: Mutex<Vec<Duration>>,
-    pub(super) expired: AtomicBool,
-    deadline: Option<Duration>,
-}
-
-impl ExecutionTimer for TestTimer {
+impl ExecutionTimer for Timer {
     fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
-        self.waits.lock().unwrap().push(delay);
-        Box::pin(poll_fn(move |_| {
-            if delay == self.deadline.unwrap_or(Duration::from_secs(240))
-                && !self.expired.load(Ordering::SeqCst)
-            {
-                Poll::Pending
-            } else {
-                Poll::Ready(())
+        Box::pin(async move {
+            if delay == ExecutionOptions::default().timeout {
+                pending::<()>().await;
             }
-        }))
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct ScriptedClient {
-    replies: Mutex<VecDeque<azure_core::Result<AsyncRawResponse>>>,
-    pub(super) requests: Mutex<Vec<Request>>,
-}
-
-impl ScriptedClient {
-    pub(super) fn new(replies: impl IntoIterator<Item = AsyncRawResponse>) -> Arc<Self> {
-        Arc::new(Self {
-            replies: Mutex::new(replies.into_iter().map(Ok).collect()),
-            requests: Mutex::new(Vec::new()),
         })
     }
 }
 
+#[derive(Debug)]
+struct Wire {
+    replies: Mutex<VecDeque<AsyncRawResponse>>,
+    requests: Mutex<Vec<Request>>,
+}
+
 #[async_trait]
-impl HttpClient for ScriptedClient {
+impl HttpClient for Wire {
     async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
         self.requests.lock().unwrap().push(request.clone());
-        self.replies
+        Ok(self
+            .replies
             .lock()
             .unwrap()
             .pop_front()
-            .expect("unexpected HTTP replay")
+            .expect("unexpected replay"))
     }
 }
 
-#[derive(Debug)]
-struct TestCredential;
-
-#[async_trait]
-impl TokenCredential for TestCredential {
-    async fn get_token(
-        &self,
-        scopes: &[&str],
-        _: Option<TokenRequestOptions<'_>>,
-    ) -> azure_core::Result<AccessToken> {
-        assert_eq!(scopes, ["https://api.fabric.microsoft.com/.default"]);
-        Ok(token())
-    }
-}
-
-fn token() -> AccessToken {
-    AccessToken {
-        token: "test-only-never-sent-to-a-service".into(),
-        expires_on: OffsetDateTime::now_utc() + AzureDuration::hours(1),
-    }
-}
-
-pub(super) fn sdk() -> Client {
-    Client::new(
-        Arc::new(TestCredential),
-        CredentialSelection::new("offline", "tenant", fabric_core::Audience::Fabric).unwrap(),
+fn setup(replies: impl IntoIterator<Item = AsyncRawResponse>) -> (HttpExecutor, Arc<Wire>) {
+    let wire = Arc::new(Wire {
+        replies: Mutex::new(replies.into_iter().collect()),
+        requests: Mutex::default(),
+    });
+    (
+        HttpExecutor::new(wire.clone(), Arc::new(Timer), ExecutionOptions::default()).unwrap(),
+        wire,
     )
 }
 
-pub(super) fn response(status: u16, body: &str, headers: &[(&str, &str)]) -> AsyncRawResponse {
-    let mut result = Headers::new();
-    for &(name, value) in headers {
-        result.insert(name.to_owned(), value.to_owned());
+fn response(status: u16, body: &[u8]) -> AsyncRawResponse {
+    AsyncRawResponse::from_bytes(StatusCode::from(status), Headers::new(), body.to_vec())
+}
+
+fn request<'a>(url: &'a Url, token: &'a AccessToken, method: Method) -> HttpRequest<'a> {
+    HttpRequest {
+        origin: ServiceOrigin::Fabric,
+        method,
+        url,
+        token,
+        body: b"exact \x00\xff",
+        headers: &[],
+        max_response_bytes: NonZeroUsize::new(4).unwrap(),
     }
-    AsyncRawResponse::from_bytes(StatusCode::from(status), result, body.as_bytes().to_vec())
-}
-
-pub(super) fn executor(client: Arc<dyn HttpClient>, timer: Arc<TestTimer>) -> HttpExecutor {
-    HttpExecutor::new(client, timer, ExecutionOptions::default()).unwrap()
-}
-
-async fn get(executor: &HttpExecutor, limit: usize) -> Result<WorkspaceResponse, ExecutionError> {
-    executor
-        .execute_fabric(
-            Method::Get,
-            &Url::parse("https://api.fabric.microsoft.com/v1/workspaces").unwrap(),
-            &token(),
-            &[],
-            NonZeroUsize::new(limit).unwrap(),
-        )
-        .await
 }
 
 #[tokio::test]
-async fn public_fabric_seam_preserves_non_workspace_request_and_accepted_response() {
-    let client = ScriptedClient::new([response(
-        202,
-        "",
-        &[("Location", "/v1/operations/test"), ("Retry-After", "3")],
-    )]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    let url = Url::parse(
-        "https://api.fabric.microsoft.com/v1/workspaces/ws/lakehouses/lh/tables/table/load",
-    )
-    .unwrap();
-    let body = br#"{"relativePath":"Files/source.csv","pathType":"File"}"#;
-    let result = exec
-        .execute_fabric(
-            Method::Post,
-            &url,
-            &token(),
-            body,
-            NonZeroUsize::new(1).unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(result.status, 202);
-    assert!(result.body.is_empty());
-    assert_eq!(result.headers["location"], "/v1/operations/test");
-    assert_eq!(result.headers["retry-after"], "3");
-    let requests = client.requests.lock().unwrap();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method(), Method::Post);
-    assert_eq!(requests[0].url(), &url);
-    assert_eq!(Bytes::from(requests[0].body()).as_ref(), body);
-}
-
-#[tokio::test]
-async fn public_fabric_seam_rejects_other_audiences_and_invalid_urls_before_io() {
-    let client = ScriptedClient::new([]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    for url in [
-        "https://onelake.dfs.fabric.microsoft.com/ws/item/Files/source.csv",
-        "https://management.azure.com/subscriptions/test",
-        "https://api.powerbi.com/v1.0/myorg/groups",
-        "https://api.fabric.microsoft.com.invalid/v1/workspaces",
-        "http://api.fabric.microsoft.com/v1/workspaces",
-        "https://api.fabric.microsoft.com:444/v1/workspaces",
-        "https://user@api.fabric.microsoft.com/v1/workspaces",
-        "https://api.fabric.microsoft.com/v1/workspaces#fragment",
+async fn neutral_trait_preserves_requests_responses_and_get_only_retries() {
+    for (method, statuses, count, status) in [
+        (Method::Get, vec![503, 200], 2, 200),
+        (Method::Post, vec![503], 1, 503),
+        (Method::Patch, vec![429], 1, 429),
     ] {
-        assert_eq!(
-            exec.execute_fabric(
-                Method::Get,
-                &Url::parse(url).unwrap(),
-                &token(),
-                &[],
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .await
-            .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-    }
-    assert!(client.requests.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn public_fabric_seam_never_replays_non_get_methods() {
-    for method in [
-        Method::Head,
-        Method::Post,
-        Method::Put,
-        Method::Patch,
-        Method::Delete,
-    ] {
-        let client = ScriptedClient::new([response(429, "", &[("Retry-After", "1")])]);
-        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-        let response = exec
-            .execute_fabric(
-                method,
-                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws").unwrap(),
-                &token(),
-                &[],
-                NonZeroUsize::new(1).unwrap(),
-            )
+        let (engine, wire) = setup(statuses.into_iter().map(|status| response(status, b"raw")));
+        let executor: &dyn HttpExecution = &engine;
+        let url = Url::parse("https://api.fabric.microsoft.com/v1/neutral").unwrap();
+        let token = AccessToken::new("offline", OffsetDateTime::UNIX_EPOCH);
+        let result = executor
+            .execute_http(request(&url, &token, method), None)
             .await
             .unwrap();
-        assert_eq!(response.status, 429);
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-    }
-}
-
-#[tokio::test]
-async fn public_fabric_seam_retains_decoded_byte_limit() {
-    let client = ScriptedClient::new([response(200, "ab", &[])]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    assert_eq!(
-        exec.execute_fabric(
-            Method::Get,
-            &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/roles").unwrap(),
-            &token(),
-            &[],
-            NonZeroUsize::new(1).unwrap(),
-        )
-        .await
-        .unwrap_err(),
-        ExecutionError::ResponseLimit
-    );
-    assert_eq!(client.requests.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn public_wait_retains_delay_bounds_and_executor_deadline() {
-    let client = ScriptedClient::new([]);
-    let timer = Arc::new(TestTimer::default());
-    let exec = executor(client.clone(), timer.clone());
-    exec.wait_for(Duration::ZERO).await.unwrap();
-    assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
-    timer.waits.lock().unwrap().clear();
-    exec.wait_for(Duration::from_secs(60)).await.unwrap();
-    assert_eq!(
-        *timer.waits.lock().unwrap(),
-        [Duration::from_secs(240), Duration::from_secs(60)]
-    );
-    assert_eq!(
-        exec.wait_for(Duration::from_secs(61)).await.unwrap_err(),
-        ExecutionError::RetryDelay
-    );
-    timer.expired.store(true, Ordering::SeqCst);
-    assert_eq!(
-        exec.wait_for(Duration::from_secs(1)).await.unwrap_err(),
-        ExecutionError::TimedOut
-    );
-    assert!(client.requests.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn headers_token_query_and_exact_body_are_preserved() {
-    let client = ScriptedClient::new([response(
-        202,
-        "",
-        &[
-            (
-                "Location",
-                "https://api.fabric.microsoft.com/v1/operations/test",
-            ),
-            ("x-ms-operation-id", "opaque"),
-            ("Retry-After", "7"),
-        ],
-    )]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    let result = exec
-        .execute(
-            Method::Post,
-            &Url::parse(
-                "https://api.fabric.microsoft.com/v1/workspaces/ws/items?updateMetadata=True",
-            )
-            .unwrap(),
-            &token(),
-            br#"{"definition":{}}"#,
-            NonZeroUsize::new(10).unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(result.status, 202);
-    assert!(result.body.is_empty());
-    assert_eq!(result.headers["retry-after"], "7");
-    assert_eq!(result.headers["x-ms-operation-id"], "opaque");
-    let requests = client.requests.lock().unwrap();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method(), Method::Post);
-    assert_eq!(requests[0].url().query(), Some("updateMetadata=True"));
-    assert_eq!(
-        requests[0]
-            .headers()
-            .get_str(&"authorization".into())
-            .unwrap(),
-        "Bearer test-only-never-sent-to-a-service"
-    );
-    assert_eq!(
-        requests[0]
-            .headers()
-            .get_str(&"content-type".into())
-            .unwrap(),
-        "application/json"
-    );
-    assert_eq!(
-        Bytes::from(requests[0].body()),
-        br#"{"definition":{}}"#.as_slice()
-    );
-    assert!(!format!("{exec:?}").contains("test-only"));
-}
-
-#[tokio::test]
-async fn read_gateway_retries_match_python_backoff_and_budget() {
-    for status in [502, 503, 504] {
-        let client = ScriptedClient::new([
-            response(status, "", &[]),
-            response(status, "", &[]),
-            response(status, "", &[]),
-            response(200, "ok", &[]),
-        ]);
-        let timer = Arc::new(TestTimer::default());
-        assert_eq!(
-            get(&executor(client.clone(), timer.clone()), 2)
-                .await
-                .unwrap()
-                .body,
-            b"ok"
-        );
-        assert_eq!(client.requests.lock().unwrap().len(), 4);
-        assert_eq!(
-            *timer.waits.lock().unwrap(),
-            [
-                Duration::from_secs(240),
-                Duration::from_secs(2),
-                Duration::from_secs(4),
-            ]
-        );
-    }
-}
-
-#[tokio::test]
-async fn independent_python_retry_traces_match_shared_execution() {
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../tests/compatibility/http/retry-cases.json"
-    ))
-    .unwrap();
-    for case in fixture["cases"].as_array().unwrap() {
-        let headers = case["retry_after"]
-            .as_str()
-            .map(|value| vec![("Retry-After", value)])
-            .unwrap_or_default();
-        let statuses = case["statuses"].as_array().unwrap();
-        let client = ScriptedClient::new(statuses.iter().map(|status| {
-            response(
-                u16::try_from(status.as_u64().unwrap()).unwrap(),
-                "",
-                &headers,
-            )
-        }));
-        let timer = Arc::new(TestTimer::default());
-        let exec = executor(client.clone(), timer.clone());
-        let method = match case["method"].as_str().unwrap() {
-            "GET" => Method::Get,
-            "POST" => Method::Post,
-            other => panic!("unsupported reference method: {other}"),
-        };
-        let observed = exec
-            .execute(
-                method,
-                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces").unwrap(),
-                &token(),
-                &[],
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .await;
-        let outcome = match observed {
-            Ok(_) => "response",
-            Err(ExecutionError::RetriesExhausted) => "exhausted",
-            Err(other) => panic!("{}: {other}", case["name"]),
-        };
-        assert_eq!(
-            outcome,
-            case["outcome"].as_str().unwrap(),
-            "{}",
-            case["name"]
-        );
-        assert_eq!(
-            client.requests.lock().unwrap().len(),
-            usize::try_from(case["requests"].as_u64().unwrap()).unwrap(),
-            "{}",
-            case["name"]
-        );
-        let waits: Vec<_> = timer
-            .waits
-            .lock()
-            .unwrap()
-            .iter()
-            .skip(1)
-            .map(Duration::as_secs)
-            .collect();
-        let expected: Vec<_> = case["wait_seconds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|seconds| seconds.as_u64().unwrap())
-            .collect();
-        assert_eq!(waits, expected, "{}", case["name"]);
-    }
-}
-
-#[tokio::test]
-async fn retry_after_takes_precedence_for_adapter_statuses() {
-    for status in [413, 429, 503] {
-        let client = ScriptedClient::new([
-            response(status, "", &[("rEtRy-AfTeR", " 3 ")]),
-            response(200, "ok", &[]),
-        ]);
-        let timer = Arc::new(TestTimer::default());
-        assert!(get(&executor(client, timer.clone()), 2).await.is_ok());
-        assert_eq!(
-            *timer.waits.lock().unwrap(),
-            [Duration::from_secs(240), Duration::from_secs(3),]
-        );
-    }
-}
-
-#[tokio::test]
-async fn headerless_throttle_uses_four_outer_attempts_and_ten_second_waits() {
-    let client = ScriptedClient::new((0..4).map(|_| response(429, "", &[])));
-    let timer = Arc::new(TestTimer::default());
-    assert_eq!(
-        get(&executor(client.clone(), timer.clone()), 1)
-            .await
-            .unwrap_err(),
-        ExecutionError::RetriesExhausted
-    );
-    assert_eq!(client.requests.lock().unwrap().len(), 4);
-    assert_eq!(
-        *timer.waits.lock().unwrap(),
-        [
-            Duration::from_secs(240),
-            Duration::from_secs(10),
-            Duration::from_secs(10),
-            Duration::from_secs(10),
-            Duration::from_secs(10),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn adapter_exhaustion_is_explicit_and_has_no_fifth_attempt() {
-    for status in [502, 503, 504, 429] {
-        let client =
-            ScriptedClient::new((0..4).map(|_| response(status, "", &[("Retry-After", "1")])));
-        assert_eq!(
-            get(&executor(client.clone(), Arc::new(TestTimer::default())), 1)
-                .await
-                .unwrap_err(),
-            ExecutionError::RetriesExhausted
-        );
-        assert_eq!(client.requests.lock().unwrap().len(), 4);
-    }
-}
-
-#[tokio::test]
-async fn posts_never_replay_on_throttling_gateway_error_or_lost_response() {
-    for status in [413, 429, 502, 503, 504] {
-        let client = ScriptedClient::new([response(status, "", &[("Retry-After", "1")])]);
-        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-        assert_eq!(
-            exec.execute(
-                Method::Post,
-                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/items").unwrap(),
-                &token(),
-                b"{}",
-                NonZeroUsize::new(1).unwrap()
-            )
-            .await
-            .unwrap()
-            .status,
-            status
-        );
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-    }
-    let client = ScriptedClient::new([]);
-    client
-        .replies
-        .lock()
-        .unwrap()
-        .push_back(Err(azure_core::Error::with_message(
-            ErrorKind::Io,
-            "secret transport diagnostic",
-        )));
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    let error = sdk()
-        .notebook_session(&exec, NotebookLimits::default(), pending())
-        .create(WORKSPACE, "Test", "", &definition())
-        .await
-        .unwrap_err();
-    assert!(error.mutation_may_have_occurred);
-    assert_eq!(
-        error.kind,
-        NotebookErrorKind::Execution(NotebookExecutionError::Failed)
-    );
-    assert_eq!(client.requests.lock().unwrap().len(), 1);
-    assert!(!error.to_string().contains("secret"));
-}
-
-#[tokio::test]
-async fn forbidden_redirect_and_nonretryable_statuses_remain_single_raw_responses() {
-    for status in [
-        200, 201, 202, 204, 301, 302, 307, 308, 400, 401, 403, 404, 413, 500,
-    ] {
-        let client = ScriptedClient::new([response(status, "", &[])]);
-        assert_eq!(
-            get(&executor(client.clone(), Arc::new(TestTimer::default())), 1)
-                .await
-                .unwrap()
-                .status,
-            status
-        );
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-    }
-}
-
-#[tokio::test]
-async fn invalid_or_excessive_retry_intervals_fail_before_sleeping_or_replay() {
-    for delay in ["-1", "invalid", "61", "18446744073709551616"] {
-        let client = ScriptedClient::new([response(503, "", &[("Retry-After", delay)])]);
-        let timer = Arc::new(TestTimer::default());
-        assert_eq!(
-            get(&executor(client.clone(), timer.clone()), 1)
-                .await
-                .unwrap_err(),
-            ExecutionError::RetryDelay
-        );
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-        assert_eq!(timer.waits.lock().unwrap().len(), 1);
-    }
-}
-
-struct CountingBody {
-    polls: Arc<AtomicUsize>,
-    dropped: Arc<AtomicBool>,
-    pending: bool,
-}
-
-impl Stream for CountingBody {
-    type Item = azure_core::Result<Bytes>;
-
-    fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.polls.fetch_add(1, Ordering::SeqCst);
-        if self.pending {
-            Poll::Pending
-        } else {
-            Poll::Ready(Some(Ok(Bytes::from_static(b"x"))))
+        assert_eq!(result.status, status);
+        assert_eq!(result.body, b"raw");
+        let requests = wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), count);
+        for sent in requests.iter() {
+            assert_eq!(sent.method(), method);
+            assert_eq!(sent.url(), &url);
+            assert_eq!(Bytes::from(sent.body()).as_ref(), b"exact \x00\xff");
         }
     }
-}
-
-impl Drop for CountingBody {
-    fn drop(&mut self) {
-        self.dropped.store(true, Ordering::SeqCst);
-    }
-}
-
-#[tokio::test]
-async fn response_limit_stops_infinite_stream_at_cap_plus_one_and_drops_it() {
-    let polls = Arc::new(AtomicUsize::new(0));
-    let dropped = Arc::new(AtomicBool::new(false));
-    let response = AsyncRawResponse::new(
-        StatusCode::Ok,
-        Headers::new(),
-        Box::pin(CountingBody {
-            polls: polls.clone(),
-            dropped: dropped.clone(),
-            pending: false,
-        }),
-    );
-    let exec = executor(
-        ScriptedClient::new([response]),
-        Arc::new(TestTimer::default()),
-    );
-    let limits = WorkspaceListLimits {
-        max_response_bytes: NonZeroUsize::new(5).unwrap(),
-        ..Default::default()
-    };
-    let error = sdk()
-        .list_workspaces(&exec, limits, pending())
-        .await
-        .unwrap_err();
-    assert_eq!(error.kind, WorkspaceListErrorKind::ResponseLimit);
-    assert!(error.partial.value.is_empty());
-    assert_eq!(polls.load(Ordering::SeqCst), 6);
-    assert!(dropped.load(Ordering::SeqCst));
-}
-
-#[tokio::test]
-async fn exact_byte_boundary_succeeds_and_plus_one_fails() {
-    for (body, expected) in [
-        ("12345", Ok(())),
-        ("123456", Err(ExecutionError::ResponseLimit)),
-    ] {
-        let exec = executor(
-            ScriptedClient::new([response(200, body, &[])]),
-            Arc::new(TestTimer::default()),
-        );
-        assert_eq!(get(&exec, 5).await.map(|_| ()), expected);
-    }
-}
-
-#[tokio::test]
-async fn stream_io_errors_are_sanitized_and_not_retried() {
-    let raw = AsyncRawResponse::new(
-        StatusCode::Ok,
-        Headers::new(),
-        Box::pin(stream::iter([Err(azure_core::Error::with_message(
-            ErrorKind::Io,
-            "secret body error",
-        ))])),
-    );
-    let client = ScriptedClient::new([raw]);
-    let error = get(&executor(client.clone(), Arc::new(TestTimer::default())), 5)
-        .await
-        .unwrap_err();
-    assert_eq!(error, ExecutionError::Transport);
-    assert!(!error.to_string().contains("secret"));
-    assert_eq!(client.requests.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn opt_in_trace_retains_partial_headers_and_clears_previous_exchange_evidence() {
-    let mut headers = Headers::new();
-    headers.insert("request-id", OPERATION);
-    headers.insert("authorization", "private-header");
-    let broken = AsyncRawResponse::new(
-        StatusCode::Accepted,
-        headers,
-        Box::pin(stream::iter([Err(azure_core::Error::with_message(
-            ErrorKind::Io,
-            "private-body",
-        ))])),
-    );
-    let client = ScriptedClient::new([response(200, "", &[("x-ms-request-id", ITEM)]), broken]);
-    let trace = ExecutionTrace::default();
-    let exec = executor(client.clone(), Arc::new(TestTimer::default())).with_trace(trace.clone());
-    get(&exec, 5).await.unwrap();
-    assert_eq!(trace.snapshot().request_ids["x-ms-request-id"], ITEM);
-    assert_eq!(get(&exec, 5).await.unwrap_err(), ExecutionError::Transport);
-    let evidence = trace.snapshot();
-    assert_eq!(evidence.requests, 2);
-    assert_eq!(evidence.status, Some(202));
-    assert_eq!(evidence.phase, "response_body");
-    assert_eq!(evidence.transport_kind, Some("io"));
-    assert_eq!(evidence.request_ids.len(), 1);
-    assert_eq!(evidence.request_ids["request-id"], OPERATION);
-    assert!(!format!("{evidence:?}").contains("private"));
-    assert_eq!(client.requests.lock().unwrap().len(), 2);
-}
-
-#[tokio::test]
-async fn deadline_covers_response_stream_and_drops_it_without_replay() {
-    let dropped = Arc::new(AtomicBool::new(false));
-    let raw = AsyncRawResponse::new(
-        StatusCode::Ok,
-        Headers::new(),
-        Box::pin(CountingBody {
-            polls: Arc::new(AtomicUsize::new(0)),
-            dropped: dropped.clone(),
-            pending: true,
-        }),
-    );
-    let client = ScriptedClient::new([raw]);
-    let timer = Arc::new(TestTimer::default());
-    let exec = executor(client.clone(), timer.clone());
-    let mut future = Box::pin(get(&exec, 5));
-    assert!(
-        future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending()
-    );
-    timer.expired.store(true, Ordering::SeqCst);
-    assert_eq!(future.await.unwrap_err(), ExecutionError::TimedOut);
-    assert!(dropped.load(Ordering::SeqCst));
-    assert_eq!(client.requests.lock().unwrap().len(), 1);
 }
 
 #[derive(Default)]
-struct TestProgress {
-    events: Mutex<Vec<(u16, Vec<u8>, bool)>>,
-    omitted: AtomicBool,
+struct Progress {
+    records: Mutex<Vec<(Vec<u8>, bool)>>,
+    omitted: Mutex<bool>,
+    fail: bool,
 }
 
-impl ResponseProgress for TestProgress {
-    fn record(&self, response: &WorkspaceResponse, complete: bool) -> Result<(), ExecutionError> {
-        self.events
+impl ResponseProgress for Progress {
+    fn record(&self, response: &HttpResponse, complete: bool) -> Result<(), ExecutionError> {
+        self.records
             .lock()
             .unwrap()
-            .push((response.status, response.body.clone(), complete));
-        Ok(())
-    }
-
-    fn body_omitted(&self, _: &WorkspaceResponse) -> Result<(), ExecutionError> {
-        self.omitted.store(true, Ordering::SeqCst);
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn scoped_deadline_preserves_trace_and_response_progress_without_post_replay() {
-    for (body, limit, expected) in [
-        ("ok", 2, Ok(())),
-        ("oversized", 2, Err(ExecutionError::ResponseLimit)),
-    ] {
-        let client = ScriptedClient::new([response(202, body, &[("request-id", OPERATION)])]);
-        let timer = Arc::new(TestTimer {
-            deadline: Some(Duration::from_secs(7)),
-            ..TestTimer::default()
-        });
-        let trace = ExecutionTrace::default();
-        let exec = executor(client.clone(), timer.clone())
-            .with_trace(trace.clone())
-            .with_timeout(Duration::from_secs(7))
-            .unwrap();
-        let progress = TestProgress::default();
-        let result = exec
-            .execute_bound_with_progress(
-                PublicOrigin::Fabric,
-                Method::Post,
-                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/items").unwrap(),
-                &token(),
-                &[],
-                &[],
-                NonZeroUsize::new(limit).unwrap(),
-                Some(&progress),
-            )
-            .await
-            .map(|_| ());
-        assert_eq!(result, expected);
-        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(7)]);
-        assert_eq!(client.requests.lock().unwrap().len(), 1);
-        let evidence = trace.snapshot();
-        assert_eq!(evidence.requests, 1);
-        assert_eq!(evidence.status, Some(202));
-        assert_eq!(evidence.request_ids["request-id"], OPERATION);
-        assert_eq!(evidence.failure, expected.err());
-        let events = progress.events.lock().unwrap();
-        assert_eq!(events[0], (202, Vec::new(), false));
-        if expected.is_ok() {
-            assert_eq!(events.last().unwrap(), &(202, b"ok".to_vec(), true));
-            assert_eq!(evidence.phase, "complete");
+            .push((response.body.clone(), complete));
+        if self.fail {
+            Err(ExecutionError::InvalidInput)
         } else {
-            assert!(events.iter().all(|(_, _, complete)| !complete));
-            assert_eq!(evidence.phase, "response_body");
+            Ok(())
         }
-        assert_eq!(progress.omitted.load(Ordering::SeqCst), expected.is_err());
+    }
+
+    fn body_omitted(&self, _: &HttpResponse) -> Result<(), ExecutionError> {
+        *self.omitted.lock().unwrap() = true;
+        Ok(())
     }
 }
 
 #[tokio::test]
-async fn scoped_deadline_preserves_partial_progress_and_trace_on_suspended_body() {
-    let dropped = Arc::new(AtomicBool::new(false));
-    let raw = AsyncRawResponse::new(
-        StatusCode::Accepted,
-        Headers::new(),
-        Box::pin(CountingBody {
-            polls: Arc::new(AtomicUsize::new(0)),
-            dropped: dropped.clone(),
-            pending: true,
-        }),
-    );
-    let client = ScriptedClient::new([raw]);
-    let timer = Arc::new(TestTimer {
-        deadline: Some(Duration::from_secs(7)),
-        ..TestTimer::default()
-    });
-    let trace = ExecutionTrace::default();
-    let exec = executor(client.clone(), timer.clone())
-        .with_trace(trace.clone())
-        .with_timeout(Duration::from_secs(7))
-        .unwrap();
-    let progress = TestProgress::default();
-    let url = Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/items").unwrap();
-    let token = token();
-    let mut future = Box::pin(exec.execute_bound_with_progress(
-        PublicOrigin::Fabric,
-        Method::Post,
-        &url,
-        &token,
-        &[],
-        &[],
-        NonZeroUsize::new(2).unwrap(),
-        Some(&progress),
-    ));
-    assert!(
-        future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending()
-    );
-    timer.expired.store(true, Ordering::SeqCst);
-    assert_eq!(future.await.unwrap_err(), ExecutionError::TimedOut);
-    assert!(dropped.load(Ordering::SeqCst));
-    assert_eq!(client.requests.lock().unwrap().len(), 1);
-    assert_eq!(*progress.events.lock().unwrap(), [(202, Vec::new(), false)]);
-    assert!(!progress.omitted.load(Ordering::SeqCst));
-    assert_eq!(trace.snapshot().status, Some(202));
-    assert_eq!(trace.snapshot().failure, Some(ExecutionError::TimedOut));
-}
-
-struct DeadlineOnSecondPoll;
-
-impl ExecutionTimer for DeadlineOnSecondPoll {
-    fn sleep(&self, _: Duration) -> ExecutionFuture<'_, ()> {
-        let mut first = true;
-        Box::pin(poll_fn(move |cx| {
-            if first {
-                first = false;
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            } else {
-                Poll::Ready(())
-            }
-        }))
-    }
-}
-
-#[tokio::test]
-async fn always_ready_empty_chunks_cannot_starve_the_deadline() {
-    let polls = Arc::new(AtomicUsize::new(0));
-    let seen = polls.clone();
-    let raw = AsyncRawResponse::new(
-        StatusCode::Ok,
-        Headers::new(),
-        Box::pin(stream::repeat_with(move || {
-            seen.fetch_add(1, Ordering::SeqCst);
-            Ok(Bytes::new())
-        })),
-    );
-    let exec = HttpExecutor::new(
-        ScriptedClient::new([raw]),
-        Arc::new(DeadlineOnSecondPoll),
-        ExecutionOptions::default(),
-    )
-    .unwrap();
-    assert_eq!(get(&exec, 5).await.unwrap_err(), ExecutionError::TimedOut);
-    assert_eq!(polls.load(Ordering::SeqCst), 64);
-}
-
-#[tokio::test]
-async fn cancellation_drops_body_and_preserves_workspace_progress() {
-    let dropped = Arc::new(AtomicBool::new(false));
-    let raw = AsyncRawResponse::new(
-        StatusCode::Ok,
-        Headers::new(),
-        Box::pin(CountingBody {
-            polls: Arc::new(AtomicUsize::new(0)),
-            dropped: dropped.clone(),
-            pending: true,
-        }),
-    );
-    let client = ScriptedClient::new([
-        response(200, r#"{"value":[],"continuationToken":"next"}"#, &[]),
-        raw,
-    ]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    let cancel = Arc::new(AtomicBool::new(false));
-    let signal = cancel.clone();
-    let sdk = sdk();
-    let mut future = Box::pin(sdk.list_workspaces(
-        &exec,
-        WorkspaceListLimits::default(),
-        poll_fn(move |_| {
-            if signal.load(Ordering::SeqCst) {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        }),
-    ));
-    assert!(
-        future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending()
-    );
-    cancel.store(true, Ordering::SeqCst);
-    let error = future.await.unwrap_err();
-    assert_eq!(error.kind, WorkspaceListErrorKind::Cancelled);
-    assert_eq!(error.partial.pages_received, 1);
-    assert_eq!(error.partial.next_token.as_deref(), Some("next"));
-    assert!(dropped.load(Ordering::SeqCst));
-    assert_eq!(client.requests.lock().unwrap().len(), 2);
-}
-
-fn definition() -> NotebookDefinition {
-    NotebookDefinition {
-        format: None,
-        parts: vec![DefinitionPart::inline("notebook-content.py", b"pass").unwrap()],
-    }
-}
-
-#[tokio::test]
-async fn notebook_empty_202_polls_retry_after_and_fetches_actual_result_through_shared_http() {
-    let location = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
-    let result_location = format!("{location}/result");
-    let item = format!(r#"{{"id":"{ITEM}","displayName":"Test","type":"Notebook"}}"#);
-    let client = ScriptedClient::new([
-        response(
-            202,
-            "",
-            &[
-                ("Location", &location),
-                ("x-ms-operation-id", OPERATION),
-                ("Retry-After", "2"),
+async fn neutral_progress_preserves_partial_failure_overflow_and_recorder_failure() {
+    for (chunks, fail, expected, records, omitted) in [
+        (
+            vec![
+                Ok(Bytes::from_static(b"raw")),
+                Err(azure_core::Error::with_message(ErrorKind::Io, "private")),
             ],
+            false,
+            ExecutionError::Transport,
+            vec![(vec![], false), (b"raw".to_vec(), false)],
+            false,
         ),
-        response(200, r#"{"status":"Running"}"#, &[("Retry-After", "3")]),
-        response(
-            200,
-            r#"{"status":"Succeeded"}"#,
-            &[("Location", &result_location)],
+        (
+            vec![
+                Ok(Bytes::from_static(b"raw")),
+                Ok(Bytes::from_static(b"xx")),
+            ],
+            false,
+            ExecutionError::ResponseLimit,
+            vec![(vec![], false), (b"raw".to_vec(), false)],
+            true,
         ),
-        response(200, &item, &[]),
-    ]);
-    let timer = Arc::new(TestTimer::default());
-    let exec = executor(client.clone(), timer.clone());
-    let sdk = sdk();
-    let mut session = sdk.notebook_session(&exec, NotebookLimits::default(), pending());
-    assert_eq!(
-        session
-            .create(WORKSPACE, "Test", "", &definition())
-            .await
-            .unwrap()
-            .id,
-        ITEM
-    );
-    let requests = client.requests.lock().unwrap();
-    assert_eq!(requests.len(), 4);
-    assert_eq!(requests[0].method(), Method::Post);
-    assert!(
-        requests[1..]
-            .iter()
-            .all(|request| request.method() == Method::Get)
-    );
-    assert_eq!(requests[3].url().as_str(), result_location);
-    let body: serde_json::Value = serde_json::from_slice(&Bytes::from(requests[0].body())).unwrap();
-    assert_eq!(body["type"], "Notebook");
-    assert_eq!(body["definition"]["parts"][0]["payload"], "cGFzcw==");
-    let waits = timer.waits.lock().unwrap();
-    assert_eq!(
-        waits
-            .iter()
-            .filter(|&&delay| delay == Duration::from_secs(2))
-            .count(),
-        1
-    );
-    assert_eq!(
-        waits
-            .iter()
-            .filter(|&&delay| delay == Duration::from_secs(3))
-            .count(),
-        1
-    );
-}
-
-#[tokio::test]
-async fn notebook_byte_limit_is_explicit_and_retains_mutation_uncertainty() {
-    let client = ScriptedClient::new([response(201, "123456", &[])]);
-    let exec = executor(client, Arc::new(TestTimer::default()));
-    let limits = NotebookLimits {
-        max_response_bytes: NonZeroUsize::new(5).unwrap(),
-        ..Default::default()
-    };
-    let error = sdk()
-        .notebook_session(&exec, limits, pending())
-        .create(WORKSPACE, "Test", "", &definition())
-        .await
-        .unwrap_err();
-    assert_eq!(error.kind, NotebookErrorKind::Limit);
-    assert!(error.mutation_may_have_occurred);
-}
-
-#[tokio::test]
-async fn workspace_pagination_retries_and_typed_rows_use_the_same_executor() {
-    let client = ScriptedClient::new([
-        response(503, "", &[]),
-        response(
-            200,
-            r#"{"value":[{"id":"opaque","displayName":"A","type":"Future"}],"continuationToken":"a+/="}"#,
-            &[],
+        (
+            vec![Ok(Bytes::from_static(b"raw"))],
+            true,
+            ExecutionError::InvalidInput,
+            vec![(vec![], false)],
+            false,
         ),
-        response(200, r#"{"value":[]}"#, &[]),
-    ]);
-    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
-    let value = sdk()
-        .list_workspaces(&exec, WorkspaceListLimits::default(), pending())
-        .await
-        .unwrap();
-    assert_eq!(value.pages_received, 2);
-    assert_eq!(value.value.len(), 1);
-    let requests = client.requests.lock().unwrap();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0].url(), requests[1].url());
-    assert_eq!(
-        requests[2].url().query_pairs().collect::<Vec<_>>(),
-        vec![("continuationToken".into(), "a+/=".into())]
-    );
-}
-
-#[tokio::test]
-async fn invalid_config_origin_and_bearer_never_reach_http_client() {
-    let client = ScriptedClient::new([]);
-    let timer = Arc::new(TestTimer::default());
-    assert!(matches!(
-        HttpExecutor::new(
-            client.clone(),
-            timer.clone(),
-            ExecutionOptions {
-                timeout: Duration::ZERO,
-                ..Default::default()
-            }
-        ),
-        Err(ExecutionError::InvalidInput)
-    ));
-    let exec = executor(client.clone(), timer);
-    for url in [
-        "http://api.fabric.microsoft.com/v1/workspaces",
-        "https://other.invalid/v1/workspaces",
-        "https://user@api.fabric.microsoft.com/v1/workspaces",
-        "https://api.fabric.microsoft.com:444/v1/workspaces",
     ] {
+        let raw = AsyncRawResponse::new(
+            StatusCode::Accepted,
+            Headers::new(),
+            Box::pin(stream::iter(chunks)),
+        );
+        let (engine, wire) = setup([raw]);
+        let trace = ExecutionTrace::default();
+        let engine = engine.with_trace(trace.clone());
+        let progress = Progress {
+            fail,
+            ..Default::default()
+        };
+        let url = Url::parse("https://api.fabric.microsoft.com/v1/neutral").unwrap();
+        let token = AccessToken::new("offline", OffsetDateTime::UNIX_EPOCH);
         assert_eq!(
-            exec.execute(
-                Method::Get,
-                &Url::parse(url).unwrap(),
-                &token(),
-                &[],
-                NonZeroUsize::new(1).unwrap()
-            )
+            engine
+                .execute_http(request(&url, &token, Method::Post), Some(&progress))
+                .await
+                .unwrap_err(),
+            expected
+        );
+        assert_eq!(*progress.records.lock().unwrap(), records);
+        assert_eq!(*progress.omitted.lock().unwrap(), omitted);
+        assert_eq!(trace.snapshot().status, Some(202));
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn neutral_seam_rejects_origin_and_token_mismatch_before_dispatch() {
+    let (engine, wire) = setup([]);
+    let token = AccessToken::new("offline", OffsetDateTime::UNIX_EPOCH);
+    let wrong = Url::parse("https://management.azure.com/subscriptions").unwrap();
+    assert_eq!(
+        engine
+            .execute_http(request(&wrong, &token, Method::Get), None)
             .await
             .unwrap_err(),
-            ExecutionError::InvalidInput
-        );
-    }
-    let mut bad = token();
-    bad.token = "token\r\ninjected: header".into();
-    assert_eq!(
-        exec.execute(
-            Method::Get,
-            &Url::parse("https://api.fabric.microsoft.com/v1/workspaces").unwrap(),
-            &bad,
-            &[],
-            NonZeroUsize::new(1).unwrap()
-        )
-        .await
-        .unwrap_err(),
         ExecutionError::InvalidInput
     );
-    assert!(client.requests.lock().unwrap().is_empty());
+    let url = Url::parse("https://api.fabric.microsoft.com/v1/neutral").unwrap();
+    let invalid = AccessToken::new("", OffsetDateTime::UNIX_EPOCH);
+    assert_eq!(
+        engine
+            .execute_http(request(&url, &invalid, Method::Get), None)
+            .await
+            .unwrap_err(),
+        ExecutionError::InvalidInput
+    );
+    assert!(wire.requests.lock().unwrap().is_empty());
 }

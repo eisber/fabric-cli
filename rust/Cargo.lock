@@ -1444,6 +1444,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "futures-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-http-transport"
+version = "0.1.0"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "azure_core",
+ "fabric-http",
+ "flate2",
+ "futures-util",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-timeout",
+ "hyper-util",
+ "rcgen",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tower-service",
+]
+
+[[package]]
 name = "fabric-identity"
 version = "0.1.0"
 dependencies = [
@@ -1643,6 +1682,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-http",
  "fabric-sdk",
  "fabric-sdk-folders",
  "fabric-sdk-items",
@@ -1873,30 +1913,21 @@ dependencies = [
 name = "fabric-sdk-transport"
 version = "0.1.0"
 dependencies = [
- "async-compression",
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-http",
+ "fabric-http-transport",
  "fabric-sdk",
  "fabric-sdk-http",
  "flate2",
  "futures-util",
- "http",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-timeout",
- "hyper-util",
  "rcgen",
  "rustls",
- "rustls-native-certs",
- "rustls-platform-verifier",
  "serde_json",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
- "tokio-util",
- "tower-service",
 ]
 
 [[package]]

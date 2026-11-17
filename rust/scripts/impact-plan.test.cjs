@@ -1093,7 +1093,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-cli', 'v2-create-eventhouse', 'eventhouse_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
-      'rust/engine/core/http/transport/Cargo.toml'],
+      'rust/engine/sdk/transport/Cargo.toml'],
   ];
   for (const [pkg, feature, target, manifestPath] of cases) {
     const profile = graph.profiles.find(item =>
@@ -1297,7 +1297,7 @@ test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forward
   assert.ok(graph.components.some(component => component.package === 'fabric-sdk-http' &&
     component.tests.some(test => test.target === 'test:native_stream')));
   const manifest = fs.readFileSync(path.join(root,
-    'rust/engine/core/http/executor/Cargo.toml'), 'utf8');
+    'rust/engine/sdk/http/Cargo.toml'), 'utf8');
   assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
 });
 

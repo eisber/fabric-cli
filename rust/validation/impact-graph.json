@@ -868,13 +868,30 @@
       ]
     },
     {
+      "id": "http-foundation",
+      "package": "fabric-http",
+      "inputs": ["rust/engine/core/http/executor/src/**"],
+      "depends_on": ["core"],
+      "tests": [{"package": "fabric-http", "target": "lib"}],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "http-native-transport",
+      "package": "fabric-http-transport",
+      "inputs": ["rust/engine/core/http/transport/src/**"],
+      "depends_on": ["http-foundation"],
+      "tests": [{"package": "fabric-http-transport", "target": "lib"}],
+      "checks": ["transport", "transport-graphs"]
+    },
+    {
       "id": "http",
       "package": "fabric-sdk-http",
       "inputs": [
-        "rust/engine/core/http/executor/src/**",
+        "rust/engine/sdk/http/src/**",
         "rust/tests/compatibility/http/retry-cases.json"
       ],
       "depends_on": [
+        "http-foundation",
         "core",
         "sdk",
         "sdk-items",
@@ -916,9 +933,10 @@
       "id": "transport",
       "package": "fabric-sdk-transport",
       "inputs": [
-        "rust/engine/core/http/transport/src/**"
+        "rust/engine/sdk/transport/src/**"
       ],
       "depends_on": [
+        "http-native-transport",
         "core",
         "http",
         "sdk"
@@ -931,6 +949,10 @@
         {
           "package": "fabric-sdk-transport",
           "target": "example:sdk_consumer"
+        },
+        {
+          "package": "fabric-sdk-transport",
+          "target": "test:http_services"
         },
         {
           "package": "fabric-sdk-transport",
@@ -3119,6 +3141,8 @@
       "coverage": "structural",
       "inputs": [],
       "depends_on": [
+        "http-foundation",
+        "http-native-transport",
         "core",
         "json",
         "context",
@@ -3186,6 +3210,10 @@
         {
           "package": "fabric-cli",
           "target": "test:workspace_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:http_architecture"
         }
       ],
       "checks": [
@@ -3759,9 +3787,11 @@
     {
       "id": "native-transport",
       "packages": [
+        "fabric-http-transport",
         "fabric-sdk-transport"
       ],
       "features": [
+        "fabric-http-transport/hyper-rustls",
         "fabric-sdk-transport/hyper-rustls"
       ],
       "platforms": [

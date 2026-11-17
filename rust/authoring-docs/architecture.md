@@ -27,6 +27,7 @@ unchanged names and logical layers:
 | `engine/core/auth/provider/`, `engine/core/auth/windows/` | Optional credential providers and isolated Windows interop |
 | `engine/control-plane/deployment/` | Reusable configuration, transforms, planning, publication and definition operations |
 | `engine/core/http/requests/`, `engine/core/http/executor/`, `engine/core/http/transport/` | Explicit API requests, shared HTTP execution and optional native transport |
+| `engine/sdk/http/`, `engine/sdk/transport/` | Service HTTP adapters and source-compatible SDK HTTP/transport entry points |
 | `engine/core/pagination/`, `engine/core/lro/` | Shared paging, request completion and polling |
 | `engine/control-plane/graph/` | Graph-only refresh composition over existing job submission and neutral SDK observation |
 | `engine/core/contracts/`, `engine/core/json/` | Shared endpoint/credential contracts and ordered JSON encoding |
@@ -71,8 +72,13 @@ network request. Table capabilities compose OneLake reads with load and
 maintenance jobs; deployment remains control-plane orchestration despite local
 configuration and definition preparation. `engine/core/` groups shared
 foundations without changing their existing core, identity or SDK layers.
-Focused capability crates remain directly consumable; this layout does not
-extract shared contracts or remove existing facade and CLI mutation coupling.
+Focused capability crates remain directly consumable. `fabric-core::http`
+defines only neutral wire requests/responses, injected execution and bounded
+progress. `fabric-http` and `fabric-http-transport` keep the existing SDK logical
+layer but exclude production/build/dev/optional service, facade, provider and CLI
+dependencies. `fabric-sdk-http` and `fabric-sdk-transport` retain compatibility
+imports above that boundary; their service adapters do not move into core.
+This does not remove unrelated facade or CLI mutation coupling.
 
 | Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |
@@ -305,7 +311,7 @@ layer. Its direct consumer has no facade/identity/CLI/deployment dependency.
 It reuses the existing workspace-owned `Page`, `FabricServiceError`, response
 and execution-error types without modifying workspace behavior. The additive
 facade module delegates using the same provider and selection. The
-`fabric-sdk-http` capacity module calls private shared HTTP execution; there is
+`fabric-sdk-http` capacity module delegates to neutral shared HTTP execution; there is
 no duplicate transport, retry, TLS, identity, or runtime implementation.
 See the [capacity matrix](capacity-compatibility.md) for its source mapping,
 failure/bounds/cancellation gates, and non-goals.
@@ -508,9 +514,11 @@ implementation/consumer gates. See the [resource matrix](mutation-compatibility.
 `fabric-sdk-http` is the first reusable executor adapter for workspace and
 Notebook service requests. It accepts a caller-owned Azure `HttpClient` and
 asynchronous timer, with bounded streaming, deadlines, read-status retries and
-no mutation replay. It depends on the SDK facade, not the reverse, so focused
-SDK consumers remain free to inject other executors. See its
-[source mapping and compatibility limits](../engine/core/http/executor/README.md).
+no mutation replay. Its service adapters depend on the SDK facade, not the
+reverse; the neutral `fabric-http` engine has no facade or capability dependency,
+including for all-target builds. Focused SDK consumers remain free to inject
+other executors. See its
+[source mapping and compatibility limits](../engine/sdk/http/README.md).
 It does not install a production HTTP/TLS backend or create a runtime.
 
 Libraries must not prompt implicitly, exit the process, initialize a global logger, create
@@ -525,11 +533,12 @@ STA thread is a WinRT/UI requirement, not an independent async runtime.
 
 `azure_core` default features remain disabled. Direct SDK consumers still
 exclude HTTP/TLS implementations. The optional
-[`fabric-sdk-transport`](../engine/core/http/transport/README.md) SDK-layer crate
+[`fabric-sdk-transport`](../engine/sdk/transport/README.md) compatibility crate
 has no default backend; its `hyper-rustls` feature selects one pooled Hyper
 client, Rustls with a per-client ring provider, explicit platform/additional
 trust, a direct/static-HTTP-proxy policy and bounded decoded streaming.
-It depends on the shared executor, not the reverse, and installs no new REST,
+The underlying `fabric-http-transport` depends on the neutral executor, not the
+reverse, and installs no new REST,
 retry, paging, authentication or overall-deadline engine.
 
 The owner approved Hyper/Rustls instead of the provisional Reqwest direction

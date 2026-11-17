@@ -3,9 +3,15 @@
 
 use crate::ExecutionError;
 use azure_core::http::{Method, Url};
-pub use fabric_sdk::ServiceOrigin as PublicOrigin;
+pub use fabric_core::ServiceOrigin as PublicOrigin;
 
-pub(crate) fn validate_request(
+/// Validate generic method, URL/body sizes and additional header safety.
+///
+/// Origin and token validation are performed separately before dispatch.
+///
+/// # Errors
+/// Rejects unsupported methods, oversized fields and unsafe header overrides.
+pub fn validate_request(
     method: Method,
     url: &Url,
     body: &[u8],

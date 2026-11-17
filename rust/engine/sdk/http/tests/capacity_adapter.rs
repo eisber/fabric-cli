@@ -284,7 +284,7 @@ async fn adapter_streaming_exact_plus_one_and_deadline_map_without_policy_copy()
 async fn immutable_source_goldens_drive_public_http_consumer_without_rewriting_safety_exceptions() {
     use serde_json::{Value, json};
     let fixtures: Value = serde_json::from_str(include_str!(
-        "../../../../../tests/compatibility/capacities/cases.json"
+        "../../../../tests/compatibility/capacities/cases.json"
     ))
     .unwrap();
     assert_eq!(

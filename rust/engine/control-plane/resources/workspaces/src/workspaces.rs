@@ -13,7 +13,7 @@ use fabric_core::{
     ServiceOrigin, cancel_with,
 };
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     fmt,
     future::Future,
     num::NonZeroUsize,
@@ -70,19 +70,8 @@ impl fmt::Debug for WorkspaceRequest<'_> {
     }
 }
 
-/// An executor response, before typed payload validation.
-///
-/// This type does not imply success. The operation checks status and body.
-/// Headers are read case-insensitively.
-#[derive(Clone, Debug)]
-pub struct WorkspaceResponse {
-    /// HTTP status returned by the executor.
-    pub status: u16,
-    /// Untrusted response body, subject to the request's byte limit.
-    pub body: Vec<u8>,
-    /// Response headers, including continuation and service error codes.
-    pub headers: BTreeMap<String, String>,
-}
+/// Compatibility name for the service-neutral raw HTTP response.
+pub use fabric_core::http::HttpResponse as WorkspaceResponse;
 
 /// Explicit executor failure, without untrusted transport diagnostic text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
