@@ -15,6 +15,7 @@ const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
+const {discoverManifests, selectionInventory} = require('./impact-contract.cjs');
 const validationRegistry = require('./validation-checks.cjs');
 
 function temporary(t) {
@@ -37,6 +38,42 @@ function plan() {
     }],
   };
 }
+
+test('Cheap manifest discovery includes nested unregistered engine/client leaves, not grouping directories', t => {
+  const root = temporary(t);
+  const manifests = ['rust/engine/new/deeper/Cargo.toml', 'rust/engine/new/other/Cargo.toml',
+    'rust/clients/cli/commands/new/Cargo.toml', 'rust/clients/new-host/Cargo.toml'];
+  for (const manifest of manifests) {
+    const file = path.join(root, manifest);
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    fs.writeFileSync(file, '[package]\nname = "fixture"\n');
+  }
+  assert.deepEqual(discoverManifests(root), manifests.sort());
+});
+
+test('Measured target inventories agree with executor default/feature commands without counting skipped targets', () => {
+  const selected = {...plan(), mode: 'affected', components: [], check_order: [], check_details: [],
+    tests: [
+      {package: 'cli', target: 'all', default_available: true, default_skipped_targets: ['test:native']},
+    ],
+    target_catalog: [
+      {package: 'cli', target: 'lib', test: true, default_available: true, profiles: ['native']},
+      {package: 'cli', target: 'test:native', test: true, default_available: false, profiles: ['native']},
+    ],
+    profiles: [{id: 'native', packages: ['cli'], features: ['cli/native'], platforms: ['windows'],
+      test_features: {cli: ['cli/native']}, tests: [{package: 'cli', target: 'all'}]}]};
+  const measured = selectionInventory(selected);
+  assert.deepEqual(measured.default_targets, ['cli/lib']);
+  assert.deepEqual(measured.profiles[0].targets, ['cli/lib', 'cli/test:native']);
+  for (const platform of ['linux', 'macos', 'windows']) {
+    const actual = coreCommands(selected, platform);
+    const tests = actual.filter(command => command.test && !command.args.includes('--doc'));
+    assert.equal(tests.length, platform === 'windows' ? 2 : 1);
+    assert.ok(tests[0].args.includes('--all-targets'));
+    if (platform === 'windows') assert.ok(tests[1].args.includes('cli/native'));
+    assert.equal(measured.platforms[platform].profiles, platform === 'windows' ? 1 : 0);
+  }
+});
 
 test('source inventory retains the exact digest and identifies tracked, untracked and deleted input changes', t => {
   const root = temporary(t);

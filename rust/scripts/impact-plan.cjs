@@ -497,6 +497,54 @@ function documentation(file) {
     file === 'rust/AGENTS.md' || file === 'rust/README.md';
 }
 
+/** Inventory the same conservative Cargo edges and capability inputs used by the planner. */
+function dependencyInventory({metadata, graph, root, files, manifests}) {
+  root = rootPath(root);
+  const {packages, consumers} = metadataModel(metadata, root);
+  const rules = graphModel(graph, packages);
+  const documents = Array.isArray(metadata) ? metadata : [metadata];
+  for (const document of documents) assert(Array.isArray(document.workspace_default_members),
+    'Metadata is missing workspace_default_members');
+  const defaults = new Set(documents.flatMap(document =>
+    strings(document.workspace_default_members, 'workspace_default_members')));
+  const ids = new Set([...packages.values()].map(pkg => pkg.id));
+  assert([...defaults].every(id => ids.has(id)), 'Unknown default workspace member');
+  const declarations = new Map(documents.flatMap(document =>
+    document.packages.filter(pkg => document.workspace_members.includes(pkg.id)).map(pkg => [pkg.name, pkg])));
+  const declared = sorted([...packages.values()].map(pkg => pkg.manifest));
+  const discovered = strings(manifests, 'discovered package manifests').map(file => relative(file));
+  assert(stable(declared) === stable(sorted(discovered)),
+    'Discovered package manifests differ from Cargo workspace members (unregistered or missing crate)');
+  files = strings(files, 'source files').map(file => relative(file));
+  return {
+    packages: sorted(packages.keys()).map(name => {
+      const pkg = packages.get(name);
+      const dependencies = sorted(pkg.dependencies.map(dep => stable({
+        package: dep.name, alias: dep.rename || dep.name, kind: dep.kind || 'normal',
+        optional: dep.optional === true, target: dep.target || null,
+        default_features: dep.uses_default_features !== false,
+        features: strings(dep.features, 'dependency features'),
+        internal: dep.path != null,
+      }))).map(value => JSON.parse(value));
+      return {name, manifest: pkg.manifest,
+        layer: declarations.get(name).metadata?.fabric?.layer ?? null,
+        cargo_targets: declarations.get(name).targets.length,
+        default_member: defaults.has(pkg.id), dependencies,
+        forward_dependencies: sorted(closure([name], id => packages.get(id).deps)).filter(id => id !== name),
+        reverse_consumers: sorted(closure([name], id => consumers.get(id))).filter(id => id !== name),
+        probe: [...pkg.targets.values()].find(target => target.name === 'lib')?.src ??
+          [...pkg.targets.values()].find(target => target.name.startsWith('bin:'))?.src ??
+          [...pkg.targets.values()][0]?.src ?? null,
+      };
+    }),
+    components: sorted(rules.components.keys()).map(id => {
+      const component = rules.components.get(id);
+      return {id, package: component.package, coverage: component.coverage,
+        files: files.filter(file => component.inputs.some(input => input.match.test(file)))};
+    }),
+  };
+}
+
 /**
  * Compute a platform-independent validation selection from Cargo metadata and
  * the declarative schema-1 impact graph. Unknown inputs conservatively go full.
@@ -1090,7 +1138,7 @@ function verifyPlan(selection, {root = selection.inputs?.root, exec, read} = {})
     evidence_scope: selection.evidence_scope};
 }
 
-module.exports = {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata};
+module.exports = {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata, dependencyInventory};
 if (require.main === module) {
   try { main(); } catch (error) {
     console.error(`Impact planning failed: ${error.message}`);

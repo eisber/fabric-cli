@@ -153,6 +153,109 @@ To add a narrow component:
 Do not weaken compatibility fixtures, immutable source pins or required contract
 inventory to achieve a smaller plan.
 
+## Independent capability graph contract
+
+Use the metadata-only inspection command to record a reproducible dependency and
+selection inventory before and after a capability refactor:
+
+```powershell
+node rust\scripts\impact-contract.cjs --output C:\validation\before.json
+# After integrating explicitly released commits in the normal integration lane:
+node rust\scripts\impact-contract.cjs --baseline C:\validation\before.json --output C:\validation\after.json
+```
+
+Both output paths must be new, absolute paths outside the checkout. The command
+does not overwrite evidence. `--cargo <absolute-executable>` selects an existing
+Cargo executable when it is not on `PATH`; it does not install a toolchain or
+modify Cargo configuration. Use the repository-pinned toolchain. The command
+only executes Git reads, `cargo --version`, and
+`cargo metadata --offline --locked --no-deps --format-version 1`. It does not
+compile, run Rust tests, dispatch CI, or acquire a build slot.
+
+The report reuses the planner's metadata model and selection algorithm, rather
+than maintaining a second package list. It records:
+
+- Every workspace package and default member, direct dependency declarations
+  (including renamed, development, build, optional and platform-specific edges),
+  and conservative transitive forward dependencies and reverse consumers.
+- Recursively discovered engine/client manifests, rejecting unregistered or
+  missing crates before a heavy build. This supplements, not replaces, the
+  existing Rust architecture contract.
+- A hypothetical source-change selection for every package, preferring its
+  library root, then binary root, then another supported Cargo target. Each
+  component with matching source-inventory files also gets a scenario containing
+  all of those declared implementation, fixture and external-contract inputs.
+- Actual expanded Cargo test-target inventories, isolated feature compositions,
+  checks, and native-platform applicability. `all` is expanded through the
+  planner's target catalog; feature-gated targets are not counted as default
+  targets, and unavailable profiles are not counted as executed obligations.
+- The exact HEAD/tree, dirty status, source-inventory digest, metadata/graph/tool
+  digests and Cargo version. Source or HEAD mutation during collection fails.
+
+Counts describe selected targets, not executed tests, compilation units, elapsed
+time, or successful native qualification. Package probes and component scenarios
+are explicitly hypothetical selections, not validation of the actual PR diff.
+Use `impact-plan.cjs --base <commit>` and the existing validator for that diff;
+nonempty/non-all-skipped execution and source-integrity checks still apply.
+Forward/reverse closures conservatively include optional and platform edges;
+they are not Cargo's feature-resolved graph for one particular host.
+
+Baseline comparisons retain added/removed scenarios, full before/after graph
+counts, and selection-count deltas. `comparable_inputs: false` identifies
+scenarios whose source paths changed; do not present those as an identical-input
+benchmark. A smaller count alone is not a speedup or permission to drop checks.
+Unknown/shared inputs, uncovered reverse consumers, source oracles and native
+full qualification retain their existing conservative behavior.
+
+For a neutral foundation, add one or more
+`--assert-foundation <actual-package-name>` selectors. Each named package and
+**all** its transitive workspace dependencies must declare the `core` layer.
+Development, build, optional and platform dependencies count too. Service
+implementations may remain reverse consumers; a generic engine must not acquire
+them as forward dependencies. Do not apply this core-only assertion to the
+service-specific compatibility adapters.
+
+### Pinned PR95-inspired baseline
+
+The [original PR95 comment](https://github.com/eisber/fabric-cli/pull/95#discussion_r4584506436)
+asks to "make sure that we can build individual elements asap." This contract
+measures the current capability graph without adopting that PR's fixed package
+boundaries or its separate implementation.
+
+The clean integration checkpoint
+`61c8221914152e231e5e64f7bd38418f66264999`
+(tree `fa28f064e9b6cb9eb165267c948c9dfc36688f82`) supplied actual Cargo 1.99.1
+metadata and source inventory before this tooling change. The new reporter was
+then applied to those retained inputs, not to a synthesized manifest list.
+There were 53 packages, 51 default members, 510 direct dependency declarations,
+215 internal declarations representing 212 distinct internal edges, and
+423 raw Cargo targets. The planner catalog had 422 supported targets (the raw
+inventory also includes the custom build target), 92 components, 50 feature
+profiles and 30 checks. These are measurements, not fixed growth limits.
+
+| Library-root probe | Forward dependencies | Reverse consumers | Selected packages | Default test targets | Profiles | Checks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `fabric-sdk-http` | 23 | 14 | 40 | 147 | 50 | 24 |
+| `fabric-sdk-transport` | 24 | 2 | 28 | 51 | 49 | 17 |
+| `fabric-cli-resources` | 29 | 2 | 38 | 25 | 45 | 17 |
+| `fabric-cli-output` | 1 | 11 | 44 | 123 | 47 | 24 |
+
+This tooling-only change leaves those graph and selection counts unchanged.
+The neutral HTTP, command-adapter and output refactors are separate dependent
+changes, not included or claimed merged here. After the integration owner
+releases their immutable combined source, rerun the report with the retained
+baseline. For the agreed neutral HTTP package names, additionally run:
+
+```powershell
+node rust\scripts\impact-contract.cjs --baseline C:\validation\before.json --assert-foundation fabric-http --assert-foundation fabric-http-transport --output C:\validation\integrated.json
+```
+
+That assertion intentionally fails with an unknown-package diagnostic at the
+baseline, where the neutral packages do not yet exist. Report actual released
+source, changed inputs and observed deltas; do not substitute a synthetic graph
+or selection counts for combined-source or timed execution evidence. Timed
+compile/test execution still needs its own current bounded build-slot grant.
+
 ## CI and evidence
 
 PRs, pushes and merge groups use their actual base/head pair. Every native job

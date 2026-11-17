@@ -9,6 +9,8 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata} = require('./impact-plan.cjs');
+const {dependencyInventory} = require('./impact-plan.cjs');
+const {contractReport, compareReports, main: contractMain} = require('./impact-contract.cjs');
 
 // Pure data fixtures and injected I/O: this suite never runs Git/Cargo, creates
 // a scratch checkout, reads credentials, or uses the host temporary directory.
@@ -75,6 +77,210 @@ const select = (files, change = () => {}) => {
   return plan(input);
 };
 const testKeys = result => result.tests.map(item => `${item.package}/${item.target}`);
+
+function contractFixture() {
+  const input = fixture();
+  input.files = ['rust/engine/control-plane/deployment/src/notebook.rs',
+    'rust/engine/control-plane/deployment/src/spark.rs', 'rust/fixtures/schema/cases.json'];
+  input.manifests = input.metadata.packages.map(pkg => path.relative(ROOT, pkg.manifest_path).split(path.sep).join('/'));
+  for (const pkg of input.metadata.packages) pkg.metadata = {
+    fabric: {layer: pkg.name === 'models' ? 'core' : pkg.name === 'cli' ? 'cli' : 'sdk'},
+  };
+  return input;
+}
+
+test('Capability inventory derives forward/reverse graphs without imposing a fixed package inventory', () => {
+  const input = contractFixture();
+  const extra = pkg('future-service', ['deploy']);
+  input.metadata.packages.push(extra);
+  input.metadata.workspace_members.push(extra.id);
+  input.manifests.push('rust/engine/future-service/Cargo.toml');
+  const inventory = dependencyInventory(input);
+  const deploy = inventory.packages.find(pkg => pkg.name === 'deploy');
+  assert.deepEqual(deploy.forward_dependencies, ['models']);
+  assert.deepEqual(deploy.reverse_consumers, ['adapter', 'cli', 'future-service']);
+  assert.equal(inventory.packages.find(pkg => pkg.name === 'future-service').default_member, false);
+  const report = contractReport(input);
+  const selected = report.scenarios.find(scenario => scenario.id === 'package:deploy').selection;
+  assert.ok(selected.packages.includes('future-service'));
+  assert.ok(selected.default_targets.includes('future-service/lib'));
+});
+
+test('Metadata contract fails early for unregistered and missing package manifests', () => {
+  const input = contractFixture();
+  assert.throws(() => dependencyInventory({...input,
+    manifests: [...input.manifests, 'rust/engine/new/unregistered/Cargo.toml']}), /unregistered or missing crate/);
+  assert.throws(() => dependencyInventory({...input, manifests: input.manifests.slice(1)}),
+    /unregistered or missing crate/);
+  assert.throws(() => dependencyInventory({...input, manifests: ['../Cargo.toml']}), /Noncanonical/);
+  const missingDefaults = clone(input.metadata);
+  delete missingDefaults.workspace_default_members;
+  assert.throws(() => dependencyInventory({...input, metadata: missingDefaults}), /missing workspace_default_members/);
+  missingDefaults.workspace_default_members = ['unknown'];
+  assert.throws(() => dependencyInventory({...input, metadata: missingDefaults}), /Unknown default workspace member/);
+});
+
+test('Neutral foundations exclude transitive service implementations but retain service reverse consumers', () => {
+  const input = contractFixture();
+  input.foundations = ['models'];
+  const report = contractReport(input);
+  assert.deepEqual(report.asserted_foundations, ['models']);
+  assert.ok(report.inventory.packages.find(pkg => pkg.name === 'models').reverse_consumers.includes('deploy'));
+  const models = input.metadata.packages.find(pkg => pkg.name === 'models');
+  models.dependencies.push({name: 'unrelated', path: absolute('rust/engine/unrelated'), kind: 'dev'});
+  assert.throws(() => contractReport(input), /Foundation models requires non-core packages: unrelated/);
+  assert.throws(() => contractReport({...input, foundations: ['absent']}), /Unknown foundation/);
+});
+
+test('Foundation contracts examine indirect optional/platform/build edges, not just normal imports', () => {
+  for (const fields of [{optional: true}, {kind: 'build'}, {target: 'cfg(windows)'}]) {
+    const input = contractFixture();
+    input.metadata.packages.find(pkg => pkg.name === 'unrelated').metadata.fabric.layer = 'core';
+    input.metadata.packages.find(pkg => pkg.name === 'models').dependencies.push({
+      name: 'unrelated', path: absolute('rust/engine/unrelated'), ...fields,
+    });
+    input.metadata.packages.find(pkg => pkg.name === 'unrelated').dependencies.push({
+      name: 'service', path: absolute('rust/engine/service'),
+    });
+    const service = pkg('service');
+    service.metadata = {fabric: {layer: 'sdk'}};
+    input.metadata.packages.push(service);
+    input.metadata.workspace_members.push(service.id);
+    input.manifests.push('rust/engine/service/Cargo.toml');
+    assert.throws(() => contractReport({...input, foundations: ['models']}), /non-core packages: service/);
+  }
+});
+
+test('Graph measurements retain dependency aliases, feature settings and non-normal declarations', () => {
+  const input = contractFixture();
+  input.metadata.packages.find(pkg => pkg.name === 'deploy').dependencies.push({
+    name: 'models', rename: 'test_models', path: absolute('rust/engine/models'),
+    kind: 'dev', optional: true, target: 'cfg(windows)', uses_default_features: false, features: [],
+  });
+  const report = contractReport(input);
+  const declared = report.inventory.packages.find(pkg => pkg.name === 'deploy').dependencies;
+  assert.ok(declared.some(dep => dep.alias === 'test_models' && dep.kind === 'dev' &&
+    dep.optional && dep.target === 'cfg(windows)' && !dep.default_features));
+  assert.ok(report.inventory.counts.internal_declarations > report.inventory.counts.internal_edges);
+  const repeated = contractReport({...input, metadata: [input.metadata, input.metadata]});
+  assert.deepEqual(repeated.inventory.counts, report.inventory.counts);
+});
+
+test('Contract measurements expand all-target selectors and retain isolated feature/platform obligations', () => {
+  const input = contractFixture();
+  const cli = input.metadata.packages.find(pkg => pkg.name === 'cli');
+  cli.features.native = [];
+  cli.targets.push(target('native', 'test', 'rust/clients/cli/app/tests/native.rs', ['native']));
+  input.graph.profiles.push({id: 'windows-native', packages: ['cli'],
+    features: ['cli/native'], platforms: ['windows']});
+  const report = contractReport(input);
+  const selected = report.scenarios.find(scenario => scenario.id === 'package:cli').selection;
+  assert.deepEqual(selected.default_targets, ['cli/lib', 'cli/test:mount']);
+  assert.deepEqual(selected.profiles[0].targets, ['cli/lib', 'cli/test:mount', 'cli/test:native']);
+  assert.deepEqual(selected.profiles[0].test_features, {cli: ['cli/native']});
+  assert.equal(selected.platforms.linux.profiles, 0);
+  assert.equal(selected.platforms.windows.profiles, 1);
+  assert.equal(selected.platforms.windows.profile_targets, 3);
+  assert.equal(report.build_executed, false);
+  assert.equal(report.latency_claim, false);
+  assert.equal(report.native_qualification, false);
+});
+
+test('Component measurements select real external fixture inputs and complete target consumers', () => {
+  const report = contractReport(contractFixture());
+  const notebook = report.scenarios.find(scenario => scenario.id === 'component:notebook');
+  assert.deepEqual(notebook.files, ['rust/engine/control-plane/deployment/src/notebook.rs']);
+  assert.deepEqual(notebook.selection.default_targets, ['adapter/test:publish', 'cli/test:mount', 'deploy/test:notebook']);
+  const input = contractFixture();
+  input.graph.components[0].inputs.push('rust/fixtures/schema/**');
+  const changed = contractReport(input).scenarios.find(scenario => scenario.id === 'component:notebook');
+  assert.ok(changed.files.includes('rust/fixtures/schema/cases.json'));
+  assert.ok(changed.selection.checks.includes('fixture-contract'));
+});
+
+test('Report comparison distinguishes added/removed scenarios and changed inputs from comparable selections', () => {
+  const before = contractReport(contractFixture()), after = clone(before);
+  after.scenarios[0].selection.counts.default_targets--;
+  after.scenarios[1].files.push('rust/engine/adapter/src/added.rs');
+  const removed = after.scenarios.pop();
+  after.scenarios.push({...clone(after.scenarios[0]), id: 'component:new'});
+  const comparison = compareReports(before, after);
+  assert.equal(comparison.scenarios.find(item => item.id === before.scenarios[0].id).delta.default_targets, -1);
+  assert.equal(comparison.scenarios.find(item => item.id === before.scenarios[1].id).comparable_inputs, false);
+  assert.equal(comparison.scenarios.find(item => item.id === removed.id).status, 'removed');
+  assert.equal(comparison.scenarios.find(item => item.id === 'component:new').status, 'added');
+  assert.throws(() => compareReports({}, after), /schema-1/);
+});
+
+test('Contract CLI rejects invalid paths/options before running commands', () => {
+  const hooks = {exec: () => { throw new Error('Must not execute'); }};
+  for (const args of [[], ['--output', 'relative.json'], ['--unknown', 'value'],
+    ['--output'], ['--output', absolute('report.json'), '--output', absolute('other.json')],
+    ['--output', absolute('report.json'), '--assert-foundation', 'models', '--assert-foundation', 'models']]) {
+    assert.throws(() => contractMain(args, hooks), /required|absolute|Unknown|Missing|Duplicate/);
+  }
+  const root = path.resolve(__dirname, '../..');
+  assert.throws(() => contractMain(['--root', root, '--output', path.join(root, 'report.json')], hooks),
+    /outside the checkout/);
+});
+
+function contractCliFixture() {
+  const input = contractFixture(), root = path.resolve(__dirname, '../..');
+  input.metadata = JSON.parse(JSON.stringify(input.metadata).replaceAll(
+    JSON.stringify(ROOT).slice(1, -1), JSON.stringify(root).slice(1, -1)));
+  const output = path.join(root, '..', 'capability-contract-fixture.json');
+  const writes = [], calls = [], head = 'a'.repeat(40), tree = 'b'.repeat(40);
+  const source = {digest: 'c'.repeat(64), files: input.files.map(path => ({path}))};
+  const hooks = {
+    sourceInventory: () => source,
+    discoverManifests: () => input.manifests,
+    read: () => JSON.stringify(input.graph),
+    write: (file, text) => writes.push({file, text}),
+    exec: (program, args) => {
+      calls.push({program, args});
+      if (program === 'cargo') return args[0] === 'metadata' ? JSON.stringify(input.metadata) : 'cargo 1.99.1';
+      if (program === 'git' && args[0] === 'status') return '';
+      if (program === 'git' && args[0] === 'rev-parse') return args.includes('HEAD^{tree}') ? tree : head;
+      throw new Error('Unexpected measurement command');
+    },
+  };
+  return {args: ['--root', root, '--output', output], hooks, writes, calls, head, tree, source};
+}
+
+test('Contract CLI binds actual source/metadata/head without executing builds or validation commands', () => {
+  const fixture = contractCliFixture();
+  const report = contractMain(fixture.args, fixture.hooks);
+  assert.deepEqual(report.source, {head: fixture.head, tree: fixture.tree, dirty: false,
+    inventory_digest: fixture.source.digest});
+  assert.equal(report.inputs.cargo_version, 'cargo 1.99.1');
+  assert.deepEqual(report.inputs.metadata_command.args,
+    ['metadata', '--offline', '--locked', '--no-deps', '--format-version', '1']);
+  assert.equal(report.inputs.graph_digest.length, 64);
+  assert.equal(fixture.writes.length, 1);
+  assert.ok(fixture.calls.every(call => call.program === 'git' ||
+    (call.program === 'cargo' && ['metadata', '--version'].includes(call.args[0]))));
+  assert.deepEqual(JSON.parse(fixture.writes[0].text), report);
+});
+
+test('Contract CLI refuses source/head mutation and metadata failures without emitting success artifacts', () => {
+  for (const mutation of ['source', 'head', 'metadata']) {
+    const fixture = contractCliFixture();
+    const exec = fixture.hooks.exec;
+    let inventories = 0, heads = 0;
+    fixture.hooks.sourceInventory = () => ({
+      ...fixture.source, digest: mutation === 'source' && inventories++ ? 'changed' : fixture.source.digest,
+    });
+    fixture.hooks.exec = (program, args) => {
+      if (mutation === 'metadata' && args[0] === 'metadata') throw new Error('Cargo metadata unavailable');
+      if (mutation === 'head' && args[0] === 'rev-parse' && args.includes('HEAD') && heads++) {
+        return 'd'.repeat(40);
+      }
+      return exec(program, args);
+    };
+    assert.throws(() => contractMain(fixture.args, fixture.hooks), /Source changed|metadata unavailable/);
+    assert.equal(fixture.writes.length, 0);
+  }
+});
 
 test('Notebook selects component consumers, not Spark or broad CLI oracles', () => {
   const result = select(['rust/engine/control-plane/deployment/src/notebook.rs']);
