@@ -225,12 +225,52 @@ Unknown/shared inputs, uncovered reverse consumers, source oracles and native
 full qualification retain their existing conservative behavior.
 
 For a neutral foundation, add one or more
-`--assert-foundation <actual-package-name>` selectors. Each named package and
-**all** its transitive workspace dependencies must declare the `core` layer.
-Development, build, optional and platform dependencies count too. Service
-implementations may remain reverse consumers; a generic engine must not acquire
-them as forward dependencies. Do not apply this core-only assertion to the
-service-specific compatibility adapters.
+`--assert-foundation <actual-package-name>` selectors. By default, each named
+package and **all** its transitive workspace dependencies must declare the
+`core` layer. Development, build, optional and platform dependencies count too.
+Service implementations may remain reverse consumers; a generic engine must
+not acquire them as forward dependencies.
+
+Logical layers are not neutral/service classifications. The approved neutral
+HTTP engine and transport retain `layer = "sdk"` despite physical core grouping.
+For these packages, supply a separately reviewed, explicit
+`--foundation-policy <absolute-json-file>` rather than relabeling crates or
+allowing every SDK package. For example, after the integration owner releases
+the actual combined commit, create an outside-checkout policy whose
+`source_commit` is that exact full HEAD:
+
+```json
+{
+  "schema": 1,
+  "source_commit": "<actual full 40-hex released source commit>",
+  "packages": [
+    {
+      "name": "fabric-http",
+      "manifest": "rust/engine/core/http/executor/Cargo.toml",
+      "layer": "sdk",
+      "role": "neutral-foundation"
+    },
+    {
+      "name": "fabric-http-transport",
+      "manifest": "rust/engine/core/http/transport/Cargo.toml",
+      "layer": "sdk",
+      "role": "neutral-foundation"
+    }
+  ]
+}
+```
+
+The policy requires a clean exact-source checkout and exact metadata
+name/manifest/layer matches; it rejects stale identities, wildcards, duplicate
+or unused enrollments, unknown fields, and mid-run changes. The complete policy
+and its digest are retained in the report. An SDK layer, physical core path or
+package metadata self-label alone cannot enroll a package. Any newly added
+non-core dependency must itself have an explicit reviewed policy entry or the
+assertion fails, including service/facade dependencies used only by tests.
+There is no fixed package count. Reviewers must assess the policy's role claims
+and actual implementation; a source pin/digest is traceability, not automatic
+proof that a caller's classification was independently approved. Do not enroll
+the service-specific compatibility adapters as neutral foundations.
 
 ### Pinned PR95-inspired baseline
 
@@ -267,11 +307,12 @@ releases their immutable combined source, rerun the report with the retained
 baseline. For the agreed neutral HTTP package names, additionally run:
 
 ```powershell
-node rust\scripts\impact-contract.cjs --baseline C:\validation\before.json --assert-foundation fabric-http --assert-foundation fabric-http-transport --output C:\validation\integrated.json
+node rust\scripts\impact-contract.cjs --baseline C:\validation\before.json --foundation-policy C:\validation\neutral-foundations.json --assert-foundation fabric-http --assert-foundation fabric-http-transport --output C:\validation\integrated.json
 ```
 
-That assertion intentionally fails with an unknown-package diagnostic at the
-baseline, where the neutral packages do not yet exist. Report actual released
+Those neutral packages do not yet exist at the baseline: a policy attempting to
+enroll them fails the exact-metadata-identity check; a selector without a policy
+fails with an unknown-package diagnostic. Report actual released
 source, changed inputs and observed deltas; do not substitute a synthetic graph
 or selection counts for combined-source or timed execution evidence. Timed
 compile/test execution still needs its own current bounded build-slot grant.

@@ -153,6 +153,69 @@ test('Foundation contracts examine indirect optional/platform/build edges, not j
   }
 });
 
+function sdkFoundationFixture() {
+  const input = contractFixture();
+  const http = pkg('fabric-http', ['models']), transport = pkg('fabric-http-transport', ['fabric-http']);
+  const locations = {'fabric-http': 'rust/engine/core/http/executor',
+    'fabric-http-transport': 'rust/engine/core/http/transport'};
+  for (const pkg of [http, transport]) {
+    pkg.manifest_path = absolute(`${locations[pkg.name]}/Cargo.toml`);
+    pkg.targets[0].src_path = absolute(`${locations[pkg.name]}/src/lib.rs`);
+    pkg.metadata = {fabric: {layer: 'sdk'}};
+    for (const dependency of pkg.dependencies) if (locations[dependency.name]) {
+      dependency.path = absolute(locations[dependency.name]);
+    }
+    input.metadata.packages.push(pkg);
+    input.metadata.workspace_members.push(pkg.id);
+    input.manifests.push(`${locations[pkg.name]}/Cargo.toml`);
+  }
+  input.foundations = ['fabric-http-transport'];
+  input.sourceCommit = 'a'.repeat(40);
+  input.foundationPolicy = {schema: 1, source_commit: input.sourceCommit, packages: [http, transport].map(pkg =>
+    ({name: pkg.name, manifest: `${locations[pkg.name]}/Cargo.toml`, layer: 'sdk', role: 'neutral-foundation'}))};
+  return input;
+}
+
+test('Explicit source-bound neutral roles permit approved sdk HTTP foundations without changing logical layers', () => {
+  const input = sdkFoundationFixture();
+  const report = contractReport(input);
+  assert.ok(report.foundation_policy.digest);
+  assert.deepEqual(report.foundation_policy.packages, input.foundationPolicy.packages);
+  assert.deepEqual(report.inventory.packages.find(pkg => pkg.name === 'fabric-http-transport')
+    .forward_dependencies, ['fabric-http', 'models']);
+  assert.throws(() => contractReport({...input, foundationPolicy: null}), /requires non-core packages/);
+  assert.throws(() => contractReport({...input, sourceCommit: 'b'.repeat(40)}), /exact source commit/);
+});
+
+test('Neutral roles reject service leaks through normal/dev/build/optional/platform edges and metadata self-labels', () => {
+  for (const fields of [{}, {kind: 'dev'}, {kind: 'build'}, {optional: true}, {target: 'cfg(windows)'}]) {
+    const input = sdkFoundationFixture();
+    const service = input.metadata.packages.find(pkg => pkg.name === 'unrelated');
+    service.metadata.fabric.role = 'neutral-foundation';
+    input.metadata.packages.find(pkg => pkg.name === 'fabric-http').dependencies.push({
+      name: service.name, path: absolute('rust/engine/unrelated'), ...fields,
+    });
+    assert.throws(() => contractReport(input), /requires non-core packages: unrelated/);
+  }
+});
+
+test('Neutral policies bind exact identities, reject wildcards/extra fields/duplicates and cannot hide unused enrollments', () => {
+  for (const mutate of [
+    input => { input.foundationPolicy.packages[0].name = 'fabric-*'; },
+    input => { input.foundationPolicy.packages[0].manifest = 'rust/engine/sdk/Cargo.toml'; },
+    input => { input.foundationPolicy.packages[0].layer = 'core'; },
+    input => { input.foundationPolicy.packages[0].role = 'service'; },
+    input => { input.foundationPolicy.packages[0].allow_services = true; },
+    input => { input.foundationPolicy.packages.push(input.foundationPolicy.packages[0]); },
+    input => { input.foundationPolicy.packages.push({name: 'unrelated', manifest: 'rust/engine/unrelated/Cargo.toml',
+      layer: 'sdk', role: 'neutral-foundation'}); },
+  ]) {
+    const input = sdkFoundationFixture();
+    mutate(input);
+    assert.throws(() => contractReport(input), /identity mismatch|Invalid neutral|Duplicate|unused package/);
+  }
+});
+
 test('Graph measurements retain dependency aliases, feature settings and non-normal declarations', () => {
   const input = contractFixture();
   input.metadata.packages.find(pkg => pkg.name === 'deploy').dependencies.push({
@@ -339,6 +402,34 @@ test('Contract CLI refuses source/head mutation and metadata failures without em
     };
     assert.throws(() => contractMain(fixture.args, fixture.hooks), /Source changed|metadata unavailable/);
     assert.equal(fixture.writes.length, 0);
+  }
+});
+
+test('Contract CLI retains exact neutral policy data and rejects dirty or externally mutated policy assertions', () => {
+  for (const mutation of [null, 'dirty', 'policy']) {
+    const fixture = contractCliFixture();
+    const root = path.resolve(__dirname, '../..');
+    const policyFile = path.join(root, '..', 'foundation-policy-fixture.json');
+    const policy = {schema: 1, source_commit: fixture.head,
+      packages: [{name: 'models', manifest: 'rust/engine/models/Cargo.toml',
+        layer: 'core', role: 'neutral-foundation'}]};
+    const read = fixture.hooks.read, exec = fixture.hooks.exec;
+    let reads = 0;
+    fixture.hooks.read = file => file !== policyFile ? read(file) : JSON.stringify({
+      ...policy, source_commit: mutation === 'policy' && reads++ ? 'd'.repeat(40) : policy.source_commit,
+    });
+    fixture.hooks.exec = (program, args) => mutation === 'dirty' && args[0] === 'status' ?
+      ' M rust/engine/models/src/lib.rs' : exec(program, args);
+    const run = () => contractMain([...fixture.args, '--foundation-policy', policyFile,
+      '--assert-foundation', 'models'], fixture.hooks);
+    if (mutation) {
+      assert.throws(run, /clean checkout|policy changed/);
+      assert.equal(fixture.writes.length, 0);
+    } else {
+      const report = run();
+      assert.deepEqual(report.foundation_policy.packages, policy.packages);
+      assert.equal(report.inputs.foundation_policy_digest, report.foundation_policy.digest);
+    }
   }
 });
 

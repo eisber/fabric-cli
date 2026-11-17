@@ -59,16 +59,43 @@ function selectionInventory(selection) {
   };
 }
 
-/** Produce reproducible selection counts, never execution or performance evidence. */
-function contractReport({metadata, graph, root, files, manifests, foundations = []}) {
-  const inventory = dependencyInventory({metadata, graph, root, files, manifests});
+function foundationContract(inventory, foundations, policy, sourceCommit) {
   const packages = new Map(inventory.packages.map(pkg => [pkg.name, pkg]));
+  const enrolled = new Set();
+  if (policy !== null) {
+    assert(policy && policy.schema === 1 && Object.keys(policy).every(key =>
+      ['schema', 'source_commit', 'packages'].includes(key)), 'Invalid foundation policy schema');
+    assert(foundations.length && /^[a-f0-9]{40}$/.test(sourceCommit) &&
+      policy.source_commit === sourceCommit, 'Foundation policy requires assertions at its exact source commit');
+    assert(Array.isArray(policy.packages) && policy.packages.length, 'Foundation policy requires exact package roles');
+    for (const entry of policy.packages) {
+      assert(entry && Object.keys(entry).every(key => ['name', 'manifest', 'layer', 'role'].includes(key)) &&
+        entry.role === 'neutral-foundation', 'Invalid neutral foundation role');
+      const pkg = packages.get(entry.name);
+      assert(pkg && pkg.manifest === entry.manifest && pkg.layer === entry.layer &&
+        ['core', 'sdk'].includes(entry.layer), `Foundation policy identity mismatch: ${entry.name}`);
+      assert(!enrolled.has(entry.name), `Duplicate foundation policy package: ${entry.name}`);
+      enrolled.add(entry.name);
+    }
+  }
+  const reachable = new Set();
   for (const name of foundations) {
     const pkg = packages.get(name);
     assert(pkg, `Unknown foundation package: ${name}`);
-    const forbidden = [name, ...pkg.forward_dependencies].filter(id => packages.get(id).layer !== 'core');
+    for (const id of [name, ...pkg.forward_dependencies]) reachable.add(id);
+    const forbidden = [name, ...pkg.forward_dependencies].filter(id =>
+      packages.get(id).layer !== 'core' && !enrolled.has(id));
     assert(!forbidden.length, `Foundation ${name} requires non-core packages: ${forbidden.join(', ')}`);
   }
+  assert([...enrolled].every(name => reachable.has(name)), 'Foundation policy contains unused package roles');
+  return policy === null ? null : {digest: digest(policy), ...policy};
+}
+
+/** Produce reproducible selection counts, never execution or performance evidence. */
+function contractReport({metadata, graph, root, files, manifests, foundations = [],
+  foundationPolicy = null, sourceCommit = null}) {
+  const inventory = dependencyInventory({metadata, graph, root, files, manifests});
+  const foundationPolicyRecord = foundationContract(inventory, foundations, foundationPolicy, sourceCommit);
   const select = files => selectionInventory(plan({metadata, graph, root, files}));
   const scenarios = [
     ...inventory.packages.map(pkg => {
@@ -93,6 +120,7 @@ function contractReport({metadata, graph, root, files, manifests, foundations = 
     evidence_scope: 'metadata-and-hypothetical-source-selections',
     build_executed: false, latency_claim: false, native_qualification: false,
     asserted_foundations: sorted(foundations),
+    foundation_policy: foundationPolicyRecord,
     inventory, full: selectionInventory(plan({metadata, graph, root, files: [], full: true})),
     scenarios,
   };
@@ -141,7 +169,8 @@ function options(argv) {
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].slice(2);
     assert(argv[i].startsWith('--') &&
-      ['root', 'output', 'baseline', 'cargo', 'assert-foundation'].includes(key), `Unknown option: ${argv[i]}`);
+      ['root', 'output', 'baseline', 'cargo', 'assert-foundation', 'foundation-policy'].includes(key),
+    `Unknown option: ${argv[i]}`);
     assert(i + 1 < argv.length && !argv[i + 1].startsWith('--'), `Missing value: ${argv[i]}`);
     const value = argv[++i];
     if (key === 'assert-foundation') {
@@ -186,18 +215,24 @@ function main(argv = process.argv.slice(2), hooks = {}) {
   const metadataArgs = ['metadata', '--offline', '--locked', '--no-deps', '--format-version', '1'];
   const metadata = parse(exec(cargo, metadataArgs, path.join(root, 'rust')));
   const graph = parse(read(path.join(root, 'rust/validation/impact-graph.json')));
+  const foundationPolicy = opts['foundation-policy'] ? parse(read(opts['foundation-policy'])) : null;
+  assert(!foundationPolicy || !dirty, 'Source-bound foundation policies require a clean checkout');
   const report = contractReport({root, metadata, graph, files: before.files.map(file => file.path),
-    manifests: (hooks.discoverManifests || discoverManifests)(root), foundations: opts.foundations});
+    manifests: (hooks.discoverManifests || discoverManifests)(root), foundations: opts.foundations,
+    foundationPolicy, sourceCommit: head});
   report.source = {head, tree, dirty, inventory_digest: before.digest};
   report.inputs = {metadata_command: {program: cargo, args: metadataArgs},
     cargo_version: String(exec(cargo, ['--version'], path.join(root, 'rust'))).trim(),
     metadata_digest: digest(metadata), graph_digest: digest(graph),
+    foundation_policy_digest: foundationPolicy === null ? null : digest(foundationPolicy),
     tool_digest: digest(fs.readFileSync(__filename, 'utf8')),
     planner_digest: digest(fs.readFileSync(path.join(__dirname, 'impact-plan.cjs'), 'utf8'))};
   if (opts.baseline) report.comparison = compareReports(parse(read(opts.baseline)), report);
   const after = (hooks.sourceInventory || sourceInventory)(root);
   assert(before.digest === after.digest && head === git(['rev-parse', '--verify', 'HEAD']) &&
     tree === git(['rev-parse', 'HEAD^{tree}']), 'Source changed while measuring capability selections');
+  if (foundationPolicy !== null) assert(digest(parse(read(opts['foundation-policy']))) === digest(foundationPolicy),
+    'Foundation policy changed while measuring capability selections');
   const write = hooks.write || ((file, text) => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
     fs.writeFileSync(file, text, {flag: 'wx'});
