@@ -29,6 +29,26 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_INCREMENTAL: "0"
     steps:
+      - name: Record the KQL candidate's first workflow-step time
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t'
+        run: |
+          @'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const recorded = Date.now();
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'kql-link-first-step-anchor.json'),
+            JSON.stringify({
+              schema: 1, kind: 'estimated-first-workflow-step', recorded_unix_ms: recorded,
+              repository: process.env.GITHUB_REPOSITORY, run_id: process.env.GITHUB_RUN_ID,
+              run_attempt: process.env.GITHUB_RUN_ATTEMPT, source: event.pull_request.head.sha,
+              base: event.pull_request.base.sha, candidate: event.pull_request.head.ref,
+              checkout: process.env.GITHUB_SHA,
+              original_source: 'e1baaee16dc6eb4917c5310224c27fcd258564ef',
+            }) + '\n', {flag: 'wx'});
+          '@ | node
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -41,10 +61,26 @@ jobs:
           rust/scripts/integration-update-smoke.test.cjs
           rust/scripts/integration-dataagent-smoke.test.cjs
           rust/scripts/integration-dataagent-link-smoke.test.cjs
+          rust/scripts/integration-kql-link-smoke.test.cjs
       - name: Build two profiles once and exercise isolated offline entry points
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
         run: node rust/scripts/integration-smoke.cjs "$env:RUNNER_TEMP/integration-smoke-receipts"
+      - name: Check the PR55 candidate's KQL LINK and current consumers offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t'
+        timeout-minutes: 20
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        run: >-
+          node rust/scripts/integration-kql-link-smoke.cjs
+          "$env:RUNNER_TEMP/integration-smoke-receipts/kql-link"
       - name: Check the PR52 candidate's DataAgent LINK and combined paths offline
         if: >-
           github.event_name == 'pull_request' &&

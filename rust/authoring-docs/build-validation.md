@@ -38,6 +38,60 @@ inventories. Broader profile/oracle obligations are recorded, not claimed.
 This candidate-only leaf is not rerun or claimed on postmerge pushes and is
 not live-provider, canonical frontier, three-OS or release qualification.
 
+The PR55 owned integration candidate additionally runs
+`scripts/integration-kql-link-smoke.cjs` on hosted Windows only, pinned to source
+`e1baaee16dc6eb4917c5310224c27fcd258564ef` and integration base
+`61c8221914152e231e5e64f7bd38418f66264999`. The small entry wrapper reuses the
+DataAgent runner's actual locked/offline Cargo metadata, impact planner,
+output/exit receipts and before/after source inventories. The explicitly admitted
+`kql-link-full-qualification-v2` policy gives only this exact candidate/source/base
+and PR106 a single 1,140-second absolute qualification deadline in a 20-minute
+step. Pins, metadata, planning, commands and source-inventory finalization share
+that deadline; no command or failure restarts it. Per-command time remains at
+most eight minutes, and the complete ordered Cargo work inventory is capped at
+64 descriptors, retained with its hash before work starts. This ceiling does
+not authorize a run, an additional attempt, or omitted coverage. The earlier
+570-second attempt remains failed evidence.
+All other entry defaults remain 570 seconds and ten-minute steps; arbitrary
+policy IDs, phases, budgets or different candidate/source/base bindings fail.
+The enclosing job stays at 45 minutes. The explicitly accepted estimated-anchor
+policy records the first workflow-step time before checkout/build, exclusively
+creates its file, and binds repository, candidate/source/base/checkout, original
+source, run ID and attempt. Admission requires an anchor age of at most 20
+minutes and reserves an estimated three minutes for cleanup/artifacts beyond
+the remaining 19-minute phase. Missing, malformed, mismatched, future, changed,
+stale or insufficient timing fails; no current-time substitute or reset exists.
+Anchor bytes are retained and checked unchanged before every command and during
+finalization. The receipt labels this as an estimate: provider job start,
+pre-anchor elapsed time and true provider headroom remain unknown. The
+20-minute entry-age bound plus 19-minute work plus three-minute estimated
+retention margin fits 42 minutes after the anchor, not necessarily after true
+job start. Unknown pre-anchor overhead may still cause provider cancellation;
+retention is best effort, and incomplete evidence is failed/censored, never a
+pass or permission to rerun. The hard provider timeout remains authoritative.
+This accounting policy does not grant a hosted slot, push or native execution.
+The KQL host suite explicitly enables `headless,v2-link-kql`, including its
+headless executable case; generic headless-only zero tests cannot satisfy it.
+KQL and current DataAgent binary-host unit namespaces use qualified test names
+derived from the current registered source tests, not frozen counts, under both
+`headless,v2-link-kql` and the combined refresh profile. Original
+DataAgent LINK host/process and LIST targets remain selected alongside the shared
+mutation wire and SDK link contracts and metadata-selected current consumers.
+The entry also runs actual all-target check and strict Clippy for default,
+headless-only, KQL registration-only, and combined
+`headless,runtime-v2,v2-link-kql,v2-refresh` profiles. Selected consumer tests retain
+their own features: isolated Eventhouse/KQL CREATE process suites never acquire
+the other owner's feature; explicit composition remains separate. Report retains
+its complete qualified root/host/HTTP/status/process inventory.
+The input set explicitly includes coupled shared LINK, the common typed-owner
+dispatch module and current main-module consumers; it is not the complete
+candidate diff. Broader reverse-consumer,
+profile and contract obligations remain in the receipt as deferred, not passed
+qualification. Cheap synthetic-metadata regressions test the real scoped path
+mappings and fail when their removal drops the KQL leaf; those fixtures are not
+Cargo or native evidence. Configuring this candidate-only leaf is not a recorded
+native pass, postmerge-push proof, live-service, three-OS or release qualification.
+
 The PR56 owned integration candidate additionally runs
 `scripts/integration-update-smoke.cjs` on hosted Windows only. It pins the
 original metadata UPDATE source and integration base and reuses the process,
