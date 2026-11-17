@@ -48,6 +48,7 @@ members = [
     "engine/core/pagination",
     "engine/core/v2-contracts",
     "engine/data-plane/dataflow",
+    "engine/data-plane/aihub-query",
     "engine/data-plane/onelake/client",
     "engine/data-plane/onelake/http",
     "engine/data-plane/query",
@@ -98,6 +99,7 @@ default-members = [
     "engine/core/v2-contracts",
     "engine/control-plane/dataagents/ontology",
     "engine/data-plane/dataflow",
+    "engine/data-plane/aihub-query",
     "engine/control-plane/ontology/client",
     "engine/control-plane/ontology/workload",
     "engine/control-plane/search/client",
@@ -134,6 +136,7 @@ parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] 
 fabric-sdk-tabular = { path = "engine/data-plane/tabular" }
 fabric-sdk-query = { path = "engine/data-plane/query" }
 fabric-sdk-query-tabular = { path = "engine/data-plane/query-tabular" }
+fabric-sdk-aihub-query = { path = "engine/data-plane/aihub-query" }
 fabric-sdk-dataflow = { path = "engine/data-plane/dataflow" }
 fabric-name-search = { path = "engine/control-plane/search/names" }
 fabric-v2-contracts = { path = "engine/core/v2-contracts" }
