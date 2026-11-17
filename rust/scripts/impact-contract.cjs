@@ -6,9 +6,17 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const LOADED_TOOL_DIGEST = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
 const {execFileSync} = require('node:child_process');
-const {plan, commands, dependencyInventory} = require('./impact-plan.cjs');
-const {sourceInventory} = require('./validate-impact.cjs');
+const planner = require('./impact-plan.cjs');
+const executor = require('./validate-impact.cjs');
+const {plan, dependencyInventory, testGroupResolver} = planner;
+const {sourceInventory, testGroups, defaultTests, profileTests, ownFeatures} = executor;
+const LOADED_SOURCES = Object.freeze([
+  {path: fs.realpathSync(__filename), sha256: LOADED_TOOL_DIGEST},
+  {path: fs.realpathSync(require.resolve('./impact-plan.cjs')), sha256: planner.LOADED_SOURCE_DIGEST},
+  {path: fs.realpathSync(require.resolve('./validate-impact.cjs')), sha256: executor.LOADED_SOURCE_DIGEST},
+].map(source => Object.freeze(source)));
 const PLATFORMS = ['linux', 'macos', 'windows'];
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const sorted = values => [...new Set(values)].sort();
@@ -29,29 +37,36 @@ function discoverManifests(root) {
   return result.sort();
 }
 
-function selectionInventory(selection) {
+function selectionInventory(selection, resolveGroups) {
+  assert(typeof resolveGroups === 'function', 'Target inventory requires the metadata test-group resolver');
   const targets = tests => sorted(tests.flatMap(test => selection.target_catalog
     .filter(target => target.package === test.package &&
       (test.target === 'all' || test.target === target.target))
     .map(target => `${target.package}/${target.target}`)));
-  const defaults = targets(selection.tests.filter(test => test.default_available))
-    .filter(key => selection.target_catalog.some(target =>
-      `${target.package}/${target.target}` === key && target.default_available));
-  const profiles = selection.profiles.map(profile => ({id: profile.id,
-    platforms: profile.platforms, features: profile.features, test_features: profile.test_features,
-    targets: targets(profile.tests).filter(key => selection.target_catalog.some(target =>
-      `${target.package}/${target.target}` === key && target.profiles.includes(profile.id)))}));
+  const defaults = resolveGroups(testGroups(defaultTests(selection)));
+  const defaultSkipped = targets(selection.tests).filter(target => !defaults.includes(target));
+  const profiles = selection.profiles.map(profile => {
+    const selected = profileTests(selection, profile);
+    const groups = sorted(selected.map(test => test.package)).flatMap(name =>
+      testGroups(selected.filter(test => test.package === name), ownFeatures(profile, name)));
+    const available = resolveGroups(groups);
+    return {id: profile.id,
+      platforms: profile.platforms, features: profile.features, test_features: profile.test_features,
+      targets: available, skipped_targets: targets(selected).filter(target => !available.includes(target))};
+  });
   return {
     mode: selection.mode, packages: selection.packages, components: selection.components,
-    checks: selection.checks, default_targets: defaults, profiles,
+    checks: selection.checks, default_targets: defaults, default_skipped_targets: defaultSkipped, profiles,
     platforms: Object.fromEntries(PLATFORMS.map(platform => {
-      const executable = commands(selection, platform);
       const compositions = profiles.filter(profile => profile.platforms.includes(platform));
+      const checks = selection.check_details.filter(check => check.platforms.includes(platform));
       return [platform, {
         default_targets: defaults.length,
         profile_targets: compositions.reduce((count, profile) => count + profile.targets.length, 0),
-        profiles: compositions.length, checks: executable.checks.length,
-        skipped_obligations: executable.skipped.length,
+        profiles: compositions.length, checks: checks.length,
+        skipped_obligations: defaultSkipped.length + profiles.length - compositions.length +
+          selection.check_details.length - checks.length +
+          compositions.reduce((count, profile) => count + profile.skipped_targets.length, 0),
       }];
     })),
     counts: {packages: selection.packages.length, test_selectors: selection.tests.length,
@@ -96,7 +111,8 @@ function contractReport({metadata, graph, root, files, manifests, foundations = 
   foundationPolicy = null, sourceCommit = null}) {
   const inventory = dependencyInventory({metadata, graph, root, files, manifests});
   const foundationPolicyRecord = foundationContract(inventory, foundations, foundationPolicy, sourceCommit);
-  const select = files => selectionInventory(plan({metadata, graph, root, files}));
+  const resolveGroups = testGroupResolver({metadata, root});
+  const select = files => selectionInventory(plan({metadata, graph, root, files}), resolveGroups);
   const scenarios = [
     ...inventory.packages.map(pkg => {
       assert(pkg.probe, `Package has no supported Cargo source probe: ${pkg.name}`);
@@ -121,7 +137,7 @@ function contractReport({metadata, graph, root, files, manifests, foundations = 
     build_executed: false, latency_claim: false, native_qualification: false,
     asserted_foundations: sorted(foundations),
     foundation_policy: foundationPolicyRecord,
-    inventory, full: selectionInventory(plan({metadata, graph, root, files: [], full: true})),
+    inventory, full: selectionInventory(plan({metadata, graph, root, files: [], full: true}), resolveGroups),
     scenarios,
   };
 }
@@ -138,27 +154,34 @@ function compareReports(baseline, current) {
   });
   const deltas = (previous, next) => previous && next ?
     Object.fromEntries(Object.keys(previous).map(key => [key, next[key] - previous[key]])) : null;
+  function compareSelections(previous, next) {
+    const oldProfiles = new Map(previous?.profiles.map(profile => [profile.id, profile]) || []);
+    const newProfiles = new Map(next?.profiles.map(profile => [profile.id, profile]) || []);
+    return {
+      before: previous?.counts ?? null, after: next?.counts ?? null,
+      delta: deltas(previous?.counts, next?.counts),
+      platforms: Object.fromEntries(PLATFORMS.map(platform => {
+        const oldCounts = previous?.platforms[platform] ?? null;
+        const newCounts = next?.platforms[platform] ?? null;
+        return [platform, {before: oldCounts, after: newCounts, delta: deltas(oldCounts, newCounts)}];
+      })),
+      membership: Object.fromEntries(['packages', 'components', 'checks', 'default_targets'].map(key =>
+        [key, membership(previous?.[key], next?.[key])])),
+      profile_changes: sorted([...oldProfiles.keys(), ...newProfiles.keys()]).filter(id =>
+        JSON.stringify(oldProfiles.get(id)) !== JSON.stringify(newProfiles.get(id))).map(id =>
+        ({id, before: oldProfiles.get(id) ?? null, after: newProfiles.get(id) ?? null})),
+    };
+  }
+  assert(baseline.full && current.full, 'Capability selection contract requires full selections');
   return {
     baseline_head: baseline.source?.head ?? null, current_head: current.source?.head ?? null,
     graph: {before: baseline.inventory.counts, after: current.inventory.counts},
+    full: compareSelections(baseline.full, current.full),
     scenarios: sorted([...before.keys(), ...after.keys()]).map(id => {
       const previous = before.get(id), next = after.get(id);
-      const oldProfiles = new Map(previous?.selection.profiles.map(profile => [profile.id, profile]) || []);
-      const newProfiles = new Map(next?.selection.profiles.map(profile => [profile.id, profile]) || []);
       return {id, status: !previous ? 'added' : !next ? 'removed' : 'matched',
         comparable_inputs: !!previous && !!next && JSON.stringify(previous.files) === JSON.stringify(next.files),
-        before: previous?.selection.counts ?? null, after: next?.selection.counts ?? null,
-        delta: deltas(previous?.selection.counts, next?.selection.counts),
-        platforms: Object.fromEntries(PLATFORMS.map(platform => {
-          const oldCounts = previous?.selection.platforms[platform] ?? null;
-          const newCounts = next?.selection.platforms[platform] ?? null;
-          return [platform, {before: oldCounts, after: newCounts, delta: deltas(oldCounts, newCounts)}];
-        })),
-        membership: Object.fromEntries(['packages', 'components', 'checks', 'default_targets'].map(key =>
-          [key, membership(previous?.selection[key], next?.selection[key])])),
-        profile_changes: sorted([...oldProfiles.keys(), ...newProfiles.keys()]).filter(id =>
-          JSON.stringify(oldProfiles.get(id)) !== JSON.stringify(newProfiles.get(id))).map(id =>
-          ({id, before: oldProfiles.get(id) ?? null, after: newProfiles.get(id) ?? null})),
+        ...compareSelections(previous?.selection, next?.selection),
       };
     }),
   };
@@ -187,6 +210,13 @@ function options(argv) {
 }
 
 function main(argv = process.argv.slice(2), hooks = {}) {
+  function verifyLoadedSources() {
+    for (const source of LOADED_SOURCES) assert(
+      typeof source.sha256 === 'string' &&
+      crypto.createHash('sha256').update(fs.readFileSync(source.path)).digest('hex') === source.sha256,
+      `Loaded code changed while measuring capability selections: ${source.path}`);
+  }
+  verifyLoadedSources();
   const opts = options(argv);
   const root = fs.realpathSync(opts.root || path.resolve(__dirname, '../..'));
   let ancestor = path.resolve(opts.output);
@@ -225,14 +255,17 @@ function main(argv = process.argv.slice(2), hooks = {}) {
     cargo_version: String(exec(cargo, ['--version'], path.join(root, 'rust'))).trim(),
     metadata_digest: digest(metadata), graph_digest: digest(graph),
     foundation_policy_digest: foundationPolicy === null ? null : digest(foundationPolicy),
-    tool_digest: digest(fs.readFileSync(__filename, 'utf8')),
-    planner_digest: digest(fs.readFileSync(path.join(__dirname, 'impact-plan.cjs'), 'utf8'))};
+    tool_digest: LOADED_TOOL_DIGEST,
+    planner_digest: planner.LOADED_SOURCE_DIGEST,
+    executor_digest: executor.LOADED_SOURCE_DIGEST,
+    loaded_sources: LOADED_SOURCES};
   if (opts.baseline) report.comparison = compareReports(parse(read(opts.baseline)), report);
   const after = (hooks.sourceInventory || sourceInventory)(root);
   assert(before.digest === after.digest && head === git(['rev-parse', '--verify', 'HEAD']) &&
     tree === git(['rev-parse', 'HEAD^{tree}']), 'Source changed while measuring capability selections');
   if (foundationPolicy !== null) assert(digest(parse(read(opts['foundation-policy']))) === digest(foundationPolicy),
     'Foundation policy changed while measuring capability selections');
+  verifyLoadedSources();
   const write = hooks.write || ((file, text) => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
     fs.writeFileSync(file, text, {flag: 'wx'});

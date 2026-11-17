@@ -199,12 +199,24 @@ than maintaining a second package list. It records:
   all of those declared implementation, fixture and external-contract inputs.
 - Actual expanded Cargo test-target inventories, isolated feature compositions,
   checks, and native-platform applicability. `all` is expanded through the
-  planner's target catalog; feature-gated targets are not counted as default
-  targets, and unavailable profiles are not counted as executed obligations.
+  planner's metadata model using the executor's shared pure test grouping.
+  All default `--all-targets` packages share one Cargo invocation, so one
+  selected package's default features can enable a required-feature target in
+  another selected package. Exact-target packages and profile test packages
+  retain their actual separate invocation roots/features, not the combined
+  compile profile's feature union. Targets unavailable to those invocations
+  are not counted as available targets; unavailable profiles are not counted
+  as executed obligations.
   Explicit selectors and `--all-targets` include targets marked `test = false`,
   including examples, just as the validator's generated Cargo commands do.
 - The exact HEAD/tree, dirty status, source-inventory digest, metadata/graph/tool
   digests and Cargo version. Source or HEAD mutation during collection fails.
+  `loaded_sources` records raw SHA-256 digests captured when the reporter,
+  planner, and executor/grouping module loaded. These files are checked before
+  collection and again before emission, independently of `--root`; a tool
+  outside the inspected checkout cannot silently change and have its new bytes
+  attributed to old loaded code. `tool_digest`, `planner_digest` and
+  `executor_digest` are those load-bound raw digests, not late hashes.
 
 Counts describe selected targets, not executed tests, compilation units, elapsed
 time, or successful native qualification. Package probes and component scenarios
@@ -217,6 +229,9 @@ they are not Cargo's feature-resolved graph for one particular host.
 Baseline comparisons retain added/removed scenarios, full before/after graph
 counts, aggregate and per-platform selection-count deltas, target/check
 membership changes, and changed profile features, targets and applicability.
+The same comparison applies to `full` and every source scenario: a full-only
+contract's Linux/macOS coverage loss remains visible even when no source
+scenario selects that contract. Missing full selections fail comparison.
 Equal aggregate counts do not hide a platform losing a feature composition or
 one complete test target being replaced by another. `comparable_inputs: false` identifies
 scenarios whose source paths changed; do not present those as an identical-input
@@ -301,6 +316,12 @@ This tooling-focused change leaves those graph and selection counts unchanged.
 Its tightly coupled all-target required-feature forwarding correction also
 leaves every actual pinned profile's package test features unchanged; a
 synthetic cross-root example proves the previously missing edge case.
+The subsequent grouped-default reporting correction leaves these actual
+pinned counts unchanged too; a synthetic default-forwarding/removal regression
+demonstrates the previously undercounted case without altering a real feature
+or contract declaration. Historical reports made by earlier tooling retain
+their original code identity; regenerate both sides with the corrected
+reporter for comparable evidence.
 The neutral HTTP, command-adapter and output refactors are separate dependent
 changes, not included or claimed merged here. After the integration owner
 releases their immutable combined source, rerun the report with the retained

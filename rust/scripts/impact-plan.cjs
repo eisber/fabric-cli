@@ -454,6 +454,27 @@ function featureSet(packages, features = [], roots = [...packages.keys()]) {
   }
   return active;
 }
+
+/** Resolve target availability using the executor's actual Cargo invocation roots and features. */
+function testGroupResolver({metadata, root}) {
+  const {packages} = metadataModel(metadata, rootPath(root));
+  return groups => sorted(groups.flatMap(group => {
+    const roots = strings(group.packages, 'test group packages');
+    assert(roots.length > 0 && roots.every(name => packages.has(name)), 'Unknown or empty test group packages');
+    const selectors = strings(group.targets, 'test group targets');
+    assert(selectors.length > 0, 'Empty test group targets');
+    const active = featureSet(packages, strings(group.features, 'test group features'), roots);
+    return roots.flatMap(name => {
+      const pkg = packages.get(name);
+      for (const selector of selectors) assert(selector === 'all' || pkg.targets.has(selector),
+        `Unknown test group target: ${name}/${selector}`);
+      return [...pkg.targets.values()].filter(target =>
+        (selectors.includes('all') || selectors.includes(target.name)) &&
+        target.required.every(feature => active.has(`${name}/${feature}`)))
+        .map(target => `${name}/${target.name}`);
+    });
+  }));
+}
 // A feature on a consumer does not make all of that consumer's ordinary
 // dependencies feature obligations. Follow only declarations on the feature
 // path, then include the compile inputs of dependencies that path selects.
@@ -1147,7 +1168,8 @@ function verifyPlan(selection, {root = selection.inputs?.root, exec, read} = {})
     evidence_scope: selection.evidence_scope};
 }
 
-module.exports = {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata, dependencyInventory};
+module.exports = {LOADED_SOURCE_DIGEST: SCRIPT_DIGEST,
+  plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata, dependencyInventory, testGroupResolver};
 if (require.main === module) {
   try { main(); } catch (error) {
     console.error(`Impact planning failed: ${error.message}`);

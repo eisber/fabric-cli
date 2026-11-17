@@ -278,6 +278,47 @@ test('All-target feature propagation includes test:false examples enabled throug
     .targets.includes('models/example:safe_consumer'));
 });
 
+test('Default inventories use actual all-target command groups, including cross-root default forwarding', () => {
+  const input = contractFixture();
+  const models = input.metadata.packages.find(pkg => pkg.name === 'models');
+  models.features.extra = [];
+  models.targets.push(target('extra', 'test', 'rust/engine/models/tests/extra.rs', ['extra']));
+  const deploy = input.metadata.packages.find(pkg => pkg.name === 'deploy');
+  deploy.features.default = ['models/extra'];
+  input.graph.profiles.push({id: 'extra', packages: ['models'],
+    features: ['models/extra'], platforms: ['linux', 'macos', 'windows']});
+  const before = contractReport(input);
+  const selected = before.scenarios.find(scenario => scenario.id === 'package:models').selection;
+  assert.ok(selected.default_targets.includes('models/test:extra'));
+  assert.ok(!selected.default_skipped_targets.includes('models/test:extra'));
+  const actual = require('./validate-impact.cjs').coreCommands(plan({
+    ...input, files: ['rust/engine/models/src/lib.rs'],
+  }), 'linux').find(command => command.id.startsWith('default:test:'));
+  assert.ok(actual.args.includes('deploy') && actual.args.includes('models'));
+  assert.ok(!actual.args.includes('--features'));
+  deploy.features.default = [];
+  const after = contractReport(input);
+  const comparison = compareReports(before, after).scenarios.find(item => item.id === 'package:models');
+  assert.deepEqual(comparison.membership.default_targets.removed, ['models/test:extra']);
+  assert.equal(comparison.delta.default_targets, -1);
+  assert.equal(comparison.platforms.linux.delta.default_targets, -1);
+  assert.deepEqual(comparison.profile_changes, []);
+
+  deploy.features.default = ['models/extra'];
+  input.graph.components.push({id: 'models-api', package: 'models',
+    inputs: ['rust/engine/models/src/lib.rs'],
+    tests: [{package: 'models', target: 'lib'}, {package: 'models', target: 'test:extra'}]});
+  const exact = contractReport(input).scenarios.find(scenario => scenario.id === 'package:models').selection;
+  assert.ok(!exact.default_targets.includes('models/test:extra'));
+  assert.ok(exact.default_skipped_targets.includes('models/test:extra'));
+  assert.ok(exact.profiles.find(profile => profile.id === 'extra').targets.includes('models/test:extra'));
+  const exactCommands = require('./validate-impact.cjs').coreCommands(plan({
+    ...input, files: ['rust/engine/models/src/lib.rs'],
+  }), 'linux').filter(command => command.id.startsWith('default:test:'));
+  assert.ok(exactCommands.some(command => command.args.includes('--lib') &&
+    command.args.includes('models') && !command.args.includes('deploy')));
+});
+
 test('Component measurements select real external fixture inputs and complete target consumers', () => {
   const report = contractReport(contractFixture());
   const notebook = report.scenarios.find(scenario => scenario.id === 'component:notebook');
@@ -335,6 +376,24 @@ test('Fresh equal-count graph comparisons retain changed target identities, not 
     {added: ['deploy/test:spark'], removed: ['deploy/test:notebook']});
 });
 
+test('Full-only platform contract coverage changes are compared even when every source scenario is unchanged', () => {
+  const input = contractFixture();
+  input.graph.checks.push({id: 'process-supervision', platforms: ['windows', 'linux', 'macos']});
+  const before = contractReport(input);
+  input.graph.checks.at(-1).platforms = ['windows'];
+  const after = contractReport(input);
+  const comparison = compareReports(before, after);
+  assert.deepEqual(before.scenarios, after.scenarios);
+  assert.equal(comparison.full.delta.checks, 0);
+  assert.equal(comparison.full.platforms.windows.delta.checks, 0);
+  assert.equal(comparison.full.platforms.linux.delta.checks, -1);
+  assert.equal(comparison.full.platforms.macos.delta.checks, -1);
+  input.graph.checks.pop();
+  const removed = compareReports(after, contractReport(input));
+  assert.deepEqual(removed.full.membership.checks.removed, ['process-supervision']);
+  assert.equal(removed.full.delta.checks, -1);
+});
+
 test('Contract CLI rejects invalid paths/options before running commands', () => {
   const hooks = {exec: () => { throw new Error('Must not execute'); }};
   for (const args of [[], ['--output', 'relative.json'], ['--unknown', 'value'],
@@ -379,6 +438,13 @@ test('Contract CLI binds actual source/metadata/head without executing builds or
   assert.deepEqual(report.inputs.metadata_command.args,
     ['metadata', '--offline', '--locked', '--no-deps', '--format-version', '1']);
   assert.equal(report.inputs.graph_digest.length, 64);
+  assert.equal(report.inputs.loaded_sources.length, 3);
+  for (const source of report.inputs.loaded_sources) {
+    assert.equal(source.sha256, crypto.createHash('sha256').update(fs.readFileSync(source.path)).digest('hex'));
+  }
+  assert.equal(report.inputs.tool_digest, report.inputs.loaded_sources[0].sha256);
+  assert.equal(report.inputs.planner_digest, report.inputs.loaded_sources[1].sha256);
+  assert.equal(report.inputs.executor_digest, report.inputs.loaded_sources[2].sha256);
   assert.equal(fixture.writes.length, 1);
   assert.ok(fixture.calls.every(call => call.program === 'git' ||
     (call.program === 'cargo' && ['metadata', '--version'].includes(call.args[0]))));
