@@ -49,6 +49,19 @@ fn mutate_text(block: &mut Value, change: impl FnOnce(&mut Value)) {
     *block = typed(&rowset.to_string(), "file:///changed.json");
 }
 
+#[test]
+fn shared_json_parser_preserves_private_sentinel_keys_as_ordinary_objects() {
+    let text = r#"{"$serde_json::private::RawValue":"123","other":true}"#;
+    let value: Value = serde_json::from_str(text).unwrap();
+    assert!(value.is_object());
+    assert_eq!(value["$serde_json::private::RawValue"], "123");
+    assert_eq!(value["other"], true);
+    let text = r#"{"$serde_json::private::Number":"123"}"#;
+    let value: Value = serde_json::from_str(text).unwrap();
+    assert!(value.is_object());
+    assert_eq!(value["$serde_json::private::Number"], "123");
+}
+
 #[tokio::test]
 async fn real_lifecycle_opt_in_binding_and_no_export_preserve_exact_values() {
     let wire = Wire::new(setup().into_iter().chain([rpc(3, success())]));

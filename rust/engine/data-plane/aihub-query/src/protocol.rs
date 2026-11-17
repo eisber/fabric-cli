@@ -1,76 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{QueryErrorKind, QueryMode, QueryRequest};
-use serde::{
-    Deserialize, Deserializer,
-    de::{DeserializeOwned, MapAccess, Visitor},
-};
-use serde_json::value::RawValue;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
-};
+use crate::{QueryErrorKind, QueryMode, QueryRequest, json::RawValue};
+use serde::Deserialize;
+use std::collections::{BTreeMap, BTreeSet};
+
+pub(crate) use crate::json::parse;
 
 pub(crate) const VERSION: &str = "2025-06-18";
-
-// RawValue retains number tokens. This duplicate/depth pass never deserializes a
-// row value through serde_json::Value (whose default number path uses f64).
-pub(crate) fn parse<T: DeserializeOwned>(text: &str) -> Result<T, QueryErrorKind> {
-    let raw: &RawValue = serde_json::from_str(text).map_err(|_| QueryErrorKind::Protocol)?;
-    let mut nodes = 0;
-    check(raw, 0, &mut nodes)?;
-    serde_json::from_str(text).map_err(|_| QueryErrorKind::Protocol)
-}
-
-fn check(raw: &RawValue, depth: usize, nodes: &mut usize) -> Result<(), QueryErrorKind> {
-    *nodes += 1;
-    if depth > 64 || *nodes > 2_100_000 {
-        return Err(QueryErrorKind::Limit);
-    }
-    match raw.get().as_bytes().first() {
-        Some(b'{') => {
-            let object: Object<'_> =
-                serde_json::from_str(raw.get()).map_err(|_| QueryErrorKind::Protocol)?;
-            for value in object.0.into_values() {
-                check(value, depth + 1, nodes)?;
-            }
-        }
-        Some(b'[') => {
-            let values: Vec<&RawValue> =
-                serde_json::from_str(raw.get()).map_err(|_| QueryErrorKind::Protocol)?;
-            for value in values {
-                check(value, depth + 1, nodes)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-struct Object<'a>(BTreeMap<String, &'a RawValue>);
-
-impl<'de> Deserialize<'de> for Object<'de> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ObjectVisitor;
-        impl<'de> Visitor<'de> for ObjectVisitor {
-            type Value = Object<'de>;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("an object with unique keys")
-            }
-            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Object<'de>, M::Error> {
-                let mut fields = BTreeMap::new();
-                while let Some((key, value)) = map.next_entry::<String, &'de RawValue>()? {
-                    if fields.insert(key, value).is_some() {
-                        return Err(serde::de::Error::custom("duplicate JSON field"));
-                    }
-                }
-                Ok(Object(fields))
-            }
-        }
-        deserializer.deserialize_map(ObjectVisitor)
-    }
-}
 
 #[derive(Deserialize)]
 struct Envelope {
@@ -337,38 +274,4 @@ pub(crate) fn validate_tool(tool: &Tool, request: &QueryRequest) -> Result<(), Q
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #![deny(unnameable_test_items)]
-
-    use super::*;
-
-    #[test]
-    fn near_response_limit_nested_validation_borrows_each_subtree() {
-        let text = format!(
-            "{{\"padding\":{}\"{}\"{}}}",
-            "[".repeat(58),
-            "x".repeat(30 * 1024 * 1024),
-            "]".repeat(58),
-        );
-        let object: Object<'_> = serde_json::from_str(&text).unwrap();
-        let mut current = object.0["padding"];
-        let start = text.as_ptr() as usize;
-        let end = start + text.len();
-        for _ in 0..58 {
-            let values: Vec<&RawValue> = serde_json::from_str(current.get()).unwrap();
-            current = values[0];
-            let pointer = current.get().as_ptr() as usize;
-            assert!(
-                pointer >= start && pointer + current.get().len() <= end,
-                "validation copied a subtree instead of borrowing the bounded input"
-            );
-        }
-        let raw: &RawValue = serde_json::from_str(&text).unwrap();
-        let mut nodes = 0;
-        check(raw, 0, &mut nodes).unwrap();
-        assert_eq!(nodes, 60);
-    }
 }

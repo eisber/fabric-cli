@@ -10,6 +10,7 @@
 mod client;
 mod contract;
 mod decode;
+mod json;
 mod protocol;
 
 pub use client::{AiHubQueryClient, AuthBinding};

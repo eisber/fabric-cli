@@ -4,7 +4,7 @@
 use crate::{
     DATA_AGENT_VARIANT, Limits, NativeDeadline, QueryError, QueryErrorKind, QueryMode,
     QueryOutcome, QueryRequest, QueryStage, SANDBOX_VARIANT, TEMPLATE_VARIANT,
-    TYPED_RESULTS_VARIANT, decode, protocol,
+    TYPED_RESULTS_VARIANT, decode, json::RawValue, protocol,
 };
 use azure_core::{
     credentials::{AccessToken, TokenCredential},
@@ -12,7 +12,7 @@ use azure_core::{
 };
 use fabric_sdk_http::ExecutionTimer;
 use futures_util::StreamExt;
-use serde_json::{Value, json, value::RawValue};
+use serde_json::{Value, json};
 use std::{
     collections::BTreeSet,
     fmt,

@@ -1,10 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{Completeness, Limits, QueryErrorKind, QueryOutcome, protocol};
+use crate::{Completeness, Limits, QueryErrorKind, QueryOutcome, json::RawValue, protocol};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Deserialize;
-use serde_json::value::RawValue;
 use std::{collections::BTreeSet, fmt};
 use uuid::Uuid;
 
@@ -152,12 +151,11 @@ struct ToolResult {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "type")]
-enum Content {
-    #[serde(rename = "text")]
-    Text { text: String },
-    #[serde(rename = "resource")]
-    Resource { resource: Resource },
+struct Content {
+    #[serde(rename = "type")]
+    kind: String,
+    text: Option<String>,
+    resource: Option<Resource>,
 }
 
 #[derive(Deserialize)]
@@ -234,9 +232,10 @@ pub(crate) fn decode(
     let (mut uris, mut ids) = (BTreeSet::new(), BTreeSet::new());
     let (mut rows, mut cells, mut bytes) = (0_usize, 0_usize, 0_usize);
     for block in tool.content {
-        match protocol::parse(block.get())? {
-            Content::Text { text } => result.messages.push(text),
-            Content::Resource { resource } => {
+        let content: Content = protocol::parse(block.get())?;
+        match (content.kind.as_str(), content.text, content.resource) {
+            ("text", Some(text), None) => result.messages.push(text),
+            ("resource", None, Some(resource)) => {
                 if resource.uri.is_empty()
                     || resource.uri.len() > 4096
                     || resource.uri.chars().any(char::is_control)
@@ -314,6 +313,7 @@ pub(crate) fn decode(
                     });
                 }
             }
+            _ => return Err(QueryErrorKind::Protocol),
         }
     }
     if result.resultsets.is_empty() {

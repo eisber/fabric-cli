@@ -124,6 +124,12 @@ including exact text for `string`/`text`. Unsupported logical-type/encoding
 pairs, scalar mismatches and structured cells fail explicitly rather than
 being coerced.
 
+Syntax validation uses `serde::de::IgnoredAny` and requires end of input.
+An SDK-private bounded span decoder captures original cell tokens; it does not
+enable `serde_json`'s `raw_value` or `arbitrary_precision` features. This avoids
+changing unrelated workspace JSON consumers through Cargo feature unification,
+including objects with serde-private-looking property names.
+
 ## Failure and lifetime contract
 
 One caller-supplied `NativeDeadline` covers credential acquisition, all MCP
