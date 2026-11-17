@@ -106,12 +106,34 @@ impl Http {
 impl HttpClient for Http {
     async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
         self.requests.lock().unwrap().push(request.clone());
-        let response = self
-            .replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("unexpected HTTP, query replay, fallback or remote cancellation");
+        let response = if request.url().host_str() == Some("login.microsoftonline.com") {
+            assert_eq!(request.method(), Method::Post);
+            assert_eq!(request.url().path(), format!("/{WS}/oauth2/v2.0/token"));
+            let body = Bytes::from(request.body());
+            let form = azure_core::http::Url::parse(&format!(
+                "https://form.example.test/?{}",
+                std::str::from_utf8(body.as_ref()).unwrap()
+            ))
+            .unwrap();
+            let values = form
+                .query_pairs()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            assert_eq!(values.get("client_id").unwrap().as_ref(), ITEM);
+            let scope = values.get("scope").unwrap().as_ref();
+            let token = if scope == KUSTO_SCOPE {
+                "synthetic-kusto-token"
+            } else {
+                assert_eq!(scope, Audience::Fabric.scope());
+                "synthetic-fabric-token"
+            };
+            reply(json!({"access_token":token,"expires_in":3600,"token_type":"Bearer"}))
+        } else {
+            self.replies
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected HTTP, query replay, fallback or remote cancellation")
+        };
         let mut headers = Headers::new();
         headers.insert("content-type", "application/json");
         if response.session {
@@ -143,10 +165,26 @@ fn host(
     credential: Arc<Credential>,
     settings: Option<Map<String, Value>>,
 ) -> NativeQueryHost {
+    host_with_credential(
+        http,
+        credential,
+        settings,
+        "selected-account",
+        "selected-tenant",
+    )
+}
+
+fn host_with_credential(
+    http: Arc<Http>,
+    credential: Arc<dyn TokenCredential>,
+    settings: Option<Map<String, Value>>,
+    account: &str,
+    tenant: &str,
+) -> NativeQueryHost {
     let endpoint = EndpointBinding::public(ServiceOrigin::Fabric);
     let client = Client::with_context(RequestContext::with_endpoint(
         credential,
-        CredentialSelection::new("selected-account", "selected-tenant", Audience::Fabric).unwrap(),
+        CredentialSelection::new(account, tenant, Audience::Fabric).unwrap(),
         endpoint.clone(),
     ));
     let metadata = HttpExecutor::new(
@@ -157,6 +195,63 @@ fn host(
     .unwrap()
     .with_endpoint(endpoint);
     NativeQueryHost::new(client, metadata, http, Arc::new(TokioTimer), settings)
+}
+
+#[cfg(feature = "headless")]
+#[tokio::test]
+async fn actual_headless_provider_queries_kusto_with_separate_exact_audience_and_same_identity() {
+    use fabric_identity::headless::{HeadlessCredential, HeadlessInput, ServiceIdentity};
+    let http = Http::new([owner("KQLDatabase"), kql_metadata(), kql_result()]);
+    let credential = HeadlessCredential::new(
+        HeadlessInput::ClientSecret {
+            identity: ServiceIdentity::new(WS, ITEM).unwrap(),
+            secret: azure_core::credentials::Secret::new("synthetic-offline-client-secret"),
+        },
+        http.clone(),
+    )
+    .unwrap();
+    let host = host_with_credential(http.clone(), credential, None, ITEM, WS);
+    let deadline = NativeDeadline::new(Duration::from_secs(120)).unwrap();
+    let canceled = AtomicBool::new(false);
+    let delivery = host
+        .dispatch(
+            &command("KQLDatabase", None),
+            QueryControl {
+                deadline: &deadline,
+                end: Instant::now() + Duration::from_secs(120),
+                canceled: &canceled,
+                request_id: "query;actual-headless-provider",
+            },
+            &mut NoInput,
+            &mut FileSink::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert!(delivery.error.is_none());
+    assert_eq!(delivery.identity.requested_artifact.item, ITEM);
+    let requests = http.requests.lock().unwrap();
+    let queries = requests
+        .iter()
+        .filter(|request| request.url().host_str() == Some("synthetic.kusto.fabric.microsoft.com"))
+        .collect::<Vec<_>>();
+    assert_eq!(queries.len(), 1);
+    assert_eq!(
+        queries[0]
+            .headers()
+            .get_str(&"authorization".into())
+            .unwrap(),
+        "Bearer synthetic-kusto-token"
+    );
+    for metadata in requests
+        .iter()
+        .filter(|request| request.url().host_str() == Some("api.fabric.microsoft.com"))
+    {
+        assert_eq!(
+            metadata.headers().get_str(&"authorization".into()).unwrap(),
+            "Bearer synthetic-fabric-token"
+        );
+    }
 }
 
 fn command(kind: &str, export: Option<(&str, &Path)>) -> NativeCommand {
