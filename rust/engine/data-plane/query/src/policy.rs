@@ -3,8 +3,11 @@
 
 use crate::{EngineBinding, KqlQuery};
 use fabric_sdk::runtime::{NativeDeadline, NativeEffect, NativeError, NativeMethod, NativeRequest};
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{MapAccess, Visitor, value::MapAccessDeserializer},
+};
+use std::{fmt, marker::PhantomData, time::Duration};
 
 pub(crate) const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 
@@ -13,13 +16,14 @@ pub(crate) const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) struct RequestBody {
     db: String,
     csl: String,
+    #[serde(deserialize_with = "deserialize_object")]
     properties: Properties,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Properties {
-    #[serde(rename = "Options")]
+    #[serde(rename = "Options", deserialize_with = "deserialize_object")]
     options: ReadOptions,
 }
 
@@ -37,6 +41,27 @@ struct ReadOptions {
     results_progressive_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     servertimeout: Option<String>,
+}
+
+struct ObjectVisitor<T>(PhantomData<T>);
+
+impl<'de, T: Deserialize<'de>> Visitor<'de> for ObjectVisitor<T> {
+    type Value = T;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<T, A::Error> {
+        T::deserialize(MapAccessDeserializer::new(map))
+    }
+}
+
+fn deserialize_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    // Struct deserialization alone also accepts positional arrays.
+    deserializer.deserialize_map(ObjectVisitor(PhantomData))
 }
 
 impl ReadOptions {
@@ -139,8 +164,10 @@ pub(crate) fn validate_request(
     if bytes.len() > MAX_REQUEST_BYTES {
         return Err(NativeError::Limit);
     }
-    // Typed decoding rejects duplicate fields as well as policy extensions.
-    let body: RequestBody = serde_json::from_slice(bytes).map_err(|_| NativeError::InvalidInput)?;
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    let body: RequestBody =
+        deserialize_object(&mut deserializer).map_err(|_| NativeError::InvalidInput)?;
+    deserializer.end().map_err(|_| NativeError::InvalidInput)?;
     let timeout = body
         .properties
         .options

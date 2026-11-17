@@ -54,7 +54,9 @@ one hour and within the remaining local deadline. Production calls require
 `KqlQuery::with_server_timeout`; no timeout is inferred or silently clamped.
 The fixed route, method, exact body shape, database, read-policy options and
 correlation metadata are validated before credentials and again before dispatch.
-Duplicate or unknown request fields and extra request headers are rejected.
+The request, `properties` and `Options` must each be JSON objects, never
+positional arrays or null. Duplicate or unknown fields and extra request headers
+are rejected without normalizing or reserializing the original body bytes.
 Credential acquisition can exhaust the deadline or leave less than the explicit
 server timeout: that fails before dispatch instead of weakening the request.
 The same absolute deadline covers credentials, opening, all reads and result
