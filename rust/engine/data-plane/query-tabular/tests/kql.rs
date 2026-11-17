@@ -14,7 +14,7 @@ use std::{
 use arrow_array::{Array, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, SchemaRef, TimeUnit};
 use bytes::Bytes;
-use fabric_sdk_query::{QueryDiagnostic, QueryDiagnosticKind, QueryResult};
+use fabric_sdk_query::{QueryCapability, QueryDiagnostic, QueryDiagnosticKind, QueryResult};
 use fabric_sdk_query_tabular::{
     ConversionControl, ConversionError, ConversionLimit, ConversionLimits, KqlTabularResult,
     convert_kql,
@@ -349,6 +349,9 @@ fn partial_failures_warnings_cancellation_truncation_and_missing_terminal_are_re
     value.evidence.completed = false;
     cases.push(value);
     let mut value = source.clone();
+    value.evidence.http_eof = false;
+    cases.push(value);
+    let mut value = source.clone();
     value.evidence.locally_truncated = true;
     cases.push(value);
     for kind in [
@@ -365,6 +368,7 @@ fn partial_failures_warnings_cancellation_truncation_and_missing_terminal_are_re
         });
         cases.push(value);
     }
+
     for (key, field) in [
         ("HasErrors", json!(true)),
         ("Cancelled", json!(true)),
@@ -385,6 +389,34 @@ fn partial_failures_warnings_cancellation_truncation_and_missing_terminal_are_re
             Err(ConversionError::UncleanResult)
         ));
     }
+}
+
+#[test]
+fn completed_flag_cannot_substitute_for_observed_http_eof() {
+    let mut source = support::result(
+        &[("value", "long")],
+        vec![vec![json!(9_007_199_254_740_993_i64)]],
+    );
+    assert!(source.evidence.completed);
+    assert!(source.evidence.http_eof);
+    assert_eq!(
+        source.evidence.adapter_capability,
+        QueryCapability::ScriptedOffline
+    );
+    assert!(!source.evidence.production_verified);
+    let converted = convert(source.clone()).unwrap();
+    assert!(converted.evidence.http_eof);
+    assert_eq!(
+        converted.evidence.adapter_capability,
+        QueryCapability::ScriptedOffline
+    );
+    assert!(!converted.evidence.production_verified);
+    source.evidence.http_eof = false;
+    assert!(source.evidence.completed);
+    assert!(matches!(
+        convert(source),
+        Err(ConversionError::UncleanResult)
+    ));
 }
 
 #[test]

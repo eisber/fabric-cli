@@ -19,11 +19,14 @@ vector means no resultset; a dataset with zero rows retains its declared schema.
 There is no silent first-dataset selection. Select a dataset explicitly before
 calling the existing `fabric_sdk_tabular::encode` or `encode_to_writer`.
 
-Only clean completed, untruncated results with a successful terminal frame and
-no diagnostics are consumable. Partial failures, completion warnings, cancelled
-responses, local truncation and missing completion fail; forensic partial rows
+Only clean completed, untruncated results with actual `http_eof` evidence, a
+successful terminal frame and no diagnostics are consumable. The completed flag
+cannot substitute for independently observed HTTP EOF. Partial failures,
+completion warnings, cancelled responses, local truncation and missing completion fail; forensic partial rows
 are not promoted into completed exports. Conversion does not establish live
-provider or read-enforcement proof.
+provider or read-enforcement proof. The original `adapter_capability` is retained,
+and `production_verified` is not a conversion gate: honest offline fixtures and
+structurally enforced production adapters both remain live-unverified.
 
 | Native declaration | Arrow type | Value contract |
 | --- | --- | --- |

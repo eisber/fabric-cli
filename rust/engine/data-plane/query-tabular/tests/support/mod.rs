@@ -2,7 +2,9 @@
 // Licensed under the MIT License.
 
 use azure_core::http::Url;
-use fabric_sdk_query::{EngineBinding, QueryColumn, QueryDataset, QueryEvidence, QueryResult};
+use fabric_sdk_query::{
+    EngineBinding, QueryCapability, QueryColumn, QueryDataset, QueryEvidence, QueryResult,
+};
 use fabric_v2_contracts::ItemIdentity;
 use serde_json::{Value, json};
 
@@ -48,7 +50,9 @@ pub fn result(columns: &[(&str, &str)], rows: Vec<Vec<Value>>) -> QueryResult {
             transport: "offline-fixture",
             protocol_version: "v2.0",
             read_policy: "offline-fixture",
+            adapter_capability: QueryCapability::ScriptedOffline,
             production_verified: false,
+            http_eof: true,
             http_status: Some(200),
             content_type: Some("application/json".into()),
             client_request_id: "offline-request".into(),

@@ -80,7 +80,7 @@ impl fmt::Debug for KqlTabularResult {
 /// for empty or all-null columns. Temporal overflow never rounds or stringifies.
 ///
 /// # Errors
-/// Rejects partial/error/warning/truncated observations, invalid values and
+/// Rejects missing HTTP EOF, partial/error/warning/truncated observations, invalid values and
 /// identities, budget overflow, cancellation, deadline, and shared model failures.
 pub fn convert_kql(
     result: QueryResult,
@@ -156,6 +156,7 @@ pub fn convert_kql(
 fn clean(result: &QueryResult) -> Result<(), ConversionError> {
     let completion = &result.completion;
     if !result.evidence.completed
+        || !result.evidence.http_eof
         || result.evidence.locally_truncated
         || !result.diagnostics.is_empty()
         || completion["FrameType"] != "DataSetCompletion"
