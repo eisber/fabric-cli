@@ -70,7 +70,7 @@ function rustCode(source) {
   return code.join('');
 }
 
-function moduleTestDeclarations(source) {
+function testDeclarationScopes(source) {
   const code = rustCode(source), depths = [];
   let depth = 0;
   for (let index = 0; index < code.length; index++) {
@@ -84,8 +84,31 @@ function moduleTestDeclarations(source) {
     /#\[(?:tokio::)?test(?:\([^\]]*\))?\]\s*(?:async\s+)?fn\s+(\w+)/g,
   )].map(match => ({name: match[1], depth: depths[match.index]}));
   assert.ok(tests.length > 0, 'No lexical test declarations');
+  return tests;
+}
+
+function moduleTestDeclarations(source) {
+  const tests = testDeclarationScopes(source);
   for (const test of tests) assert.equal(test.depth, 0, `Test is not at module scope: ${test.name}`);
   return tests.map(test => test.name);
+}
+
+function rustTestItem(source, name) {
+  const text = source.replace(/\r\n/g, '\n'), code = rustCode(text);
+  const declaration = [...code.matchAll(
+    /#\[(?:tokio::)?test(?:\([^\]]*\))?\]\s*(?:async\s+)?fn\s+(\w+)/g,
+  )].find(match => match[1] === name);
+  assert.ok(declaration, `Missing test declaration: ${name}`);
+  const start = text.lastIndexOf('\n', declaration.index) + 1;
+  const opening = code.indexOf('{', declaration.index);
+  assert.ok(opening >= 0);
+  let end = opening + 1, depth = 1;
+  for (; depth && end < code.length; end++) {
+    if (code[end] === '{') depth++;
+    if (code[end] === '}') depth--;
+  }
+  assert.equal(depth, 0);
+  return {text: text.slice(start, end), remaining: text.slice(0, start) + text.slice(end)};
 }
 
 test('KQL host regressions are module-scoped siblings, not nested declarations counted as registrations', () => {
@@ -125,6 +148,39 @@ test('KQL host regressions are module-scoped siblings, not nested declarations c
     'Every other nonblank source line, including outer test semantics and lint, is unchanged');
 });
 
+test('both KQL host and main test files keep every declaration at module scope after the 2f5c main failure', () => {
+  const main = 'rust/clients/cli/app/src/v2_link_kql_main_tests.rs';
+  const host = 'rust/clients/cli/app/tests/v2_link_kql_host.rs';
+  const historical = spawnSync('git', ['show', `2f5c25df1e8e7ce0a4b17e098550229bb24490e6:${main}`], {
+    cwd: ROOT, encoding: 'utf8', windowsHide: true, timeout: 30000,
+  });
+  assert.equal(historical.error, undefined);
+  assert.equal(historical.status, 0);
+  const stalled = 'stalled_stderr_delivery_retains_accepted_handle_with_bounded_return';
+  const owned = 'owned_stderr_worker_cannot_prevent_supervised_process_exit_after_deadline';
+  const previous = testDeclarationScopes(historical.stdout);
+  assert.equal(previous.find(test => test.name === stalled).depth, 1, 'Old async regression is in a function');
+  assert.equal(previous.find(test => test.name === owned).depth, 3, 'Old sync regression is in the nested Write impl');
+  assert.throws(() => moduleTestDeclarations(historical.stdout), /Test is not at module scope/);
+  for (const file of [host, main]) {
+    assert.deepEqual(moduleTestDeclarations(read(file)), update.registeredTests(file));
+    assert.match(read(file), /#!\[deny\(unnameable_test_items\)\]/);
+  }
+  assert.deepEqual(moduleTestDeclarations(read(main)), previous.map(test => test.name),
+    'No previous test declaration is lost, renamed or reordered');
+  const beforeOwned = rustTestItem(historical.stdout, owned);
+  const afterOwned = rustTestItem(read(main), owned);
+  assert.equal(afterOwned.text, beforeOwned.text.replace(/^ {12}/gm, ''),
+    'The entire process-test attribute/body/assertions move by exact deindent only');
+  const beforeStalled = rustTestItem(beforeOwned.remaining, stalled);
+  const afterStalled = rustTestItem(afterOwned.remaining, stalled);
+  const nonblank = text => text.replace(/\r\n/g, '\n').split('\n').filter(line => line.trim()).join('\n');
+  assert.equal(nonblank(afterStalled.text), nonblank(beforeStalled.text.replace(/^ {4}/gm, '')),
+    'Async attribute/body and both Write fixtures remain intact after extracting the inner test');
+  assert.equal(nonblank(afterStalled.remaining), nonblank(beforeStalled.remaining),
+    'Every other nonblank main-test line, including outer classification loop and deny lint, is unchanged');
+});
+
 test('lexical test placement ignores Rust comments and literals but rejects nested blocks regardless of indentation', () => {
   const siblings = [
     '// } #[test] fn fake_line() {}',
@@ -140,6 +196,11 @@ test('lexical test placement ignores Rust comments and literals but rejects nest
   assert.deepEqual(moduleTestDeclarations(siblings), ['first', 'second']);
   for (const opening of ['fn outer() {', 'fn outer() { for _ in 0..1 {']) {
     const closing = opening.includes('for ') ? '}}' : '}';
+    assert.throws(() => moduleTestDeclarations(`${opening}\n${siblings}\n${closing}`),
+      /Test is not at module scope: first/);
+  }
+  for (const opening of ['impl Write for Stalled {', 'fn outer() { impl Write for Stalled {']) {
+    const closing = opening.startsWith('fn') ? '}}' : '}';
     assert.throws(() => moduleTestDeclarations(`${opening}\n${siblings}\n${closing}`),
       /Test is not at module scope: first/);
   }
