@@ -51,6 +51,7 @@ members = [
     "engine/data-plane/onelake/client",
     "engine/data-plane/onelake/http",
     "engine/data-plane/query",
+    "engine/data-plane/query-tabular",
     "engine/data-plane/semantic-model/client",
     "engine/data-plane/semantic-model/dotnet",
     "engine/data-plane/tables",
@@ -107,6 +108,7 @@ default-members = [
     "engine/control-plane/sql/definition",
     "engine/data-plane/tabular",
     "engine/data-plane/query",
+    "engine/data-plane/query-tabular",
     "engine/data-plane/semantic-model/client",
     "clients/cli/commands/semantic-model",
 ]
@@ -131,6 +133,7 @@ flatbuffers = { version = "=25.12.19", default-features = false }
 parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
 fabric-sdk-tabular = { path = "engine/data-plane/tabular" }
 fabric-sdk-query = { path = "engine/data-plane/query" }
+fabric-sdk-query-tabular = { path = "engine/data-plane/query-tabular" }
 fabric-sdk-dataflow = { path = "engine/data-plane/dataflow" }
 fabric-name-search = { path = "engine/control-plane/search/names" }
 fabric-v2-contracts = { path = "engine/core/v2-contracts" }

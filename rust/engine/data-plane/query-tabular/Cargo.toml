@@ -1,0 +1,32 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-query-tabular"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Bounded native query results to shared typed Arrow tables"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+arrow-array.workspace = true
+arrow-schema.workspace = true
+chrono.workspace = true
+fabric-sdk-query.workspace = true
+fabric-sdk-tabular.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+azure_core.workspace = true
+bytes.workspace = true
+fabric-v2-contracts.workspace = true
+parquet.workspace = true
+
+[lints]
+workspace = true
