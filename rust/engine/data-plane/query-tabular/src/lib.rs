@@ -11,6 +11,7 @@ mod bounds;
 mod error;
 mod kql;
 mod scalar;
+mod table;
 
 pub use bounds::{ConversionControl, ConversionLimits};
 pub use error::{ConversionError, ConversionLimit};

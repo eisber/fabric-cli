@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 use std::{
+    io::{self, Write},
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
@@ -24,6 +25,63 @@ pub struct ConversionLimits {
     pub(crate) bytes: usize,
     pub(crate) batches: usize,
     pub(crate) depth: usize,
+}
+
+pub(crate) fn json_text(
+    value: &Value,
+    max_bytes: usize,
+    control: &ConversionControl<'_>,
+) -> Result<String, ConversionError> {
+    struct BoundedJson<'a, 'b> {
+        bytes: Vec<u8>,
+        max_bytes: usize,
+        exceeded: bool,
+        control: &'a ConversionControl<'b>,
+        stopped: Option<ConversionError>,
+    }
+    impl Write for BoundedJson<'_, '_> {
+        fn write(&mut self, value: &[u8]) -> io::Result<usize> {
+            if let Err(error) = self.control.check() {
+                self.stopped = Some(error);
+                return Err(io::Error::other("logical JSON conversion interrupted"));
+            }
+            if self
+                .bytes
+                .len()
+                .checked_add(value.len())
+                .is_none_or(|size| size > self.max_bytes)
+            {
+                self.exceeded = true;
+                return Err(io::Error::other("JSON logical value exceeds byte budget"));
+            }
+            self.bytes.extend_from_slice(value);
+            Ok(value.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut output = BoundedJson {
+        bytes: Vec::new(),
+        max_bytes,
+        exceeded: false,
+        control,
+        stopped: None,
+    };
+    if let Err(error) = serde_json::to_writer(&mut output, value) {
+        if let Some(error) = output.stopped {
+            return Err(error);
+        }
+        return Err(if output.exceeded {
+            ConversionError::Limit(ConversionLimit::Bytes)
+        } else {
+            ConversionError::Json(error)
+        });
+    }
+    control.check()?;
+    // serde_json writes valid UTF-8; conversion does not replace invalid bytes.
+    String::from_utf8(output.bytes).map_err(|_| ConversionError::LogicalEncoding)
 }
 
 impl ConversionLimits {

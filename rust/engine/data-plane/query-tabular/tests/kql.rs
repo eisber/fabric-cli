@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arrow_array::{Array, Int32Array, Int64Array, RecordBatch, StringArray};
+use arrow_array::{Array, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, SchemaRef, TimeUnit};
 use bytes::Bytes;
 use fabric_sdk_query::{QueryDiagnostic, QueryDiagnosticKind, QueryResult};
@@ -143,6 +143,15 @@ fn unicode_boolean_null_empty_and_signed_zero_survive_without_string_inference()
     assert_eq!(strings.value(1), "");
     assert!(!strings.is_null(1));
     assert!(strings.is_null(2));
+    assert!(
+        batches[0]
+            .column(2)
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap()
+            .value(0)
+            .is_sign_negative()
+    );
 }
 
 #[test]
@@ -305,14 +314,7 @@ fn invalid_values_fail_instead_of_coercing_or_rounding() {
 
 #[test]
 fn missing_schema_details_and_unsupported_logical_types_fail_even_if_empty() {
-    for native in [
-        "decimal",
-        "dynamic",
-        "guid",
-        "binary",
-        "unsigned",
-        "future-type",
-    ] {
+    for native in ["decimal", "binary", "unsigned", "future-type"] {
         for rows in [vec![], vec![vec![Value::Null]]] {
             assert!(matches!(
                 convert(support::result(&[("value", native)], rows)),
@@ -528,4 +530,144 @@ fn caller_cancellation_absolute_deadline_and_invalid_budgets_are_explicit() {
             Err(ConversionError::InvalidLimits)
         ));
     }
+}
+
+#[test]
+fn logical_json_and_guid_keep_schema_evidence_and_native_model_values() {
+    let nested = json!({
+        "wide": 9_007_199_254_740_993_u64,
+        "unsigned": u64::MAX,
+        "nested": [true, null, "\u{4e16}\u{754c}", {"empty":""}]
+    });
+    let guid = "ABCDEF01-2345-6789-ABCD-EF0123456789";
+    let result = convert(support::result(
+        &[("payload", "dynamic"), ("identifier", "guid")],
+        vec![
+            vec![nested.clone(), json!(guid)],
+            vec![json!("not a guessed object"), Value::Null],
+            vec![json!(""), Value::Null],
+            vec![Value::Null, Value::Null],
+        ],
+    ))
+    .unwrap();
+    let table = &result.datasets[0].table;
+    let json = json_table(table);
+    assert_eq!(json["schema"][0]["encoding"], "json-text");
+    assert_eq!(json["schema"][1]["encoding"], "guid-string");
+    assert_eq!(
+        json["schema"][0]["metadata"]["fabric.tabular.logical_type"],
+        "json"
+    );
+    assert_eq!(
+        json["schema"][0]["metadata"]["fabric.tabular.native_type"],
+        "dynamic"
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(json["rows"][0][0].as_str().unwrap()).unwrap(),
+        nested
+    );
+    assert_eq!(json["rows"][0][1], guid);
+    assert_eq!(json["rows"][1][0], "\"not a guessed object\"");
+    assert_eq!(json["rows"][2][0], "\"\"");
+    assert!(json["rows"][3][0].is_null());
+    let (schema, batches) = parquet_table(table);
+    assert_eq!(&schema, table.schema());
+    assert_eq!(batches, table.batches());
+    let csv =
+        String::from_utf8(encode(table, ResultFormat::Csv, output_limits()).unwrap()).unwrap();
+    assert!(csv.contains(guid));
+    assert!(csv.ends_with(",\r\n"));
+}
+
+#[test]
+fn invalid_guid_never_passes_as_an_ordinary_string() {
+    for value in [
+        json!(""),
+        json!("not-guid"),
+        json!("ABCDEF0123456789ABCDEF0123456789"),
+        json!(7),
+    ] {
+        assert!(matches!(
+            convert(support::result(
+                &[("identifier", "guid")],
+                vec![vec![value]]
+            )),
+            Err(ConversionError::Value { .. })
+        ));
+    }
+}
+
+#[test]
+fn logical_empty_and_all_null_columns_retain_the_declared_schema() {
+    for rows in [vec![], vec![vec![Value::Null, Value::Null]]] {
+        let result = convert(support::result(
+            &[("payload", "dynamic"), ("identifier", "guid")],
+            rows,
+        ))
+        .unwrap();
+        let table = &result.datasets[0].table;
+        let json = json_table(table);
+        assert_eq!(json["schema"][0]["encoding"], "json-text");
+        assert_eq!(json["schema"][1]["encoding"], "guid-string");
+        let (schema, batches) = parquet_table(table);
+        assert_eq!(&schema, table.schema());
+        assert_eq!(
+            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            table.num_rows()
+        );
+    }
+}
+
+#[test]
+fn debug_and_error_display_do_not_echo_source_values() {
+    let sentinel = "source-sensitive-sentinel";
+    let mut source = support::result(&[("label", "string")], vec![vec![json!(sentinel)]]);
+    source.metadata = vec![json!({"private":sentinel})];
+    let result = convert(source).unwrap();
+    assert!(!format!("{result:?}").contains(sentinel));
+    assert!(!format!("{:?}", result.datasets[0]).contains(sentinel));
+    let error = convert(support::result(
+        &[("flag", "bool")],
+        vec![vec![json!(sentinel)]],
+    ))
+    .unwrap_err();
+    assert!(!error.to_string().contains(sentinel));
+}
+
+#[test]
+fn logical_json_escape_expansion_still_respects_the_byte_budget() {
+    let source = support::result(
+        &[("payload", "dynamic")],
+        vec![vec![json!("\0".repeat(8192))]],
+    );
+    let cancelled = AtomicBool::new(false);
+    let control = ConversionControl::new(Instant::now() + Duration::from_secs(30), &cancelled);
+    assert!(matches!(
+        convert_kql(
+            source,
+            ConversionLimits::new(1, 1, 1, 32_000, 1, 16).unwrap(),
+            &control
+        ),
+        Err(ConversionError::Limit(ConversionLimit::Bytes))
+    ));
+}
+
+#[test]
+fn retained_arrow_schema_budget_is_aggregate_even_for_empty_datasets() {
+    let mut source = support::result(&[("x", "int")], vec![]);
+    let template = source.datasets[0].clone();
+    for ordinal in 1..100 {
+        let mut next = template.clone();
+        next.ordinal = ordinal;
+        next.table_id = ordinal as u64 + 100;
+        source.datasets.push(next);
+    }
+    let cancelled = AtomicBool::new(false);
+    let control = ConversionControl::new(Instant::now() + Duration::from_secs(30), &cancelled);
+    let limits = ConversionLimits::new(100, 0, 1, 20_000, 100, 16).unwrap();
+    assert!(matches!(
+        convert_kql(source, limits, &control),
+        Err(ConversionError::Limit(ConversionLimit::Bytes))
+    ));
+    assert!(convert_kql(support::result(&[("x", "int")], vec![]), limits, &control).is_ok());
 }

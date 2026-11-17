@@ -4,6 +4,14 @@
 use chrono::{DateTime, Timelike};
 use serde_json::Value;
 
+pub(crate) fn guid(value: &Value) -> Result<&str, &'static str> {
+    let value = text(value)?;
+    if value.len() != 36 || uuid::Uuid::parse_str(value).is_err() {
+        return Err("expected hyphenated GUID");
+    }
+    Ok(value)
+}
+
 pub(crate) fn signed(value: &Value) -> Result<i64, &'static str> {
     value.as_i64().ok_or("expected exact signed integer")
 }
@@ -61,6 +69,10 @@ pub(crate) fn datetime(value: &Value) -> Result<i64, &'static str> {
 
 pub(crate) fn timespan(value: &Value) -> Result<i64, &'static str> {
     let value = text(value)?;
+    timespan_text(value)
+}
+
+pub(crate) fn timespan_text(value: &str) -> Result<i64, &'static str> {
     let (negative, value) = match value.strip_prefix('-') {
         Some(value) => (true, value),
         None => (false, value),

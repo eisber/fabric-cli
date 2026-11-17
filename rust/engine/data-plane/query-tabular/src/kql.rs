@@ -1,23 +1,24 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, fmt, sync::Arc};
 
 use arrow_array::{
     ArrayRef, BooleanArray, DurationNanosecondArray, Float64Array, Int32Array, Int64Array,
-    RecordBatch, RecordBatchOptions, StringArray, TimestampNanosecondArray,
+    StringArray, TimestampNanosecondArray,
 };
-use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use arrow_schema::{DataType, Field, Metadata, Schema, TimeUnit};
 use fabric_sdk_query::{QueryColumn, QueryDiagnostic, QueryEvidence, QueryResult};
-use fabric_sdk_tabular::TabularResult;
+use fabric_sdk_tabular::{LOGICAL_TYPE_METADATA_KEY, NATIVE_TYPE_METADATA_KEY, TabularResult};
 use serde_json::Value;
 
 use crate::{
     ConversionControl, ConversionError, ConversionLimit, ConversionLimits, bounds::Budget,
+    table::TableBudget,
 };
 
 /// One independently typed native dataset with its original identity.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct KqlDataset {
     /// Service-order primary-result ordinal.
     pub ordinal: usize,
@@ -31,11 +32,21 @@ pub struct KqlDataset {
     pub table: TabularResult,
 }
 
+impl fmt::Debug for KqlDataset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KqlDataset")
+            .field("ordinal", &self.ordinal)
+            .field("columns", &self.columns.len())
+            .field("rows", &self.table.num_rows())
+            .finish_non_exhaustive()
+    }
+}
+
 /// All converted datasets plus unchanged, unprojected execution evidence.
 ///
 /// An empty `datasets` vector means no primary resultset, not a zero-row table.
 /// There is deliberately no first-dataset accessor or automatic export choice.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct KqlTabularResult {
     /// Every primary dataset in service order.
     pub datasets: Vec<KqlDataset>,
@@ -49,10 +60,22 @@ pub struct KqlTabularResult {
     pub evidence: QueryEvidence,
 }
 
+impl fmt::Debug for KqlTabularResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KqlTabularResult")
+            .field("datasets", &self.datasets.len())
+            .field("metadata", &self.metadata.len())
+            .field("diagnostics", &self.diagnostics.len())
+            .field("evidence", &self.evidence)
+            .finish()
+    }
+}
+
 /// Converts all datasets only after validating clean completion and finite budgets.
 ///
 /// Schema mapping is explicit: `bool`, `int`, `long`, `real`, `string`,
-/// `datetime` (UTC nanoseconds), and `timespan` (nanoseconds). Unknown types,
+/// `datetime` (UTC nanoseconds), `timespan` (nanoseconds), and GUID/dynamic
+/// (annotated logical UTF-8). Unknown types,
 /// unspecified decimal precision/scale, and unsupported logical types fail even
 /// for empty or all-null columns. Temporal overflow never rounds or stringifies.
 ///
@@ -68,7 +91,7 @@ pub fn convert_kql(
     clean(&result)?;
     preflight(&result, limits, control)?;
     let mut datasets = Vec::with_capacity(result.datasets.len());
-    let mut retained_bytes = 0usize;
+    let mut retained = TableBudget::new(limits);
     for dataset in result.datasets {
         control.check()?;
         let fields = dataset
@@ -76,11 +99,22 @@ pub fn convert_kql(
             .iter()
             .enumerate()
             .map(|(column, field)| {
+                let mut metadata =
+                    Metadata::new().with(NATIVE_TYPE_METADATA_KEY, &field.native_type);
+                let logical = match field.native_type.as_str() {
+                    "dynamic" => Some("json"),
+                    "guid" => Some("guid"),
+                    _ => None,
+                };
+                if let Some(logical) = logical {
+                    metadata = metadata.with(LOGICAL_TYPE_METADATA_KEY, logical);
+                }
                 Ok(Field::new(
                     &field.name,
                     data_type(&field.native_type, dataset.ordinal, column)?,
                     true,
-                ))
+                )
+                .with_metadata(metadata))
             })
             .collect::<Result<Vec<_>, ConversionError>>()?;
         let schema = Arc::new(Schema::new(fields));
@@ -95,22 +129,11 @@ pub fn convert_kql(
                     dataset.ordinal,
                     column,
                     control,
+                    limits,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for array in &arrays {
-            retained_bytes = retained_bytes
-                .checked_add(array.get_array_memory_size())
-                .filter(|bytes| *bytes <= limits.bytes)
-                .ok_or(ConversionError::Limit(ConversionLimit::Bytes))?;
-        }
-        let batch = RecordBatch::try_new_with_options(
-            schema.clone(),
-            arrays,
-            &RecordBatchOptions::new().with_row_count(Some(dataset.rows.len())),
-        )
-        .map_err(ConversionError::Arrow)?;
-        let table = TabularResult::try_new(schema, vec![batch], limits.output()?)?;
+        let table = retained.table(schema, arrays, dataset.rows.len(), control)?;
         control.check()?;
         datasets.push(KqlDataset {
             ordinal: dataset.ordinal,
@@ -233,7 +256,7 @@ fn data_type(native: &str, dataset: usize, column: usize) -> Result<DataType, Co
         "int" => DataType::Int32,
         "long" => DataType::Int64,
         "real" => DataType::Float64,
-        "string" => DataType::Utf8,
+        "string" | "guid" | "dynamic" => DataType::Utf8,
         "datetime" => DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
         "timespan" => DataType::Duration(TimeUnit::Nanosecond),
         _ => {
@@ -242,7 +265,6 @@ fn data_type(native: &str, dataset: usize, column: usize) -> Result<DataType, Co
                 column,
                 reason: match native {
                     "decimal" => "native schema supplies no decimal precision or scale",
-                    "dynamic" | "guid" => "shared codec has no supported logical metadata contract",
                     _ => "native schema has no supported exact Arrow mapping",
                 },
             });
@@ -256,6 +278,7 @@ fn array(
     dataset: usize,
     column: usize,
     control: &ConversionControl<'_>,
+    limits: ConversionLimits,
 ) -> Result<ArrayRef, ConversionError> {
     macro_rules! typed {
         ($array:ty, $parse:expr) => {{
@@ -268,7 +291,7 @@ fn array(
                     if value.is_null() {
                         Ok(None)
                     } else {
-                        $parse(value)
+                        ($parse)(value)
                             .map(Some)
                             .map_err(|reason| ConversionError::Value {
                                 dataset,
@@ -288,6 +311,24 @@ fn array(
         "long" => Arc::new(typed!(Int64Array, crate::scalar::signed)),
         "real" => Arc::new(typed!(Float64Array, crate::scalar::real)),
         "string" => Arc::new(typed!(StringArray, crate::scalar::text)),
+        "guid" => Arc::new(typed!(StringArray, crate::scalar::guid)),
+        "dynamic" => {
+            let mut remaining = limits.bytes;
+            let values = rows
+                .iter()
+                .map(|values| {
+                    control.check()?;
+                    if values[column].is_null() {
+                        Ok(None)
+                    } else {
+                        let value = crate::bounds::json_text(&values[column], remaining, control)?;
+                        remaining -= value.len();
+                        Ok(Some(value))
+                    }
+                })
+                .collect::<Result<Vec<_>, ConversionError>>()?;
+            Arc::new(StringArray::from(values))
+        }
         "datetime" => {
             Arc::new(typed!(TimestampNanosecondArray, crate::scalar::datetime).with_timezone("UTC"))
         }

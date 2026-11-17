@@ -6,6 +6,7 @@ use fabric_sdk_query::{EngineBinding, QueryColumn, QueryDataset, QueryEvidence, 
 use fabric_v2_contracts::ItemIdentity;
 use serde_json::{Value, json};
 
+/// Constructs only synthetic, offline native execution evidence.
 pub fn result(columns: &[(&str, &str)], rows: Vec<Vec<Value>>) -> QueryResult {
     QueryResult {
         datasets: vec![QueryDataset {

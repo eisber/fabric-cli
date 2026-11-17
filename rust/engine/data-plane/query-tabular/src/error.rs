@@ -41,6 +41,12 @@ pub enum ConversionError {
     /// The caller's absolute conversion deadline expired.
     #[error("conversion deadline expired")]
     Deadline,
+    /// Standard JSON encoding of a logical value failed.
+    #[error("JSON logical value encoding failed")]
+    Json(#[source] serde_json::Error),
+    /// Logical text encoding did not produce valid UTF-8.
+    #[error("invalid logical UTF-8 encoding")]
+    LogicalEncoding,
     /// A declared native schema has no exact supported representation.
     #[error("unsupported native type at dataset {dataset}, column {column}: {reason}")]
     UnsupportedType {

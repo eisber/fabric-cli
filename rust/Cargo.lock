@@ -1772,6 +1772,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-query-tabular"
+version = "0.1.0"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "azure_core",
+ "bytes",
+ "chrono",
+ "fabric-sdk-query",
+ "fabric-sdk-tabular",
+ "fabric-v2-contracts",
+ "parquet",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "fabric-sdk-relevance"
 version = "0.1.0"
 dependencies = [
