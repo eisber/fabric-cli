@@ -3,48 +3,16 @@
 'use strict';
 
 /**
- * Non-executing post-hoc request facade. No native admission or native pass is
- * possible here, including when every source guard passes. Exit 78 means a
- * prepared but NOT_ADMITTED request, not a successful validation run.
+ * Full/affected inspection remains non-executing (exit 78, NOT_ADMITTED).
+ * The separate bootstrap-v1 route admits ONLY the frozen partial workload in
+ * rust-native-posthoc.md. It does not use or qualify the impact graph, establish
+ * a native baseline, or require the separately owned 9ff bridge in the DUT.
  * Inspection requires Git 2.43+ for pinned-tree attributes. Declared text/CRLF
  * checkout is supported; custom filters, ident and encodings are rejected.
  *
- * Activation prerequisites (separate ownership/authorization, not this patch):
- * 1. Publish/register this path on default main; dispatch there with full source
- *    and base SHAs. Batch dispatch coalesces a named batch without a timer.
- * 2. Add explicit-source/platform APIs in rust/scripts/impact-ci.cjs:
- *    selectRequest({root, head, base, full, platforms}) must verify the request,
- *    call the existing impact-plan CLI, and retain the original graph/consumer/
- *    feature/test selection. nativePoolsForMatrix currently requires all three
- *    platforms. aggregate currently reconstructs all three platforms too; add a
- *    validated platform domain to BOTH paths, without dropping any obligations
- *    inside that domain. Reuse equalSelection, verifyNativePool, selectShard,
- *    verifyManifest and aggregate rather than implementing new test oracles.
- * 3. Wire native ubuntu-24.04 and macos-15 jobs to separate immutable DUT and
- *    trusted-driver checkouts. Do NOT call rust-native-shard.yml unchanged: its
- *    default checkout is the event ref (main), not the DUT. Either give that
- *    workflow an explicit verified source-request API, or own a narrow caller
- *    that invokes the existing source-rooted CLI. Never spoof GITHUB_SHA/event.
- *    validate-impact.cjs already supports --root; its CLI defaults exceed the
- *    native job contract, so supply explicit <=600s command/<=720s total limits,
- *    inside a 15-minute job. Reuse validation-process.executeOwned, per-file
- *    source inventories and evidence aggregation, including failure receipts.
- * 4. Authorize a finite, trusted workflow-code resource policy: platforms,
- *    shards, max-parallel, test count, bytes and full-baseline budget. Dispatch
- *    text is NOT a resource grant. Validate/cap the real plan before launching.
- *    No implicit full fallback on invalid/unknown inputs. Affected admission
- *    needs actual complete native receipts at base, matching platform/arch,
- *    toolchain, selection/workload and source inventory. A Windows parent is
- *    not that proof. Preserve remaining debt for any explicitly scoped pilot.
- * 5. Only after an admitted exact-source native execution and complete,
- *    nonempty, nonignored test/command evidence may an external consumer advance
- *    a platform/workload watermark. Missing/stale/duplicate/skipped/partial,
- *    failed, canceled or source-mutated receipts cannot pass. Acquisition
- *    failure needs actual provider acquisition evidence, never job duration.
- *
- * A future scheduled route requires separate publication/enablement, a trusted
- * finite policy, its own genuine schedule context validator and immutable source
- * resolution. There is intentionally NO schedule or native execution route now.
+ * Full/affected activation still requires the separate compatible source-domain
+ * bridge, a real matching native baseline or reviewed full policy, and complete
+ * canonical selection/aggregation. Never turn this subset into that proof.
  */
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -80,6 +48,53 @@ const BRIDGE_BLOBS = Object.freeze({
 const REQUIRED_INPUTS = ['rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
   'rust/validation/impact-graph.json', ...Object.keys(BRIDGE_BLOBS)];
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
+const POLICY = Object.freeze({id: 'bootstrap-v1', qualification: 'PARTIAL_FIXED_WORKLOAD',
+  maxParallel: 2, maxTests: 2048, outputBytes: 16 * 1024 ** 2,
+  bundleBytes: 64 * 1024 ** 2, metadataReserve: 8 * 1024 ** 2,
+  maxDailyPlatformJobs: 4, maxDailyBatches: 2, batchIntervalSeconds: 21600,
+  nativeBaseline: null});
+const HOSTS = Object.freeze({
+  linux: {os: 'Linux', platform: 'linux', arch: 'x64', image: 'ubuntu-24.04',
+    triple: 'x86_64-unknown-linux-gnu'},
+  macos: {os: 'macOS', platform: 'darwin', arch: 'arm64', image: 'macos-15',
+    triple: 'aarch64-apple-darwin'},
+});
+const BOOTSTRAP_BLOBS = Object.freeze({
+  'rust/scripts/integration-smoke.cjs': 'fa9b140899537c9fa0776b0df42a6260b459cecb',
+  'rust/scripts/validate-impact.cjs': BRIDGE_BLOBS['rust/scripts/validate-impact.cjs'],
+  'rust/scripts/validation-process.cjs': BRIDGE_BLOBS['rust/scripts/validation-process.cjs'],
+  'rust/scripts/validation-process.py': 'dda079affe45a76f18b6964d0c935c30a12db356',
+  'rust/scripts/validation_posix.py': '3f034b1ba4a6168e13f5d4e7dca5ef87d3bb3321',
+  'rust/engine/core/contracts/Cargo.toml': '699377c01183961f9af4ddb021caa5e9d203f8c7',
+  'rust/engine/core/contracts/src/lib.rs': 'f204e0851510409b7bbfed41348a733eb9958a8a',
+  'rust/engine/core/contracts/src/endpoint.rs': 'ebc6361dcd84a4a691640945761b3b0bff20443c',
+  'rust/engine/core/contracts/src/operation.rs': 'e4cde89300134ed500a129daddf9801bcbc15786',
+  'rust/engine/core/contracts/src/request.rs': '6851c8bbd070bd40d3e7175dc03e02e4b9e710ff',
+});
+const CORE_TESTS = Object.freeze([
+  ...['public_defaults_have_fixed_audiences_and_roots',
+    'daily_and_cross_family_overrides_do_not_infer_the_service',
+    'rejects_non_hostname_syntax_and_suffix_confusion',
+    'path_construction_preserves_encoded_items_and_queries',
+    'workspace_item_paths_preserve_opaque_segments_but_reject_dot_segments',
+    'parsed_urls_are_bound_to_exact_https_host_and_port',
+    'raw_links_reject_parsing_tricks_and_require_exact_queryless_path',
+    'relevance_discovery_has_an_explicit_root_not_a_powerbi_route_rewrite']
+    .map(name => `endpoint::tests::${name}`),
+  ...['incomplete_selection_is_a_typed_error',
+    'selection_preserves_explicit_account_tenant_and_audience',
+    'identity_failures_remain_distinct_and_sanitized'].map(name => `tests::${name}`),
+  ...['context_retains_identity_and_does_not_acquire_or_format_credentials',
+    'validation_failures_precede_all_credential_and_execution_access',
+    'every_origin_and_daily_override_requests_one_fixed_scope',
+    'cancellation_wins_before_validation_or_operation_polling',
+    'cancellation_after_token_prevents_executor_creation',
+    'cancellation_after_execution_suppresses_success_and_error',
+    'cancellation_drops_in_flight_credential_or_execution',
+    'credential_and_executor_failures_are_distinct_and_sanitized',
+    'request_errors_compare_payloads_without_requiring_payload_debug',
+    'ready_request_preserves_three_cancellation_checkpoints'].map(name => `request::tests::${name}`),
+].sort());
 
 function sha(value) {
   assert.equal(typeof value, 'string', 'Expected a full lowercase 40-hex commit');
@@ -88,7 +103,7 @@ function sha(value) {
   return value;
 }
 
-function requestContext(env, event, actualDriver) {
+function requestContext(env, event, actualDriver, bootstrap = false) {
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch', 'Only genuine dispatch is implemented');
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(event.repository?.full_name, REPOSITORY);
@@ -97,7 +112,8 @@ function requestContext(env, event, actualDriver) {
   assert.equal(env.GITHUB_WORKFLOW_REF, `${REPOSITORY}/${WORKFLOW}@refs/heads/main`);
   assert.equal(env.GITHUB_SERVER_URL, 'https://github.com');
   assert.equal(env.GITHUB_API_URL, 'https://api.github.com');
-  assert.equal(env.GITHUB_JOB, 'prepare');
+  assert.ok((bootstrap ? ['prepare', 'native'] : ['prepare']).includes(env.GITHUB_JOB),
+    'Unexpected workflow job');
   assert.equal(sha(actualDriver), sha(env.GITHUB_SHA), 'Driver checkout differs from event SHA');
   assert.equal(sha(env.GITHUB_WORKFLOW_SHA), actualDriver, 'Workflow and driver differ');
   for (const key of ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT']) {
@@ -106,7 +122,9 @@ function requestContext(env, event, actualDriver) {
   const inputs = event.inputs;
   assert.ok(inputs && typeof inputs === 'object' && !Array.isArray(inputs), 'Missing dispatch inputs');
   assert.deepEqual(Object.keys(inputs).sort(),
-    ['base_sha', 'batch_id', 'mode', 'route', 'source_sha'], 'Unknown or missing dispatch input');
+    ['base_sha', 'batch_id', 'mode', 'route', 'source_sha',
+      ...(bootstrap ? ['platforms', 'workload_id', 'repair_of'] : [])].sort(),
+    'Unknown or missing dispatch input');
   for (const [input, variable] of Object.entries({source_sha: 'REQUESTED_SOURCE_SHA',
     base_sha: 'REQUESTED_BASE_SHA', mode: 'REQUESTED_MODE', route: 'REQUESTED_ROUTE',
     batch_id: 'REQUESTED_BATCH_ID'})) {
@@ -116,16 +134,27 @@ function requestContext(env, event, actualDriver) {
   const source = sha(inputs.source_sha), base = sha(inputs.base_sha);
   assert.notEqual(source, base, 'Source and comparison base must differ');
   assert.notEqual(source, actualDriver, 'DUT must not be the default-branch driver');
-  assert.ok(['full', 'affected'].includes(inputs.mode), 'Explicit full or affected mode required');
+  assert.ok((bootstrap ? ['bootstrap'] : ['full', 'affected']).includes(inputs.mode),
+    'Explicit supported mode required');
   assert.ok(['manual', 'batch'].includes(inputs.route), 'Only manual or batched dispatch is implemented');
   if (inputs.route === 'batch') assert.match(inputs.batch_id, /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
   else assert.equal(inputs.batch_id, '', 'Manual requests have no batch ID');
+  const extra = {};
+  if (bootstrap) {
+    assert.equal(inputs.workload_id, POLICY.id, 'Unknown fixed workload/policy');
+    assert.ok(['both', 'linux', 'macos'].includes(inputs.platforms), 'Unknown platform selection');
+    assert.match(inputs.repair_of, /^(|[1-9][0-9]{0,19})$/, 'Invalid repair run');
+    assert.equal(env.GITHUB_RUN_ATTEMPT, '1', 'Reruns are not admitted; use a reviewed repair dispatch');
+    extra.workload_id = inputs.workload_id;
+    extra.platforms = inputs.platforms === 'both' ? ['linux', 'macos'] : [inputs.platforms];
+    extra.repair_of = inputs.repair_of || null;
+  }
   return {repository: REPOSITORY, branch: BRANCH, event: env.GITHUB_EVENT_NAME,
     ref: env.GITHUB_REF, driver: actualDriver, driver_base: MAIN_BASE,
     workflow_ref: env.GITHUB_WORKFLOW_REF, workflow_sha: env.GITHUB_WORKFLOW_SHA,
     source, base, anchor: ANCHOR, mode: inputs.mode, route: inputs.route,
     batch_id: inputs.batch_id || null, run_id: env.GITHUB_RUN_ID,
-    job: env.GITHUB_JOB, run_attempt: env.GITHUB_RUN_ATTEMPT};
+    job: env.GITHUB_JOB, run_attempt: env.GITHUB_RUN_ATTEMPT, ...extra};
 }
 
 async function resolveHead(token, request = fetch) {
@@ -430,15 +459,552 @@ async function runStage(mode, driver, env, services = {}) {
   return exit;
 }
 
-/** The only runtime modes are source pinning and non-executing inspection. */
+function bootstrapContext(driver, env) {
+  repositoryRoot(driver);
+  git(driver, ['merge-base', '--is-ancestor', MAIN_BASE, 'HEAD']);
+  assert.ok(fs.statSync(env.GITHUB_EVENT_PATH).size <= LIMITS.artifactBytes);
+  return requestContext(env, JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, 'utf8')),
+    git(driver, ['rev-parse', 'HEAD']), true);
+}
+
+function verifyBootstrapInputs(inventory) {
+  const files = new Map(inventory.files.map(file => [file.path, file]));
+  for (const [name, blob] of Object.entries(BOOTSTRAP_BLOBS)) {
+    assert.equal(files.get(name)?.blob, blob, `Bootstrap API/workload changed; re-audit required: ${name}`);
+  }
+  for (const name of ['rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
+    'rust/clients/cli/app/Cargo.toml']) assert.ok(files.has(name), `Missing workload input: ${name}`);
+}
+
+function bootstrapHost(platform, env, actual = {platform: process.platform, arch: process.arch}) {
+  const host = HOSTS[platform];
+  assert.ok(host, 'Unknown native host');
+  assert.equal(env.RUNNER_ENVIRONMENT, 'github-hosted', 'Native work requires a GitHub-hosted runner');
+  assert.equal(actual.platform, host.platform, 'Wrong actual native OS');
+  assert.equal(env.RUNNER_OS, host.os, 'Runner OS mismatch');
+  assert.equal(env.POSTHOC_IMAGE, host.image, 'Wrong allowlisted runner image');
+  const triples = platform === 'linux' ? {x64: host.triple} :
+    {arm64: 'aarch64-apple-darwin', x64: 'x86_64-apple-darwin'};
+  assert.ok(Object.hasOwn(triples, actual.arch), 'Unsupported actual native architecture');
+  assert.equal(env.RUNNER_ARCH, actual.arch === 'x64' ? 'X64' : 'ARM64', 'Runner architecture mismatch');
+  assert.ok(env.ImageVersion, 'Missing hosted image version');
+  return {platform, os: actual.platform, arch: actual.arch, triple: triples[actual.arch],
+    image: host.image, image_version: env.ImageVersion, image_os: env.ImageOS || null,
+    runner_name: env.RUNNER_NAME, cpu_count: os.cpus().length,
+    cpu_models: [...new Set(os.cpus().map(cpu => cpu.model))], release: os.release()};
+}
+
+async function providerJson(endpoint, token, request = fetch) {
+  assert.ok(typeof token === 'string' && token.length, 'Read-only provider token required');
+  const response = await request(`https://api.github.com/repos/${REPOSITORY}/${endpoint}`, {
+    method: 'GET', redirect: 'error', signal: AbortSignal.timeout(LIMITS.providerMilliseconds),
+    headers: {Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'},
+  });
+  assert.equal(response.status, 200, `Provider guard failed: HTTP ${response.status}`);
+  const body = await response.text();
+  assert.ok(Buffer.byteLength(body) <= LIMITS.artifactBytes, 'Provider response exceeds limit');
+  return JSON.parse(body);
+}
+
+function runTitle(context) {
+  const platforms = context.platforms.length === 2 ? 'both' : context.platforms[0];
+  return `posthoc:${context.source}:${POLICY.id}:${platforms}:${context.repair_of || 'initial'}`;
+}
+
+function admitHistory(context, runs, now = Date.now()) {
+  assert.ok(Array.isArray(runs) && runs.length <= 100, 'Incomplete bounded run history');
+  assert.equal(new Set(runs.map(run => String(run.id))).size, runs.length, 'Duplicate run history');
+  const current = runs.find(run => String(run.id) === context.run_id);
+  assert.ok(current, 'Current genuine run missing from provider history');
+  assert.equal(current.display_title, runTitle(context), 'Actual run title differs from fixed request');
+  assert.equal(current.head_sha, context.driver, 'Provider driver SHA differs');
+  const all = runs.filter(run => String(run.id) !== context.run_id).map(run => {
+    assert.ok(Number.isFinite(Date.parse(run.created_at)) && Date.parse(run.created_at) <= now,
+      'Malformed provider reservation time');
+    assert.equal(run.event, 'workflow_dispatch');
+    assert.equal(run.head_branch, 'main');
+    const match = /^posthoc:([a-f0-9]{40}):bootstrap-v1:(both|linux|macos):(initial|[1-9][0-9]{0,19})$/
+      .exec(run.display_title);
+    assert.ok(match, 'Unclassifiable recent workload history; admission is unknown');
+    return {...run, source: match[1], platforms: match[2] === 'both' ? ['linux', 'macos'] : [match[2]],
+      repair: match[3] !== 'initial'};
+  });
+  const parsed = all.filter(run => Date.parse(run.created_at) >=
+    now - (86400 + LIMITS.nativeJobSeconds) * 1000);
+  assert.ok(parsed.length + 1 <= POLICY.maxDailyBatches, 'Daily dispatch reservation exhausted');
+  assert.ok(parsed.reduce((sum, run) => sum + run.platforms.length, context.platforms.length) <=
+    POLICY.maxDailyPlatformJobs, 'Daily native job reservation exhausted');
+  for (const run of parsed) {
+    if (run.source !== context.source) {
+      assert.ok(now - Date.parse(run.created_at) >= POLICY.batchIntervalSeconds * 1000,
+        'Coalesce immutable batches for at least six hours');
+    }
+  }
+  const duplicates = all.filter(run => run.source === context.source &&
+    run.platforms.some(platform => context.platforms.includes(platform)));
+  if (context.repair_of) {
+    const prior = duplicates.find(run => String(run.id) === context.repair_of);
+    assert.ok(prior && !prior.repair && prior.status === 'completed' &&
+      ['failure', 'cancelled', 'timed_out'].includes(prior.conclusion),
+    'Repair must reference one completed unsuccessful initial run');
+    assert.notEqual(prior.head_sha, context.driver, 'No reviewed driver root-cause repair: blind retry refused');
+    assert.ok(context.platforms.every(platform => prior.platforms.includes(platform)));
+    assert.equal(duplicates.length, 1, 'Only one repaired attempt per platform is admitted');
+  } else {
+    assert.equal(duplicates.length, 0, 'Duplicate source/platform/workload dispatch refused');
+  }
+  return {observed_at: new Date(now).toISOString(), reserved_platform_jobs_24h:
+    parsed.reduce((sum, run) => sum + run.platforms.length, context.platforms.length),
+  reserved_runner_minutes_24h: parsed.reduce((sum, run) => sum + run.platforms.length * 15,
+    context.platforms.length * 15), prior_runs: parsed.map(run => run.id)};
+}
+
+function portableContext(context) {
+  const {job, ...portable} = context;
+  return portable;
+}
+
+function readJson(file) {
+  assert.ok(fs.statSync(file).size <= LIMITS.artifactBytes, 'Receipt exceeds byte budget');
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+function bundleBytes(directory) {
+  return fs.readdirSync(directory, {withFileTypes: true}).reduce((total, entry) => {
+    const file = path.join(directory, entry.name);
+    const stat = fs.lstatSync(file);
+    assert.equal(stat.isSymbolicLink(), false, 'Artifact symlink refused');
+    return total + (entry.isDirectory() ? bundleBytes(file) : stat.size);
+  }, 0);
+}
+
+function verifyCoreOutput(stdout) {
+  const names = [...stdout.matchAll(/^test ([A-Za-z0-9_:]+) \.\.\. ok\r?$/gm)]
+    .map(match => match[1]).sort();
+  assert.deepEqual(names, CORE_TESTS, 'Every frozen lib test must actually pass exactly once');
+  const summaries = [...stdout.matchAll(
+    /^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out;.*$/gm)];
+  assert.equal(summaries.length, 1, 'Missing or duplicate core test summary');
+  assert.deepEqual(summaries[0].slice(1).map(Number), [CORE_TESTS.length, 0, 0, 0, 0],
+    'Empty, ignored, filtered, failed or partial tests are not a pass');
+  assert.ok(names.length > 0 && names.length <= POLICY.maxTests);
+  return {passed: names.length, failed: 0, ignored: 0, filtered: 0, tests: names};
+}
+
+function commandEnvironment(env, directories) {
+  const names = ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'PATHEXT', 'COMSPEC'];
+  return {...Object.fromEntries(names.filter(name => env[name] !== undefined)
+    .map(name => [name, env[name]])), ...directories, HOME: directories.HOME,
+  XDG_CONFIG_HOME: directories.HOME, XDG_CACHE_HOME: directories.HOME,
+  TMPDIR: directories.TMPDIR, TMP: directories.TMPDIR, TEMP: directories.TMPDIR,
+  CARGO_NET_RETRY: '1', CARGO_HTTP_TIMEOUT: '30', CARGO_HTTP_LOW_SPEED_LIMIT: '10',
+  CARGO_BUILD_JOBS: '2', CARGO_INCREMENTAL: '0', CARGO_PROFILE_DEV_DEBUG: '0',
+  CARGO_PROFILE_TEST_DEBUG: '0', RUST_TEST_THREADS: '2', NO_COLOR: '1',
+  PYTHONDONTWRITEBYTECODE: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: GIT_NULL,
+  GIT_ATTR_NOSYSTEM: '1', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0'};
+}
+
+function pipeOutput(pipe, retained, limit, abort) {
+  assert.equal(fs.lstatSync(pipe).isFIFO(), true, 'Expected a private output FIFO');
+  const reader = fs.openSync(pipe, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+  let writer;
+  try { writer = fs.openSync(retained, 'wx', 0o600); }
+  catch (error) { fs.closeSync(reader); throw error; }
+  let observed = 0, bytes = 0, completed, failure = null;
+  const observedHash = crypto.createHash('sha256');
+  const buffer = Buffer.alloc(65536);
+  const pump = () => {
+    try {
+      for (let reads = 0; reads < 32; reads++) {
+        let count;
+        try { count = fs.readSync(reader, buffer, 0, buffer.length, null); }
+        catch (error) {
+          if (['EAGAIN', 'EWOULDBLOCK'].includes(error.code)) break;
+          throw error;
+        }
+        if (!count) break;
+        observed += count;
+        observedHash.update(buffer.subarray(0, count));
+        const keep = Math.min(count, limit - bytes);
+        if (keep > 0) { fs.writeFileSync(writer, buffer.subarray(0, keep)); bytes += keep; }
+        if (observed > limit) abort();
+      }
+    } catch (error) {
+      failure = error.message;
+      abort();
+    }
+  };
+  return {pump, finish: () => {
+    if (completed) return completed;
+    try { pump(); }
+    finally { fs.closeSync(reader); fs.closeSync(writer); }
+    completed = {observed_bytes: observed, bytes, observed_sha256: observedHash.digest('hex'),
+      censored: observed > limit, error: failure};
+    return completed;
+  }};
+}
+
+async function boundedCommand(executeOwned, descriptor, options) {
+  const {directory, deadline, env, report, save, signal, transportRoot} = options;
+  assert.ok(Date.now() < deadline, 'Native executor budget exhausted');
+  const index = String(report.commands.length + 1).padStart(2, '0');
+  const stdout = path.join(directory, `${index}-stdout.log`);
+  const stderr = path.join(directory, `${index}-stderr.log`);
+  const available = POLICY.bundleBytes - POLICY.metadataReserve - bundleBytes(directory);
+  const cap = Math.min(POLICY.outputBytes, Math.floor(available / 2));
+  assert.ok(cap > 0, 'Artifact budget exhausted');
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  signal?.addEventListener('abort', cancel, {once: true});
+  if (signal?.aborted) cancel();
+  const entry = {...descriptor, status: 'INCOMPLETE', started_at: new Date().toISOString(),
+    output_limit_bytes: cap, timeout_ms: Math.min(descriptor.timeout_ms, LIMITS.commandSeconds * 1000,
+      deadline - Date.now())};
+  report.commands.push(entry);
+  save();
+  let censored = false;
+  const pipes = transportRoot ? [] : null;
+  try {
+    if (pipes) {
+      for (const [position, stream] of ['stdout', 'stderr'].entries()) {
+        const pipe = path.join(transportRoot, `${index}-${stream}.pipe`);
+        pipes.push({path: pipe, output: pipeOutput(pipe, position === 0 ? stdout : stderr,
+          cap, () => controller.abort())});
+      }
+    }
+  } catch (error) {
+    pipes?.forEach(pipe => pipe.output.finish());
+    signal?.removeEventListener('abort', cancel);
+    entry.error = error.message;
+    save();
+    throw error;
+  }
+  const watch = setInterval(() => {
+    if (pipes) { pipes.forEach(pipe => pipe.output.pump()); return; }
+    for (const file of [stdout, stderr]) {
+      if (fs.existsSync(file) && fs.statSync(file).size > cap) {
+        censored = true;
+        controller.abort();
+      }
+    }
+  }, 20);
+  try {
+    const result = await executeOwned(descriptor.program, descriptor.args, {
+      cwd: descriptor.cwd, env, python: 'python3',
+      stdout: pipes?.[0].path || stdout, stderr: pipes?.[1].path || stderr,
+      timeout: entry.timeout_ms, deadline, signal: controller.signal,
+    });
+    for (const [stream, file] of [['stdout', stdout], ['stderr', stderr]]) {
+      const capture = pipes?.[stream === 'stdout' ? 0 : 1].output.finish();
+      const observed = capture?.observed_bytes ?? fs.statSync(file).size;
+      if (observed > cap) { censored = true; fs.truncateSync(file, cap); }
+      const bytes = fs.readFileSync(file);
+      entry[stream] = {file: path.basename(file), observed_bytes: observed, bytes: bytes.length,
+        sha256: hash(bytes), ...(capture ? {observed_sha256: capture.observed_sha256,
+          transport_error: capture.error} : {})};
+    }
+    Object.assign(entry, {exit: result.status, signal: result.signal, timed_out: result.timed_out,
+      cancelled: result.cancelled, cleanup_confirmed: result.cleanup_confirmed,
+      cleanup_errors: result.cleanup_errors, cleanup_method: result.cleanup_method,
+      error: result.error?.message || null, censored, finished_at: new Date().toISOString()});
+    assert.equal(censored, false, 'CENSORED: command output exceeded finite byte policy');
+    assert.ok(!entry.stdout.transport_error && !entry.stderr.transport_error, 'Output transport failed');
+    assert.equal(result.timed_out, false, 'Command timed out');
+    assert.equal(result.cancelled, false, 'Command cancelled');
+    assert.equal(result.cleanup_confirmed, true, 'Owned process cleanup unconfirmed');
+    assert.deepEqual(result.cleanup_errors, [], 'Owned process cleanup failed');
+    assert.equal(result.error, null, 'Owned process supervisor failed');
+    assert.equal(result.signal, null, 'Command terminated by signal');
+    assert.equal(result.status, descriptor.exit ?? 0, `Unexpected command exit: ${descriptor.id}`);
+    entry.status = 'COMPLETE';
+    return {status: result.status, signal: result.signal, error: undefined,
+      stdout: fs.readFileSync(stdout, 'utf8'), stderr: fs.readFileSync(stderr, 'utf8')};
+  } finally {
+    clearInterval(watch);
+    if (pipes) pipes.forEach(pipe => pipe.output.finish());
+    signal?.removeEventListener('abort', cancel);
+    entry.finished_at ||= new Date().toISOString();
+    save();
+  }
+}
+
+async function bootstrapStage(mode, driver, env) {
+  assert.ok(['bootstrap-pin', 'bootstrap-inspect', 'bootstrap-refresh', 'bootstrap',
+    'bootstrap-finalize'].includes(mode));
+  const root = path.join(path.dirname(driver), 'source');
+  const directory = artifactDirectory(env.POSTHOC_ARTIFACTS, [driver, root]);
+  if (mode === 'bootstrap-pin') fs.mkdirSync(directory);
+  else assert.equal(fs.realpathSync(directory), directory);
+  const report = {schema: 2, kind: mode, status: 'FAIL_UNRUN', passed: false,
+    qualification: POLICY.qualification, policy: POLICY, native_baseline: null,
+    watermark: null, commands: [], started_at: new Date().toISOString(),
+    remaining_debt: 'All other CLI/feature/SDK/native obligations; no affected/full qualification'};
+  const output = path.join(directory, `${mode}.json`);
+  const save = () => fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  assert.equal(fs.existsSync(output), false, 'Stage receipt already exists; no replay');
+  let context, before, inventory, smoke, privateRoot, privateCreated = false;
+  let exit = 0;
+  try {
+    save();
+    context = bootstrapContext(driver, env);
+    report.context = portableContext(context);
+    if (mode === 'bootstrap-pin') {
+      assert.equal(context.job, 'prepare');
+      const defaultBranch = await providerJson('branches/main', env.GH_TOKEN);
+      assert.equal(defaultBranch.name, 'main');
+      assert.equal(defaultBranch.commit?.sha, context.driver, 'Driver is not current trusted default main');
+      matchResolved(context, await resolveHead(env.GH_TOKEN));
+      const history = await providerJson(
+        'actions/workflows/rust-native-posthoc.yml/runs?event=workflow_dispatch&per_page=100', env.GH_TOKEN);
+      assert.ok(Number.isSafeInteger(history.total_count) && history.total_count <= 100,
+        'Bounded run-history coverage exhausted; explicit policy maintenance required');
+      report.admission = admitHistory(context, history.workflow_runs);
+      report.status = 'PINNED_PARTIAL_UNRUN';
+      fs.appendFileSync(env.GITHUB_OUTPUT, `source_sha=${context.source}\n` +
+        `matrix=${JSON.stringify({include: context.platforms.map(platform =>
+          ({platform, image: HOSTS[platform].image}))})}\n`);
+    } else {
+      const pin = readJson(path.join(directory, 'bootstrap-pin.json'));
+      assert.equal(pin.status, 'PINNED_PARTIAL_UNRUN');
+      assert.deepEqual(pin.context, portableContext(context), 'Pin provenance mismatch');
+      fixedRoots(driver, env.GITHUB_WORKSPACE);
+      repositoryRoot(root);
+      const parents = git(root, ['show', '-s', '--format=%P', 'HEAD']).split(' ');
+      git(root, ['merge-base', '--is-ancestor', ANCHOR, context.source]);
+      report.source = require('./integration-smoke-recovery.cjs').manualPin({
+        event: context.event, requested_source: context.source, requested_base: context.base,
+      }, context.source, git(root, ['rev-parse', 'HEAD']), parents, true);
+      before = snapshot(root);
+      verifyBootstrapInputs(before);
+      report.source_inventory = before.sha256;
+      report.source_tree = before.tree;
+      if (mode === 'bootstrap-inspect') {
+        matchResolved(context, await resolveHead(env.GH_TOKEN));
+        writeJson(path.join(directory, 'bootstrap-source-before.json'), before);
+        report.status = 'ADMITTED_PARTIAL_UNRUN';
+      } else {
+        const inspection = readJson(path.join(directory, 'bootstrap-inspect.json'));
+        assert.equal(inspection.status, 'ADMITTED_PARTIAL_UNRUN');
+        assert.deepEqual(inspection.context, report.context);
+        const original = readJson(path.join(directory, 'bootstrap-source-before.json'));
+        unchanged(original, before);
+        if (mode === 'bootstrap-refresh') {
+          report.runner = bootstrapHost(env.POSTHOC_PLATFORM, env);
+          matchResolved(context, await resolveHead(env.GH_TOKEN));
+          report.status = 'FRESH_PARTIAL_UNRUN';
+        } else if (mode === 'bootstrap-finalize') {
+          matchResolved(context, await resolveHead(env.GH_TOKEN));
+          const native = readJson(path.join(directory, 'bootstrap.json'));
+          assert.deepEqual(native.context, report.context);
+          assert.equal(native.status, 'COMPLETE_PARTIAL');
+          assert.equal(native.passed, true);
+          assert.equal(native.source_inventory, before.sha256);
+          assert.equal(native.cli_cases?.length, 6);
+          assert.deepEqual(native.core?.tests, CORE_TESTS);
+          assert.ok(native.commands.length === 13 && native.commands.every(command =>
+            command.status === 'COMPLETE' && command.cleanup_confirmed && !command.censored));
+          assert.equal(native.private_cleanup?.confirmed, true);
+          assert.ok(native.executor_elapsed_seconds > 0 &&
+            native.executor_elapsed_seconds <= LIMITS.executorSeconds);
+          for (const command of native.commands) {
+            for (const stream of ['stdout', 'stderr']) {
+              const output = command[stream];
+              assert.match(output.file, /^[0-9]{2}-(stdout|stderr)\.log$/);
+              const bytes = fs.readFileSync(path.join(directory, output.file));
+              assert.ok(bytes.length <= POLICY.outputBytes);
+              assert.equal(bytes.length, output.bytes);
+              assert.equal(bytes.length, output.observed_bytes);
+              assert.equal(hash(bytes), output.sha256, 'Native output hash mismatch');
+            }
+          }
+          assert.deepEqual(verifyCoreOutput(fs.readFileSync(path.join(directory,
+            native.commands.find(command => command.id === 'fabric-core:lib').stdout.file), 'utf8')),
+          native.core);
+          report.native_receipt_sha256 = hash(fs.readFileSync(path.join(directory, 'bootstrap.json')));
+          report.freshness = {source: context.source, observed_at: new Date().toISOString()};
+          report.passed = true;
+          report.status = 'COMPLETE_PARTIAL_CURRENT';
+        } else {
+          assert.equal(env.GH_TOKEN, undefined, 'Provider token must not enter native stage');
+          assert.equal(env.GITHUB_TOKEN, undefined, 'Provider token must not enter native stage');
+          assert.ok(context.platforms.includes(env.POSTHOC_PLATFORM));
+          const refresh = readJson(path.join(directory, 'bootstrap-refresh.json'));
+          assert.equal(refresh.status, 'FRESH_PARTIAL_UNRUN');
+          assert.deepEqual(refresh.context, report.context);
+          assert.equal(refresh.source_inventory, before.sha256);
+          report.runner = bootstrapHost(env.POSTHOC_PLATFORM, env);
+          process.once('SIGINT', cancel);
+          process.once('SIGTERM', cancel);
+          const executorStarted = Date.now();
+          const deadline = executorStarted + LIMITS.executorSeconds * 1000;
+          privateRoot = artifactDirectory(env.POSTHOC_PRIVATE, [driver, root, directory]);
+          assert.equal(path.dirname(privateRoot), fs.realpathSync(env.RUNNER_TEMP));
+          assert.equal(path.basename(privateRoot),
+            `posthoc-${context.run_id}-${context.run_attempt}-${env.POSTHOC_PLATFORM}`);
+          fs.mkdirSync(privateRoot);
+          privateCreated = true;
+          const directories = {HOME: path.join(privateRoot, 'home'),
+            CARGO_HOME: path.join(privateRoot, 'cargo'), CARGO_TARGET_DIR: path.join(privateRoot, 'target'),
+            RUSTUP_HOME: path.join(privateRoot, 'rustup'), TMPDIR: path.join(privateRoot, 'tmp')};
+          for (const value of Object.values(directories)) fs.mkdirSync(value);
+          const buildEnv = commandEnvironment(env, directories);
+          const savedPath = process.env.PATH;
+          // Source helpers' internal Git and supervisor children inherit only this allowlist.
+          const ambient = {...process.env};
+          for (const name of Object.keys(process.env)) delete process.env[name];
+          Object.assign(process.env, buildEnv);
+          let sourceBefore;
+          try {
+            smoke = require(path.join(root, 'rust/scripts/integration-smoke.cjs'));
+            inventory = require(path.join(root, 'rust/scripts/validate-impact.cjs'));
+            const {executeOwned} = require(path.join(root, 'rust/scripts/validation-process.cjs'));
+            assert.deepEqual(smoke.PROFILES, require('./integration-smoke-recovery.cjs').PROFILES);
+            assert.equal(smoke.BRANCH, BRANCH);
+            sourceBefore = inventory.sourceInventory(root);
+            writeJson(path.join(directory, 'native-source-before.json'), sourceBefore);
+            report.lock_sha256 = hash(fs.readFileSync(path.join(root, 'rust/Cargo.lock')));
+            const toolchain = fs.readFileSync(path.join(root, 'rust/rust-toolchain.toml'), 'utf8')
+              .match(/^channel\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"$/m)?.[1];
+            assert.equal(toolchain, '1.99.1', 'Toolchain policy requires re-audit');
+            const manifest = fs.readFileSync(path.join(root, 'rust/Cargo.toml'), 'utf8');
+            const version = manifest.match(/^version\s*=\s*"([^"]+)"$/m)?.[1];
+            assert.ok(version);
+            assert.match(manifest, /^fabric-core = \{ path = "engine\/core\/contracts" \}$/m);
+            const pipePaths = Array.from({length: 12}, (_, index) =>
+              ['stdout', 'stderr'].map(stream =>
+                path.join(privateRoot, `${String(index + 2).padStart(2, '0')}-${stream}.pipe`))).flat();
+            const pipeSetup = await boundedCommand(executeOwned, {id: 'private-output-pipes',
+              program: 'python3', args: ['-B', '-c',
+                'import os,sys; [os.mkfifo(p, 0o600) for p in sys.argv[1:]]', ...pipePaths],
+              cwd: privateRoot, timeout_ms: 5000},
+            {directory, deadline, env: buildEnv, report, save, signal: controller.signal});
+            assert.equal(pipeSetup.stdout, '');
+            assert.equal(pipeSetup.stderr, '');
+            const run = (id, program, args, extra = {}) => boundedCommand(executeOwned,
+              {id, program, args, cwd: path.join(root, 'rust'), timeout_ms: 600000, ...extra},
+              {directory, deadline, env: buildEnv, report, save, signal: controller.signal,
+                transportRoot: privateRoot});
+            await run('private-toolchain', 'rustup', ['toolchain', 'install', toolchain, '--profile', 'minimal']);
+            buildEnv.RUSTUP_TOOLCHAIN = toolchain;
+            process.env.RUSTUP_TOOLCHAIN = toolchain;
+            const rustc = await run('rustc-host', 'rustc', ['--version', '--verbose'], {timeout_ms: 30000});
+            const cargo = await run('cargo-version', 'cargo', ['--version'], {timeout_ms: 30000});
+            assert.ok(rustc.stdout.startsWith(`rustc ${toolchain} `));
+            assert.ok(cargo.stdout.startsWith(`cargo ${toolchain} `));
+            assert.equal(rustc.stdout.match(/^host: ([^\r\n]+)\r?$/m)?.[1], report.runner.triple);
+            report.toolchain = {pin: toolchain, rustc: rustc.stdout, cargo: cargo.stdout};
+            report.cli_cases = [];
+            report.binaries = [];
+            const sandbox = path.join(privateRoot, 'sandbox');
+            fs.mkdirSync(sandbox);
+            const isolated = smoke.isolatedEnvironment(directories.HOME, sandbox, {});
+            for (const [index, profile] of smoke.PROFILES.entries()) {
+              await run(`build:${profile.bin}`, 'cargo', smoke.buildArgs(profile, index !== 0));
+              const executable = path.join(directories.CARGO_TARGET_DIR, 'debug', profile.bin);
+              const binaryHash = hash(fs.readFileSync(executable));
+              report.binaries.push({bin: profile.bin, sha256: binaryHash});
+              for (const item of smoke.smokeCases(profile.bin)) {
+                const result = await boundedCommand(executeOwned, {id: `${profile.bin}:${item.kind}`,
+                  program: executable, args: item.args, cwd: sandbox, timeout_ms: 10000, exit: item.exit},
+                {directory, deadline, env: isolated, report, save, signal: controller.signal,
+                  transportRoot: privateRoot});
+                smoke.verifyOutput(profile.bin, version, item, result);
+                report.cli_cases.push({bin: profile.bin, kind: item.kind, exit: result.status,
+                  stdout_sha256: hash(result.stdout), stderr_sha256: hash(result.stderr)});
+              }
+              assert.equal(hash(fs.readFileSync(executable)), binaryHash, 'Executable mutated');
+            }
+            const core = await run('fabric-core:lib', 'cargo',
+              ['test', '--locked', '--offline', '-p', 'fabric-core', '--lib', '--no-default-features',
+                '--', '--test-threads=2']);
+            report.core = verifyCoreOutput(core.stdout);
+            assert.equal(report.cli_cases.length, 6);
+            report.executor_elapsed_seconds = (Date.now() - executorStarted) / 1000;
+            assert.ok(Date.now() <= deadline, 'Native executor budget exceeded');
+            report.passed = true;
+            report.status = 'COMPLETE_PARTIAL';
+          } finally {
+            try {
+              if (sourceBefore) {
+                const sourceAfter = inventory.sourceInventory(root);
+                writeJson(path.join(directory, 'native-source-after.json'), sourceAfter);
+                writeJson(path.join(directory, 'native-source-differences.json'),
+                  inventory.sourceDifferences(sourceBefore, sourceAfter));
+                smoke.requireUnchanged(sourceBefore, sourceAfter);
+              }
+            } finally {
+              for (const name of Object.keys(process.env)) delete process.env[name];
+              Object.assign(process.env, ambient);
+              assert.equal(process.env.PATH, savedPath);
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    report.passed = false;
+    report.status = report.commands.length ? 'FAIL_OR_CENSORED_PARTIAL' : 'FAIL_UNRUN';
+    const last = report.commands.at(-1);
+    report.classification = !last ? 'GUARD_PROVIDER_OR_PREFLIGHT_UNRUN' :
+      last.censored ? 'OUTPUT_CENSORED' : last.timed_out ? 'TIMEOUT_OR_BUDGET_CENSORED' :
+        last.cancelled ? 'CANCELLED' : last.cleanup_confirmed !== true ?
+          'SUPERVISOR_OR_CLEANUP_INFRASTRUCTURE_FAILURE' :
+          last.id.startsWith('build:') ? 'SOURCE_BUILD_FAILURE' :
+            last.id === 'fabric-core:lib' ? 'SOURCE_TEST_FAILURE' :
+              last.id.startsWith('fab-') ? 'SOURCE_CLI_FAILURE' : 'TOOLCHAIN_OR_SETUP_FAILURE';
+    report.error = error.message;
+    console.error(`${report.status}: ${error.message}`);
+    exit = 1;
+  } finally {
+    process.removeListener('SIGINT', cancel);
+    process.removeListener('SIGTERM', cancel);
+    try {
+      if (before) {
+        const after = snapshot(root);
+        unchanged(before, after);
+        report.source_after = after.sha256;
+        if (mode === 'bootstrap') writeJson(path.join(directory, 'bootstrap-source-after.json'), after);
+      }
+      if (context) {
+        clean(driver);
+        assert.equal(git(driver, ['rev-parse', 'HEAD']), context.driver);
+      }
+      if (privateCreated && fs.existsSync(privateRoot)) {
+        fs.rmSync(privateRoot, {recursive: true, force: false});
+        report.private_cleanup = {confirmed: !fs.existsSync(privateRoot),
+          target_cache: 'cold private target/cargo/rustup removed; no save or restore'};
+        assert.equal(report.private_cleanup.confirmed, true);
+      }
+      assert.ok(bundleBytes(directory) <= POLICY.bundleBytes, 'Artifact bundle exceeds finite byte policy');
+    } catch (error) {
+      report.passed = false;
+      report.status = 'SOURCE_OR_ARTIFACT_INTEGRITY_FAILURE';
+      report.integrity_error = error.message;
+      exit = 1;
+    }
+    report.finished_at = new Date().toISOString();
+    report.driver_files = Object.fromEntries([WORKFLOW, '.github/scripts/rust-native-posthoc.cjs',
+      '.github/scripts/integration-smoke-recovery.cjs'].map(file =>
+      [file, hash(fs.readFileSync(path.join(driver, file)))]));
+    save();
+  }
+  return exit;
+}
+
 async function main(argv, env = process.env) {
   if (argv.length === 1 && argv[0] === '--help') {
-    console.log('rust-native-posthoc.cjs pin|inspect\n' +
-      'Default-main manual/batch exact-source request facade; native execution is UNRUN.\n' +
-      'Inspect exits 78 (NOT_ADMITTED); see module header for activation/API prerequisites.');
+    console.log('rust-native-posthoc.cjs pin|inspect|bootstrap-pin|bootstrap-inspect|bootstrap-refresh|bootstrap|bootstrap-finalize\n' +
+      'Full/affected native execution is UNRUN; bootstrap-v1 is a separate fixed partial workload.\n' +
+      'Inspect exits 78 (NOT_ADMITTED); see rust-native-posthoc.md for the finite bootstrap protocol.');
     return 0;
   }
-  assert.ok(argv.length === 1 && ['pin', 'inspect'].includes(argv[0]), 'Usage: pin|inspect|--help');
+  if (argv.length === 1 && argv[0].startsWith('bootstrap')) {
+    return bootstrapStage(argv[0], fs.realpathSync(path.resolve(__dirname, '../..')), env);
+  }
+  assert.ok(argv.length === 1 && ['pin', 'inspect'].includes(argv[0]), 'Usage: pin|inspect|bootstrap-*|--help');
   return runStage(argv[0], fs.realpathSync(path.resolve(__dirname, '../..')), env);
 }
 
@@ -446,7 +1012,10 @@ module.exports = {REPOSITORY, BRANCH, MAIN_BASE, ANCHOR, REFERENCE_SOURCE, WORKF
   LIMITS, ADMISSION, BRIDGE_BLOBS, sha, requestContext, resolveHead, matchResolved,
   proveLineage, gitEnvironment, git, clean, repositoryRoot, checkoutAttributes,
   verifyCheckoutBytes, snapshot, verifyBridge,
-  unchanged, debt, artifactDirectory, writeJson, fixedRoots, runStage, main};
+  unchanged, debt, artifactDirectory, writeJson, fixedRoots, runStage, main,
+  POLICY, HOSTS, BOOTSTRAP_BLOBS, CORE_TESTS, bootstrapContext, verifyBootstrapInputs, bootstrapHost,
+  providerJson, runTitle, admitHistory, portableContext, bundleBytes, verifyCoreOutput,
+  commandEnvironment, pipeOutput, boundedCommand, bootstrapStage};
 if (require.main === module) {
   main(process.argv.slice(2)).then(code => { process.exitCode = code; })
     .catch(error => { console.error(error.message); process.exitCode = 1; });

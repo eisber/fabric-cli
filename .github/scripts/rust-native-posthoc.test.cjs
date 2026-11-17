@@ -439,7 +439,7 @@ test('untrusted proof, baseline and budget environment text cannot admit even a 
   }
 });
 
-test('CLI has no execution, baseline-proof intake, arbitrary path or untrusted receipt route', async () => {
+test('legacy CLI has no generic executor, baseline-proof intake, arbitrary path or untrusted receipt route', async () => {
   for (const argv of [[], ['run'], ['execute'], ['aggregate'], ['schedule'], ['pin', '--execute'],
     ['inspect', '--root', '/unsafe'], ['--baseline', 'forged.json']]) {
     await assert.rejects(p.main(argv, {}), /Usage/);
@@ -451,18 +451,228 @@ test('CLI has no execution, baseline-proof intake, arbitrary path or untrusted r
   assert.match(result.stdout, /native execution is UNRUN/);
 });
 
-test('workflow keeps input text in env and routes to immutable DUT without a native or timer path', () => {
+test('workflow separates cheap PR contracts from genuine default-main finite partial native dispatch', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../workflows/rust-native-posthoc.yml'), 'utf8');
   const commands = [...workflow.matchAll(/^\s+(?:- )?run: (.+)$/gm)].map(match => match[1]);
-  assert.deepEqual(commands, ['node --test .github/scripts/rust-native-posthoc.test.cjs',
-    'node driver/.github/scripts/rust-native-posthoc.cjs pin',
-    'node driver/.github/scripts/rust-native-posthoc.cjs inspect']);
+  assert.deepEqual(commands, ['node --test .github/scripts/rust-native-posthoc.test.cjs .github/scripts/integration-smoke-recovery.test.cjs',
+    ...['bootstrap-pin', 'bootstrap-inspect', 'bootstrap-refresh', 'bootstrap', 'bootstrap-finalize']
+      .map(stage => `node driver/.github/scripts/rust-native-posthoc.cjs ${stage}`)]);
   assert.ok(commands.every(command => !command.includes('${{')));
-  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3);
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 5);
   assert.equal((workflow.match(/^\s+contents: read$/gm) || []).length, 1);
   assert.match(workflow, /ref: \$\{\{ steps\.pin\.outputs\.source_sha \}\}\s+path: source/);
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /if-no-files-found: error/);
-  assert.doesNotMatch(workflow, /^\s+(schedule|cron|push|pull_request|repository_dispatch|strategy|matrix):/m);
+  assert.doesNotMatch(workflow, /^\s+(schedule|cron|repository_dispatch):/m);
   assert.doesNotMatch(workflow, /continue-on-error|secrets: inherit|cargo |rustc |--execute/);
+  assert.match(workflow, /max-parallel: 2/);
+  assert.match(workflow, /timeout-minutes: 15/);
+  assert.match(workflow, /fail-fast: false/);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /ref: \$\{\{ needs\.prepare\.outputs\.source_sha \}\}/);
+});
+
+function bootstrapFixture() {
+  const env = {...environment(), GITHUB_RUN_ATTEMPT: '1', REQUESTED_MODE: 'bootstrap'};
+  const ev = {...event(), inputs: {...inputs(), mode: 'bootstrap', workload_id: p.POLICY.id,
+    platforms: 'both', repair_of: ''}};
+  return {env, ev, context: p.requestContext(env, ev, driver, true)};
+}
+
+test('fixed bootstrap context is a distinct policy, never affected/full or an input-defined budget', () => {
+  const {env, ev, context: c} = bootstrapFixture();
+  assert.deepEqual(c.platforms, ['linux', 'macos']);
+  assert.equal(c.workload_id, 'bootstrap-v1');
+  assert.equal(c.repair_of, null);
+  assert.equal(p.POLICY.nativeBaseline, null);
+  assert.throws(() => p.requestContext(env, ev, driver));
+  for (const change of [{mode: 'affected'}, {mode: 'full'}, {platforms: 'windows'},
+    {platforms: 'linux,macos'}, {workload_id: 'full'}, {maxTests: '999999'}, {repair_of: '0'}]) {
+    assert.throws(() => p.requestContext(env, {...ev, inputs: {...ev.inputs, ...change}}, driver, true));
+  }
+  assert.throws(() => p.requestContext({...env, GITHUB_RUN_ATTEMPT: '2'}, ev, driver, true));
+  const native = p.requestContext({...env, GITHUB_JOB: 'native'}, ev, driver, true);
+  assert.deepEqual(p.portableContext(native), p.portableContext(c));
+});
+
+test('native admission checks actual host, architecture, hosted image and never accepts Windows/cross-host', () => {
+  const env = {RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64',
+    POSTHOC_IMAGE: 'ubuntu-24.04', ImageVersion: 'offline-fixture-not-a-runner'};
+  assert.equal(p.bootstrapHost('linux', env, {platform: 'linux', arch: 'x64'}).triple,
+    'x86_64-unknown-linux-gnu');
+  for (const change of [{RUNNER_ENVIRONMENT: 'self-hosted'}, {RUNNER_OS: 'macOS'},
+    {RUNNER_ARCH: 'ARM64'}, {POSTHOC_IMAGE: 'ubuntu-latest'}, {ImageVersion: ''}]) {
+    assert.throws(() => p.bootstrapHost('linux', {...env, ...change}, {platform: 'linux', arch: 'x64'}));
+  }
+  for (const actual of [{platform: 'win32', arch: 'x64'}, {platform: 'linux', arch: 'arm64'}]) {
+    assert.throws(() => p.bootstrapHost('linux', env, actual));
+  }
+  assert.equal(p.bootstrapHost('macos', {...env, RUNNER_OS: 'macOS', RUNNER_ARCH: 'ARM64',
+    POSTHOC_IMAGE: 'macos-15'}, {platform: 'darwin', arch: 'arm64'}).triple, 'aarch64-apple-darwin');
+});
+
+test('bootstrap inputs re-audit exact existing APIs and all unmodified core assertions independently of9ff', () => {
+  const files = Object.entries(p.BOOTSTRAP_BLOBS).map(([name, blob]) => ({path: name, blob}));
+  files.push(...['rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
+    'rust/clients/cli/app/Cargo.toml'].map(name => ({path: name, blob: base})));
+  p.verifyBootstrapInputs({files});
+  assert.equal(Object.hasOwn(p.BOOTSTRAP_BLOBS, 'rust/scripts/impact-ci.cjs'), false);
+  assert.throws(() => p.verifyBootstrapInputs({files: files.slice(1)}));
+  assert.throws(() => p.verifyBootstrapInputs({files: files.map((item, index) =>
+    index === 0 ? {...item, blob: base} : item)}), /re-audit/);
+});
+
+test('exact complete core suite rejects empty, list-only, duplicate, filtered, ignored and partial output', () => {
+  const lines = p.CORE_TESTS.map(name => `test ${name} ... ok`).join('\n');
+  const summary = `test result: ok. ${p.CORE_TESTS.length} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n`;
+  const complete = `${lines}\n\n${summary}`;
+  assert.equal(p.verifyCoreOutput(complete).passed, 21);
+  for (const text of ['', summary, lines, complete.replace('0 ignored', '1 ignored'),
+    complete.replace('0 filtered out', '1 filtered out'), complete.replace('0 failed', '1 failed'),
+    complete.replace(lines.split('\n')[0], ''), `${complete}${summary}`,
+    `${complete}test ${p.CORE_TESTS[0]} ... ok\n`, complete.replace(' ... ok', ' ... ignored')]) {
+    assert.throws(() => p.verifyCoreOutput(text));
+  }
+});
+
+test('bounded read-only provider facts fail on errors, malformed/oversize JSON and foreign redirects', async () => {
+  assert.deepEqual(await p.providerJson('branches/main', 'offline-token', async (url, opts) => {
+    assert.equal(url, `https://api.github.com/repos/${p.REPOSITORY}/branches/main`);
+    assert.equal(opts.redirect, 'error');
+    assert.equal(opts.method, 'GET');
+    assert.equal(opts.headers.Authorization, 'Bearer offline-token');
+    return {status: 200, text: async () => '{"name":"main"}'};
+  }), {name: 'main'});
+  for (const response of [{status: 403}, {status: 200, text: async () => 'not JSON'},
+    {status: 200, text: async () => 'x'.repeat(p.LIMITS.artifactBytes + 1)}]) {
+    await assert.rejects(p.providerJson('branches/main', 'offline-token', async () => response));
+  }
+});
+
+test('provider history enforces durable source/platform dedupe and conservative daily finite reservations', () => {
+  const {context: c} = bootstrapFixture();
+  const now = Date.parse('2026-11-17T06:00:00Z');
+  const current = {id: 123, head_sha: driver, display_title: p.runTitle(c)};
+  const prior = {id: 122, head_sha: '8'.repeat(40),
+    created_at: new Date(now - 7 * 3600000).toISOString(), event: 'workflow_dispatch',
+    head_branch: 'main', status: 'completed', conclusion: 'failure',
+    display_title: `posthoc:${base}:bootstrap-v1:both:initial`};
+  assert.equal(p.admitHistory(c, [current], now).reserved_runner_minutes_24h, 30);
+  assert.equal(p.admitHistory(c, [current, prior], now).reserved_platform_jobs_24h, 4);
+  for (const runs of [[], [current, current], [current, {...prior, created_at: 'malformed'}],
+    [current, {...prior, created_at: new Date(now - 3600000).toISOString()}],
+    [current, {...prior, display_title: p.runTitle(c)}],
+    [current, prior, {...prior, id: 121}], [{...current, head_sha: base}]]) {
+    assert.throws(() => p.admitHistory(c, runs, now));
+  }
+  const oldDuplicate = {...prior, display_title: p.runTitle(c),
+    created_at: new Date(now - 4 * 86400000).toISOString()};
+  assert.throws(() => p.admitHistory(c, [current, oldDuplicate], now), /Duplicate/);
+  const repair = {...c, repair_of: '122'};
+  const matching = {...prior, display_title: p.runTitle(c)};
+  p.admitHistory(repair, [{...current, display_title: p.runTitle(repair)}, matching], now);
+  assert.throws(() => p.admitHistory(repair, [{...current, display_title: p.runTitle(repair)},
+    {...matching, head_sha: driver}], now), /blind retry/);
+});
+
+test('native command environment is an allowlist, not a token/auth/config/identity fallback', () => {
+  const env = p.commandEnvironment({PATH: '/tools', GH_TOKEN: 'never-forward', GITHUB_TOKEN: 'never-forward',
+    AZURE_CLIENT_SECRET: 'never-forward', FAB_TOKEN: 'never-forward', NODE_OPTIONS: 'unsafe',
+    RUSTC_WRAPPER: 'unsafe', CARGO_HOME: '/old', RUSTUP_HOME: '/global',
+    GIT_CONFIG_COUNT: '1', GITHUB_SHA: source}, {HOME: '/private/home', CARGO_HOME: '/private/cargo',
+    RUSTUP_HOME: '/private/rustup', CARGO_TARGET_DIR: '/private/target', TMPDIR: '/private/tmp'});
+  assert.equal(env.CARGO_HOME, '/private/cargo');
+  assert.equal(env.RUSTUP_HOME, '/private/rustup');
+  assert.equal(env.CARGO_NET_RETRY, '1');
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'AZURE_CLIENT_SECRET', 'FAB_TOKEN',
+    'NODE_OPTIONS', 'RUSTC_WRAPPER', 'GIT_CONFIG_COUNT', 'GITHUB_SHA']) {
+    assert.equal(Object.hasOwn(env, key), false);
+  }
+});
+
+function ownedProcessFixture(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'posthoc-process-'));
+  t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  const revision = '61c8221914152e231e5e64f7bd38418f66264999';
+  for (const name of ['validation-process.cjs', 'validation-process.py',
+    'validation_posix.py', 'native_acceptance.py']) {
+    const result = spawnSync('git', ['show', `${revision}:rust/scripts/${name}`],
+      {cwd: path.resolve(__dirname, '../..'), maxBuffer: 1024 ** 2, timeout: 10000,
+        env: p.gitEnvironment()});
+    assert.equal(result.status, 0, 'Exact offline source supervisor object must be locally available');
+    fs.writeFileSync(path.join(directory, name), result.stdout);
+  }
+  const {executeOwned} = require(path.join(directory, 'validation-process.cjs'));
+  const execute = (program, args, options) => executeOwned(program, args, {
+    ...options, python: process.platform === 'win32' ? 'python' : 'python3',
+  });
+  const report = {commands: []};
+  const options = {directory, deadline: Date.now() + 20000,
+    env: p.gitEnvironment(), report, save: () => {}};
+  const enablePipes = async () => {
+    if (process.platform !== 'win32') {
+      const pipes = ['stdout', 'stderr'].map(stream => path.join(directory, `01-${stream}.pipe`));
+      const setup = await execute('python3', ['-B', '-c',
+        'import os,sys; [os.mkfifo(p, 0o600) for p in sys.argv[1:]]', ...pipes],
+      {cwd: directory, env: options.env, stdout: path.join(directory, 'pipe-setup-stdout.log'),
+        stderr: path.join(directory, 'pipe-setup-stderr.log'), timeout: 5000});
+      assert.equal(setup.status, 0);
+      assert.equal(setup.cleanup_confirmed, true);
+      options.transportRoot = directory;
+    }
+  };
+  return {directory, execute, report, options, enablePipes};
+}
+
+test('real existing supervisor executes only harmless Node fixture and binds output/cleanup receipts', async t => {
+  const f = ownedProcessFixture(t);
+  await f.enablePipes();
+  const result = await p.boundedCommand(f.execute, {id: 'offline-node-not-native',
+    program: process.execPath, args: ['-e', 'process.stdout.write("offline fixture\\n")'],
+    cwd: f.directory, timeout_ms: 5000}, f.options);
+  assert.equal(result.stdout, 'offline fixture\n');
+  assert.equal(f.report.commands[0].cleanup_confirmed, true);
+  assert.equal(f.report.commands[0].status, 'COMPLETE');
+  assert.equal(f.report.commands[0].stdout.bytes, 16);
+  assert.match(f.report.commands[0].stdout.sha256, /^[a-f0-9]{64}$/);
+});
+
+test('real supervisor timeout and over-output remain incomplete/censored with finite retained bytes', async t => {
+  for (const [script, timeout] of [['setInterval(() => {}, 100)', 200],
+    [`process.stdout.write("x".repeat(${p.POLICY.outputBytes + 65536}))`, 5000]]) {
+    const f = ownedProcessFixture(t);
+    await f.enablePipes();
+    await assert.rejects(p.boundedCommand(f.execute, {id: 'offline-failure-not-native',
+      program: process.execPath, args: ['-e', script], cwd: f.directory, timeout_ms: timeout}, f.options));
+    const entry = f.report.commands[0];
+    assert.equal(entry.status, 'INCOMPLETE');
+    assert.equal(entry.cleanup_confirmed, true);
+    assert.ok(entry.timed_out || entry.censored);
+    assert.ok(entry.stdout.bytes <= p.POLICY.outputBytes);
+    assert.ok(entry.stderr.bytes <= p.POLICY.outputBytes);
+  }
+});
+
+test('real child receives no ambient provider/identity tokens and cancellation confirms owned cleanup', async t => {
+  const f = ownedProcessFixture(t);
+  await f.enablePipes();
+  const env = p.commandEnvironment({...process.env, GH_TOKEN: 'offline-provider-sentinel',
+    GITHUB_TOKEN: 'offline-provider-sentinel', AZURE_CLIENT_SECRET: 'offline-identity-sentinel'}, {});
+  const result = await p.boundedCommand(f.execute, {id: 'offline-env-not-native',
+    program: process.execPath, args: ['-e',
+      'process.stdout.write(JSON.stringify(Object.keys(process.env).filter(k => /TOKEN|SECRET|AZURE|FAB_/i.test(k))))'],
+    cwd: f.directory, timeout_ms: 5000}, {...f.options, env});
+  assert.equal(result.stdout, '[]');
+  const cancelled = ownedProcessFixture(t);
+  await cancelled.enablePipes();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 200);
+  try {
+    await assert.rejects(p.boundedCommand(cancelled.execute, {id: 'offline-cancel-not-native',
+      program: process.execPath, args: ['-e', 'setInterval(() => {}, 100)'],
+      cwd: cancelled.directory, timeout_ms: 5000}, {...cancelled.options, signal: controller.signal}));
+    assert.equal(cancelled.report.commands[0].cancelled, true);
+    assert.equal(cancelled.report.commands[0].cleanup_confirmed, true);
+    assert.equal(cancelled.report.commands[0].status, 'INCOMPLETE');
+  } finally { clearTimeout(timer); }
 });
