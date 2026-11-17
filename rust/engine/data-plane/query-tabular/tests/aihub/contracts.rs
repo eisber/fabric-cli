@@ -9,7 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arrow_array::{Array, BinaryArray, Decimal128Array, Float64Array, RecordBatch, UInt64Array};
+use arrow_array::{
+    Array, BinaryArray, Decimal128Array, Float64Array, RecordBatch, TimestampNanosecondArray,
+    UInt64Array,
+};
 use arrow_schema::{DataType, SchemaRef, TimeUnit};
 use bytes::Bytes;
 use fabric_sdk_aihub_query::{
@@ -240,10 +243,8 @@ fn explicitly_declared_decimal_precision_scale_and_exponents_are_exact() {
 }
 
 #[test]
-fn decimals_without_schema_parameters_and_inexact_values_are_explicit_errors() {
+fn invalid_decimal_declarations_and_inexact_values_are_explicit_errors() {
     for engine in [
-        "Decimal",
-        "numeric",
         "decimal(39,2)",
         "decimal(0,0)",
         "decimal(5,6)",
@@ -311,16 +312,16 @@ fn date_naive_time_datetime_and_duration_retain_precision_in_shared_parquet() {
 
 #[test]
 fn timezone_offsets_and_temporal_overflow_never_normalize_or_round_silently() {
-    assert!(matches!(
-        convert(outcome(
-            &[("when", "DateTimeOffset", "datetimeoffset", "iso8601")],
-            vec![]
-        )),
-        Err(ConversionError::UnsupportedType { .. })
-    ));
+    let empty_offset = convert(outcome(
+        &[("when", "DateTimeOffset", "datetimeoffset", "iso8601")],
+        vec![],
+    ))
+    .unwrap();
+    assert_eq!(
+        empty_offset.datasets[0].table.schema().field(0).data_type(),
+        &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
+    );
     for value in [
-        NativeValue::DateTime("2026-01-01T12:00:00+02:00".into()),
-        NativeValue::DateTime("2026-01-01T12:00:00Z".into()),
         NativeValue::DateTime("9999-12-31T23:59:59.9999999".into()),
         NativeValue::DateTime("2026-01-01T12:00:00.1234567891".into()),
         NativeValue::DateTime("2016-12-31T23:59:60".into()),
@@ -715,4 +716,383 @@ fn bounds_cancellation_deadline_and_arity_are_enforced_without_partial_output() 
         ),
         Err(ConversionError::Deadline)
     ));
+}
+
+#[test]
+fn common_plain_decimal_and_utc_datetime_use_exact_output_types_in_every_codec() {
+    let exact = "0.1000000000000000000000000001";
+    let result = convert(outcome(
+        &[
+            ("amount", "decimal", "decimal", "json-number"),
+            ("when", "DateTime", "datetime", "iso8601"),
+        ],
+        vec![
+            vec![
+                NativeValue::Decimal(exact.into()),
+                NativeValue::DateTime("1970-01-01T00:00:00.0000001Z".into()),
+            ],
+            vec![
+                NativeValue::Decimal("1e-28".into()),
+                NativeValue::DateTime("1969-12-31T23:59:59.9999999Z".into()),
+            ],
+            vec![NativeValue::Null; 2],
+        ],
+    ))
+    .unwrap();
+    let dataset = &result.datasets[0];
+    let table = &dataset.table;
+    assert_eq!(dataset.columns[0].engine_type, "decimal");
+    assert_eq!(
+        table.schema().field(0).metadata()["fabric.tabular.native_type"],
+        "decimal"
+    );
+    assert_eq!(
+        table.schema().field(0).data_type(),
+        &DataType::Decimal128(28, 28)
+    );
+    assert_eq!(
+        table.schema().field(1).data_type(),
+        &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
+    );
+    let json = json_table(table);
+    assert_eq!(json["rows"][0], json!([exact, "100"]));
+    assert_eq!(
+        json["rows"][1],
+        json!(["0.0000000000000000000000000001", "-100"])
+    );
+    assert_eq!(json["rows"][2], json!([null, null]));
+    let csv =
+        String::from_utf8(encode(table, ResultFormat::Csv, output_limits()).unwrap()).unwrap();
+    assert!(csv.contains(&format!("\"{exact}\",\"100\"\r\n")));
+    assert!(csv.ends_with(",\r\n"));
+    let (schema, batches) = parquet_table(table);
+    assert_eq!(&schema, table.schema());
+    assert_eq!(batches, table.batches());
+    let decimals = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Decimal128Array>()
+        .unwrap();
+    assert_eq!(decimals.value(0), 1_000_000_000_000_000_000_000_000_001);
+    assert_eq!(decimals.value(1), 1);
+    let timestamps = batches[0]
+        .column(1)
+        .as_any()
+        .downcast_ref::<TimestampNanosecondArray>()
+        .unwrap();
+    assert_eq!(timestamps.value(0), 100);
+    assert_eq!(timestamps.value(1), -100);
+}
+
+#[test]
+fn plain_decimal_representation_scans_all_scales_exponents_and_leading_zero_coefficients() {
+    for engine in ["Decimal", "numeric"] {
+        let lexemes = ["1.20", "0.00300", "-4e1", "1.2300e+2", "0e0"];
+        for reverse in [false, true] {
+            let mut rows = lexemes
+                .iter()
+                .map(|value| vec![NativeValue::Decimal((*value).into())])
+                .collect::<Vec<_>>();
+            if reverse {
+                rows.reverse();
+            }
+            let result =
+                convert(outcome(&[("d", engine, "decimal", "json-number")], rows)).unwrap();
+            let table = &result.datasets[0].table;
+            assert_eq!(
+                table.schema().field(0).data_type(),
+                &DataType::Decimal128(8, 5)
+            );
+            let mut expected = vec![
+                json!(["1.20000"]),
+                json!(["0.00300"]),
+                json!(["-40.00000"]),
+                json!(["123.00000"]),
+                json!(["0.00000"]),
+            ];
+            if reverse {
+                expected.reverse();
+            }
+            assert_eq!(json_table(table)["rows"], json!(expected));
+            let (schema, batches) = parquet_table(table);
+            assert_eq!(&schema, table.schema());
+            assert_eq!(batches, table.batches());
+        }
+    }
+}
+
+#[test]
+fn zero_decimal_values_and_extreme_checked_exponents_never_allocate_exponent_sized_buffers() {
+    let result = convert(outcome(
+        &[("d", "decimal", "decimal", "json-number")],
+        vec![
+            vec![NativeValue::Decimal("0e9223372036854775807".into())],
+            vec![NativeValue::Decimal("-0.000".into())],
+            vec![NativeValue::Decimal("0.00000e2".into())],
+        ],
+    ))
+    .unwrap();
+    let table = &result.datasets[0].table;
+    assert_eq!(
+        table.schema().field(0).data_type(),
+        &DataType::Decimal128(3, 3)
+    );
+    assert_eq!(
+        json_table(table)["rows"],
+        json!([["0.000"], ["0.000"], ["0.000"]])
+    );
+    let (schema, batches) = parquet_table(table);
+    assert_eq!(&schema, table.schema());
+    assert_eq!(batches, table.batches());
+}
+
+#[test]
+fn plain_decimal_38_digit_boundary_is_exact_and_wider_or_incompatible_scales_fail() {
+    let maximum = "99999999999999999999999999999999999999";
+    let result = convert(outcome(
+        &[("d", "decimal", "decimal", "json-number")],
+        vec![
+            vec![NativeValue::Decimal(maximum.into())],
+            vec![NativeValue::Decimal("1e37".into())],
+        ],
+    ))
+    .unwrap();
+    let table = &result.datasets[0].table;
+    assert_eq!(
+        table.schema().field(0).data_type(),
+        &DataType::Decimal128(38, 0)
+    );
+    assert_eq!(json_table(table)["rows"][0][0], maximum);
+    let (schema, batches) = parquet_table(table);
+    assert_eq!(&schema, table.schema());
+    assert_eq!(batches, table.batches());
+    for values in [
+        vec!["100000000000000000000000000000000000000"],
+        vec!["1e38"],
+        vec!["1e-39"],
+        vec!["1e9223372036854775808"],
+        vec!["1e-9223372036854775808"],
+        vec!["0e-100"],
+        vec!["1e+-1"],
+        vec![
+            "0.1000000000000000000000000001",
+            "79228162514264337593543950335",
+        ],
+        vec!["1", "0.00000000000000000000000000000000000001"],
+    ] {
+        let rows = values
+            .iter()
+            .map(|value| vec![NativeValue::Decimal((*value).into())])
+            .collect();
+        assert!(
+            matches!(
+                convert(outcome(&[("d", "decimal", "decimal", "json-number")], rows)),
+                Err(ConversionError::Value { .. })
+            ),
+            "{values:?}"
+        );
+    }
+}
+
+#[test]
+fn empty_and_all_null_plain_decimals_use_canonical_output_without_native_schema_claims() {
+    for rows in [vec![], vec![vec![NativeValue::Null]]] {
+        let result = convert(outcome(&[("d", "decimal", "decimal", "json-number")], rows)).unwrap();
+        let dataset = &result.datasets[0];
+        let table = &dataset.table;
+        assert_eq!(
+            table.schema().field(0).data_type(),
+            &DataType::Decimal128(1, 0)
+        );
+        assert_eq!(dataset.columns[0].engine_type, "decimal");
+        assert_eq!(
+            table.schema().field(0).metadata()["fabric.tabular.native_type"],
+            "decimal"
+        );
+        let (schema, batches) = parquet_table(table);
+        assert_eq!(&schema, table.schema());
+        assert_eq!(
+            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            table.num_rows()
+        );
+    }
+}
+
+#[test]
+fn uniform_datetime_offsets_are_proven_across_all_rows_and_retained_in_parquet_schema() {
+    for (engine, logical, wrap) in [
+        (
+            "DateTime",
+            "datetime",
+            NativeValue::DateTime as fn(String) -> NativeValue,
+        ),
+        (
+            "DateTimeOffset",
+            "datetimeoffset",
+            NativeValue::DateTimeOffset as fn(String) -> NativeValue,
+        ),
+    ] {
+        for (timezone, values) in [
+            ("UTC", ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00+00:00"]),
+            (
+                "+02:30",
+                [
+                    "1970-01-01T02:30:00+02:30",
+                    "1970-01-01T02:30:00.000000001+02:30",
+                ],
+            ),
+            (
+                "-05:45",
+                [
+                    "1969-12-31T18:15:00-05:45",
+                    "1969-12-31T18:15:00.000000001-05:45",
+                ],
+            ),
+        ] {
+            let mut rows = vec![vec![NativeValue::Null]];
+            rows.extend(values.iter().map(|value| vec![wrap((*value).into())]));
+            let result = convert(outcome(&[("when", engine, logical, "iso8601")], rows)).unwrap();
+            let table = &result.datasets[0].table;
+            assert_eq!(
+                table.schema().field(0).data_type(),
+                &DataType::Timestamp(TimeUnit::Nanosecond, Some(timezone.into()))
+            );
+            let expected_second = if timezone == "UTC" { "0" } else { "1" };
+            assert_eq!(
+                json_table(table)["rows"],
+                json!([[null], ["0"], [expected_second]])
+            );
+            let csv = String::from_utf8(encode(table, ResultFormat::Csv, output_limits()).unwrap())
+                .unwrap();
+            assert!(csv.ends_with(&format!("\"{expected_second}\"\r\n")));
+            let (schema, batches) = parquet_table(table);
+            assert_eq!(&schema, table.schema());
+            assert_eq!(batches, table.batches());
+            let values = batches[0]
+                .column(0)
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .unwrap();
+            assert!(values.is_null(0));
+            assert_eq!(values.value(1), 0);
+            assert_eq!(values.value(2), if timezone == "UTC" { 0 } else { 1 });
+        }
+    }
+}
+
+#[test]
+fn mixed_naive_aware_and_differing_offsets_fail_regardless_of_first_nonnull_row() {
+    for values in [
+        ["1970-01-01T00:00:00", "1970-01-01T00:00:00Z"],
+        ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00"],
+        ["1970-01-01T01:00:00+01:00", "1970-01-01T02:00:00+02:00"],
+        ["1970-01-01T00:00:00Z", "1970-01-01T01:00:00+01:00"],
+    ] {
+        let rows = values
+            .iter()
+            .map(|value| vec![NativeValue::DateTime((*value).into())])
+            .collect();
+        assert!(matches!(
+            convert(outcome(
+                &[("when", "DateTime", "datetime", "iso8601")],
+                rows
+            )),
+            Err(ConversionError::Value { row: 1, .. })
+        ));
+    }
+    for values in [
+        ["1970-01-01T01:00:00+01:00", "1970-01-01T02:00:00+02:00"],
+        ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00"],
+    ] {
+        let rows = values
+            .iter()
+            .map(|value| vec![NativeValue::DateTimeOffset((*value).into())])
+            .collect();
+        assert!(matches!(
+            convert(outcome(
+                &[("when", "DateTimeOffset", "datetimeoffset", "iso8601")],
+                rows
+            )),
+            Err(ConversionError::Value { row: 1, .. })
+        ));
+    }
+}
+
+#[test]
+fn null_datetime_columns_use_documented_canonical_output_timezones() {
+    for rows in [vec![], vec![vec![NativeValue::Null; 2]]] {
+        let result = convert(outcome(
+            &[
+                ("local", "DateTime", "datetime", "iso8601"),
+                ("aware", "DateTimeOffset", "datetimeoffset", "iso8601"),
+            ],
+            rows,
+        ))
+        .unwrap();
+        let table = &result.datasets[0].table;
+        assert_eq!(
+            table.schema().field(0).data_type(),
+            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+        );
+        assert_eq!(
+            table.schema().field(1).data_type(),
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
+        );
+        assert_eq!(result.datasets[0].columns[1].engine_type, "DateTimeOffset");
+        let (schema, batches) = parquet_table(table);
+        assert_eq!(&schema, table.schema());
+        assert_eq!(
+            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            table.num_rows()
+        );
+    }
+}
+
+#[test]
+fn aware_temporal_precision_range_leaps_unknown_offsets_and_variant_mismatches_fail() {
+    for value in [
+        "1970-01-01T00:00:00.1234567891Z",
+        "1970-01-01T00:00:00.1234567891+02:00",
+        "9999-12-31T23:59:59.9999999Z",
+        "2016-12-31T23:59:60Z",
+        "2017-01-01T01:59:60+02:00",
+        "1970-01-01T00:00:00-00:00",
+        "1970-01-01T00:00:00+24:00",
+    ] {
+        assert!(
+            matches!(
+                convert(outcome(
+                    &[("when", "DateTimeOffset", "datetimeoffset", "iso8601")],
+                    vec![vec![NativeValue::DateTimeOffset(value.into())]]
+                )),
+                Err(ConversionError::Value { .. })
+            ),
+            "{value}"
+        );
+    }
+    for (logical, engine, value) in [
+        (
+            "datetime",
+            "DateTime",
+            NativeValue::DateTimeOffset("1970-01-01T00:00:00Z".into()),
+        ),
+        (
+            "datetimeoffset",
+            "DateTimeOffset",
+            NativeValue::DateTime("1970-01-01T00:00:00Z".into()),
+        ),
+        (
+            "datetimeoffset",
+            "DateTimeOffset",
+            NativeValue::DateTimeOffset("1970-01-01T00:00:00".into()),
+        ),
+    ] {
+        assert!(matches!(
+            convert(outcome(
+                &[("when", engine, logical, "iso8601")],
+                vec![vec![value]]
+            )),
+            Err(ConversionError::Value { .. })
+        ));
+    }
 }

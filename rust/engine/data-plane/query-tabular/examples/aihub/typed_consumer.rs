@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Column {
                     name: "amount".into(),
-                    engine_type: "decimal(38,28)".into(),
+                    engine_type: "decimal".into(),
                     logical_type: "decimal".into(),
                     encoding: "json-number".into(),
                 },
@@ -42,11 +42,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                     logical_type: "binary".into(),
                     encoding: "base64".into(),
                 },
+                Column {
+                    name: "when".into(),
+                    engine_type: "DateTime".into(),
+                    logical_type: "datetime".into(),
+                    encoding: "iso8601".into(),
+                },
             ],
             rows: vec![vec![
                 NativeValue::Integer("18446744073709551615".into()),
                 NativeValue::Decimal("0.1000000000000000000000000001".into()),
                 NativeValue::Binary("AP8i".into()),
+                NativeValue::DateTime("1970-01-01T00:00:00.0000001Z".into()),
             ]],
             row_count: 1,
             truncated: false,

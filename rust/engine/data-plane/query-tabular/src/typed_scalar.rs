@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use fabric_sdk_aihub_query::NativeValue;
 
 pub(crate) fn integer<T: TryFrom<i128>>(value: &NativeValue) -> Result<T, &'static str> {
@@ -112,25 +112,83 @@ fn fraction(text: &str) -> Result<(), &'static str> {
 }
 
 pub(crate) fn datetime(value: &NativeValue) -> Result<i64, &'static str> {
-    let NativeValue::DateTime(value) = value else {
-        return Err("expected native datetime");
-    };
-    if value.len() < 19 || value.as_bytes().get(10) != Some(&b'T') {
-        return Err("expected naive native datetime");
+    let (ticks, offset) = datetime_value(value)?;
+    if offset.is_some() {
+        return Err("offset datetime does not match the naive output column");
     }
-    fraction(value)?;
-    let value = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-        .map_err(|_| "offset-bearing datetime has no declared column timezone")?;
-    if value.nanosecond() >= 1_000_000_000 {
+    Ok(ticks)
+}
+
+pub(crate) fn offset_datetime(value: &NativeValue, expected: i32) -> Result<i64, &'static str> {
+    let (ticks, offset) = datetime_value(value)?;
+    if offset != Some(expected) {
+        return Err("datetime offset does not match the fixed output column timezone");
+    }
+    Ok(ticks)
+}
+
+pub(crate) fn datetime_value(value: &NativeValue) -> Result<(i64, Option<i32>), &'static str> {
+    let (value, offset_required) = match value {
+        NativeValue::DateTime(value) => (value, false),
+        NativeValue::DateTimeOffset(value) => (value, true),
+        _ => return Err("expected native datetime"),
+    };
+    let (local, aware) = match value.strip_suffix('Z') {
+        Some(local) => (local, true),
+        None => match value.get(value.len().saturating_sub(6)..) {
+            Some(offset) if offset.starts_with(['+', '-']) => {
+                if offset == "-00:00" {
+                    return Err("unknown RFC3339 offset cannot be represented as UTC");
+                }
+                (&value[..value.len() - 6], true)
+            }
+            _ => (value.as_str(), false),
+        },
+    };
+    if local.len() < 19 || local.as_bytes().get(10) != Some(&b'T') {
+        return Err("expected native datetime");
+    }
+    fraction(local)?;
+    if aware {
+        let parsed =
+            DateTime::parse_from_rfc3339(value).map_err(|_| "invalid native datetime offset")?;
+        if parsed.nanosecond() >= 1_000_000_000 {
+            return Err("leap seconds cannot be represented without normalization");
+        }
+        let ticks = parsed
+            .timestamp_nanos_opt()
+            .ok_or("datetime exceeds exact Arrow nanosecond range")?;
+        return Ok((ticks, Some(parsed.offset().local_minus_utc())));
+    }
+    if offset_required {
+        return Err("native DateTimeOffset requires an explicit offset");
+    }
+    let parsed = NaiveDateTime::parse_from_str(local, "%Y-%m-%dT%H:%M:%S%.f")
+        .map_err(|_| "invalid naive native datetime")?;
+    if parsed.nanosecond() >= 1_000_000_000 {
         return Err("leap seconds cannot be represented without normalization");
     }
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)
         .and_then(|date| date.and_hms_opt(0, 0, 0))
         .ok_or("invalid naive epoch")?;
-    value
+    let ticks = parsed
         .signed_duration_since(epoch)
         .num_nanoseconds()
-        .ok_or("datetime exceeds exact Arrow nanosecond range")
+        .ok_or("datetime exceeds exact Arrow nanosecond range")?;
+    Ok((ticks, None))
+}
+
+pub(crate) fn timezone(offset: i32) -> String {
+    if offset == 0 {
+        return "UTC".into();
+    }
+    let seconds = offset.unsigned_abs();
+    format!(
+        "{}{:02}:{:02}",
+        if offset < 0 { '-' } else { '+' },
+        seconds / 3600,
+        seconds % 3600 / 60
+    )
 }
 
 pub(crate) fn time(value: &NativeValue) -> Result<i64, &'static str> {
@@ -179,7 +237,31 @@ pub(crate) fn decimal_schema(native: &str) -> Result<(u8, i8), &'static str> {
     Ok((precision, scale))
 }
 
-pub(crate) fn decimal(value: &NativeValue, precision: u8, scale: i8) -> Result<i128, &'static str> {
+struct DecimalParts<'a> {
+    negative: bool,
+    integer: &'a str,
+    fraction: &'a str,
+    exponent: i64,
+}
+
+impl DecimalParts<'_> {
+    fn scale(&self) -> Result<i64, &'static str> {
+        i64::try_from(self.fraction.len())
+            .map_err(|_| "decimal scale overflow")?
+            .checked_sub(self.exponent)
+            .ok_or("decimal scale overflow")
+    }
+
+    fn coefficient_digits(&self) -> usize {
+        self.integer
+            .bytes()
+            .chain(self.fraction.bytes())
+            .skip_while(|digit| *digit == b'0')
+            .count()
+    }
+}
+
+fn decimal_parts(value: &NativeValue) -> Result<DecimalParts<'_>, &'static str> {
     let NativeValue::Decimal(text) = value else {
         return Err("expected native decimal");
     };
@@ -188,12 +270,18 @@ pub(crate) fn decimal(value: &NativeValue, precision: u8, scale: i8) -> Result<i
         None => (false, text),
     };
     let (mantissa, exponent) = match text.split_once(['e', 'E']) {
-        Some((mantissa, exponent)) => (
-            mantissa,
-            exponent
-                .parse::<i64>()
-                .map_err(|_| "decimal exponent exceeds supported range")?,
-        ),
+        Some((mantissa, exponent)) => {
+            let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+            if digits.is_empty() || !digits.bytes().all(|digit| digit.is_ascii_digit()) {
+                return Err("invalid exact decimal exponent");
+            }
+            (
+                mantissa,
+                exponent
+                    .parse::<i64>()
+                    .map_err(|_| "decimal exponent exceeds supported range")?,
+            )
+        }
         None => (text, 0),
     };
     let (integer, fraction) = match mantissa.split_once('.') {
@@ -210,17 +298,30 @@ pub(crate) fn decimal(value: &NativeValue, precision: u8, scale: i8) -> Result<i
     {
         return Err("invalid exact decimal token");
     }
+    Ok(DecimalParts {
+        negative,
+        integer,
+        fraction,
+        exponent,
+    })
+}
+
+pub(crate) fn decimal_layout(value: &NativeValue) -> Result<(i64, usize), &'static str> {
+    let parts = decimal_parts(value)?;
+    Ok((parts.scale()?, parts.coefficient_digits()))
+}
+
+pub(crate) fn decimal(value: &NativeValue, precision: u8, scale: i8) -> Result<i128, &'static str> {
+    let parts = decimal_parts(value)?;
+    if parts.coefficient_digits() == 0 {
+        return Ok(0);
+    }
     let shift = i64::from(scale)
-        .checked_sub(
-            i64::try_from(fraction.len())
-                .map_err(|_| "decimal scale overflow")?
-                .checked_sub(exponent)
-                .ok_or("decimal scale overflow")?,
-        )
+        .checked_sub(parts.scale()?)
         .ok_or("decimal scale overflow")?;
-    let mut digits = String::with_capacity(integer.len() + fraction.len());
-    digits.push_str(integer);
-    digits.push_str(fraction);
+    let mut digits = String::with_capacity(parts.integer.len() + parts.fraction.len());
+    digits.push_str(parts.integer);
+    digits.push_str(parts.fraction);
     if shift < 0 {
         let discard = usize::try_from(shift.checked_neg().ok_or("decimal scale overflow")?)
             .map_err(|_| "decimal scale overflow")?;
@@ -253,5 +354,9 @@ pub(crate) fn decimal(value: &NativeValue, precision: u8, scale: i8) -> Result<i
         .map_err(|_| "decimal coefficient overflow")?
         .checked_mul(10i128.pow(append as u32))
         .ok_or("decimal coefficient overflow")?;
-    Ok(if negative { -coefficient } else { coefficient })
+    Ok(if parts.negative {
+        -coefficient
+    } else {
+        coefficient
+    })
 }

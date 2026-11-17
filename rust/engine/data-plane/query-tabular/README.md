@@ -86,18 +86,46 @@ unknown integer/number engine type never defaults to Int64 or Float64.
 `decimal(p,s)` and `numeric(p,s)` declarations explicitly supplying supported
 precision (1-38) and scale (0 through precision) map to Decimal128. Coefficient
 and exponent arithmetic uses integers only. Values requiring rounding, losing
-fractional digits or exceeding precision fail. Plain `Decimal` without schema
-parameters is unsupported even for empty/all-null columns. The
-[synthetic direct consumer](examples/aihub/typed_consumer.rs) demonstrates an explicitly
-parameterized schema; it is **not** evidence that a live provider supplies those
-parameters.
+fractional digits or exceeding precision fail.
 
-Date/DateOnly maps to Date32; naive DateTime to nanosecond timestamp **without**
-timezone; Time/TimeOnly to nanosecond time; TimeSpan/duration to nanosecond
-duration. No first-value timezone or precision inference occurs. Offset-bearing
-datetime values and DateTimeOffset columns without a declared fixed column
-timezone explicitly fail rather than normalize/drop offsets. Range overflow,
-leap seconds and finer-than-nanosecond values also fail.
+For explicitly logical decimal/json-number columns with plain `Decimal` or
+`numeric` native type, **native precision and scale remain UNKNOWN**. The bridge
+scans every non-null native Decimal lexeme under caller budgets/control and
+selects an exact **output representation**, not an inferred SQL schema:
+`output_scale = max(0, fraction_digits - exponent)` over all values;
+`output_precision` is the maximum of 1, output scale, and all exact rescaled
+coefficient digit counts. Leading coefficient zeros do not consume precision;
+declared fractional scale is retained, including zero values. Both output
+parameters must fit Decimal128 (at most 38). Checked arithmetic rejects exponent,
+scale, precision or combined-column overflow without rounding, f64 or
+exponent-sized allocations. Values that each fit separately can still fail if
+their combined scale/precision cannot fit one exact column. Empty/all-null plain
+decimal columns use canonical **output** Decimal128(1,0); no native parameter
+claim is made. Original native `Column` declarations and `native_type` metadata
+remain unchanged. Explicit native `decimal(p,s)` still takes precedence.
+
+Date/DateOnly maps to Date32; Time/TimeOnly to nanosecond time; TimeSpan/duration
+to nanosecond duration. For DateTime/DateTimeOffset, the bridge validates
+**every** non-null value before choosing the output timezone. Uniform naive
+DateTime values map to timestamp without timezone. Uniform explicit `Z` or
+`+00:00` values map to timestamp with UTC; uniform nonzero offsets map to a fixed
+`+HH:MM` or `-HH:MM` Arrow timezone with checked UTC ticks. The shared Parquet
+codec retains this Arrow timezone, so neither the instant nor the fixed offset
+is discarded. This is proof about the complete returned column, not a claim
+about the native engine's schema or a first-value inference.
+
+Mixed naive/aware values or differing row offsets fail, even if they denote the
+same instant. DateTimeOffset requires an explicit offset in every non-null value.
+Empty/all-null DateTime columns have unknown timezone and canonical output
+`None`; DateTimeOffset uses canonical **output** UTC without claiming a native
+offset. Range overflow, leap seconds, finer-than-nanosecond values and RFC3339
+unknown offset `-00:00` fail. Canonical output preserves temporal meaning,
+precision and fixed offset, not original lexical spellings such as `Z` versus
+`+00:00`.
+
+The [synthetic direct consumer](examples/aihub/typed_consumer.rs) demonstrates
+plain-decimal and explicit UTC native values. It is not evidence of live
+provider compatibility.
 
 Boolean, text, base64 binary and GUID have explicit mappings. Unknown engine
 types are accepted only when the source explicitly declares logical string/text,

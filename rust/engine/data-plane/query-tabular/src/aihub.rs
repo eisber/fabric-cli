@@ -86,8 +86,10 @@ impl fmt::Debug for AihubTabularResult {
 /// Converts all clean typed DataAgent resultsets using their declared schemas.
 ///
 /// Accepts only the native SDK's complete outcome, never its incomplete variant.
-/// Missing schemas, unsupported native representations, inferred decimal
-/// precision/scale and per-value timezone inference are explicitly refused.
+/// Missing schemas, unsupported native representations, invented native decimal
+/// precision/scale and first-value timezone inference are explicitly refused.
+/// Plain declared decimals receive an exact output representation selected from
+/// all their values; this does not assert native precision/scale.
 /// There is no CSV/Markdown/Excel parse fallback or direct-Report assumption.
 ///
 /// # Errors
@@ -112,7 +114,7 @@ pub fn convert_aihub(
             .columns
             .iter()
             .enumerate()
-            .map(|(column, field)| native_type(field, ordinal, column))
+            .map(|(column, field)| output_type(field, &source.rows, ordinal, column, control))
             .collect::<Result<Vec<_>, _>>()?;
         let fields = source
             .columns
@@ -299,6 +301,7 @@ enum NativeType {
     Text,
     Date,
     DateTime,
+    OffsetDateTime(i32),
     Time,
     Duration,
     Guid,
@@ -323,6 +326,10 @@ impl NativeType {
             Self::Text | Self::Guid => DataType::Utf8,
             Self::Date => DataType::Date32,
             Self::DateTime => DataType::Timestamp(TimeUnit::Nanosecond, None),
+            Self::OffsetDateTime(offset) => DataType::Timestamp(
+                TimeUnit::Nanosecond,
+                Some(crate::typed_scalar::timezone(offset).into()),
+            ),
             Self::Time => DataType::Time64(TimeUnit::Nanosecond),
             Self::Duration => DataType::Duration(TimeUnit::Nanosecond),
             Self::Binary => DataType::Binary,
@@ -367,8 +374,12 @@ fn native_type(
             }
         },
         ("decimal", "json-number") => {
-            let (precision, scale) =
-                crate::typed_scalar::decimal_schema(&native).map_err(unsupported)?;
+            let (precision, scale) = if matches!(native.as_str(), "decimal" | "numeric") {
+                // Canonical output for schema-only columns, not native p/s.
+                (1, 0)
+            } else {
+                crate::typed_scalar::decimal_schema(&native).map_err(unsupported)?
+            };
             NativeType::Decimal(precision, scale)
         }
         ("number", "json-number") => match native.as_str() {
@@ -382,10 +393,8 @@ fn native_type(
         ("string", "text") => NativeType::Text,
         ("date", "iso8601") if matches!(native.as_str(), "date" | "dateonly") => NativeType::Date,
         ("datetime", "iso8601") if native == "datetime" => NativeType::DateTime,
-        ("datetimeoffset", "iso8601") => {
-            return Err(unsupported(
-                "source schema supplies no fixed column timezone; per-row offsets cannot be discarded",
-            ));
+        ("datetimeoffset", "iso8601") if native == "datetimeoffset" => {
+            NativeType::OffsetDateTime(0)
         }
         ("time", "iso8601") if matches!(native.as_str(), "time" | "timeonly") => NativeType::Time,
         ("duration", "text") if matches!(native.as_str(), "timespan" | "duration") => {
@@ -405,6 +414,100 @@ fn native_type(
             ));
         }
     };
+    Ok(kind)
+}
+
+fn output_type(
+    field: &Column,
+    rows: &[Vec<NativeValue>],
+    dataset: usize,
+    column: usize,
+    control: &ConversionControl<'_>,
+) -> Result<NativeType, ConversionError> {
+    let kind = native_type(field, dataset, column)?;
+    let invalid = |row, reason| ConversionError::Value {
+        dataset,
+        column,
+        row,
+        reason,
+    };
+    if matches!(kind, NativeType::Decimal(_, _))
+        && matches!(
+            field.engine_type.to_ascii_lowercase().as_str(),
+            "decimal" | "numeric"
+        )
+    {
+        let mut scale = 0i64;
+        for (row, values) in rows.iter().enumerate() {
+            control.check()?;
+            if matches!(values[column], NativeValue::Null) {
+                continue;
+            }
+            let (value_scale, _) = crate::typed_scalar::decimal_layout(&values[column])
+                .map_err(|reason| invalid(row, reason))?;
+            scale = scale.max(value_scale);
+            if scale > 38 {
+                return Err(invalid(
+                    row,
+                    "exact decimal output scale exceeds Decimal128",
+                ));
+            }
+        }
+        let mut precision = scale.max(1);
+        for (row, values) in rows.iter().enumerate() {
+            control.check()?;
+            if matches!(values[column], NativeValue::Null) {
+                continue;
+            }
+            let (value_scale, digits) = crate::typed_scalar::decimal_layout(&values[column])
+                .map_err(|reason| invalid(row, reason))?;
+            if digits != 0 {
+                let width = i64::try_from(digits)
+                    .ok()
+                    .and_then(|digits| scale.checked_sub(value_scale)?.checked_add(digits))
+                    .filter(|width| *width <= 38)
+                    .ok_or_else(|| {
+                        invalid(row, "exact decimal output precision exceeds Decimal128")
+                    })?;
+                precision = precision.max(width);
+            }
+        }
+        return Ok(NativeType::Decimal(precision as u8, scale as i8));
+    }
+    if matches!(kind, NativeType::DateTime | NativeType::OffsetDateTime(_)) {
+        let mut mode = None;
+        for (row, values) in rows.iter().enumerate() {
+            control.check()?;
+            if matches!(values[column], NativeValue::Null) {
+                continue;
+            }
+            if !matches!(
+                (&values[column], kind),
+                (NativeValue::DateTime(_), NativeType::DateTime)
+                    | (
+                        NativeValue::DateTimeOffset(_),
+                        NativeType::OffsetDateTime(_)
+                    )
+            ) {
+                return Err(invalid(
+                    row,
+                    "native datetime variant disagrees with its declared logical type",
+                ));
+            }
+            let (_, offset) = crate::typed_scalar::datetime_value(&values[column])
+                .map_err(|reason| invalid(row, reason))?;
+            if mode.is_some_and(|previous| previous != offset) {
+                return Err(invalid(
+                    row,
+                    "mixed naive or differing datetime offsets have no exact column timezone",
+                ));
+            }
+            mode = Some(offset);
+        }
+        if let Some(Some(offset)) = mode {
+            return Ok(NativeType::OffsetDateTime(offset));
+        }
+    }
     Ok(kind)
 }
 
@@ -461,6 +564,12 @@ fn array(
         NativeType::Guid => Arc::new(typed!(StringArray, scalar::guid)),
         NativeType::Date => Arc::new(typed!(Date32Array, scalar::date)),
         NativeType::DateTime => Arc::new(typed!(TimestampNanosecondArray, scalar::datetime)),
+        NativeType::OffsetDateTime(offset) => Arc::new(
+            typed!(TimestampNanosecondArray, |value| scalar::offset_datetime(
+                value, offset
+            ))
+            .with_timezone(scalar::timezone(offset)),
+        ),
         NativeType::Time => Arc::new(typed!(Time64NanosecondArray, scalar::time)),
         NativeType::Duration => Arc::new(typed!(DurationNanosecondArray, scalar::duration)),
         NativeType::Binary => {
