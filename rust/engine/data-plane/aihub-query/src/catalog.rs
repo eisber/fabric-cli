@@ -94,6 +94,12 @@ struct Resource {
     blob: Option<String>,
 }
 
+fn present_mime<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
 pub(crate) fn decode(
     raw: &RawValue,
     limits: Limits,
@@ -136,11 +142,6 @@ pub(crate) fn decode(
                     return Err(QueryErrorKind::DuplicateResource);
                 }
 
-                fn present_mime<'de, D: serde::Deserializer<'de>>(
-                    deserializer: D,
-                ) -> Result<Option<String>, D::Error> {
-                    String::deserialize(deserializer).map(Some)
-                }
                 if let Some(blob) = &resource.blob {
                     STANDARD
                         .decode(blob)
