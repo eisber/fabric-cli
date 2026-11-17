@@ -40,7 +40,7 @@ async fn summary_and_full_entries_use_fixed_navigation_over_the_real_lifecycle()
         (CatalogView::FullEntries, "Templates[]"),
     ] {
         let native = catalog();
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, native.clone())]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, native.clone())]));
         let credential = Arc::new(Credential::default());
         let result = client(
             wire.clone(),
@@ -68,17 +68,12 @@ async fn summary_and_full_entries_use_fixed_navigation_over_the_real_lifecycle()
                 .iter()
                 .map(|m| m["method"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            [
-                "initialize",
-                "notifications/initialized",
-                "tools/list",
-                "tools/call"
-            ]
+            ["initialize", "notifications/initialized", "tools/call"]
         );
-        assert_eq!(messages[3]["params"]["arguments"]["query"], expression);
-        assert_eq!(messages[3]["params"]["arguments"]["language"], "jmespath");
+        assert_eq!(messages[2]["params"]["arguments"]["query"], expression);
+        assert_eq!(messages[2]["params"]["arguments"]["language"], "jmespath");
         assert_eq!(
-            messages[3]["params"]["arguments"]["artifactId"],
+            messages[2]["params"]["arguments"]["artifactId"],
             format!("{AGENT}/{SOURCE}")
         );
         for message in messages {
@@ -100,7 +95,7 @@ async fn default_summary_empty_catalog_and_guidance_are_not_inferred_rowsets() {
         json!({"content":[]}),
         json!({"content":[{"type":"text","text":"not JSON; |not|a rowset|"}]}),
     ] {
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, native.clone())]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, native.clone())]));
         let result = client(
             wire.clone(),
             Arc::new(Credential::default()),
@@ -115,10 +110,10 @@ async fn default_summary_empty_catalog_and_guidance_are_not_inferred_rowsets() {
             native
         );
         assert_eq!(
-            messages(&wire)[3]["params"]["arguments"]["query"],
+            messages(&wire)[2]["params"]["arguments"]["query"],
             "Templates[].{Name:Name,Description:Description}"
         );
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
     }
 }
 
@@ -130,7 +125,7 @@ async fn every_native_resource_block_and_metadata_survives_without_download_or_c
         {"type":"resource","resource":{"uri":"opaque:blob","mimeType":"application/octet-stream","blob":"AAEC/w=="}},
         {"type":"resource_link","uri":"https://never-download.example.invalid/two","name":"native link","annotations":{"audience":["assistant"]}}
     ]});
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, native.clone())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, native.clone())]));
     let result = client(
         wire.clone(),
         Arc::new(Credential::default()),
@@ -149,14 +144,14 @@ async fn every_native_resource_block_and_metadata_survives_without_download_or_c
     }
     assert_eq!(
         wire.requests.lock().unwrap().len(),
-        4,
+        3,
         "catalog resources must never be fetched"
     );
 }
 
 #[tokio::test]
 async fn catalog_content_never_relaxes_missing_typed_json_for_template_execution() {
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, catalog())]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, catalog())]));
     let error = client(
         wire.clone(),
         Arc::new(Credential::default()),
@@ -172,14 +167,14 @@ async fn catalog_content_never_relaxes_missing_typed_json_for_template_execution
     .unwrap_err();
     assert_eq!(error.kind, QueryErrorKind::MissingTypedJson);
     assert!(error.query_dispatched);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
-async fn catalog_tool_errors_tasks_and_unsafe_discovery_fail_without_fallback() {
+async fn catalog_tool_errors_tasks_and_missing_tool_fail_without_fallback() {
     let mut native = catalog();
     native["isError"] = json!(true);
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, native)]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, native)]));
     let error = client(
         wire.clone(),
         Arc::new(Credential::default()),
@@ -191,10 +186,10 @@ async fn catalog_tool_errors_tasks_and_unsafe_discovery_fail_without_fallback() 
     .unwrap_err();
     assert_eq!(error.kind, QueryErrorKind::ToolError);
     assert!(error.query_dispatched);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
     let mut native = catalog();
     native["task"] = json!({"taskId":"not-negotiated"});
-    let wire = Wire::new(setup().into_iter().chain([rpc(3, native)]));
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, native)]));
     let error = client(
         wire,
         Arc::new(Credential::default()),
@@ -205,13 +200,13 @@ async fn catalog_tool_errors_tasks_and_unsafe_discovery_fail_without_fallback() 
     .await
     .unwrap_err();
     assert_eq!(error.kind, QueryErrorKind::Protocol);
-    let mut descriptor = tool();
-    descriptor["annotations"]["destructiveHint"] = json!(true);
-    let wire = Wire::new([
-        initialize(),
-        response(202, vec![], "application/json", None),
-        rpc(2, json!({"tools":[descriptor]})),
-    ]);
+    let missing = response(
+        200,
+        br#"{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"missing tool"}}"#.to_vec(),
+        "application/json",
+        None,
+    );
+    let wire = Wire::new(setup().into_iter().chain([missing]));
     let error = client(
         wire.clone(),
         Arc::new(Credential::default()),
@@ -221,8 +216,8 @@ async fn catalog_tool_errors_tasks_and_unsafe_discovery_fail_without_fallback() 
     .discover_query_templates(target(), &deadline(), pending())
     .await
     .unwrap_err();
-    assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
-    assert!(!error.query_dispatched);
+    assert_eq!(error.kind, QueryErrorKind::Rpc(-32601));
+    assert!(error.query_dispatched);
     assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
@@ -236,7 +231,7 @@ async fn catalog_resource_shapes_duplicates_and_budgets_are_validated() {
         json!({"content":[{"type":"resource","resource":{"uri":"opaque:one","mimeType":"application/octet-stream","blob":"invalid base64!"}}]}),
         json!({"content":[{"type":"text"}]}),
     ] {
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, native)]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, native)]));
         assert!(
             client(
                 wire,
@@ -263,7 +258,7 @@ async fn catalog_resource_shapes_duplicates_and_budgets_are_validated() {
             ..Limits::default()
         },
     ] {
-        let wire = Wire::new(setup().into_iter().chain([rpc(3, catalog())]));
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, catalog())]));
         assert!(
             client(
                 wire,
@@ -299,7 +294,7 @@ async fn catalog_http_429_and_lost_transport_are_single_dispatch() {
             QueryErrorKind::Http(429) | QueryErrorKind::Transport
         ));
         assert!(error.query_dispatched);
-        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
     }
 }
 
@@ -337,7 +332,7 @@ async fn catalog_deadline_cancel_and_drop_keep_the_shared_local_lifetime_contrac
     assert_eq!(error.kind, QueryErrorKind::Deadline);
     assert!(error.query_dispatched);
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 
     let wire = Wire::new(setup().into_iter().chain([Reply::Pending]));
     let c = client(
@@ -350,7 +345,7 @@ async fn catalog_deadline_cancel_and_drop_keep_the_shared_local_lifetime_contrac
     assert!(call.as_mut().now_or_never().is_none());
     drop(call);
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 
     let wire = Wire::new(setup().into_iter().chain([Reply::Pending]));
     let c = client(
@@ -374,5 +369,5 @@ async fn catalog_deadline_cancel_and_drop_keep_the_shared_local_lifetime_contrac
     assert_eq!(error.kind, QueryErrorKind::Canceled);
     assert!(error.query_dispatched);
     assert_eq!(wire.dropped.load(Ordering::SeqCst), 1);
-    assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
