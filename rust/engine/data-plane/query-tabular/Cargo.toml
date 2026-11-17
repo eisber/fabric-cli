@@ -13,12 +13,19 @@ description = "Bounded native query results to shared typed Arrow tables"
 [package.metadata.fabric]
 layer = "sdk"
 
+[features]
+default = []
+aihub = ["dep:base64", "dep:fabric-sdk-aihub-query", "dep:serde"]
+
 [dependencies]
 arrow-array.workspace = true
 arrow-schema.workspace = true
+base64 = { workspace = true, optional = true }
 chrono.workspace = true
+fabric-sdk-aihub-query = { workspace = true, optional = true }
 fabric-sdk-query.workspace = true
 fabric-sdk-tabular.workspace = true
+serde = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
@@ -28,6 +35,16 @@ azure_core.workspace = true
 bytes.workspace = true
 fabric-v2-contracts.workspace = true
 parquet.workspace = true
+
+[[test]]
+name = "aihub"
+path = "tests/aihub/contracts.rs"
+required-features = ["aihub"]
+
+[[example]]
+name = "typed_aihub"
+path = "examples/aihub/typed_consumer.rs"
+required-features = ["aihub"]
 
 [lints]
 workspace = true
