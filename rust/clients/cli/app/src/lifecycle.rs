@@ -36,7 +36,7 @@ pub fn run_process(args: Vec<OsString>, host: &dyn Host) -> u8 {
     {
         Ok(runtime) => runtime,
         Err(_) => {
-            eprintln!("Cannot initialize fab-rs runtime");
+            eprintln!("Cannot initialize {} runtime", crate::EXECUTABLE_NAME);
             return 1;
         }
     };
@@ -50,13 +50,19 @@ pub fn run_process(args: Vec<OsString>, host: &dyn Host) -> u8 {
         let mut listener = match listener {
             Ok(listener) => listener,
             Err(_) => {
-                eprintln!("Cannot initialize fab-rs Ctrl+C handler");
+                eprintln!(
+                    "Cannot initialize {} Ctrl+C handler",
+                    crate::EXECUTABLE_NAME
+                );
                 return 1;
             }
         };
         let handler = tokio::spawn(async move {
             if listener.recv().await.is_none() {
-                eprintln!("fab-rs Ctrl+C handler closed unexpectedly");
+                eprintln!(
+                    "{} Ctrl+C handler closed unexpectedly",
+                    crate::EXECUTABLE_NAME
+                );
             }
             signal.cancel();
         });

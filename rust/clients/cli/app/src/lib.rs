@@ -43,6 +43,13 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+macro_rules! executable_text {
+    ($prefix:literal, $suffix:literal) => {
+        concat!($prefix, "fab-rs", $suffix)
+    };
+}
+
+const EXECUTABLE_NAME: &str = executable_text!("", "");
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
 
 struct ProgressEvent {
@@ -567,7 +574,7 @@ fn help_arg() -> Arg {
 /// Build the complete small parser, without any host/provider/configuration effects.
 pub fn parser() -> Command {
     let auth_leaf = |name| Command::new(name).disable_help_flag(true).arg(help_arg());
-    Command::new("fab-rs")
+    Command::new(EXECUTABLE_NAME)
         .version(env!("CARGO_PKG_VERSION"))
         .about("Raw API and Azure CLI identity binding. Recognized operations poll by default; --async returns immediately.")
         .disable_help_flag(true)
@@ -578,8 +585,8 @@ pub fn parser() -> Command {
         .arg(Arg::new("verbose").long("verbose").global(true).action(ArgAction::SetTrue)
             .help("Print debug diagnostics logs to console"))
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
-        .subcommand(Command::new("auth").about("Bind fab-rs to an existing Azure CLI identity.")
-            .after_help("fab-rs does not sign in to or sign out of Azure CLI; run az login separately.")
+        .subcommand(Command::new("auth").about(executable_text!("Bind ", " to an existing Azure CLI identity."))
+            .after_help(executable_text!("", " does not sign in to or sign out of Azure CLI; run az login separately."))
             .disable_help_flag(true).disable_help_subcommand(true).arg(help_arg()).subcommand_required(true)
             .subcommand(auth_leaf("login").about("Validate and bind the current Azure CLI tenant/principal"))
             .subcommand(auth_leaf("status").about("Validate the selected Azure CLI identity"))
@@ -653,9 +660,9 @@ fn parse_failure_message(command: &str, error: &clap::Error) -> String {
         _ => String::new(),
     };
     let help = if command.is_empty() {
-        "Run fab-rs --help.".to_owned()
+        format!("Run {EXECUTABLE_NAME} --help.")
     } else {
-        format!("Run fab-rs {command} --help.")
+        format!("Run {EXECUTABLE_NAME} {command} --help.")
     };
     match error.kind() {
         ParseErrorKind::InvalidValue
@@ -722,8 +729,10 @@ fn write_failure(
 }
 
 fn welcome(stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
-    let output = "Welcome to fab-rs.\n\n\n\
-                  Get started:\n  fab-rs api workspaces   List workspaces\n  fab-rs auth             Authentication commands\n  fab-rs --help           All commands\n";
+    let output = format!(
+        "Welcome to {EXECUTABLE_NAME}.\n\n\n\
+                  Get started:\n  {EXECUTABLE_NAME} api workspaces   List workspaces\n  {EXECUTABLE_NAME} auth             Authentication commands\n  {EXECUTABLE_NAME} --help           All commands\n"
+    );
     if stdout.write_all(output.as_bytes()).is_err() {
         let _ = stderr.write_all(b"Cannot write welcome output\n");
         return 1;
@@ -931,7 +940,7 @@ fn selected(host: &dyn Host) -> Result<Binding, CommandError> {
     host.selection()?.ok_or_else(|| {
         CommandError::new(
             "Unauthorized",
-            "No Rust identity selected. Run fab-rs auth login.",
+            format!("No Rust identity selected. Run {EXECUTABLE_NAME} auth login."),
         )
     })
 }
@@ -1012,7 +1021,7 @@ async fn execute(
                 .map_err(|_| {
                     CommandError::new(
                         "Unauthorized",
-                        "Credential acquisition failed; run fab-rs auth login to validate the selected session",
+                        format!("Credential acquisition failed; run {EXECUTABLE_NAME} auth login to validate the selected session"),
                     )
                 });
                 observer
@@ -1022,7 +1031,9 @@ async fn execute(
             }
             _ => Err(CommandError::new(
                 "InvalidInput",
-                "An auth action is required; use fab-rs auth login, logout, or status",
+                format!(
+                    "An auth action is required; use {EXECUTABLE_NAME} auth login, logout, or status"
+                ),
             )),
         },
         Some(("api", api)) => {
@@ -1130,7 +1141,7 @@ async fn execute(
         }
         _ => Err(CommandError::new(
             "InvalidInput",
-            "A command is required; run fab-rs --help to list commands",
+            format!("A command is required; run {EXECUTABLE_NAME} --help to list commands"),
         )),
     }
 }
