@@ -54,17 +54,22 @@ not authorize a run, an additional attempt, or omitted coverage. The earlier
 570-second attempt remains failed evidence.
 All other entry defaults remain 570 seconds and ten-minute steps; arbitrary
 policy IDs, phases, budgets or different candidate/source/base bindings fail.
-The enclosing job stays at 45 minutes. A candidate-only first-step timestamp
-supplies diagnostic estimates only, not a provider job-start attestation or
-qualification admission. The estimate subtracts a one-minute startup reserve
-and requires another minute for cleanup beyond the remaining phase, but that
-reserve cannot prove the true job deadline. Missing, malformed, future or
-insufficient timing fails; even a numerically sufficient estimate remains
-unverified and fails closed before any qualification command. This policy
-preparation cannot run until the controller resolves provider headroom
-accounting through an explicitly permitted route. The actual provider job
-timeout remains authoritative; no permission/API expansion or successful
-fallback is implied.
+The enclosing job stays at 45 minutes. The explicitly accepted estimated-anchor
+policy records the first workflow-step time before checkout/build, exclusively
+creates its file, and binds repository, candidate/source/base/checkout, original
+source, run ID and attempt. Admission requires an anchor age of at most 20
+minutes and reserves an estimated three minutes for cleanup/artifacts beyond
+the remaining 19-minute phase. Missing, malformed, mismatched, future, changed,
+stale or insufficient timing fails; no current-time substitute or reset exists.
+Anchor bytes are retained and checked unchanged before every command and during
+finalization. The receipt labels this as an estimate: provider job start,
+pre-anchor elapsed time and true provider headroom remain unknown. The
+20-minute entry-age bound plus 19-minute work plus three-minute estimated
+retention margin fits 42 minutes after the anchor, not necessarily after true
+job start. Unknown pre-anchor overhead may still cause provider cancellation;
+retention is best effort, and incomplete evidence is failed/censored, never a
+pass or permission to rerun. The hard provider timeout remains authoritative.
+This accounting policy does not grant a hosted slot, push or native execution.
 The KQL host suite explicitly enables `headless,v2-link-kql`, including its
 headless executable case; generic headless-only zero tests cannot satisfy it.
 KQL and current DataAgent binary-host unit namespaces use qualified test names

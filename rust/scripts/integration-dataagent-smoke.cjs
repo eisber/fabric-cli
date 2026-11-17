@@ -26,7 +26,7 @@ const KQL_POLICY = Object.freeze({
   id: 'kql-link-full-qualification-v2', phase: 'candidate-qualification',
   executorMilliseconds: 1140000, commandMaximumMilliseconds: 480000,
   workflowStepMinutes: 20, enclosingJobMinutes: 45, cargoWorkInventoryMaximum: 64,
-  cleanupMarginMilliseconds: 60000, startupReserveMilliseconds: 60000,
+  maximumAnchorAgeMilliseconds: 1200000, estimatedCleanupMarginMilliseconds: 180000,
 });
 const KQL_POLICY_ENTRY = Object.freeze({
   candidate: 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t',
@@ -143,8 +143,14 @@ function qualificationPolicy(entry) {
 function phaseBudget(entry, now = Date.now, started = now()) {
   const policy = qualificationPolicy(entry);
   const deadline = started + policy.executorMilliseconds;
+  let observed = started;
   const remaining = () => {
-    const value = deadline - now();
+    const current = now();
+    if (policy === KQL_POLICY) {
+      assert.ok(current >= observed, 'Candidate proof clock moved backwards');
+    }
+    observed = current;
+    const value = deadline - current;
     assert.ok(value > 0, 'Finite candidate proof budget expired');
     return value;
   };
@@ -156,26 +162,43 @@ function phaseBudget(entry, now = Date.now, started = now()) {
     }};
 }
 
-function jobHeadroom(phase, anchor, now = Date.now()) {
-  assert.match(anchor || '', /^\d+$/, 'The first workflow-step timestamp is required');
-  const started = Number(anchor);
-  assert.ok(Number.isSafeInteger(started) && started > 0 && started <= phase.started,
-    'Invalid first workflow-step timestamp');
-  const remaining = started + phase.policy.enclosingJobMinutes * 60000 -
-    phase.policy.startupReserveMilliseconds - now;
-  assert.ok(remaining >= phase.remaining() + phase.policy.cleanupMarginMilliseconds,
-    'Insufficient enclosing-job headroom for qualification and cleanup');
-  return {anchor: 'first workflow step, not provider job start', started,
-    admitted: false, provider_job_deadline_verified: false,
-    startup_reserve_milliseconds: phase.policy.startupReserveMilliseconds,
-    remaining_milliseconds: remaining};
+function estimatedAnchorAdmission(phase, anchor, context, now = Date.now()) {
+  assert.ok(now >= phase.started, 'Candidate admission clock moved backwards');
+  assert.ok(anchor && typeof anchor === 'object' && !Array.isArray(anchor),
+    'The bound first-step anchor is required');
+  assert.equal(anchor.schema, 1, 'Invalid first-step anchor schema');
+  assert.equal(anchor.kind, 'estimated-first-workflow-step', 'Invalid first-step anchor kind');
+  assert.equal(context.repository, 'eisber/fabric-cli');
+  for (const key of ['run_id', 'run_attempt']) assert.match(context[key] || '', /^[1-9]\d*$/);
+  for (const key of ['source', 'base', 'checkout', 'original_source']) {
+    assert.match(context[key] || '', /^[a-f0-9]{40}$/);
+  }
+  assert.deepEqual(Object.keys(anchor).sort(),
+    ['schema', 'kind', 'recorded_unix_ms', ...Object.keys(context)].sort(),
+    'Invalid first-step anchor fields');
+  for (const [key, value] of Object.entries(context)) {
+    assert.equal(anchor[key], value, `First-step anchor binding mismatch: ${key}`);
+  }
+  const recorded = anchor.recorded_unix_ms;
+  assert.ok(Number.isSafeInteger(recorded) && recorded > 0 && recorded <= phase.started,
+    'Invalid or future first-step timestamp');
+  const age = phase.started - recorded;
+  assert.ok(age <= phase.policy.maximumAnchorAgeMilliseconds, 'First-step anchor is stale');
+  const remaining = recorded + phase.policy.enclosingJobMinutes * 60000 - now;
+  assert.ok(remaining >= phase.remaining() + phase.policy.estimatedCleanupMarginMilliseconds,
+    'Insufficient estimated time for qualification and cleanup');
+  return {accounting_policy: 'estimated-first-step-v1', anchor, estimated_admission: true,
+    age_at_phase_entry_milliseconds: age,
+    observed_unix_ms: now, age_at_admission_milliseconds: now - recorded,
+    estimated_remaining_milliseconds: remaining,
+    estimated_cleanup_margin_milliseconds: phase.policy.estimatedCleanupMarginMilliseconds,
+    provider_job_start_unix_ms: null, pre_anchor_elapsed_milliseconds: null,
+    true_provider_headroom_milliseconds: null, provider_job_deadline_verified: false,
+    censor_risk: 'Unknown pre-anchor overhead may exhaust the hard 45-minute provider limit; retention is best effort'};
 }
 
-function requireJobHeadroom(phase, anchor) {
-  const estimate = jobHeadroom(phase, anchor);
-  assert.ok(estimate.admitted && estimate.provider_job_deadline_verified,
-    'Provider job deadline is unverified; first-step timing cannot admit KQL qualification');
-  return estimate;
+function requireUnchangedAnchor(expectedHash, bytes) {
+  assert.equal(digest(bytes), expectedHash, 'First-step anchor changed after phase admission');
 }
 
 function proofCommands(entry, selected) {
@@ -216,8 +239,12 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     }
     save();
   };
-  let phase;
+  let phase, anchorFile, anchorHash;
+  const verifyAnchor = () => {
+    if (anchorHash) requireUnchangedAnchor(anchorHash, fs.readFileSync(anchorFile));
+  };
   const run = (file, args, options = {}) => {
+    verifyAnchor();
     const timeout = phase.commandTimeout(options.timeout);
     const remaining = phase.remaining();
     console.log(`${file} ${JSON.stringify(args)}`);
@@ -250,9 +277,20 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     if (phase.policy === KQL_POLICY) {
       assert.equal(event.repository?.full_name, 'eisber/fabric-cli');
       assert.equal(event.number, 106, 'Qualification is admitted only for candidate PR106');
-      report.enclosing_job = jobHeadroom(phase, process.env.KQL_LINK_WORKFLOW_STARTED_UNIX_MS);
+      assert.ok(process.env.RUNNER_TEMP && path.isAbsolute(process.env.RUNNER_TEMP),
+        'An absolute hosted runner temporary directory is required');
+      anchorFile = path.join(process.env.RUNNER_TEMP, 'kql-link-first-step-anchor.json');
+      const bytes = fs.readFileSync(anchorFile);
+      anchorHash = digest(bytes);
+      report.enclosing_job = estimatedAnchorAdmission(phase, JSON.parse(bytes.toString('utf8')), {
+        repository: event.repository.full_name, run_id: process.env.GITHUB_RUN_ID,
+        run_attempt: process.env.GITHUB_RUN_ATTEMPT, source: event.pull_request.head.sha,
+        base: entry.base, candidate: entry.candidate, checkout: process.env.GITHUB_SHA,
+        original_source: entry.source,
+      });
+      report.enclosing_job.anchor_sha256 = anchorHash;
+      fs.writeFileSync(path.join(artifacts, 'first-step-anchor.json'), bytes);
       save();
-      requireJobHeadroom(phase, process.env.KQL_LINK_WORKFLOW_STARTED_UNIX_MS);
     }
     const actual = git(['rev-parse', 'HEAD']);
     report.source = sourcePin('pull_request', event, process.env.GITHUB_REF,
@@ -286,9 +324,7 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     const commandPlan = `${JSON.stringify(commands, null, 2)}\n`;
     fs.writeFileSync(path.join(artifacts, 'command-plan.json'), commandPlan);
     report.command_plan = {cargo_commands: commands.length, sha256: digest(commandPlan)};
-    if (phase.policy === KQL_POLICY) {
-      requireJobHeadroom(phase, process.env.KQL_LINK_WORKFLOW_STARTED_UNIX_MS);
-    }
+    verifyAnchor();
     phase.remaining();
     save();
     for (const command of commands) {
@@ -325,10 +361,11 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
       throw error;
     } finally {
       try {
+        verifyAnchor();
         if (phase) phase.remaining();
       } catch (error) {
         report.passed = false;
-        report.deadline_error = error.message;
+        report.finalization_error = error.message;
         throw error;
       } finally {
         report.elapsed_seconds = (Date.now() - started) / 1000;
@@ -340,7 +377,8 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
 }
 
 module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, REPORT_TESTS,
-  DEFAULT_POLICY, KQL_POLICY, qualificationPolicy, phaseBudget, jobHeadroom, requireJobHeadroom, proofCommands,
+  DEFAULT_POLICY, KQL_POLICY, qualificationPolicy, phaseBudget, estimatedAnchorAdmission,
+  requireUnchangedAnchor, proofCommands,
   selectedCommands, leafCommand, testObservations, testResults, main};
 if (require.main === module) {
   try { assert.equal(process.argv.length, 3); main(process.argv[2]); }

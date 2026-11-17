@@ -33,9 +33,22 @@ jobs:
         if: >-
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.ref == 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t'
-        run: >-
-          node -e "require('node:fs').appendFileSync(process.env.GITHUB_ENV,
-          'KQL_LINK_WORKFLOW_STARTED_UNIX_MS=' + Date.now() + '\n')"
+        run: |
+          @'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const recorded = Date.now();
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'kql-link-first-step-anchor.json'),
+            JSON.stringify({
+              schema: 1, kind: 'estimated-first-workflow-step', recorded_unix_ms: recorded,
+              repository: process.env.GITHUB_REPOSITORY, run_id: process.env.GITHUB_RUN_ID,
+              run_attempt: process.env.GITHUB_RUN_ATTEMPT, source: event.pull_request.head.sha,
+              base: event.pull_request.base.sha, candidate: event.pull_request.head.ref,
+              checkout: process.env.GITHUB_SHA,
+              original_source: 'e1baaee16dc6eb4917c5310224c27fcd258564ef',
+            }) + '\n', {flag: 'wx'});
+          '@ | node
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}

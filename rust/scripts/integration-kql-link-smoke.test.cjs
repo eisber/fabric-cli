@@ -41,7 +41,8 @@ test('PR55 proof is candidate-only, immutable-pinned, and retains the existing f
   assert.match(workflow, /timeout-minutes: 45/);
   assert.ok(workflow.indexOf("Record the KQL candidate's first workflow-step time") <
     workflow.indexOf('uses: actions/checkout@'));
-  assert.match(workflow, /KQL_LINK_WORKFLOW_STARTED_UNIX_MS=.*Date\.now\(\)/);
+  assert.match(workflow, /kind: 'estimated-first-workflow-step'/);
+  assert.match(workflow, /\{flag: 'wx'\}/);
   for (const other of workflow.split('\n      - name: Check the ').slice(2)) {
     assert.match(other.split('\n      - name:')[0], /timeout-minutes: 10/);
   }
@@ -76,7 +77,7 @@ test('only the exact KQL entry can select the admitted phase and immutable limit
     id: 'kql-link-full-qualification-v2', phase: 'candidate-qualification',
     executorMilliseconds: 1140000, commandMaximumMilliseconds: 480000,
     workflowStepMinutes: 20, enclosingJobMinutes: 45, cargoWorkInventoryMaximum: 64,
-    cleanupMarginMilliseconds: 60000, startupReserveMilliseconds: 60000,
+    maximumAnchorAgeMilliseconds: 1200000, estimatedCleanupMarginMilliseconds: 180000,
   });
   assert.ok(Object.isFrozen(dataagent.KQL_POLICY) && Object.isFrozen(dataagent.DEFAULT_POLICY));
   for (const policy of [undefined, null, 'kql-link-full-qualification-v2',
@@ -86,6 +87,8 @@ test('only the exact KQL entry can select the admitted phase and immutable limit
     {...kql.ENTRY.policy, commandMaximumMilliseconds: 480001},
     {...kql.ENTRY.policy, cargoWorkInventoryMaximum: 65},
     {...kql.ENTRY.policy, enclosingJobMinutes: 46},
+    {...kql.ENTRY.policy, maximumAnchorAgeMilliseconds: 1200001},
+    {...kql.ENTRY.policy, estimatedCleanupMarginMilliseconds: 179999},
     {...kql.ENTRY.policy, budgetFromEnvironment: true}]) {
     assert.throws(() => dataagent.qualificationPolicy({...kql.ENTRY, policy}), /Unrecognized/);
   }
@@ -121,36 +124,116 @@ test('one absolute phase deadline covers commands, failed work, overhead and fin
   }
 });
 
-test('KQL enclosing-job admission reserves the complete remaining phase and cleanup without extending the job', () => {
+function anchorFixture(recorded = 1700000) {
+  const context = {
+    repository: 'eisber/fabric-cli', run_id: '44043745329', run_attempt: '1',
+    source: 'a'.repeat(40), base: kql.ENTRY.base, candidate: kql.ENTRY.candidate,
+    checkout: 'b'.repeat(40), original_source: kql.ENTRY.source,
+  };
+  return {context, anchor: {schema: 1, kind: 'estimated-first-workflow-step',
+    recorded_unix_ms: recorded, ...context}};
+}
+
+test('estimated anchor admission retains unknown provider headroom and exact 20-minute/3-minute boundaries', () => {
   let now = 2000000;
   const phase = dataagent.phaseBudget(kql.ENTRY, () => now);
-  const anchor = String(now - 300000);
-  const headroom = dataagent.jobHeadroom(phase, anchor, now);
-  assert.equal(headroom.remaining_milliseconds, 2340000);
-  assert.match(headroom.anchor, /not provider job start/);
-  assert.equal(headroom.admitted, false);
-  assert.equal(headroom.provider_job_deadline_verified, false);
-  for (const invalid of [undefined, '', 'NaN', '-1', '0', String(now + 1), '99999999999999999999999']) {
-    assert.throws(() => dataagent.jobHeadroom(phase, invalid, now), /timestamp/);
+  const {anchor, context} = anchorFixture();
+  const admission = dataagent.estimatedAnchorAdmission(phase, anchor, context, now);
+  assert.equal(admission.estimated_admission, true);
+  assert.equal(admission.estimated_remaining_milliseconds, 2400000);
+  assert.equal(admission.age_at_phase_entry_milliseconds, 300000);
+  assert.equal(admission.estimated_cleanup_margin_milliseconds, 180000);
+  for (const key of ['provider_job_start_unix_ms', 'pre_anchor_elapsed_milliseconds',
+    'true_provider_headroom_milliseconds']) assert.equal(admission[key], null);
+  assert.equal(admission.provider_job_deadline_verified, false);
+  assert.match(admission.censor_risk, /Unknown pre-anchor overhead/);
+  for (const age of [0, 1200000]) {
+    const fixture = anchorFixture(now - age);
+    assert.equal(dataagent.estimatedAnchorAdmission(phase, fixture.anchor, fixture.context, now)
+      .age_at_phase_entry_milliseconds, age);
   }
-  assert.throws(() => dataagent.jobHeadroom(phase, String(now - 1500000), now), /Insufficient/);
+  assert.throws(() => dataagent.estimatedAnchorAdmission(phase,
+    {...anchor, recorded_unix_ms: now - 1200001}, context, now), /stale/);
+  assert.throws(() => dataagent.estimatedAnchorAdmission(phase, anchor, context, now - 1), /backwards/);
+  assert.throws(() => dataagent.estimatedAnchorAdmission(phase, anchor, context,
+    anchor.recorded_unix_ms + 1380001), /Insufficient estimated time/);
   now += 1139000;
   assert.equal(phase.remaining(), 1000);
-  assert.equal(dataagent.jobHeadroom(phase, anchor, now).remaining_milliseconds, 1201000);
+  assert.equal(dataagent.estimatedAnchorAdmission(phase, anchor, context, now)
+    .age_at_phase_entry_milliseconds, 300000, 'Later work does not renew or re-age the entry');
   now += 1000;
-  assert.throws(() => dataagent.jobHeadroom(phase, anchor, now), /budget expired/);
+  assert.throws(() => dataagent.estimatedAnchorAdmission(phase, anchor, context, now), /budget expired/);
 });
 
-test('a valid-looking first-step timestamp cannot stand in for unknown provider job headroom', () => {
-  const phase = dataagent.phaseBudget(kql.ENTRY);
-  const anchor = String(phase.started - 1000);
-  assert.throws(() => dataagent.requireJobHeadroom(phase, anchor),
-    /Provider job deadline is unverified/);
+test('missing, malformed, future and mismatched immutable source/run/attempt anchors fail closed', () => {
+  const now = 2000000;
+  const phase = dataagent.phaseBudget(kql.ENTRY, () => now);
+  const {anchor, context} = anchorFixture();
+  for (const invalid of [undefined, null, '', [], {...anchor, schema: 2}, {...anchor, kind: 'provider-start'},
+    {...anchor, extra: true}, Object.fromEntries(Object.entries(anchor).filter(([key]) => key !== 'source'))]) {
+    assert.throws(() => dataagent.estimatedAnchorAdmission(phase, invalid, context, now));
+  }
+  for (const recorded of [undefined, null, '1700000', NaN, Infinity, -1, 0, 1.5, now + 1]) {
+    assert.throws(() => dataagent.estimatedAnchorAdmission(phase,
+      {...anchor, recorded_unix_ms: recorded}, context, now), /timestamp/);
+  }
+  for (const key of Object.keys(context)) {
+    assert.throws(() => dataagent.estimatedAnchorAdmission(phase,
+      {...anchor, [key]: 'other'}, context, now), new RegExp(`binding mismatch: ${key}`));
+  }
+  for (const key of ['run_id', 'run_attempt', 'source', 'base', 'checkout', 'original_source']) {
+    assert.throws(() => dataagent.estimatedAnchorAdmission(phase,
+      {...anchor, [key]: ''}, {...context, [key]: ''}, now));
+  }
+});
+
+test('workflow records its bound estimate exclusively before checkout and changed bytes never reset a phase', () => {
+  const workflow = read('.github/workflows/integration-smoke.yml').replace(/\r\n/g, '\n');
+  const script = workflow.match(/run: \|\n          @'\n([\s\S]*?)\n          '@ \| node/)[1]
+    .replace(/^          /gm, '');
+  const {context} = anchorFixture();
+  let contents;
+  const env = {
+    RUNNER_TEMP: '/hosted-temp', GITHUB_EVENT_PATH: '/event.json',
+    GITHUB_REPOSITORY: context.repository, GITHUB_RUN_ID: context.run_id,
+    GITHUB_RUN_ATTEMPT: context.run_attempt, GITHUB_SHA: context.checkout,
+  };
+  const sandbox = {Date: {now: () => 1700000}, process: {env},
+    require(name) {
+      if (name === 'node:path') return path.posix;
+      assert.equal(name, 'node:fs');
+      return {readFileSync(file) {
+        assert.equal(file, env.GITHUB_EVENT_PATH);
+        return JSON.stringify({pull_request: {head: {sha: context.source, ref: context.candidate},
+          base: {sha: context.base}}});
+      }, writeFileSync(file, bytes, options) {
+        assert.equal(file, '/hosted-temp/kql-link-first-step-anchor.json');
+        assert.equal(options.flag, 'wx');
+        assert.equal(contents, undefined, 'Exclusive creation prevents a changed/reset anchor');
+        contents = bytes;
+      }};
+    }};
+  vm.runInNewContext(script, sandbox, {timeout: 1000});
+  const phase = dataagent.phaseBudget(kql.ENTRY, () => 2000000);
+  assert.equal(dataagent.estimatedAnchorAdmission(phase, JSON.parse(contents), context, 2000000)
+    .estimated_admission, true);
+  assert.throws(() => vm.runInNewContext(script, {...sandbox}, {timeout: 1000}), /Exclusive creation/);
+  const digest = require('node:crypto').createHash('sha256').update(contents).digest('hex');
+  dataagent.requireUnchangedAnchor(digest, contents);
+  for (const changed of ['', `${contents}\n`, contents.replace('1700000', '2000000')]) {
+    assert.throws(() => dataagent.requireUnchangedAnchor(digest, changed), /anchor changed/);
+  }
+  let now = 2000000;
+  const clock = dataagent.phaseBudget(kql.ENTRY, () => now);
+  now += 1000;
+  assert.equal(clock.remaining(), 1139000);
+  now -= 1;
+  assert.throws(() => clock.remaining(), /clock moved backwards/);
+  assert.equal(clock.deadline, 3140000);
   const runner = read('rust/scripts/integration-dataagent-smoke.cjs');
-  assert.ok(runner.indexOf('requireJobHeadroom(phase, process.env.') <
-    runner.indexOf("const actual = git(['rev-parse', 'HEAD'])"),
-  'Unverified admission must fail before commands, metadata or native work');
-  assert.equal((runner.match(/requireJobHeadroom\(phase, process\.env\./g) || []).length, 2);
+  assert.ok(runner.indexOf('report.enclosing_job = estimatedAnchorAdmission(') <
+    runner.indexOf("const actual = git(['rev-parse', 'HEAD'])"));
+  assert.ok((runner.match(/verifyAnchor\(\)/g) || []).length >= 3);
 });
 
 test('shared frozen command assembly preserves every original descriptor and rejects oversized KQL work', () => {
