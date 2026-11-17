@@ -86,10 +86,7 @@ fn main() -> std::process::ExitCode {
     }
     #[cfg(feature = "v2-link-kql")]
     if v2_link_kql_main::handles(&args) {
-        return std::process::ExitCode::from(finish(
-            v2_link_kql_main::run(args),
-            &mut io::stderr().lock(),
-        ));
+        return std::process::ExitCode::from(v2_link_kql_main::run(args));
     }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
@@ -140,6 +137,9 @@ const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  
 
 #[cfg(feature = "v2-create-eventhouse")]
 const EVENTHOUSE_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Eventhouse [OPTIONS]\nMetadata-only Eventhouse creation requires immediate terminal approval. Run create --help.\nThe provider may create a same-name default KQL database and incur capacity or storage consumption; the client issues no child POST.";
+
+#[cfg(feature = "v2-link-kql")]
+const KQL_LINK_HELP: &str = "KQL links: artifact kql-database link <typed-shortcut-destination> --input FILE|- [--wait]\nRoot link selects the explicit DataAgent or KQLDatabase owner. Run artifact kql-database link --help.\nExplicit controlling-terminal approval is required; query acceleration may incur costs.";
 
 fn failed(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), Value::Null, exit)
@@ -214,7 +214,7 @@ fn run() -> Result<(), Failure> {
         writeln!(io::stdout().lock(), "\n{EVENTHOUSE_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-link-kql")]
-        writeln!(io::stdout().lock(), "\nKQL links: artifact kql-database link <typed-shortcut-destination> --input FILE|- [--wait]\nRoot link selects the explicit DataAgent or KQLDatabase owner. Run artifact kql-database link --help.\nExplicit controlling-terminal approval is required; query acceleration may incur costs.")
+        writeln!(io::stdout().lock(), "\n{KQL_LINK_HELP}")
             .map_err(|_| failed("OutputFailed", "Link help output failed.", 1))?;
         return Ok(());
     }

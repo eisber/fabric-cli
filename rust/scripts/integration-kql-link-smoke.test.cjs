@@ -105,6 +105,26 @@ test('KQL native-adapter and current DataAgent main namespaces use dynamic quali
   }
 });
 
+test('combined refresh fixtures and repaired output/preflight/help cases remain actual proof obligations', () => {
+  const command = kql.ENTRY.commands.find(item => item.args.includes('v2_refresh_main::tests::'));
+  assert.ok(command?.exhaustive);
+  assert.deepEqual(features(command), kql.REGISTRATION_PROFILES.at(-1).features);
+  assert.deepEqual(command.required,
+    update.registeredTests('rust/clients/cli/app/src/v2_refresh_main_tests.rs')
+      .map(name => `v2_refresh_main::tests::${name}`));
+  const main = kql.mainCommand('v2_link_kql_main');
+  for (const name of [
+    'stalled_stderr_delivery_retains_accepted_handle_with_bounded_return',
+    'owned_stderr_worker_cannot_prevent_supervised_process_exit_after_deadline',
+  ]) assert.ok(main.required.includes(`v2_link_kql_main::tests::${name}`));
+  assert.ok(kql.leafCommand(kql.KQL_TARGET).required
+    .includes('native_invalid_shortcut_names_reject_before_open_stdin_or_authentication'));
+  const entry = read('rust/clients/cli/app/src/v2_main.rs');
+  assert.match(entry, /ExitCode::from\(v2_link_kql_main::run\(args\)\)/);
+  assert.match(read('rust/clients/cli/app/src/v2_link_kql_main.rs'), /owned_output::owned_stream/);
+  assert.match(read('rust/clients/cli/app/src/v2_livy_list_main.rs'), /super::KQL_LINK_HELP/);
+});
+
 test('shared mutation, wire and SDK LINK suites require every currently registered source test', () => {
   for (const target of kql.CONTRACT_TARGETS) {
     const command = kql.ENTRY.commands.find(item => item.args.includes(target.package) &&

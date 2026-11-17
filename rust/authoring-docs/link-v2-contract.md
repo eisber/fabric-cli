@@ -29,6 +29,8 @@ may be names or GUIDs; complete bounded discovery uses the existing SDK resolver
 and rejects ambiguity. Explicit GUIDs avoid discovery. The relationship suffix
 is parsed separately from its metadata-only owner prefix. No implicit current
 context, URL normalization, source access probe, or identity fallback is used.
+The shortcut name is ASCII with no surrounding whitespace or native-invalid
+characters (including wildcards); these paths fail before identity or input I/O.
 
 The executable uses the existing explicit `FAB_RUST_AUTH_MODE` selection and
 validated `FAB_RUST_FABRIC_HOST` binding. It has a 120-second invocation bound,
@@ -73,6 +75,8 @@ returns a nonzero exit with best-effort reconciliation evidence on stderr.
 Neither output failure nor interrupted observation causes resubmission.
 Output delivery uses the original invocation deadline; an expired, interrupted,
 or failed delivery retains the known operation evidence and never replays it.
+Output workers own duplicated OS handles, never global Rust stream locks.
+Diagnostic delivery is bounded by the same deadline, with no synchronous fallback.
 Offline host tests are not proof of live Fabric permission, deployed provider
 availability, authentication, or compute execution. Required combined/platform
 validation still gates integration.

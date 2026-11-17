@@ -572,6 +572,7 @@ fn offline_process(args: &[&str]) -> std::process::Output {
 fn combined_typed_help_and_facades_preserve_both_owners_without_input_or_auth() {
     let agent = "/w.Workspace/agent.DataAgent/settings/staging/datasources";
     for args in [
+        vec!["--help"],
         vec!["link", "--help", TARGET],
         vec!["link", TARGET, "-h"],
         vec!["link", "--input", "unopened.json", TARGET, "--help"],
@@ -588,6 +589,12 @@ fn combined_typed_help_and_facades_preserve_both_owners_without_input_or_auth() 
         assert!(output.stderr.is_empty());
         assert!(String::from_utf8(output.stdout).unwrap().contains("link"));
     }
+    let root = offline_process(&["--help"]);
+    assert!(
+        String::from_utf8(root.stdout)
+            .unwrap()
+            .contains("artifact kql-database link <typed-shortcut-destination>")
+    );
     let generic = offline_process(&["link", "--help"]);
     let agent = offline_process(&["artifact", "data-agent", "link", "--help"]);
     assert!(generic.status.success());
@@ -628,6 +635,45 @@ fn malformed_combined_roots_and_facades_reject_before_input_or_identity() {
             let diagnostic = String::from_utf8(output.stderr).unwrap();
             assert!(!diagnostic.contains(target));
             assert!(!diagnostic.contains("unopened"));
+        }
+
+        #[cfg(feature = "headless")]
+        #[test]
+        fn native_invalid_shortcut_names_reject_before_open_stdin_or_authentication() {
+            for name in [
+                "*",
+                "bad+name",
+                "bad:name",
+                "bad\"name",
+                "<name>",
+                "bad|name",
+                " name",
+                "name ",
+                "nonascii-\u{e9}",
+            ] {
+                let target = format!("/w.Workspace/db.KQLDatabase/Tables/{name}.Shortcut");
+                assert!(KqlDestination::parse(&target).is_err());
+                for args in [
+                    vec!["link", target.as_str(), "--input", "-"],
+                    vec![
+                        "artifact",
+                        "kql-database",
+                        "link",
+                        target.as_str(),
+                        "--input",
+                        "-",
+                    ],
+                ] {
+                    let output = offline_process(&args);
+                    assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+                    assert!(output.stdout.is_empty());
+                    assert_eq!(
+                        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+                        "InvalidArguments"
+                    );
+                    assert!(!String::from_utf8(output.stderr).unwrap().contains(&target));
+                }
+            }
         }
     }
     for args in [

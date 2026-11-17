@@ -342,4 +342,119 @@ fn interruption_classification_does_not_hide_timeout_or_signal_setup_failure() {
     for (state, expected) in [(1, "TimedOut"), (2, "Cancelled"), (3, "SignalFailed")] {
         assert_eq!(interruption_code(&AtomicU8::new(state)), expected);
     }
+
+    #[tokio::test]
+    async fn stalled_stderr_delivery_retains_accepted_handle_with_bounded_return() {
+        struct Stalled;
+        impl Write for Stalled {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                std::thread::sleep(Duration::from_millis(200));
+                Err(io::Error::other("synthetic blocked pipe"))
+            }
+
+            #[test]
+            fn owned_stderr_worker_cannot_prevent_supervised_process_exit_after_deadline() {
+                const CHILD: &str = "FAB_KQL_STALLED_STDERR_CHILD";
+                if std::env::var_os(CHILD).is_some() {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .max_blocking_threads(1)
+                        .build()
+                        .unwrap();
+                    runtime.block_on(async {
+                        let writer =
+                            owned_output::owned_stream(OutputStream::Stderr, true).unwrap();
+                        let result = owned_output::write_owned(
+                            writer,
+                            Instant::now() + Duration::from_millis(100),
+                            std::future::pending::<()>(),
+                            |writer| -> io::Result<()> {
+                                let block = [b'x'; 65_536];
+                                loop {
+                                    writer.write_all(&block)?;
+                                }
+                            },
+                        )
+                        .await;
+                        assert!(matches!(result, owned_output::OwnedWrite::Deadline));
+                    });
+                    runtime.shutdown_timeout(Duration::from_millis(20));
+                    return;
+                }
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "v2_link_kql_main::tests::owned_stderr_worker_cannot_prevent_supervised_process_exit_after_deadline",
+                        "--nocapture",
+                    ])
+                    .env(CHILD, "1")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap();
+                let deadline = Instant::now() + Duration::from_secs(5);
+                loop {
+                    if let Some(status) = child.try_wait().unwrap() {
+                        assert!(status.success());
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        child.kill().unwrap();
+                        let _ = child.wait();
+                        panic!("owned stalled stderr prevented bounded child exit");
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        struct Broken;
+        impl Write for Broken {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                Err(io::Error::other("synthetic output failure"))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let http = ScriptedHttp::new([response(
+            202,
+            "",
+            &[(
+                "location",
+                "https://api.fabric.microsoft.com/v1/operations/55555555-5555-4555-8555-555555555555",
+            )],
+        )]);
+        let client = client();
+        let mut operations = OperationSession::with_context(
+            client.context(),
+            executor(http.clone()),
+            OperationLimits::default(),
+            std::future::pending(),
+        );
+        let prepared = prepared_for_presentation().await;
+        let mut approval = CapturedApproval(prepared.target().clone(), prepared.effects());
+        let delivery =
+            host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;
+        let started = Instant::now();
+        let error = deliver(
+            delivery,
+            started + Duration::from_millis(20),
+            Broken,
+            Stalled,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.0, "TimedOut");
+        assert_eq!(
+            error.2["operationId"],
+            "55555555-5555-4555-8555-555555555555"
+        );
+        assert_eq!(error.2["remoteReplayed"], false);
+        assert!(started.elapsed() < Duration::from_millis(150));
+        assert_eq!(http.requests.lock().unwrap().len(), 1);
+    }
 }

@@ -56,7 +56,11 @@ impl KqlDestination {
             .filter(|name| !name.is_empty() && !matches!(*name, "." | ".."))
             .ok_or_else(invalid_target)?;
         if path.len() > 4096
-            || path.contains(['\\', '?', '#', '%', '[', ']'])
+            || !name.is_ascii()
+            || name.trim() != name
+            || path.contains([
+                '\\', '?', '#', '%', '[', ']', '+', ':', '"', '<', '>', '|', '*',
+            ])
             || path.chars().any(char::is_control)
         {
             return Err(invalid_target());

@@ -14,6 +14,7 @@ use fabric_cli_mutations::{
         self, LinkApproval, LinkEffects, LinkFiles, LinkResolver, PreparedLink, ResolvedLinkTarget,
     },
 };
+use fabric_cli_output::OutputStream;
 use fabric_sdk::{Client, RequestContext};
 use fabric_sdk_http::HttpExecutor;
 use fabric_sdk_operations::{OperationLimits, OperationSession};
@@ -26,6 +27,10 @@ use std::{
 };
 
 const TIMEOUT: Duration = Duration::from_secs(120);
+
+#[allow(dead_code)]
+#[path = "native_output.rs"]
+mod owned_output;
 
 #[cfg(test)]
 #[path = "v2_link_kql_main_tests.rs"]
@@ -42,16 +47,67 @@ pub(super) fn handles(args: &[OsString]) -> bool {
                 )))
 }
 
-pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
+pub(super) fn run(args: Vec<OsString>) -> u8 {
+    let deadline = Instant::now() + TIMEOUT;
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(2)
+        .build()
+    else {
+        return 1;
+    };
+    let exit = runtime.block_on(async {
+        match execute(args, deadline).await {
+            Ok(exit) => exit,
+            Err((code, message, evidence, exit)) => {
+                let diagnostic = serde_json::json!({
+                    "error":{"code":code,"message":message},"evidence":evidence,
+                });
+                let _ = write_stream(
+                    OutputStream::Stderr,
+                    diagnostic.to_string().into_bytes(),
+                    deadline,
+                )
+                .await;
+                exit
+            }
+        }
+    });
+    runtime.shutdown_timeout(Duration::from_secs(1));
+    exit
+}
+
+async fn write_stream(
+    stream: OutputStream,
+    mut bytes: Vec<u8>,
+    deadline: Instant,
+) -> io::Result<()> {
+    bytes.push(b'\n');
+    let writer = owned_output::owned_stream(stream, bytes.is_ascii())?;
+    match owned_output::write_owned(writer, deadline, tokio::signal::ctrl_c(), move |writer| {
+        writer.write_all(&bytes)?;
+        writer.flush()
+    })
+    .await
+    {
+        owned_output::OwnedWrite::Complete(result) => result,
+        _ => Err(io::ErrorKind::Interrupted.into()),
+    }
+}
+
+async fn execute(args: Vec<OsString>, deadline: Instant) -> Result<u8, Failure> {
     let mut schema = host::command();
     match schema.try_get_matches_from_mut(
         std::iter::once(OsString::from("fab-cli-v2")).chain(args.iter().cloned()),
     ) {
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
-            io::stdout()
-                .lock()
-                .write_all(error.to_string().as_bytes())
-                .map_err(|_| failed("OutputFailed", "Link help delivery failed.", 1))?;
+            write_stream(
+                OutputStream::Stdout,
+                error.to_string().into_bytes(),
+                deadline,
+            )
+            .await
+            .map_err(|_| failed("OutputFailed", "Link help delivery failed.", 1))?;
             return Ok(0);
         }
         Err(_) => {
@@ -65,76 +121,93 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
     }
     let command =
         host::parse(args).map_err(|error| failed("InvalidArguments", error.to_string(), 2))?;
-    let started = Instant::now();
     let (selection, endpoint) = capture_fabric_selection()?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .max_blocking_threads(2)
-        .build()
-        .map_err(|_| failed("RuntimeFailed", "Link runtime could not start.", 1))?;
-    let result = runtime.block_on(async {
-        let remaining = TIMEOUT.saturating_sub(started.elapsed());
-        if remaining.is_zero() {
-            return Err(failed("TimedOut", "Link deadline elapsed before transport setup; no mutation was submitted.", 1));
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(failed(
+            "TimedOut",
+            "Link deadline elapsed before transport setup; no mutation was submitted.",
+            1,
+        ));
+    }
+    let session = NativeSession::new(selection, endpoint, remaining)?;
+    let client = Client::with_context(session.context.clone());
+    let mut resolver = Resolver {
+        client: &client,
+        executor: &session.executor,
+    };
+    let mut files = Files;
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let interruption = AtomicU8::new(0);
+    let interrupted = async {
+        tokio::select! {
+            _ = tokio::time::sleep(remaining) =>
+                interruption.store(1, Ordering::SeqCst),
+            signal = tokio::signal::ctrl_c() =>
+                interruption.store(if signal.is_ok() { 2 } else { 3 }, Ordering::SeqCst),
         }
-        let session = NativeSession::new(selection, endpoint, remaining)?;
-        let client = Client::with_context(session.context.clone());
-        let mut resolver = Resolver { client: &client, executor: &session.executor };
-        let mut files = Files;
-        let remaining = TIMEOUT.saturating_sub(started.elapsed());
-        let interruption = AtomicU8::new(0);
-        let interrupted = async {
-            tokio::select! {
-                _ = tokio::time::sleep(remaining) =>
-                    interruption.store(1, Ordering::SeqCst),
-                signal = tokio::signal::ctrl_c() =>
-                    interruption.store(if signal.is_ok() { 2 } else { 3 }, Ordering::SeqCst),
-            }
-        };
-        tokio::pin!(interrupted);
-        let prepared = tokio::select! {
-            biased;
-            () = &mut interrupted => return Err(failed(interruption_code(&interruption), "Link preflight interrupted; no mutation was submitted.", 1)),
-            prepared = host::prepare(&command, &mut resolver, &mut files) => prepared
-                .map_err(|error| failed("LinkPreflightFailed", error.to_string(), 1))?,
-        };
-        // Approval is part of the shared execute boundary. Race only pre-write
-        // phases; shared OperationSession retains evidence during submission/polls.
-        let mut approval = ConsoleApproval(approval_question(&prepared, &session.context));
-        let effects = prepared.effects();
-        let approved = tokio::select! {
-            biased;
-            () = &mut interrupted => return Err(failed(interruption_code(&interruption), "Link approval interrupted; no mutation was submitted.", 1)),
-            result = approval.approve(prepared.target(), effects) => result
-                .map_err(|error| failed("ApprovalRequired", error.to_string(), 1))?,
-        };
-        if !approved {
-            return Err(failed("ApprovalDenied", "Link was not approved; no mutation was submitted.", 1));
-        }
-        let mut approved = CapturedApproval(prepared.target().clone(), effects);
-        let mut operations = OperationSession::with_context(
-            &session.context,
-            (*session.executor).clone(),
-            OperationLimits {
-                max_requests: NonZeroUsize::new(32).unwrap(),
-                max_response_bytes: NonZeroUsize::new(MAX_BYTES).unwrap(),
-                max_poll_delay: Duration::from_secs(60),
-            },
-            &mut interrupted,
-        );
-        let delivery = host::Delivery::execute(prepared, &mut operations, Some(&mut approved)).await;
-        if interruption.load(Ordering::SeqCst) != 0 {
-            return Err((
+    };
+    tokio::pin!(interrupted);
+    let prepared = tokio::select! {
+        biased;
+        () = &mut interrupted => return Err(failed(interruption_code(&interruption), "Link preflight interrupted; no mutation was submitted.", 1)),
+        prepared = host::prepare(&command, &mut resolver, &mut files) => prepared
+            .map_err(|error| failed("LinkPreflightFailed", error.to_string(), 1))?,
+    };
+    // Approval is part of the shared execute boundary. Race only pre-write
+    // phases; shared OperationSession retains evidence during submission/polls.
+    let mut approval = ConsoleApproval(approval_question(&prepared, &session.context));
+    let effects = prepared.effects();
+    let approved = tokio::select! {
+        biased;
+        () = &mut interrupted => return Err(failed(interruption_code(&interruption), "Link approval interrupted; no mutation was submitted.", 1)),
+        result = approval.approve(prepared.target(), effects) => result
+            .map_err(|error| failed("ApprovalRequired", error.to_string(), 1))?,
+    };
+    if !approved {
+        return Err(failed(
+            "ApprovalDenied",
+            "Link was not approved; no mutation was submitted.",
+            1,
+        ));
+    }
+    let mut approved = CapturedApproval(prepared.target().clone(), effects);
+    let mut operations = OperationSession::with_context(
+        &session.context,
+        (*session.executor).clone(),
+        OperationLimits {
+            max_requests: NonZeroUsize::new(32).unwrap(),
+            max_response_bytes: NonZeroUsize::new(MAX_BYTES).unwrap(),
+            max_poll_delay: Duration::from_secs(60),
+        },
+        &mut interrupted,
+    );
+    let delivery = host::Delivery::execute(prepared, &mut operations, Some(&mut approved)).await;
+    if interruption.load(Ordering::SeqCst) != 0 {
+        return Err((
                 interruption_code(&interruption),
                 "Link observation interrupted; retain the receipt and do not replay. Local cancellation is not remote rollback.".into(),
                 delivery.metadata(),
                 1,
             ));
-        }
-        deliver(delivery, started + TIMEOUT, io::stdout(), io::stderr()).await
-    });
-    runtime.shutdown_timeout(Duration::from_secs(1));
-    result
+    }
+    let stdout = owned_output::owned_stream(OutputStream::Stdout, true).map_err(|_| {
+        (
+            "OutputFailed",
+            "Link stdout is unavailable; retain the receipt and do not replay.".into(),
+            delivery.metadata(),
+            1,
+        )
+    })?;
+    let stderr = owned_output::owned_stream(OutputStream::Stderr, true).map_err(|_| {
+        (
+            "OutputFailed",
+            "Link stderr is unavailable; retain the receipt and do not replay.".into(),
+            delivery.metadata(),
+            1,
+        )
+    })?;
+    deliver(delivery, deadline, stdout, stderr).await
 }
 
 fn interruption_code(interruption: &AtomicU8) -> &'static str {
