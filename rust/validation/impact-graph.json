@@ -735,6 +735,51 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "sdk-items-link",
+      "package": "fabric-sdk-items",
+      "inputs": ["rust/engine/control-plane/resources/items/tests/links.rs"],
+      "depends_on": ["sdk-items"],
+      "tests": [
+        {"package": "fabric-sdk-items", "target": "test:links"}
+      ]
+    },
+    {
+      "id": "mutations-link",
+      "package": "fabric-cli-mutations",
+      "inputs": [
+        "rust/clients/cli/commands/mutations/tests/v2_link.rs",
+        "rust/clients/cli/commands/mutations/tests/v2_link_wire.rs"
+      ],
+      "depends_on": ["mutations", "sdk-items-link"],
+      "tests": [
+        {"package": "fabric-cli-mutations", "target": "test:v2_link"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link_wire"}
+      ]
+    },
+    {
+      "id": "cli-dataagent-link",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_link_dataagent_host.rs",
+        "rust/clients/cli/app/src/v2_link_dataagent_main.rs",
+        "rust/clients/cli/app/src/v2_link_dataagent_main_tests.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/v2_link_dataagent_host.rs",
+        "rust/clients/cli/app/tests/v2_link_dataagent_process.rs",
+        "rust/authoring-docs/link-v2-contract.md"
+      ],
+      "depends_on": ["mutations", "mutations-link", "sdk-items", "sdk-items-link", "operations", "cli-get", "cli-headless", "output"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_host"},
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_process"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link_wire"},
+        {"package": "fabric-sdk-items", "target": "test:links"}
+      ],
+      "checks": ["headless", "dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [

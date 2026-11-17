@@ -41,7 +41,8 @@ const REPORT_TESTS = [
 ];
 
 function selectedCommands(selection, read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'),
-  graph = JSON.parse(fs.readFileSync(path.join(ROOT, 'rust/validation/impact-graph.json')))) {
+  graph = JSON.parse(fs.readFileSync(path.join(ROOT, 'rust/validation/impact-graph.json'))),
+  leaves = LEAVES) {
   const groups = new Map(), deferred = [], cliFeatures = new Set(), cliTargets = new Set();
   for (const test of selection.tests) {
     if (!test.target.startsWith('test:')) {
@@ -78,7 +79,7 @@ function selectedCommands(selection, read = file => fs.readFileSync(path.join(RO
     const group = groups.get(key);
     group.targets.add(test.target.slice(5));
   }
-  assert.ok(LEAVES.every(name => cliTargets.has(name)), 'Actual DataAgent leaf selection is required');
+  assert.ok(leaves.every(name => cliTargets.has(name)), 'Actual DataAgent leaf selection is required');
   const commands = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([, group]) => ({
     args: ['test', '--offline', '--locked', '-p', group.package, '--no-default-features',
       ...(group.features.length ? ['--features', group.features.join(',')] : []),
@@ -113,7 +114,8 @@ function testResults(stdout, stderr, command) {
   return results;
 }
 
-function main(output) {
+function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
+  inputs: INPUTS, leaves: LEAVES}) {
   const root = fs.realpathSync(ROOT);
   assert.ok(output && path.isAbsolute(output), 'An absolute external artifact directory is required');
   const artifacts = path.resolve(output);
@@ -122,7 +124,7 @@ function main(output) {
   const started = Date.now(), deadline = started + 570000;
   const report = {schema: 1, passed: false,
     qualification: 'candidate-only offline Windows DataAgent and metadata-selected consumer proof',
-    original_source: SOURCE, integration_base: BASE, commands: [],
+    original_source: entry.source, integration_base: entry.base, commands: [],
     run_id: process.env.GITHUB_RUN_ID, run_attempt: process.env.GITHUB_RUN_ATTEMPT};
   const save = () => fs.writeFileSync(path.join(artifacts, 'receipt.json'), `${JSON.stringify(report, null, 2)}\n`);
   const persist = (_, result) => {
@@ -152,37 +154,40 @@ function main(output) {
     assert.equal(process.env.RUNNER_OS, 'Windows');
     assert.equal(process.env.GITHUB_EVENT_NAME, 'pull_request');
     const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-    assert.equal(event.pull_request.head.ref, CANDIDATE);
-    assert.equal(event.pull_request.base.sha, BASE, 'Integration base moved');
+    assert.equal(event.pull_request.head.ref, entry.candidate);
+    assert.equal(event.pull_request.base.sha, entry.base, 'Integration base moved');
     const actual = git(['rev-parse', 'HEAD']);
     report.source = sourcePin('pull_request', event, process.env.GITHUB_REF,
       process.env.GITHUB_SHA, actual, git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
     report.tree = git(['rev-parse', 'HEAD^{tree}']);
     report.candidate_parents = git(['show', '-s', '--format=%P', event.pull_request.head.sha]).split(' ');
-    git(['merge-base', '--is-ancestor', SOURCE, event.pull_request.head.sha]);
-    git(['merge-base', '--is-ancestor', BASE, event.pull_request.head.sha]);
+    git(['merge-base', '--is-ancestor', entry.source, event.pull_request.head.sha]);
+    git(['merge-base', '--is-ancestor', entry.base, event.pull_request.head.sha]);
     assert.equal(git(['status', '--porcelain']), '');
     before = sourceInventory(root);
     fs.writeFileSync(path.join(artifacts, 'source-before.json'), JSON.stringify(before, null, 2));
     report.lockfile_sha256 = digest(fs.readFileSync(path.join(root, 'rust/Cargo.lock')));
     report.driver_sha256 = digest(fs.readFileSync(__filename));
+    if (entry.driver) report.entry_driver_sha256 = digest(fs.readFileSync(path.join(root, entry.driver)));
     const rust = path.join(root, 'rust');
     const metadataResult = run('cargo', ['metadata', '--offline', '--locked', '--no-deps',
       '--format-version', '1'], {cwd: rust});
     assert.equal(metadataResult.status, 0, 'Actual locked Cargo metadata is required');
     fs.writeFileSync(path.join(artifacts, 'metadata.json'), metadataResult.stdout);
     const selection = plan({root, metadata: JSON.parse(metadataResult.stdout),
-      graph: JSON.parse(fs.readFileSync(path.join(rust, 'validation/impact-graph.json'))), files: INPUTS});
+      graph: JSON.parse(fs.readFileSync(path.join(rust, 'validation/impact-graph.json'))), files: entry.inputs});
     fs.writeFileSync(path.join(artifacts, 'selection.json'), JSON.stringify(selection, null, 2));
     assert.equal(selection.mode, 'affected', 'Bounded capability selection must not silently widen');
-    const selected = selectedCommands(selection);
-    report.selection = {fingerprint: selection.fingerprint, inputs: INPUTS,
+    const graph = JSON.parse(fs.readFileSync(path.join(rust, 'validation/impact-graph.json')));
+    const selected = selectedCommands(selection, undefined, graph, entry.leaves);
+    report.selection = {fingerprint: selection.fingerprint, inputs: entry.inputs,
       scope: 'explicit DataAgent entry and coupled consumer inputs, not the complete head diff',
       deferred: selected.deferred, qualification_profiles: selection.profiles.map(item => item.id),
       qualification_checks: selection.checks};
     const commands = [
       {args: notebook.COMMANDS[0]},
-      ...LEAVES.map(leafCommand),
+      ...entry.leaves.map(leafCommand),
+      ...(entry.commands || []),
       ...selected.commands,
       update.COMMANDS[4],
       ...ocv.COMMANDS.slice(3, 8),
@@ -195,6 +200,8 @@ function main(output) {
       const result = run('cargo', command.args, {cwd: rust, timeout: 8 * 60 * 1000});
       if (command.args[0] === 'test') {
         report.commands.at(-1).test_observations = testObservations(result.stdout);
+        report.commands.at(-1).case_names = [...result.stdout.matchAll(/^test ([^\r\n]+) \.\.\. ok\r?$/gm)]
+          .map(match => match[1]);
         save();
       }
       assert.equal(result.status, 0, `DataAgent command failed: cargo ${command.args.join(' ')}`);
@@ -228,7 +235,7 @@ function main(output) {
 }
 
 module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, REPORT_TESTS,
-  selectedCommands, leafCommand, testObservations, testResults};
+  selectedCommands, leafCommand, testObservations, testResults, main};
 if (require.main === module) {
   try { assert.equal(process.argv.length, 3); main(process.argv[2]); }
   catch (error) { console.error(error.stack); process.exitCode = 1; }

@@ -33,6 +33,7 @@ mod headless;
 mod v2_create_main;
 mod v2_dataagent_list_main;
 mod v2_exists_main;
+mod v2_link_dataagent_main;
 #[cfg(feature = "runtime-v2")]
 mod v2_livy_list_main;
 #[cfg(feature = "v2-refresh")]
@@ -68,6 +69,12 @@ fn main() -> std::process::ExitCode {
     if fabric_cli::v2_dataagent_list_host::is_list(&args) {
         return std::process::ExitCode::from(finish(
             v2_dataagent_list_main::run(args),
+            &mut io::stderr().lock(),
+        ));
+    }
+    if fabric_cli::v2_link_dataagent_host::handles(&args) {
+        return std::process::ExitCode::from(finish(
+            v2_link_dataagent_main::run(args),
             &mut io::stderr().lock(),
         ));
     }
@@ -107,7 +114,7 @@ fn finish(result: Result<u8, Failure>, stderr: &mut dyn Write) -> u8 {
 
 type Failure = (&'static str, String, Value, u8);
 
-const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 artifact data-agent list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch [--plan]\n\nRun a command with --help for its supported schema.\nUpdate plans are local; Notebook execution requires explicit terminal approval.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
+const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 artifact data-agent list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 link <explicit-data-agent-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 artifact data-agent link <explicit-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 update <path> --input FILE|- --mode patch [--plan]\n\nRun a command with --help for its supported schema.\nUpdate plans are local; Notebook execution requires explicit terminal approval.\nDataAgent links require explicit native identity and interactive effect approval.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
 
 #[cfg(feature = "v2-create")]
 const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
