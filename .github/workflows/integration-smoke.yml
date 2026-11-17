@@ -29,6 +29,13 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_INCREMENTAL: "0"
     steps:
+      - name: Record the KQL candidate's first workflow-step time
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t'
+        run: >-
+          node -e "require('node:fs').appendFileSync(process.env.GITHUB_ENV,
+          'KQL_LINK_WORKFLOW_STARTED_UNIX_MS=' + Date.now() + '\n')"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -50,7 +57,7 @@ jobs:
         if: >-
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.ref == 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t'
-        timeout-minutes: 10
+        timeout-minutes: 20
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
           CARGO_PROFILE_TEST_DEBUG: "0"

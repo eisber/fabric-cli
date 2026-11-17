@@ -60,6 +60,7 @@ function registrationCommands() {
 }
 
 const ENTRY = {
+  policy: dataagent.KQL_POLICY,
   driver: 'rust/scripts/integration-kql-link-smoke.cjs',
   candidate: 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t',
   base: '61c8221914152e231e5e64f7bd38418f66264999',

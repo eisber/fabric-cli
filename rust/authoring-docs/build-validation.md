@@ -43,7 +43,28 @@ The PR55 owned integration candidate additionally runs
 `e1baaee16dc6eb4917c5310224c27fcd258564ef` and integration base
 `61c8221914152e231e5e64f7bd38418f66264999`. The small entry wrapper reuses the
 DataAgent runner's actual locked/offline Cargo metadata, impact planner,
-570-second budget, output/exit receipts and before/after source inventories.
+output/exit receipts and before/after source inventories. The explicitly admitted
+`kql-link-full-qualification-v2` policy gives only this exact candidate/source/base
+and PR106 a single 1,140-second absolute qualification deadline in a 20-minute
+step. Pins, metadata, planning, commands and source-inventory finalization share
+that deadline; no command or failure restarts it. Per-command time remains at
+most eight minutes, and the complete ordered Cargo work inventory is capped at
+64 descriptors, retained with its hash before work starts. This ceiling does
+not authorize a run, an additional attempt, or omitted coverage. The earlier
+570-second attempt remains failed evidence.
+All other entry defaults remain 570 seconds and ten-minute steps; arbitrary
+policy IDs, phases, budgets or different candidate/source/base bindings fail.
+The enclosing job stays at 45 minutes. A candidate-only first-step timestamp
+supplies diagnostic estimates only, not a provider job-start attestation or
+qualification admission. The estimate subtracts a one-minute startup reserve
+and requires another minute for cleanup beyond the remaining phase, but that
+reserve cannot prove the true job deadline. Missing, malformed, future or
+insufficient timing fails; even a numerically sufficient estimate remains
+unverified and fails closed before any qualification command. This policy
+preparation cannot run until the controller resolves provider headroom
+accounting through an explicitly permitted route. The actual provider job
+timeout remains authoritative; no permission/API expansion or successful
+fallback is implied.
 The KQL host suite explicitly enables `headless,v2-link-kql`, including its
 headless executable case; generic headless-only zero tests cannot satisfy it.
 KQL and current DataAgent binary-host unit namespaces use qualified test names

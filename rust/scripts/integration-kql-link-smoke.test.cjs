@@ -9,6 +9,9 @@ const vm = require('node:vm');
 const {test} = require('node:test');
 const {plan} = require('./impact-plan.cjs');
 const dataagent = require('./integration-dataagent-smoke.cjs');
+const dataagentLink = require('./integration-dataagent-link-smoke.cjs');
+const notebook = require('./integration-notebook-smoke.cjs');
+const ocv = require('./integration-ocv-smoke.cjs');
 const update = require('./integration-update-smoke.cjs');
 const kql = require('./integration-kql-link-smoke.cjs');
 
@@ -34,7 +37,14 @@ test('PR55 proof is candidate-only, immutable-pinned, and retains the existing f
   }
   assert.equal(kql.ENTRY.base, '61c8221914152e231e5e64f7bd38418f66264999');
   assert.equal(kql.ENTRY.source, 'e1baaee16dc6eb4917c5310224c27fcd258564ef');
-  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /timeout-minutes: 20/);
+  assert.match(workflow, /timeout-minutes: 45/);
+  assert.ok(workflow.indexOf("Record the KQL candidate's first workflow-step time") <
+    workflow.indexOf('uses: actions/checkout@'));
+  assert.match(workflow, /KQL_LINK_WORKFLOW_STARTED_UNIX_MS=.*Date\.now\(\)/);
+  for (const other of workflow.split('\n      - name: Check the ').slice(2)) {
+    assert.match(other.split('\n      - name:')[0], /timeout-minutes: 10/);
+  }
   assert.match(block, /integration-kql-link-smoke\.cjs/);
   assert.ok(!block.includes('continue-on-error'));
   for (const binding of ['FAB_CLI_V2_TEST_ROOT', 'FAB_IDENTITY_TEST_ROOT', 'FAB_UPDATE_TEST_ROOT']) {
@@ -43,11 +53,135 @@ test('PR55 proof is candidate-only, immutable-pinned, and retains the existing f
   assert.ok(workflow.includes('rust/scripts/integration-kql-link-smoke.test.cjs'));
   const runner = read('rust/scripts/integration-dataagent-smoke.cjs');
   assert.match(runner, /entry\.leaves\.map\(entry\.leafCommand \|\| leafCommand\)/);
+  assert.equal((runner.match(/phase = phaseBudget\(/g) || []).length, 1);
+  assert.match(runner, /event\.number, 106/);
   for (const guard of ['570000', 'github-hosted', 'metadata', '--offline', '--locked',
     'selection.json', 'selected.deferred', 'source-before.json', 'source-after.json', 'requireUnchanged']) {
     assert.ok(runner.includes(guard));
   }
   assert.match(read(kql.ENTRY.driver), /dataagent\.main\(process\.argv\[2\], ENTRY\)/);
+});
+
+test('only the exact KQL entry can select the admitted phase and immutable limits', () => {
+  for (const entry of [{}, dataagentLink.ENTRY, {candidate: dataagent.CANDIDATE,
+    base: dataagent.BASE, source: dataagent.SOURCE}]) {
+    const policy = dataagent.qualificationPolicy(entry);
+    assert.equal(policy, dataagent.DEFAULT_POLICY);
+    assert.equal(policy.executorMilliseconds, 570000);
+    assert.equal(policy.workflowStepMinutes, 10);
+    assert.equal(policy.commandMaximumMilliseconds, 480000);
+  }
+  assert.equal(dataagent.qualificationPolicy(kql.ENTRY), dataagent.KQL_POLICY);
+  assert.deepEqual(kql.ENTRY.policy, {
+    id: 'kql-link-full-qualification-v2', phase: 'candidate-qualification',
+    executorMilliseconds: 1140000, commandMaximumMilliseconds: 480000,
+    workflowStepMinutes: 20, enclosingJobMinutes: 45, cargoWorkInventoryMaximum: 64,
+    cleanupMarginMilliseconds: 60000, startupReserveMilliseconds: 60000,
+  });
+  assert.ok(Object.isFrozen(dataagent.KQL_POLICY) && Object.isFrozen(dataagent.DEFAULT_POLICY));
+  for (const policy of [undefined, null, 'kql-link-full-qualification-v2',
+    {...kql.ENTRY.policy, id: 'unknown'},
+    {...kql.ENTRY.policy, phase: 'second-attempt'},
+    {...kql.ENTRY.policy, executorMilliseconds: 1200000},
+    {...kql.ENTRY.policy, commandMaximumMilliseconds: 480001},
+    {...kql.ENTRY.policy, cargoWorkInventoryMaximum: 65},
+    {...kql.ENTRY.policy, enclosingJobMinutes: 46},
+    {...kql.ENTRY.policy, budgetFromEnvironment: true}]) {
+    assert.throws(() => dataagent.qualificationPolicy({...kql.ENTRY, policy}), /Unrecognized/);
+  }
+  for (const key of ['candidate', 'base', 'source', 'driver']) {
+    assert.throws(() => dataagent.qualificationPolicy({...kql.ENTRY, [key]: 'other'}), /not admitted/);
+  }
+});
+
+test('one absolute phase deadline covers commands, failed work, overhead and finalization without renewal', () => {
+  let now = 100000;
+  for (const [entry, duration] of [[{}, 570000], [kql.ENTRY, 1140000]]) {
+    const start = now;
+    const phase = dataagent.phaseBudget(entry, () => now, start);
+    assert.equal(phase.started, start);
+    assert.equal(phase.deadline, start + duration);
+    now += 1000;
+    assert.equal(phase.commandTimeout(), 30000);
+    assert.equal(phase.commandTimeout(480000), 480000);
+    for (const invalid of [0, -1, 480001, NaN, Infinity, '480000']) {
+      assert.throws(() => phase.commandTimeout(invalid), /Invalid command timeout/);
+    }
+    // A previous command failure grants no new clock or retry budget.
+    now = phase.deadline - 7000;
+    assert.equal(phase.commandTimeout(480000), 7000);
+    assert.equal(phase.remaining(), 7000);
+    assert.equal(phase.deadline, start + duration);
+    now += 7000;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.throws(() => phase.commandTimeout(), /budget expired/);
+      assert.throws(() => phase.remaining(), /budget expired/);
+      assert.equal(phase.deadline, start + duration);
+    }
+  }
+});
+
+test('KQL enclosing-job admission reserves the complete remaining phase and cleanup without extending the job', () => {
+  let now = 2000000;
+  const phase = dataagent.phaseBudget(kql.ENTRY, () => now);
+  const anchor = String(now - 300000);
+  const headroom = dataagent.jobHeadroom(phase, anchor, now);
+  assert.equal(headroom.remaining_milliseconds, 2340000);
+  assert.match(headroom.anchor, /not provider job start/);
+  assert.equal(headroom.admitted, false);
+  assert.equal(headroom.provider_job_deadline_verified, false);
+  for (const invalid of [undefined, '', 'NaN', '-1', '0', String(now + 1), '99999999999999999999999']) {
+    assert.throws(() => dataagent.jobHeadroom(phase, invalid, now), /timestamp/);
+  }
+  assert.throws(() => dataagent.jobHeadroom(phase, String(now - 1500000), now), /Insufficient/);
+  now += 1139000;
+  assert.equal(phase.remaining(), 1000);
+  assert.equal(dataagent.jobHeadroom(phase, anchor, now).remaining_milliseconds, 1201000);
+  now += 1000;
+  assert.throws(() => dataagent.jobHeadroom(phase, anchor, now), /budget expired/);
+});
+
+test('a valid-looking first-step timestamp cannot stand in for unknown provider job headroom', () => {
+  const phase = dataagent.phaseBudget(kql.ENTRY);
+  const anchor = String(phase.started - 1000);
+  assert.throws(() => dataagent.requireJobHeadroom(phase, anchor),
+    /Provider job deadline is unverified/);
+  const runner = read('rust/scripts/integration-dataagent-smoke.cjs');
+  assert.ok(runner.indexOf('requireJobHeadroom(phase, process.env.') <
+    runner.indexOf("const actual = git(['rev-parse', 'HEAD'])"),
+  'Unverified admission must fail before commands, metadata or native work');
+  assert.equal((runner.match(/requireJobHeadroom\(phase, process\.env\./g) || []).length, 2);
+});
+
+test('shared frozen command assembly preserves every original descriptor and rejects oversized KQL work', () => {
+  const input = fixture();
+  const selection = plan({...input, files: kql.ENTRY.inputs.filter(file =>
+    /v2_link_kql_host\.rs$/.test(file))});
+  const selected = dataagent.selectedCommands(selection, undefined, input.graph, kql.ENTRY.leaves);
+  for (const entry of [kql.ENTRY, dataagentLink.ENTRY]) {
+    const actual = dataagent.proofCommands(entry, selected);
+    const expected = [
+      {args: notebook.COMMANDS[0]},
+      ...entry.leaves.map(entry.leafCommand || dataagent.leafCommand),
+      ...(entry.commands || []),
+      ...selected.commands,
+      update.COMMANDS[4],
+      ...ocv.COMMANDS.slice(3, 8),
+      ...['check', 'clippy'].map(kind => ({
+        args: [kind, '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
+          '--no-default-features', '--features', selected.cli_features.join(','),
+          ...(kind === 'clippy' ? ['--', '-D', 'warnings'] : [])],
+      })),
+    ];
+    assert.deepEqual(actual, expected);
+    assert.equal(actual.filter(command => command.args[0] === 'fetch').length, 1);
+  }
+  const count = dataagent.proofCommands(kql.ENTRY, selected).length;
+  const extra = Array.from({length: 64 - count}, () => ({args: ['check']}));
+  const atCap = {...kql.ENTRY, commands: [...kql.ENTRY.commands, ...extra]};
+  assert.equal(dataagent.proofCommands(atCap, selected).length, 64);
+  assert.throws(() => dataagent.proofCommands({...atCap,
+    commands: [...atCap.commands, {args: ['check']}]}, selected), /inventory exceeds/);
 });
 
 test('complete KQL and preserved DataAgent leaves require their current registered cases, including headless process tests', () => {

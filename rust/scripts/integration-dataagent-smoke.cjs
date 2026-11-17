@@ -17,6 +17,23 @@ const ROOT = path.resolve(__dirname, '../..');
 const CANDIDATE = 'dev/marcozo/integrate-explicit-stage-dataagent-reads-tomcl2';
 const BASE = 'ce50f369f2713ed1a2599099458f19bb0750d3e3';
 const SOURCE = '6af13a0d3f87077151ea674f32e2da659996b5ab';
+const DEFAULT_POLICY = Object.freeze({
+  id: 'candidate-qualification-v1', phase: 'candidate-qualification',
+  executorMilliseconds: 570000, commandMaximumMilliseconds: 480000,
+  workflowStepMinutes: 10, enclosingJobMinutes: 45, cargoWorkInventoryMaximum: null,
+});
+const KQL_POLICY = Object.freeze({
+  id: 'kql-link-full-qualification-v2', phase: 'candidate-qualification',
+  executorMilliseconds: 1140000, commandMaximumMilliseconds: 480000,
+  workflowStepMinutes: 20, enclosingJobMinutes: 45, cargoWorkInventoryMaximum: 64,
+  cleanupMarginMilliseconds: 60000, startupReserveMilliseconds: 60000,
+});
+const KQL_POLICY_ENTRY = Object.freeze({
+  candidate: 'dev/marcozo/integrate-kql-shortcut-links-pr55-end-to-tomz4t',
+  base: '61c8221914152e231e5e64f7bd38418f66264999',
+  source: 'e1baaee16dc6eb4917c5310224c27fcd258564ef',
+  driver: 'rust/scripts/integration-kql-link-smoke.cjs',
+});
 const LEAVES = ['dataagent_list', 'v2_dataagent_list_binary'];
 const INPUTS = [
   'rust/clients/cli/app/src/v2_dataagent_list_host.rs',
@@ -114,6 +131,71 @@ function testResults(stdout, stderr, command) {
   return results;
 }
 
+function qualificationPolicy(entry) {
+  if (!Object.hasOwn(entry, 'policy')) return DEFAULT_POLICY;
+  assert.deepEqual(entry.policy, KQL_POLICY, 'Unrecognized qualification policy, phase or budget');
+  for (const [key, value] of Object.entries(KQL_POLICY_ENTRY)) {
+    assert.equal(entry[key], value, `Qualification policy is not admitted for this entry: ${key}`);
+  }
+  return KQL_POLICY;
+}
+
+function phaseBudget(entry, now = Date.now, started = now()) {
+  const policy = qualificationPolicy(entry);
+  const deadline = started + policy.executorMilliseconds;
+  const remaining = () => {
+    const value = deadline - now();
+    assert.ok(value > 0, 'Finite candidate proof budget expired');
+    return value;
+  };
+  return {started, deadline, policy, remaining,
+    commandTimeout(requested = 30000) {
+      assert.ok(Number.isSafeInteger(requested) && requested > 0 &&
+        requested <= policy.commandMaximumMilliseconds, 'Invalid command timeout');
+      return Math.min(requested, remaining());
+    }};
+}
+
+function jobHeadroom(phase, anchor, now = Date.now()) {
+  assert.match(anchor || '', /^\d+$/, 'The first workflow-step timestamp is required');
+  const started = Number(anchor);
+  assert.ok(Number.isSafeInteger(started) && started > 0 && started <= phase.started,
+    'Invalid first workflow-step timestamp');
+  const remaining = started + phase.policy.enclosingJobMinutes * 60000 -
+    phase.policy.startupReserveMilliseconds - now;
+  assert.ok(remaining >= phase.remaining() + phase.policy.cleanupMarginMilliseconds,
+    'Insufficient enclosing-job headroom for qualification and cleanup');
+  return {anchor: 'first workflow step, not provider job start', started,
+    admitted: false, provider_job_deadline_verified: false,
+    startup_reserve_milliseconds: phase.policy.startupReserveMilliseconds,
+    remaining_milliseconds: remaining};
+}
+
+function requireJobHeadroom(phase, anchor) {
+  const estimate = jobHeadroom(phase, anchor);
+  assert.ok(estimate.admitted && estimate.provider_job_deadline_verified,
+    'Provider job deadline is unverified; first-step timing cannot admit KQL qualification');
+  return estimate;
+}
+
+function proofCommands(entry, selected) {
+  const commands = [
+    {args: notebook.COMMANDS[0]},
+    ...entry.leaves.map(entry.leafCommand || leafCommand),
+    ...(entry.commands || []),
+    ...selected.commands,
+    update.COMMANDS[4],
+    ...ocv.COMMANDS.slice(3, 8),
+    {args: ['check', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
+      '--no-default-features', '--features', selected.cli_features.join(',')]},
+    {args: ['clippy', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
+      '--no-default-features', '--features', selected.cli_features.join(','), '--', '-D', 'warnings']},
+  ];
+  const maximum = qualificationPolicy(entry).cargoWorkInventoryMaximum;
+  assert.ok(maximum === null || commands.length <= maximum, 'Cargo work inventory exceeds admitted cap');
+  return commands;
+}
+
 function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
   inputs: INPUTS, leaves: LEAVES}) {
   const root = fs.realpathSync(ROOT);
@@ -121,7 +203,7 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
   const artifacts = path.resolve(output);
   assert.ok(artifacts !== root && !artifacts.startsWith(`${root}${path.sep}`), 'Artifacts must be external');
   fs.mkdirSync(artifacts, {recursive: false});
-  const started = Date.now(), deadline = started + 570000;
+  const started = Date.now();
   const report = {schema: 1, passed: false,
     qualification: entry.qualification || 'candidate-only offline Windows DataAgent and metadata-selected consumer proof',
     original_source: entry.source, integration_base: entry.base, commands: [],
@@ -134,12 +216,18 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     }
     save();
   };
+  let phase;
   const run = (file, args, options = {}) => {
-    const remaining = deadline - Date.now();
-    assert.ok(remaining > 0, 'Finite candidate proof budget expired');
+    const timeout = phase.commandTimeout(options.timeout);
+    const remaining = phase.remaining();
     console.log(`${file} ${JSON.stringify(args)}`);
     return capture(file, args, {cwd: root, ...options,
-      timeout: Math.min(options.timeout || 30000, remaining)}, report, persist);
+      timeout}, report, (command, result) => {
+      command.timeout_milliseconds = timeout;
+      command.phase_remaining_before_milliseconds = remaining;
+      command.phase_remaining_after_milliseconds = phase.deadline - Date.now();
+      persist(command, result);
+    });
   };
   const git = args => {
     const result = run('git', args);
@@ -149,6 +237,9 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
   let before;
   try {
     save();
+    phase = phaseBudget(entry, Date.now, started);
+    report.phase = {policy: phase.policy, started_unix_ms: phase.started,
+      deadline_unix_ms: phase.deadline};
     assert.equal(process.platform, 'win32', 'Hosted Windows only');
     assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'No shared local native execution');
     assert.equal(process.env.RUNNER_OS, 'Windows');
@@ -156,6 +247,13 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
     assert.equal(event.pull_request.head.ref, entry.candidate);
     assert.equal(event.pull_request.base.sha, entry.base, 'Integration base moved');
+    if (phase.policy === KQL_POLICY) {
+      assert.equal(event.repository?.full_name, 'eisber/fabric-cli');
+      assert.equal(event.number, 106, 'Qualification is admitted only for candidate PR106');
+      report.enclosing_job = jobHeadroom(phase, process.env.KQL_LINK_WORKFLOW_STARTED_UNIX_MS);
+      save();
+      requireJobHeadroom(phase, process.env.KQL_LINK_WORKFLOW_STARTED_UNIX_MS);
+    }
     const actual = git(['rev-parse', 'HEAD']);
     report.source = sourcePin('pull_request', event, process.env.GITHUB_REF,
       process.env.GITHUB_SHA, actual, git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
@@ -184,18 +282,15 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
       scope: entry.scope || 'explicit DataAgent entry and coupled consumer inputs, not the complete head diff',
       deferred: selected.deferred, qualification_profiles: selection.profiles.map(item => item.id),
       qualification_checks: selection.checks};
-    const commands = [
-      {args: notebook.COMMANDS[0]},
-      ...entry.leaves.map(entry.leafCommand || leafCommand),
-      ...(entry.commands || []),
-      ...selected.commands,
-      update.COMMANDS[4],
-      ...ocv.COMMANDS.slice(3, 8),
-      {args: ['check', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
-        '--no-default-features', '--features', selected.cli_features.join(',')]},
-      {args: ['clippy', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
-        '--no-default-features', '--features', selected.cli_features.join(','), '--', '-D', 'warnings']},
-    ];
+    const commands = proofCommands(entry, selected);
+    const commandPlan = `${JSON.stringify(commands, null, 2)}\n`;
+    fs.writeFileSync(path.join(artifacts, 'command-plan.json'), commandPlan);
+    report.command_plan = {cargo_commands: commands.length, sha256: digest(commandPlan)};
+    if (phase.policy === KQL_POLICY) {
+      requireJobHeadroom(phase, process.env.KQL_LINK_WORKFLOW_STARTED_UNIX_MS);
+    }
+    phase.remaining();
+    save();
     for (const command of commands) {
       const result = run('cargo', command.args, {cwd: rust, timeout: 8 * 60 * 1000});
       if (command.args[0] === 'test') {
@@ -204,12 +299,13 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
           .map(match => match[1]);
         save();
       }
-      assert.equal(result.status, 0, `DataAgent command failed: cargo ${command.args.join(' ')}`);
+      assert.equal(result.status, 0, `Candidate command failed: cargo ${command.args.join(' ')}`);
       if (command.args[0] === 'test') {
         report.commands.at(-1).tests = testResults(result.stdout, result.stderr, command);
       }
       save();
     }
+    phase.remaining();
     report.passed = true;
   } catch (error) {
     report.error = error.message;
@@ -228,13 +324,23 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
       report.integrity_error = error.message;
       throw error;
     } finally {
-      report.elapsed_seconds = (Date.now() - started) / 1000;
-      save();
+      try {
+        if (phase) phase.remaining();
+      } catch (error) {
+        report.passed = false;
+        report.deadline_error = error.message;
+        throw error;
+      } finally {
+        report.elapsed_seconds = (Date.now() - started) / 1000;
+        if (phase) report.phase.remaining_after_finalization_milliseconds = phase.deadline - Date.now();
+        save();
+      }
     }
   }
 }
 
 module.exports = {CANDIDATE, BASE, SOURCE, INPUTS, LEAVES, REPORT_TESTS,
+  DEFAULT_POLICY, KQL_POLICY, qualificationPolicy, phaseBudget, jobHeadroom, requireJobHeadroom, proofCommands,
   selectedCommands, leafCommand, testObservations, testResults, main};
 if (require.main === module) {
   try { assert.equal(process.argv.length, 3); main(process.argv[2]); }
