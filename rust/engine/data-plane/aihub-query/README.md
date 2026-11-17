@@ -123,6 +123,10 @@ optional guidance; full entries may include native queries or sensitive paramete
 metadata. All such content is **untrusted caller-owned data**, not instructions,
 safe executable queries, inferred JSON/Markdown/CSV schemas, DataFrames, or
 completed datasets. Resource URIs are never downloaded. Debug output is redacted.
+Native embedded catalog text resources may omit `mimeType`; their original
+blocks and metadata are retained without assigning a default. A present media
+type must be valid, and blob resources must still declare one. This catalog-only
+allowance does not relax the typed dataset's required JSON media/descriptor.
 The same credential, stage, positive-policy request, fixed tool contract,
 absolute budget, body/resource limits and no-replay transport apply. Observing
 the tool response does not prove that the engine performed no work or establish
@@ -155,11 +159,35 @@ decoded HTTP response, 16 MiB combined resource text/metadata, 128 content
 blocks, 32 resultsets, 1,024 columns, 10,000 aggregate rows and 1,000,000 cells.
 Bounds may be lowered, never raised above these envelopes.
 
+Schema 1 accepts two explicit `fabric.queryResult` metadata profiles: the compact
+marker has exactly `schemaVersion`, `resultId`, and `format: "json"`; the expanded
+descriptor has those plus all six `columns`, `rowCount`, `truncated`, `maxRows`,
+`totalRowCount`, and `nulls` fields. Missing marker fields, unknown fields, or any
+partial expanded descriptor fail. Both profiles must match the body's version
+and result ID. The complete typed body always supplies the authoritative schema,
+counts, values and nulls; expanded declarations additionally must match it
+exactly, including null coordinates. Compact metadata is not a schema-less or
+inferred-data fallback, and omitted expanded fields are never fabricated.
+
 Duplicate/depth validation borrows subtrees from the bounded input instead of
 copying large payloads at every nesting level. SSE frames are parsed as chunks
 arrive; the matching terminal JSON-RPC response completes observation even if
 the transport remains open. Releasing that body is local disposal, not a remote
 cancellation request.
+
+Before any owned rowset, column, cell or descriptor vectors are deserialized,
+an order-independent borrowed-span preflight bounds both schemas, advertised and
+actual rows, actual row arity/cell totals and null-coordinate counts. Each resultset
+consumes the remaining aggregate row/cell budget before materialization, not
+after it. The early-limit regression uses a two-million-null malformed row with
+a one-cell limit and counters at the actual raw-cell ownership and owned-rowset
+deserialization boundaries; eventual rejection alone is not its oracle.
+
+Resource media types are validated and compared by case-insensitive essence.
+CSV/XLSX companions without typed descriptors are rejected even with parameters
+or mixed casing, so one typed result cannot conceal an additional untyped
+rowset. A typed dataset still requires an explicit `application/json` media type
+and its matching descriptor; neither extension nor omitted media is inferred.
 
 `NativeValue::{Integer, Decimal, Number}` holds the **original JSON number
 lexeme**, without a floating-point intermediary. Wide signed/unsigned values,
@@ -170,6 +198,12 @@ engine types remain attached to their declared portable representation,
 including exact text for `string`/`text`. Unsupported logical-type/encoding
 pairs, scalar mismatches and structured cells fail explicitly rather than
 being coerced.
+
+The explicit schema-1 `int64` / `json-number` logical representation is also
+supported alongside `integer`, retaining the original column metadata and exact
+numeric lexeme. It enforces the signed 64-bit range even when other engine
+metadata would permit a wider value. This narrow compatibility form does not
+enable inferred aliases or relax body/descriptor schema equality.
 
 Syntax validation uses `serde::de::IgnoredAny` and requires end of input.
 An SDK-private bounded span decoder captures original cell tokens; it does not

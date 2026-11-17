@@ -49,6 +49,16 @@ fn mutate_text(block: &mut Value, change: impl FnOnce(&mut Value)) {
     *block = typed(&rowset.to_string(), "file:///changed.json");
 }
 
+fn compact(mut block: Value) -> Value {
+    let descriptor = &block["resource"]["_meta"]["fabric.queryResult"];
+    block["resource"]["_meta"]["fabric.queryResult"] = json!({
+        "schemaVersion":descriptor["schemaVersion"],
+        "resultId":descriptor["resultId"],
+        "format":descriptor["format"],
+    });
+    block
+}
+
 #[test]
 fn shared_json_parser_preserves_private_sentinel_keys_as_ordinary_objects() {
     let text = r#"{"$serde_json::private::RawValue":"123","other":true}"#;
@@ -295,6 +305,224 @@ async fn native_temporal_binary_guid_boolean_signed_and_unknown_values_survive()
 }
 
 #[tokio::test]
+async fn explicit_int64_logical_representation_preserves_metadata_and_exact_signed_values() {
+    for number in [
+        "-9223372036854775808",
+        "-9007199254740993",
+        "0",
+        "9007199254740993",
+        "9223372036854775807",
+    ] {
+        let text = format!(
+            r#"{{
+            "schemaVersion":1,"resultId":"{RESULT}",
+            "columns":[{{"name":"n","engineType":"Int64","logicalType":"int64","encoding":"json-number"}}],
+            "rowCount":1,"truncated":false,"maxRows":1000,"totalRowCount":null,
+            "rows":[[{number}]]
+        }}"#
+        );
+        let result = complete(
+            observe(json!({"content":[typed(&text,"opaque:int64")]}))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(result.resultsets[0].columns[0].engine_type, "Int64");
+        assert_eq!(result.resultsets[0].columns[0].logical_type, "int64");
+        assert_eq!(
+            result.resultsets[0].rows[0][0],
+            NativeValue::Integer(number.into())
+        );
+    }
+}
+
+#[tokio::test]
+async fn explicit_int64_rejects_overflow_fractions_wrong_encodings_and_unobserved_aliases() {
+    for (number, logical, encoding) in [
+        ("9223372036854775808", "int64", "json-number"),
+        ("-9223372036854775809", "int64", "json-number"),
+        ("18446744073709551615", "int64", "json-number"),
+        ("1.5", "int64", "json-number"),
+        ("1e0", "int64", "json-number"),
+        ("1", "int64", "text"),
+        ("1", "signed64", "json-number"),
+    ] {
+        let text = format!(
+            r#"{{
+            "schemaVersion":1,"resultId":"{RESULT}",
+            "columns":[{{"name":"n","engineType":"Int64","logicalType":"{logical}","encoding":"{encoding}"}}],
+            "rowCount":1,"truncated":false,"maxRows":1000,"totalRowCount":null,
+            "rows":[[{number}]]
+        }}"#
+        );
+        assert!(
+            observe(json!({"content":[typed(&text,"opaque:int64")]}))
+                .await
+                .is_err()
+        );
+    }
+}
+
+#[tokio::test]
+async fn compact_schema1_marker_accepts_explicit_int64_empty_and_all_null_bodies() {
+    let columns =
+        json!([{"name":"n","engineType":"Int64","logicalType":"int64","encoding":"json-number"}]);
+    for (columns, rows) in [
+        (columns.clone(), json!([[9007199254740993_i64]])),
+        (columns.clone(), json!([[null]])),
+        (columns, json!([])),
+        (json!([]), json!([])),
+    ] {
+        let body = json!({"schemaVersion":1,"resultId":RESULT,"columns":columns,
+            "rowCount":rows.as_array().unwrap().len(),"truncated":false,
+            "maxRows":1,"totalRowCount":null,"rows":rows});
+        let result = complete(
+            observe(json!({"content":[compact(typed(&body.to_string(),"opaque:compact"))]}))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            result.resultsets[0].columns.len(),
+            body["columns"].as_array().unwrap().len()
+        );
+        assert_eq!(
+            result.resultsets[0].row_count,
+            body["rows"].as_array().unwrap().len()
+        );
+        assert_eq!(result.resultsets[0].total_row_count, None);
+        if body["rows"] == json!([[9007199254740993_i64]]) {
+            assert_eq!(
+                result.resultsets[0].rows[0][0],
+                NativeValue::Integer("9007199254740993".into())
+            );
+            assert_eq!(result.resultsets[0].columns[0].logical_type, "int64");
+        }
+        if body["rows"] == json!([[null]]) {
+            assert_eq!(result.resultsets[0].rows[0], [NativeValue::Null]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn compact_and_expanded_profiles_reject_missing_unknown_and_partial_metadata() {
+    let expanded = typed(&rowset(), "opaque:expanded");
+    let base = compact(expanded.clone());
+    for field in ["schemaVersion", "resultId", "format"] {
+        let mut block = base.clone();
+        block["resource"]["_meta"]["fabric.queryResult"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(
+            observe(json!({"content":[block]})).await.is_err(),
+            "missing {field}"
+        );
+    }
+    for (field, value) in [
+        ("schemaVersion", json!(2)),
+        ("schemaVersion", json!("1")),
+        ("resultId", json!(AGENT)),
+        ("format", json!("csv")),
+        ("unknown", json!(true)),
+    ] {
+        let mut block = base.clone();
+        block["resource"]["_meta"]["fabric.queryResult"][field] = value;
+        assert!(
+            observe(json!({"content":[block]})).await.is_err(),
+            "{field}"
+        );
+    }
+    for field in [
+        "columns",
+        "rowCount",
+        "truncated",
+        "maxRows",
+        "totalRowCount",
+        "nulls",
+    ] {
+        let mut partial = base.clone();
+        partial["resource"]["_meta"]["fabric.queryResult"][field] =
+            expanded["resource"]["_meta"]["fabric.queryResult"][field].clone();
+        assert!(
+            observe(json!({"content":[partial]})).await.is_err(),
+            "partial {field}"
+        );
+        let mut missing = expanded.clone();
+        missing["resource"]["_meta"]["fabric.queryResult"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(
+            observe(json!({"content":[missing]})).await.is_err(),
+            "expanded missing {field}"
+        );
+    }
+    let mut unknown = expanded.clone();
+    unknown["resource"]["_meta"]["fabric.queryResult"]["unknown"] = json!(true);
+    assert!(observe(json!({"content":[unknown]})).await.is_err());
+    let mut no_marker = base;
+    no_marker["resource"]
+        .as_object_mut()
+        .unwrap()
+        .remove("_meta");
+    assert_eq!(
+        observe(json!({"content":[no_marker]}))
+            .await
+            .unwrap_err()
+            .kind,
+        QueryErrorKind::MissingTypedJson
+    );
+}
+
+#[tokio::test]
+async fn compact_marker_never_relaxes_authoritative_body_shape_truncation_or_limits() {
+    for mutation in 0..8 {
+        let mut block = typed(&rowset(), "opaque:compact");
+        mutate_text(&mut block, |body| match mutation {
+            0 => body["schemaVersion"] = json!(2),
+            1 => body["rowCount"] = json!(0),
+            2 => body["rows"] = json!([[1]]),
+            3 => body["columns"][0]["encoding"] = json!("unknown"),
+            4 => body["totalRowCount"] = json!(2000),
+            5 => body["maxRows"] = json!(0),
+            6 => body["truncated"] = json!("false"),
+            _ => body["rows"][0][0] = json!("18446744073709551615"),
+        });
+        assert!(
+            observe(json!({"content":[compact(block)]})).await.is_err(),
+            "body mutation {mutation}"
+        );
+    }
+    let mut truncated = typed(&rowset(), "opaque:compact-truncated");
+    mutate_text(&mut truncated, |body| {
+        body["truncated"] = json!(true);
+        body["totalRowCount"] = json!(2);
+    });
+    assert!(matches!(
+        observe(json!({"content":[compact(truncated)]}))
+            .await
+            .unwrap(),
+        QueryOutcome::Incomplete(_)
+    ));
+    let wire = Wire::new(setup().into_iter().chain([rpc(
+        2,
+        json!({"content":[compact(typed(&rowset(),"opaque:cap"))]}),
+    )]));
+    let error = client(
+        wire,
+        Arc::new(Credential::default()),
+        Arc::new(Timer::default()),
+        Limits {
+            cells: 1,
+            ..Limits::default()
+        },
+    )
+    .execute_query(&request(), &deadline(), pending())
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::Limit);
+}
+
+#[tokio::test]
 async fn truncation_is_an_explicit_incomplete_outcome() {
     let mut block = typed(&rowset(), "opaque:truncated");
     mutate_text(&mut block, |r| {
@@ -322,6 +550,76 @@ async fn legacy_csv_markdown_direct_strings_and_structured_content_are_not_typed
             QueryErrorKind::MissingTypedJson
         );
     }
+}
+
+#[tokio::test]
+async fn mixed_typed_and_untyped_rowsets_cannot_hide_behind_mime_parameters_or_case() {
+    for (mime, blob) in [
+        ("text/csv", false),
+        ("text/csv; charset=utf-8", false),
+        ("TeXt/CsV; CHARSET=\"utf-8\"", false),
+        (" text/csv ; filename=\"x;y.csv\" ", false),
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            true,
+        ),
+        (
+            "APPLICATION/VND.OPENXMLFORMATS-OFFICEDOCUMENT.SPREADSHEETML.SHEET; charset=utf-8",
+            true,
+        ),
+    ] {
+        for companion_first in [false, true] {
+            let mut companion =
+                json!({"type":"resource","resource":{"uri":"opaque:untyped","mimeType":mime}});
+            if blob {
+                companion["resource"]["blob"] = json!("AAEC");
+            } else {
+                companion["resource"]["text"] = json!("synthetic,csv");
+            }
+            let typed = typed(&rowset(), "opaque:typed");
+            let content = if companion_first {
+                vec![companion, typed]
+            } else {
+                vec![typed, companion]
+            };
+            let error = observe(json!({"content":content})).await.unwrap_err();
+            assert_eq!(error.kind, QueryErrorKind::MissingTypedJson, "{mime}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_json_requires_explicit_media_and_preserves_valid_non_tabular_companions() {
+    let mut native = typed(&rowset(), "opaque:typed");
+    native["resource"]["mimeType"] = json!("Application/JSON; charset=\"utf-8\"");
+    let companion = json!({"type":"resource","resource":{"uri":"opaque:notes","mimeType":"Text/Plain; charset=utf-8","text":"Synthetic notes"}});
+    let result = complete(
+        observe(json!({"content":[native,companion]}))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(result.resultsets.len(), 1);
+    assert_eq!(result.resources[0].mime_type, "Text/Plain; charset=utf-8");
+    for mime in [
+        "text/csv; charset",
+        "text/csv; charset=\"unterminated",
+        "text/csv\r\nx-header: y",
+        "invalid",
+        "text/csv;",
+    ] {
+        let companion = json!({"type":"resource","resource":{"uri":"opaque:bad","mimeType":mime,"text":"synthetic"}});
+        assert!(
+            observe(json!({"content":[typed(&rowset(),"opaque:typed"),companion]}))
+                .await
+                .is_err()
+        );
+    }
+    let mut missing = typed(&rowset(), "opaque:missing");
+    missing["resource"]
+        .as_object_mut()
+        .unwrap()
+        .remove("mimeType");
+    assert!(observe(json!({"content":[missing]})).await.is_err());
 }
 
 #[tokio::test]

@@ -12,6 +12,7 @@ mod client;
 mod contract;
 mod decode;
 mod json;
+mod media;
 mod protocol;
 
 pub use catalog::{CatalogView, NativeCatalogContent, NativeCatalogResponse};

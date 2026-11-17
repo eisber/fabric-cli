@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{Limits, QueryErrorKind, json::RawValue, protocol};
+use crate::{Limits, QueryErrorKind, json::RawValue, media, protocol};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use std::{collections::BTreeSet, fmt};
@@ -88,7 +88,8 @@ struct Block {
 #[serde(rename_all = "camelCase")]
 struct Resource {
     uri: String,
-    mime_type: String,
+    #[serde(default, deserialize_with = "present_mime")]
+    mime_type: Option<String>,
     text: Option<String>,
     blob: Option<String>,
 }
@@ -123,14 +124,22 @@ pub(crate) fn decode(
                 if resource.uri.is_empty()
                     || resource.uri.len() > 4096
                     || resource.uri.chars().any(char::is_control)
-                    || resource.mime_type.is_empty()
-                    || resource.mime_type.len() > 256
                     || resource.text.is_some() == resource.blob.is_some()
+                    || (resource.mime_type.is_none() && resource.text.is_none())
                 {
                     return Err(QueryErrorKind::Protocol);
                 }
+                if let Some(mime) = &resource.mime_type {
+                    media::essence(mime)?;
+                }
                 if !uris.insert(resource.uri) {
                     return Err(QueryErrorKind::DuplicateResource);
+                }
+
+                fn present_mime<'de, D: serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> Result<Option<String>, D::Error> {
+                    String::deserialize(deserializer).map(Some)
                 }
                 if let Some(blob) = &resource.blob {
                     STANDARD

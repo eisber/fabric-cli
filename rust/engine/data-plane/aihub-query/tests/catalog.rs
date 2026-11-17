@@ -222,6 +222,74 @@ async fn catalog_tool_errors_tasks_and_missing_tool_fail_without_fallback() {
 }
 
 #[tokio::test]
+async fn catalog_text_resource_can_omit_mime_without_losing_native_block_or_metadata() {
+    let native = json!({"content":[{"type":"resource","resource":{
+        "uri":"https://never-download.example.invalid/catalog",
+        "text":"Untrusted native catalog text, not an inferred table.",
+        "_meta":{"synthetic":"retained"}
+    },"annotations":{"audience":["user"]}}]});
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, native.clone())]));
+    let result = client(
+        wire.clone(),
+        Arc::new(Credential::default()),
+        Arc::new(Timer::default()),
+        Limits::default(),
+    )
+    .discover_query_templates(target(), &deadline(), pending())
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&result.content[0].json).unwrap(),
+        native["content"][0]
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&result.result_json).unwrap(),
+        native
+    );
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn present_catalog_mime_must_be_valid_and_missing_blob_mime_is_not_assumed() {
+    for mime in [
+        Value::Null,
+        json!(42),
+        json!(""),
+        json!("text/plain; bad"),
+        json!("invalid"),
+        json!("text/plain\n"),
+    ] {
+        let native = json!({"content":[{"type":"resource","resource":{"uri":"opaque:catalog","mimeType":mime,"text":"native"}}]});
+        let wire = Wire::new(setup().into_iter().chain([rpc(2, native)]));
+        assert!(
+            client(
+                wire,
+                Arc::new(Credential::default()),
+                Arc::new(Timer::default()),
+                Limits::default()
+            )
+            .discover_query_templates(target(), &deadline(), pending())
+            .await
+            .is_err()
+        );
+    }
+    let native =
+        json!({"content":[{"type":"resource","resource":{"uri":"opaque:blob","blob":"AAEC"}}]});
+    let wire = Wire::new(setup().into_iter().chain([rpc(2, native)]));
+    assert!(
+        client(
+            wire,
+            Arc::new(Credential::default()),
+            Arc::new(Timer::default()),
+            Limits::default()
+        )
+        .discover_query_templates(target(), &deadline(), pending())
+        .await
+        .is_err()
+    );
+}
+
+#[tokio::test]
 async fn catalog_resource_shapes_duplicates_and_budgets_are_validated() {
     let resource = json!({"type":"resource","resource":{"uri":"opaque:one","mimeType":"text/plain","text":"synthetic"}});
     for native in [
