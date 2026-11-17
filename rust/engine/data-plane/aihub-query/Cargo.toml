@@ -1,0 +1,32 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-aihub-query"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Runtime-neutral opt-in DataAgent typed query client over injected MCP HTTP"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+azure_core.workspace = true
+base64.workspace = true
+chrono.workspace = true
+fabric-sdk.workspace = true
+fabric-sdk-http.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+uuid.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
