@@ -807,6 +807,73 @@ async fn exact_numeric_lexemes_and_required_nullable_metadata_are_validated() {
             NativeValue::Decimal(number.into())
         );
     }
+
+    #[tokio::test]
+    async fn terminal_sse_frame_completes_without_transport_eof_at_every_byte_boundary() {
+        let mut result = success();
+        result["content"][0]["text"] = json!("Synthetic \u{1f642} summary");
+        let event = format!(
+            "event: message\r\ndata: {}\r\n\r\n",
+            json!({"jsonrpc":"2.0","id":3,"result":result})
+        );
+        let chunks = event
+            .bytes()
+            .map(|b| Chunk::Bytes(vec![b]))
+            .chain([Chunk::Pending])
+            .collect();
+        let reply = Reply::Response {
+            status: 200,
+            media: "text/event-stream".into(),
+            session: None,
+            chunks,
+        };
+        let wire = Wire::new(setup().into_iter().chain([reply]));
+        let result = client(
+            wire.clone(),
+            Arc::new(Credential::default()),
+            Arc::new(Timer::default()),
+            Limits::default(),
+        )
+        .execute_query(&request(), &deadline(), pending())
+        .await
+        .unwrap();
+        assert_eq!(complete(result).resultsets.len(), 1);
+        assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 4);
+        assert_eq!(wire.requests.lock().unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn duplicate_and_wrong_id_sse_terminals_fail_without_waiting_for_eof() {
+        let right = format!(
+            "data: {}\n\n",
+            json!({"jsonrpc":"2.0","id":3,"result":success()})
+        );
+        let wrong = format!(
+            "data: {}\n\n",
+            json!({"jsonrpc":"2.0","id":99,"result":success()})
+        );
+        for event in [right.repeat(2), wrong] {
+            let reply = Reply::Response {
+                status: 200,
+                media: "text/event-stream".into(),
+                session: None,
+                chunks: vec![Chunk::Bytes(event.into_bytes()), Chunk::Pending],
+            };
+            let wire = Wire::new(setup().into_iter().chain([reply]));
+            let error = client(
+                wire.clone(),
+                Arc::new(Credential::default()),
+                Arc::new(Timer::default()),
+                Limits::default(),
+            )
+            .execute_query(&request(), &deadline(), pending())
+            .await
+            .unwrap_err();
+            assert_eq!(error.kind, QueryErrorKind::Protocol);
+            assert!(error.query_dispatched);
+            assert_eq!(wire.body_dropped.load(Ordering::SeqCst), 4);
+        }
+    }
     let mut block = typed(&rowset(), "opaque:required");
     let text = rowset().replace("\"totalRowCount\":null,", "");
     block["resource"]["text"] = json!(text);

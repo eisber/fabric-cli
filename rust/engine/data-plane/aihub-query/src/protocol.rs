@@ -17,9 +17,9 @@ pub(crate) const VERSION: &str = "2025-06-18";
 // RawValue retains number tokens. This duplicate/depth pass never deserializes a
 // row value through serde_json::Value (whose default number path uses f64).
 pub(crate) fn parse<T: DeserializeOwned>(text: &str) -> Result<T, QueryErrorKind> {
-    let raw: Box<RawValue> = serde_json::from_str(text).map_err(|_| QueryErrorKind::Protocol)?;
+    let raw: &RawValue = serde_json::from_str(text).map_err(|_| QueryErrorKind::Protocol)?;
     let mut nodes = 0;
-    check(&raw, 0, &mut nodes)?;
+    check(raw, 0, &mut nodes)?;
     serde_json::from_str(text).map_err(|_| QueryErrorKind::Protocol)
 }
 
@@ -30,17 +30,17 @@ fn check(raw: &RawValue, depth: usize, nodes: &mut usize) -> Result<(), QueryErr
     }
     match raw.get().as_bytes().first() {
         Some(b'{') => {
-            let object: Object =
+            let object: Object<'_> =
                 serde_json::from_str(raw.get()).map_err(|_| QueryErrorKind::Protocol)?;
             for value in object.0.into_values() {
-                check(&value, depth + 1, nodes)?;
+                check(value, depth + 1, nodes)?;
             }
         }
         Some(b'[') => {
-            let values: Vec<Box<RawValue>> =
+            let values: Vec<&RawValue> =
                 serde_json::from_str(raw.get()).map_err(|_| QueryErrorKind::Protocol)?;
             for value in values {
-                check(&value, depth + 1, nodes)?;
+                check(value, depth + 1, nodes)?;
             }
         }
         _ => {}
@@ -48,19 +48,19 @@ fn check(raw: &RawValue, depth: usize, nodes: &mut usize) -> Result<(), QueryErr
     Ok(())
 }
 
-struct Object(BTreeMap<String, Box<RawValue>>);
+struct Object<'a>(BTreeMap<String, &'a RawValue>);
 
-impl<'de> Deserialize<'de> for Object {
+impl<'de> Deserialize<'de> for Object<'de> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct ObjectVisitor;
         impl<'de> Visitor<'de> for ObjectVisitor {
-            type Value = Object;
+            type Value = Object<'de>;
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("an object with unique keys")
             }
-            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Object, M::Error> {
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Object<'de>, M::Error> {
                 let mut fields = BTreeMap::new();
-                while let Some((key, value)) = map.next_entry::<String, Box<RawValue>>()? {
+                while let Some((key, value)) = map.next_entry::<String, &'de RawValue>()? {
                     if fields.insert(key, value).is_some() {
                         return Err(serde::de::Error::custom("duplicate JSON field"));
                     }
@@ -117,13 +117,35 @@ pub(crate) fn response(body: &[u8], media: &str, id: u64) -> Result<Box<RawValue
     let text = std::str::from_utf8(body).map_err(|_| QueryErrorKind::Protocol)?;
     match media.split(';').next().map(str::trim) {
         Some("application/json") => envelope(text, id)?.ok_or(QueryErrorKind::Protocol),
-        Some("text/event-stream") => {
-            let text = text.replace("\r\n", "\n");
-            let mut answer = None;
-            let mut events = 0;
-            let mut rest = text.as_str();
-            while let Some((frame, tail)) = rest.split_once("\n\n") {
-                rest = tail;
+        _ => Err(QueryErrorKind::Protocol),
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SseDecoder {
+    scanned: usize,
+    line_start: usize,
+    frame_start: usize,
+    events: usize,
+}
+
+impl SseDecoder {
+    pub(crate) fn consume(
+        &mut self,
+        body: &[u8],
+        id: u64,
+    ) -> Result<Option<Box<RawValue>>, QueryErrorKind> {
+        let mut answer = None;
+        while self.scanned < body.len() {
+            let index = self.scanned;
+            self.scanned += 1;
+            if body[index] != b'\n' {
+                continue;
+            }
+            let line = &body[self.line_start..index];
+            if line.is_empty() || line == b"\r" {
+                let frame = std::str::from_utf8(&body[self.frame_start..self.line_start])
+                    .map_err(|_| QueryErrorKind::Protocol)?;
                 let mut data = Vec::new();
                 for line in frame.lines() {
                     if line.starts_with(':') || line.is_empty() {
@@ -134,29 +156,26 @@ pub(crate) fn response(body: &[u8], media: &str, id: u64) -> Result<Box<RawValue
                     match key {
                         "data" => data.push(value),
                         "event" if value == "message" || value.is_empty() => {}
-                        "id" | "retry" => {} // No reconnect or replay is implemented.
+                        "id" | "retry" => {} // Never used to reconnect or replay.
                         _ => return Err(QueryErrorKind::Protocol),
                     }
                 }
-                if data.is_empty() {
-                    continue;
-                }
-                events += 1;
-                if events > 256 {
-                    return Err(QueryErrorKind::Limit);
-                }
-                if let Some(result) = envelope(&data.join("\n"), id)? {
-                    if answer.replace(result).is_some() {
-                        return Err(QueryErrorKind::Protocol);
+                self.frame_start = index + 1;
+                if !data.is_empty() {
+                    self.events += 1;
+                    if self.events > 256 {
+                        return Err(QueryErrorKind::Limit);
+                    }
+                    if let Some(result) = envelope(&data.join("\n"), id)? {
+                        if answer.replace(result).is_some() {
+                            return Err(QueryErrorKind::Protocol);
+                        }
                     }
                 }
             }
-            if !rest.trim().is_empty() {
-                return Err(QueryErrorKind::Protocol);
-            }
-            answer.ok_or(QueryErrorKind::Protocol)
+            self.line_start = index + 1;
         }
-        _ => Err(QueryErrorKind::Protocol),
+        Ok(answer)
     }
 }
 
@@ -318,4 +337,38 @@ pub(crate) fn validate_tool(tool: &Tool, request: &QueryRequest) -> Result<(), Q
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+
+    #[test]
+    fn near_response_limit_nested_validation_borrows_each_subtree() {
+        let text = format!(
+            "{{\"padding\":{}\"{}\"{}}}",
+            "[".repeat(58),
+            "x".repeat(30 * 1024 * 1024),
+            "]".repeat(58),
+        );
+        let object: Object<'_> = serde_json::from_str(&text).unwrap();
+        let mut current = object.0["padding"];
+        let start = text.as_ptr() as usize;
+        let end = start + text.len();
+        for _ in 0..58 {
+            let values: Vec<&RawValue> = serde_json::from_str(current.get()).unwrap();
+            current = values[0];
+            let pointer = current.get().as_ptr() as usize;
+            assert!(
+                pointer >= start && pointer + current.get().len() <= end,
+                "validation copied a subtree instead of borrowing the bounded input"
+            );
+        }
+        let raw: &RawValue = serde_json::from_str(&text).unwrap();
+        let mut nodes = 0;
+        check(raw, 0, &mut nodes).unwrap();
+        assert_eq!(nodes, 60);
+    }
 }

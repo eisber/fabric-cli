@@ -12,7 +12,7 @@ use azure_core::{
 };
 use fabric_sdk_http::ExecutionTimer;
 use futures_util::StreamExt;
-use serde_json::{Value, json};
+use serde_json::{Value, json, value::RawValue};
 use std::{
     collections::BTreeSet,
     fmt,
@@ -213,11 +213,12 @@ impl AiHubQueryClient {
                 &init, &token, None, None, deadline, false, dispatched, canceled,
             )
             .await?;
-        let version = protocol::negotiate(&protocol::response(
-            &initialized.body,
-            &initialized.media,
-            1,
-        )?)?;
+        let version = protocol::negotiate(
+            initialized
+                .result
+                .as_deref()
+                .ok_or(QueryErrorKind::Protocol)?,
+        )?;
         let session = initialized.session;
         let notification =
             json!({"jsonrpc":"2.0", "method":"notifications/initialized", "params":{"_meta":meta}});
@@ -254,7 +255,7 @@ impl AiHubQueryClient {
                     canceled,
                 )
                 .await?;
-            let raw = protocol::response(&response.body, &response.media, next_id)?;
+            let raw = response.result.ok_or(QueryErrorKind::Protocol)?;
             next_id += 1;
             let tools: protocol::ToolList = protocol::parse(raw.get())?;
             if tools.tools.len() > 1024 {
@@ -303,7 +304,7 @@ impl AiHubQueryClient {
                 canceled,
             )
             .await?;
-        let raw = protocol::response(&response.body, &response.media, next_id)?;
+        let raw = response.result.ok_or(QueryErrorKind::Protocol)?;
         let result = decode::decode(&raw, self.limits, request.max_rows as usize, version)?;
         canceled.check().await?;
         deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
@@ -352,7 +353,8 @@ impl AiHubQueryClient {
             .map_err(|_| QueryErrorKind::Transport)?;
         let (status, headers, mut stream) = response.deconstruct();
         let status = u16::from(status);
-        let notification = message.get("id").is_none();
+        let id = message.get("id").and_then(Value::as_u64);
+        let notification = id.is_none();
         if (notification && status != 202) || (!notification && status != 200) {
             return Err(QueryErrorKind::Http(status));
         }
@@ -387,6 +389,13 @@ impl AiHubQueryClient {
         }
         let mut body = Vec::new();
         let mut chunks = 0;
+        let sse = media.as_deref().is_some_and(|media| {
+            media
+                .split(';')
+                .next()
+                .is_some_and(|m| m.trim() == "text/event-stream")
+        });
+        let mut decoder = protocol::SseDecoder::default();
         while let Some(chunk) = stream.next().await {
             canceled.check().await?;
             deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
@@ -395,6 +404,15 @@ impl AiHubQueryClient {
                 return Err(QueryErrorKind::Limit);
             }
             body.extend_from_slice(&chunk);
+            if sse
+                && let Some(id) = id
+                && let Some(result) = decoder.consume(&body, id)?
+            {
+                return Ok(Response {
+                    result: Some(result),
+                    session: returned_session,
+                });
+            }
             chunks += 1;
             if chunks % 32 == 0 {
                 yield_once().await;
@@ -403,21 +421,24 @@ impl AiHubQueryClient {
         if notification && !body.is_empty() {
             return Err(QueryErrorKind::Protocol);
         }
+        let result = if let Some(id) = id {
+            Some(protocol::response(
+                &body,
+                &media.ok_or(QueryErrorKind::Protocol)?,
+                id,
+            )?)
+        } else {
+            None
+        };
         Ok(Response {
-            body,
-            media: if notification {
-                String::new()
-            } else {
-                media.ok_or(QueryErrorKind::Protocol)?
-            },
+            result,
             session: returned_session,
         })
     }
 }
 
 struct Response {
-    body: Vec<u8>,
-    media: String,
+    result: Option<Box<RawValue>>,
     session: Option<String>,
 }
 

@@ -108,6 +108,12 @@ decoded HTTP response, 16 MiB combined resource text/metadata, 128 content
 blocks, 32 resultsets, 1,024 columns, 10,000 aggregate rows and 1,000,000 cells.
 Bounds may be lowered, never raised above these envelopes.
 
+Duplicate/depth validation borrows subtrees from the bounded input instead of
+copying large payloads at every nesting level. SSE frames are parsed as chunks
+arrive; the matching terminal JSON-RPC response completes observation even if
+the transport remains open. Releasing that body is local disposal, not a remote
+cancellation request.
+
 `NativeValue::{Integer, Decimal, Number}` holds the **original JSON number
 lexeme**, without a floating-point intermediary. Wide signed/unsigned values,
 decimal digits, scale and exponent survive; no decimal precision/scale is
