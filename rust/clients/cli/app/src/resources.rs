@@ -57,7 +57,7 @@ pub(crate) fn command(kind: &'static str) -> Command {
         if verb == "create" || verb == "update" {
             let mut arg = Arg::new("payload").long("payload");
             arg = if verb == "update" {
-                arg.required_unless_present("source")
+                arg.required_unless_present("import-from")
             } else {
                 arg
             };
@@ -65,8 +65,8 @@ pub(crate) fn command(kind: &'static str) -> Command {
         }
         if sourced {
             leaf = leaf.arg(
-                Arg::new("source")
-                    .long("source")
+                Arg::new("import-from")
+                    .long("import-from")
                     .conflicts_with("payload")
                     .help("Import the definition from this local directory"),
             );
@@ -74,27 +74,27 @@ pub(crate) fn command(kind: &'static str) -> Command {
         if verb == "get" {
             leaf = leaf
                 .arg(
-                    Arg::new("destination")
-                        .long("destination")
+                    Arg::new("export-to")
+                        .long("export-to")
                         .help("Export the definition into this existing local directory"),
                 )
                 .arg(
                     Arg::new("overwrite")
                         .long("overwrite")
                         .action(ArgAction::SetTrue)
-                        .requires("destination"),
+                        .requires("export-to"),
                 );
         }
         let file_flag = if verb == "get" {
-            "destination"
+            "export-to"
         } else {
-            "source"
+            "import-from"
         };
         if kind == "item" && (verb == "get" || sourced) {
             leaf = leaf.arg(Arg::new("format").long("format").requires(file_flag));
         }
         if kind == "item" && verb == "create" {
-            leaf = leaf.arg(Arg::new("type").long("type").requires("source"));
+            leaf = leaf.arg(Arg::new("type").long("type").requires("import-from"));
         }
         if verb == "delete" {
             leaf = leaf.arg(Arg::new("force").long("force").action(ArgAction::SetTrue));
@@ -104,7 +104,7 @@ pub(crate) fn command(kind: &'static str) -> Command {
                 Arg::new("force")
                     .long("force")
                     .action(ArgAction::SetTrue)
-                    .requires("source"),
+                    .requires("import-from"),
             );
         }
         if matches!(verb, "create" | "update" | "delete") {
@@ -118,12 +118,12 @@ pub(crate) fn command(kind: &'static str) -> Command {
                     Arg::new("async")
                         .long("async")
                         .action(ArgAction::SetTrue)
-                        .requires("destination"),
+                        .requires("export-to"),
                 )
                 .arg(
                     Arg::new("polling-config")
                         .long("polling-config")
-                        .requires("destination"),
+                        .requires("export-to"),
                 );
         }
         parent = parent.subcommand(leaf);
@@ -539,16 +539,16 @@ fn finish_prepare(
     }
     let polling = fabric_cli_api::parse_polling_config(polling_text)?;
     let destination = if verb == "get" {
-        text("destination").map(expand).transpose()?
+        text("export-to").map(expand).transpose()?
     } else {
         None
     };
     if let Some(path) = &destination {
-        definition::require_directory(path, "--destination")?;
+        definition::require_directory(path, "--export-to")?;
     }
     let sourced = verb == "update" || (verb == "create" && kind == "item");
     let source = if sourced {
-        text("source").map(expand).transpose()?
+        text("import-from").map(expand).transpose()?
     } else {
         None
     };
@@ -570,7 +570,7 @@ fn finish_prepare(
     let overwrite = verb == "get" && args.get_flag("overwrite");
     let force = matches!(verb, "delete" | "update") && args.get_flag("force");
     if let Some(root) = &source {
-        definition::require_directory(root, "--source")?;
+        definition::require_directory(root, "--import-from")?;
         let body = source_body(kind, verb, &target, args, root, format.as_deref())?;
         return Ok(Prepared {
             kind,

@@ -47,14 +47,14 @@ Azure CLI and run Rust login again.
 
 ```text
 fab-rs workspace list
-fab-rs workspace get <name-or-guid> [--destination <dir> [--overwrite]]
+fab-rs workspace get <name-or-guid> [--export-to <dir> [--overwrite]]
 fab-rs workspace create [display-name] [--payload <json-or-@file>]
-fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --source <dir> [--force])
+fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--force])
 fab-rs workspace delete <name-or-guid> [--force]
 fab-rs item list --workspace <name-or-guid>
-fab-rs item get <name-or-guid> --workspace <name-or-guid> [--destination <dir> [--format <f>] [--overwrite]]
-fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file> | --source <dir> [--type <t>] [--format <f>]]
-fab-rs item update <name-or-guid> --workspace <name-or-guid> (--payload <json-or-@file> | --source <dir> [--format <f>] [--force])
+fab-rs item get <name-or-guid> --workspace <name-or-guid> [--export-to <dir> [--format <f>] [--overwrite]]
+fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file> | --import-from <dir> [--type <t>] [--format <f>]]
+fab-rs item update <name-or-guid> --workspace <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--format <f>] [--force])
 fab-rs item delete <name-or-guid> --workspace <name-or-guid> [--force]
 ```
 
@@ -91,21 +91,21 @@ input do not confirm. `--force` bypasses only confirmation.
 
 ### Definition export and import
 
-`--destination` exports definitions; `--source` imports them. Both take an
+`--export-to` exports definitions; `--import-from` imports them. Both take an
 existing local directory. A leading `~`, `~/`, or (on Windows) `~\` expands to
 the home directory like Python `os.path.expanduser`; `~user` is literal.
 Absolute and relative paths are used as given.
 
-- `item get --destination <dir>` calls Get Item Definition and writes each
+- `item get --export-to <dir>` calls Get Item Definition and writes each
   base64-decoded part below `<dir>/<displayName>.<type>/`.
-- `workspace get --destination <dir>` calls the beta Bulk Export Item
+- `workspace get --export-to <dir>` calls the beta Bulk Export Item
   Definitions API (`mode: All`) and writes parts below `<dir>` using the
   service paths (for example `<dir>/<name>.<type>/...`).
-- `item create --source <dir>` reads every file below `<dir>` into a base64
+- `item create --import-from <dir>` reads every file below `<dir>` into a base64
   definition and creates the item. The type comes from `--type` or the
   `.platform` file; a mismatch fails.
-- `item update --source <dir>` calls Update Item Definition.
-- `workspace update --source <dir>` calls Bulk Import Item Definitions with
+- `item update --import-from <dir>` calls Update Item Definition.
+- `workspace update --import-from <dir>` calls Bulk Import Item Definitions with
   every file below `<dir>` as `/`-prefixed parts, replacing matching items.
   It fails if any item reports `operationStatus: Failed`. Bulk import never
   creates the workspace.
@@ -115,7 +115,7 @@ files are written atomically with mode `0600` and directories with `0700` on
 Unix. Symlinks and special files are rejected on both export and import, and
 part paths must be relative, portable, and free of `..`. Import skips
 `cache.abf`, rejects `byPath` `definition.pbir`, and is bounded by the request
-size limit. Import into an existing target (`update --source`) prompts like
+size limit. Import into an existing target (`update --import-from`) prompts like
 delete unless `--force` is supplied. `--format` is forwarded as the definition
 format.
 

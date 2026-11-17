@@ -887,7 +887,7 @@ async fn item_get_destination_writes_decoded_parts_and_refuses_overwrite() {
         ITEM,
         "--workspace",
         WS,
-        "--destination",
+        "--export-to",
         destination,
     ];
     let host = FakeHost::new(item_export_replies("src/a.py"));
@@ -935,7 +935,7 @@ async fn item_get_destination_rejects_traversal_parts() {
             ITEM,
             "--workspace",
             WS,
-            "--destination",
+            "--export-to",
             destination.to_str().unwrap(),
         ],
         &host,
@@ -960,7 +960,7 @@ async fn async_export_returns_accepted_without_writing() {
             ITEM,
             "--workspace",
             WS,
-            "--destination",
+            "--export-to",
             dir.0.to_str().unwrap(),
             "--async",
         ],
@@ -970,6 +970,32 @@ async fn async_export_returns_accepted_without_writing() {
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(data(&stdout)["saved"], false);
     assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn old_definition_path_flags_are_rejected() {
+    let dir = TempDirectory::new();
+    let path = dir.0.to_str().unwrap();
+    let cases = [
+        vec![
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--destination",
+            path,
+        ],
+        vec!["item", "update", ITEM, "--workspace", WS, "--source", path],
+        vec!["workspace", "get", WS, "--destination", path],
+        vec!["workspace", "update", WS, "--source", path],
+    ];
+    for args in cases {
+        let host = FakeHost::new(vec![]);
+        let (code, _, _) = run(&args, &host).await;
+        assert_ne!(code, 0, "{args:?}");
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]
@@ -989,7 +1015,7 @@ async fn item_create_source_infers_type_from_platform() {
             "nb",
             "--workspace",
             WS,
-            "--source",
+            "--import-from",
             dir.0.to_str().unwrap(),
         ],
         &host,
@@ -1028,7 +1054,7 @@ async fn item_create_source_rejects_type_mismatch_before_effects() {
             WS,
             "--type",
             "Report",
-            "--source",
+            "--import-from",
             dir.0.to_str().unwrap(),
         ],
         &host,
@@ -1049,7 +1075,7 @@ async fn item_update_source_confirms_unless_forced() {
         ITEM,
         "--workspace",
         WS,
-        "--source",
+        "--import-from",
         source,
     ];
     let host = FakeHost::new(vec![]);
@@ -1087,7 +1113,7 @@ async fn workspace_update_source_reports_failed_item_imports() {
             "workspace",
             "update",
             WS,
-            "--source",
+            "--import-from",
             dir.0.to_str().unwrap(),
             "--force",
         ],
