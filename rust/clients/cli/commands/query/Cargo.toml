@@ -1,0 +1,33 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-query-commands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Read-only query command preparation and native typed-result composition"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+fabric-sdk.workspace = true
+fabric-sdk-query.workspace = true
+fabric-sdk-tabular.workspace = true
+fabric-v2-contracts.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+arrow-array.workspace = true
+arrow-schema.workspace = true
+azure_core.workspace = true
+bytes.workspace = true
+parquet.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -8,6 +8,7 @@ members = [
     "clients/cli/commands/local",
     "clients/cli/commands/mutations",
     "clients/cli/commands/ontology",
+    "clients/cli/commands/query",
     "clients/cli/commands/resources",
     "clients/cli/commands/semantic-model",
     "clients/cli/commands/storage",
@@ -93,6 +94,7 @@ default-members = [
     "clients/cli/commands/tables",
     "engine/data-plane/tables",
     "clients/cli/commands/ontology",
+    "clients/cli/commands/query",
     "clients/cli/v2",
     "engine/core/v2-contracts",
     "engine/control-plane/dataagents/ontology",
@@ -157,6 +159,7 @@ fabric-core-json = { path = "engine/core/json" }
 fabric-identity = { path = "engine/core/auth/provider" }
 fabric-cli-output = { path = "clients/cli/output" }
 fabric-cli-query = { path = "clients/cli/query" }
+fabric-cli-query-commands = { path = "clients/cli/commands/query" }
 fabric-cli-jobs = { path = "clients/cli/commands/jobs" }
 fabric-sdk-jobs = { path = "engine/control-plane/jobs" }
 fabric-sdk-graph = { path = "engine/control-plane/graph" }

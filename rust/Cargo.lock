@@ -1279,6 +1279,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-query-commands"
+version = "0.1.0"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "azure_core",
+ "bytes",
+ "fabric-sdk",
+ "fabric-sdk-query",
+ "fabric-sdk-tabular",
+ "fabric-v2-contracts",
+ "parquet",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "fabric-cli-repl"
 version = "0.1.0"
 dependencies = [
