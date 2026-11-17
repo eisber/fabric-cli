@@ -46,9 +46,11 @@ opt-in explicit; legacy CSV is not a typed-result mode.
 | Authentication | Caller-injected credential and exact scope/account/tenant labels | Labels are caller attestations, not token inspection; supported live caller contract remains unverified |
 | Production auth | No automatic user-token or broker composition | Available source evidence describes S2sObo; user CLI token compatibility is **not established** |
 | Typed execution route | Explicit DataAgent/datasource with both routing and typed-result variants | Source-snapshot contract only; opt-in is not routing eligibility or authorization |
+| Read policy | Always request the existing positive SQL/GQL policy variant; require discovery `readOnlyHint: true` and `destructiveHint: false` before query dispatch | Requested policy and an untrusted discovery contract, not cryptographic or live enforcement proof |
 | Direct Report/SemanticModel | Not advertised as a typed SDK route | No universal typed-result coverage claim |
 | Stage | Explicit Production (Sandbox token absent) or Sandbox (existing token present) | Never inferred from typed opt-in; no alternate-stage fallback |
 | Templates | Explicit `QueryMode::Template`, `language: "jmespath"` and existing template variant; positive tool-schema enum or quoted selector advertisement required | A selector advertisement is not evidence that a particular template exists or that the caller is eligible |
+| Template catalog | Separate fixed Summary or FullEntries navigation, with all native content retained as untrusted JSON blocks | Not a typed rowset, arbitrary expression API, automatic template invocation, or proof of engine inactivity |
 | Results | Embedded `application/json` **and** resource `_meta["fabric.queryResult"]`; schema version 1 | No Markdown, CSV, URI-extension, or `structuredContent` inference |
 | Source freshness | Contract derived from an available October 2026 source snapshot | Not verified current or deployed; private implementation/source material intentionally omitted |
 | Files/CLI/Arrow | No local export or CLI composition | Other consumers explicitly convert the public native result model |
@@ -67,11 +69,22 @@ SDK does **not** also send `FABAIHUB-X-Variants`, which is a server-side fallbac
 | --- | --- | --- |
 | `Fabric.Routing.Documents.DataAgent` | DataAgent route opt-in | Always for this explicit route |
 | `Fabric.Routing.Documents.DataAgent.TypedQueryResults` | Versioned JSON resource opt-in | Always, because typed JSON is required |
+| `Fabric.Routing.Documents.SqlReadOnlyEnforce` | One-way positive SQL/GQL read-policy request | Always, including lifecycle and discovery |
 | `Fabric.Routing.Documents.DataAgent.Sandbox` | Draft configuration stage | Only explicit Sandbox |
 | `Fabric.Routing.Documents.QueryTemplates` | Curated template selector | Only explicit Template mode |
 
 These are existing request variants, not new service flights, rollout changes,
 permission grants, or a request to modify shared settings.
+
+The positive read-policy variant takes precedence over an operator disable
+flight in the available source contract, but an explicit in-process server
+override can still take precedence over it. The SQL/GQL policy does not validate
+DAX or KQL. Discovery hints are server-supplied and not an independent enforcement
+mechanism: missing, malformed, false read-only, or true destructive hints fail
+closed before query HTTP dispatch. These checks do not prove a trusted server,
+deployed policy, or safe live target; caller qualification and the documented
+authentication/source limits still apply. The SDK offers no write-approval bypass,
+client SQL-text heuristic, disable-policy token, or alternate query provider.
 
 Tool arguments are `artifactId`, `query`, optional `filename`, optional
 `language` (only `jmespath`), and `max_rows`. Native mode omits `language`; the
@@ -80,6 +93,31 @@ exposed. Filename bases are restricted to 1..=50 ASCII letters, digits, hyphens
 and underscores. The default row cap is 1,000; callers can explicitly request
 1..=10,000. Invalid bounds are rejected, not silently clamped.
 **An output row cap is not a server compute, cost, or read-only enforcement bound.**
+
+## Template catalog versus invocation
+
+`execute_query` with `QueryMode::Template` executes an explicit caller-supplied
+template expression and still **requires typed JSON**. A catalog-only response
+to that API fails `MissingTypedJson`; discovery is never a rowset fallback.
+
+Use the separate `discover_query_templates(target, deadline, canceled)` for
+fixed summary navigation. `discover_query_templates_view` accepts only
+`CatalogView::Summary` (`Templates[].{Name:Name,Description:Description}`) or
+`CatalogView::FullEntries` (`Templates[]`). The closed enum cannot interpolate
+functions or accept arbitrary caller expressions. No navigation result is
+automatically invoked, repaired, or converted into a query.
+
+`NativeCatalogResponse` preserves every native content block, its original JSON
+and top-level result JSON, negotiated protocol, and actual tool HTTP dispatch
+evidence. Source-backed catalog responses contain native text followed by
+optional guidance; full entries may include native queries or sensitive parameter
+metadata. All such content is **untrusted caller-owned data**, not instructions,
+safe executable queries, inferred JSON/Markdown/CSV schemas, DataFrames, or
+completed datasets. Resource URIs are never downloaded. Debug output is redacted.
+The same credential, stage, positive-policy request, safe discovery annotations,
+absolute budget, body/resource limits and no-replay transport apply. Observing
+the tool response does not prove that the engine performed no work or establish
+live read-only enforcement.
 
 ## Native result contract
 

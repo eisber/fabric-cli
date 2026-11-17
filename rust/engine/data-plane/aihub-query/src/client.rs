@@ -2,9 +2,10 @@
 // Licensed under the MIT License.
 
 use crate::{
-    DATA_AGENT_VARIANT, Limits, NativeDeadline, QueryError, QueryErrorKind, QueryMode,
-    QueryOutcome, QueryRequest, QueryStage, SANDBOX_VARIANT, TEMPLATE_VARIANT,
-    TYPED_RESULTS_VARIANT, decode, json::RawValue, protocol,
+    CatalogView, DATA_AGENT_VARIANT, DataAgentTarget, Limits, NativeCatalogResponse,
+    NativeDeadline, QueryError, QueryErrorKind, QueryMode, QueryOutcome, QueryRequest, QueryStage,
+    READ_ONLY_VARIANT, SANDBOX_VARIANT, TEMPLATE_VARIANT, TYPED_RESULTS_VARIANT, TypedJson,
+    catalog, decode, json::RawValue, protocol,
 };
 use azure_core::{
     credentials::{AccessToken, TokenCredential},
@@ -147,6 +148,53 @@ impl AiHubQueryClient {
         deadline: &NativeDeadline,
         canceled: impl Future<Output = ()> + Send,
     ) -> Result<QueryOutcome, QueryError> {
+        self.invoke(request, deadline, canceled, |raw, version| {
+            decode::decode(raw, self.limits, request.max_rows as usize, version)
+        })
+        .await
+    }
+
+    /// Navigate the fixed template summary catalog, without invoking templates.
+    ///
+    /// Returns untrusted native MCP content, not a typed dataset. Errors retain
+    /// actual tool dispatch evidence in [`QueryError::query_dispatched`].
+    pub async fn discover_query_templates(
+        &self,
+        target: DataAgentTarget,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+    ) -> Result<NativeCatalogResponse, QueryError> {
+        self.discover_query_templates_view(target, CatalogView::Summary, deadline, canceled)
+            .await
+    }
+
+    /// Navigate one closed catalog view; arbitrary expressions are not accepted.
+    ///
+    /// Uses the same credential, negotiation, discovery, requested read policy,
+    /// annotation checks, absolute budget and single-call HTTP path as queries.
+    /// This does not prove remote engine inactivity or live read-only enforcement.
+    pub async fn discover_query_templates_view(
+        &self,
+        target: DataAgentTarget,
+        view: CatalogView,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+    ) -> Result<NativeCatalogResponse, QueryError> {
+        let request = QueryRequest::new(target, view.expression().into(), TypedJson::Required)?
+            .with_mode(QueryMode::Template);
+        self.invoke(&request, deadline, canceled, |raw, version| {
+            catalog::decode(raw, self.limits, version)
+        })
+        .await
+    }
+
+    async fn invoke<T>(
+        &self,
+        request: &QueryRequest,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+        decode_result: impl FnOnce(&RawValue, String) -> Result<T, QueryErrorKind> + Send,
+    ) -> Result<T, QueryError> {
         let dispatched = AtomicBool::new(false);
         let remaining = deadline.remaining().unwrap_or(Duration::ZERO);
         let mut timeout = self.timer.sleep(remaining);
@@ -154,7 +202,13 @@ impl AiHubQueryClient {
             future: Mutex::new(Box::pin(canceled)),
             latched: AtomicBool::new(false),
         };
-        let mut operation = pin!(self.run(request, deadline, &dispatched, &canceled));
+        let mut operation = pin!(async {
+            let (raw, version) = self.run(request, deadline, &dispatched, &canceled).await?;
+            let result = decode_result(&raw, version)?;
+            canceled.check().await?;
+            deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
+            Ok(result)
+        });
         let result = poll_fn(|cx| {
             if canceled.poll(cx) {
                 return Poll::Ready(Err(QueryErrorKind::Canceled));
@@ -184,7 +238,7 @@ impl AiHubQueryClient {
         deadline: &NativeDeadline,
         dispatched: &AtomicBool,
         canceled: &Cancellation<'_>,
-    ) -> Result<QueryOutcome, QueryErrorKind> {
+    ) -> Result<(RawValue, String), QueryErrorKind> {
         canceled.check().await?;
         let token = self
             .credential
@@ -195,7 +249,7 @@ impl AiHubQueryClient {
         if secret.is_empty() || secret.len() > 32 * 1024 || secret.chars().any(char::is_control) {
             return Err(QueryErrorKind::Authentication);
         }
-        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT];
+        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT, READ_ONLY_VARIANT];
         if request.target.stage == QueryStage::Sandbox {
             variants.push(SANDBOX_VARIANT);
         }
@@ -305,10 +359,9 @@ impl AiHubQueryClient {
             )
             .await?;
         let raw = response.result.ok_or(QueryErrorKind::Protocol)?;
-        let result = decode::decode(&raw, self.limits, request.max_rows as usize, version)?;
         canceled.check().await?;
         deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
-        Ok(result)
+        Ok((*raw, version))
     }
 
     #[allow(
