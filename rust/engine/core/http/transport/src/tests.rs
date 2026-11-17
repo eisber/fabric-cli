@@ -5,9 +5,11 @@ use super::*;
 use crate::test_server::{Reply, Server};
 use azure_core::{
     Bytes,
+    credentials::AccessToken,
     http::{HttpClient, Method, Request, Url},
+    time::OffsetDateTime,
 };
-use fabric_http::{ExecutionOptions, ExecutionTimer, HttpExecutor};
+use fabric_http::{ExecutionError, ExecutionOptions, ExecutionTimer, HttpExecutor};
 use flate2::{Compression, write::GzEncoder};
 use futures_util::StreamExt;
 use std::{
@@ -237,6 +239,76 @@ async fn redirects_never_reach_a_second_host_or_leak_authorization() {
     assert_eq!(sink.state.connections.load(Ordering::SeqCst), 0);
     assert!(sink.requests().is_empty());
     sink.stop().await;
+}
+
+#[tokio::test]
+async fn endless_native_response_hits_generic_body_limit_and_releases_connection_without_replay() {
+    let (tls, root) = test_tls();
+    let server = Server::start(vec![Reply::Endless], Some(tls)).await;
+    let exec = executor(client(&server, vec![root]), Duration::from_secs(3));
+    let error = exec
+        .execute_fabric(
+            Method::Post,
+            &Url::parse("https://api.fabric.microsoft.com/v1/neutral-endless").unwrap(),
+            &AccessToken::new("neutral-limit-synthetic-only", OffsetDateTime::UNIX_EPOCH),
+            b"{}",
+            NonZeroUsize::new(16 * 1024).unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error, ExecutionError::ResponseLimit);
+    server.wait_closed().await;
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1, "an oversized response must not replay a POST");
+    assert!(requests[0].starts_with(b"POST /v1/neutral-endless HTTP/1.1\r\n"));
+    assert!(requests[0].ends_with(b"\r\n\r\n{}"));
+    assert_eq!(server.state.connections.load(Ordering::SeqCst), 1);
+    assert_eq!(server.state.closed.load(Ordering::SeqCst), 1);
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn public_static_proxy_tunnels_https_without_forwarding_origin_bearer_to_connect() {
+    let (tls, root) = test_tls();
+    let server = Server::proxy(
+        vec![Reply::body(202, b"raw accepted response".to_vec())],
+        tls,
+    )
+    .await;
+    let mut configuration = options(vec![root]);
+    configuration.proxy = ProxyPolicy::StaticHttp(
+        StaticHttpProxy::new(&format!("http://{}", server.address)).unwrap(),
+    );
+    let client = NativeHttpClient::new(configuration).unwrap();
+    let invalid = Request::new(
+        Url::parse("http://api.fabric.microsoft.com/v1/neutral-proxy").unwrap(),
+        Method::Post,
+    );
+    assert!(client.execute_request(&invalid).await.is_err());
+    assert!(server.requests().is_empty());
+    assert_eq!(server.state.connections.load(Ordering::SeqCst), 0);
+
+    let mut pending = request(Method::Post, "/v1/neutral-proxy?opaque=a%2B%2F%3D");
+    pending.insert_header("authorization", "Bearer neutral-proxy-synthetic-only");
+    pending.set_body(br#"{"neutral":true}"#.to_vec());
+    let response = client.execute_request(&pending).await.unwrap();
+    assert_eq!(u16::from(response.status()), 202);
+    assert_eq!(bytes(response).await, b"raw accepted response");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2, "one CONNECT and one origin request");
+    let connect = String::from_utf8(requests[0].clone())
+        .unwrap()
+        .to_ascii_lowercase();
+    assert!(connect.starts_with("connect api.fabric.microsoft.com:443 http/1.1\r\n"));
+    assert!(!connect.contains("authorization"));
+    assert!(!connect.contains("neutral-proxy-synthetic-only"));
+    let origin = String::from_utf8(requests[1].clone()).unwrap();
+    assert!(origin.starts_with("POST /v1/neutral-proxy?opaque=a%2B%2F%3D HTTP/1.1\r\n"));
+    assert!(origin.contains("\r\nhost: api.fabric.microsoft.com\r\n"));
+    assert!(origin.contains("\r\nauthorization: Bearer neutral-proxy-synthetic-only\r\n"));
+    assert!(origin.ends_with(r#"{"neutral":true}"#));
+    assert_eq!(server.state.connections.load(Ordering::SeqCst), 1);
+    server.stop().await;
 }
 
 fn gzip(bytes: &[u8]) -> Vec<u8> {
