@@ -40,6 +40,10 @@ impl Clock for FixtureClock {
     fn wall_now(&self) -> SystemTime {
         UNIX_EPOCH + Duration::from_secs(946684800)
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
 
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         self.sleeps.fetch_add(1, Ordering::SeqCst);
@@ -91,6 +95,7 @@ impl HttpTransport for FixtureTransport {
         &self,
         request: ApiRequest,
         _: &OperationContext,
+        _: &dyn Clock,
     ) -> Result<ApiResponse, CoreError> {
         self.methods.lock().unwrap().push(request.method);
         Ok(self

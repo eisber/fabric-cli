@@ -2,17 +2,43 @@
 // Licensed under the MIT License.
 //! Offline tests of the production response-body/decode path after a safe head.
 use super::*;
-use fabric_core::{Audience, CancellationToken};
+use fabric_core::{Audience, CancellationToken, Clock, CoreError, OperationContext};
 use std::{
     pin::Pin,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     task::{Context, Poll},
+    time::{Instant, SystemTime},
 };
 
 enum Mode {
     Fail,
     Stall,
     Cancel(CancellationToken),
+}
+struct TestClock(Mutex<Instant>);
+#[async_trait]
+impl Clock for TestClock {
+    fn now(&self) -> Instant {
+        *self.0.lock().unwrap()
+    }
+    fn wall_now(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH
+    }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
+    async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
+        let now = self.now();
+        let remaining = context.remaining_at(now)?;
+        let mut current = self.0.lock().unwrap();
+        *current += delay.min(remaining);
+        context.remaining_at(*current)?;
+        Ok(())
+    }
 }
 struct SyntheticBody {
     mode: Mode,
@@ -75,13 +101,19 @@ fn assert_safe_error(error: CoreError, audience: Audience, expected: ErrorKind) 
 #[tokio::test]
 async fn safe_head_survives_real_body_reader_stream_and_decode_errors() {
     for audience in [Audience::Fabric, Audience::Azure] {
-        let context = OperationContext::new(Duration::from_secs(240), CancellationToken::new());
+        let clock = TestClock(Mutex::new(Instant::now()));
+        let context = OperationContext::new(
+            clock.now(),
+            Duration::from_secs(240),
+            CancellationToken::new(),
+        )
+        .unwrap();
         let head = ResponseHeadCapture::new(audience);
         let body = SyntheticBody {
             mode: Mode::Fail,
             polls: Arc::new(AtomicUsize::new(0)),
         };
-        let error = receive(202, safe_headers(audience), body, &context, &head)
+        let error = receive(202, safe_headers(audience), body, &context, &clock, &head)
             .await
             .unwrap_err();
         assert_safe_error(error, audience, ErrorKind::Transport);
@@ -93,6 +125,7 @@ async fn safe_head_survives_real_body_reader_stream_and_decode_errors() {
             headers,
             Full::new(Bytes::from_static(b"not gzip")),
             &context,
+            &clock,
             &head,
         )
         .await
@@ -105,7 +138,13 @@ async fn safe_head_survives_real_body_reader_stream_and_decode_errors() {
 async fn safe_head_survives_pending_body_timeout_and_cancellation() {
     for audience in [Audience::Fabric, Audience::Azure] {
         for cancel in [false, true] {
-            let context = OperationContext::new(Duration::from_secs(1), CancellationToken::new());
+            let clock = TestClock(Mutex::new(Instant::now()));
+            let context = OperationContext::new(
+                clock.now(),
+                Duration::from_secs(1),
+                CancellationToken::new(),
+            )
+            .unwrap();
             let head = ResponseHeadCapture::new(audience);
             let body = SyntheticBody {
                 mode: if cancel {
@@ -115,7 +154,7 @@ async fn safe_head_survives_pending_body_timeout_and_cancellation() {
                 },
                 polls: Arc::new(AtomicUsize::new(0)),
             };
-            let error = receive(202, safe_headers(audience), body, &context, &head)
+            let error = receive(202, safe_headers(audience), body, &context, &clock, &head)
                 .await
                 .unwrap_err();
             assert_safe_error(
@@ -140,7 +179,13 @@ async fn unsafe_or_conflicting_handle_is_not_followed_or_leaked_but_raw_response
             ("x-ms-operation-id", "different-id"),
         ],
     ] {
-        let context = OperationContext::new(Duration::from_secs(240), CancellationToken::new());
+        let clock = TestClock(Mutex::new(Instant::now()));
+        let context = OperationContext::new(
+            clock.now(),
+            Duration::from_secs(240),
+            CancellationToken::new(),
+        )
+        .unwrap();
         let head = ResponseHeadCapture::new(Audience::Fabric);
         let headers: BTreeMap<String, String> = fields
             .into_iter()
@@ -151,6 +196,7 @@ async fn unsafe_or_conflicting_handle_is_not_followed_or_leaked_but_raw_response
             headers.clone(),
             Full::new(Bytes::from_static(b"raw initial")),
             &context,
+            &clock,
             &head,
         )
         .await
@@ -166,7 +212,7 @@ async fn unsafe_or_conflicting_handle_is_not_followed_or_leaked_but_raw_response
             mode: Mode::Fail,
             polls: Arc::new(AtomicUsize::new(0)),
         };
-        let error = receive(202, headers, body, &context, &head)
+        let error = receive(202, headers, body, &context, &clock, &head)
             .await
             .unwrap_err();
         assert_eq!(error.kind, ErrorKind::Transport);
@@ -177,7 +223,13 @@ async fn unsafe_or_conflicting_handle_is_not_followed_or_leaked_but_raw_response
 
 #[tokio::test]
 async fn ambiguous_http_control_headers_fail_before_body_read() {
-    let context = OperationContext::new(Duration::from_secs(240), CancellationToken::new());
+    let clock = TestClock(Mutex::new(Instant::now()));
+    let context = OperationContext::new(
+        clock.now(),
+        Duration::from_secs(240),
+        CancellationToken::new(),
+    )
+    .unwrap();
     let head = ResponseHeadCapture::new(Audience::Fabric);
     let polls = Arc::new(AtomicUsize::new(0));
     let body = SyntheticBody {
@@ -188,7 +240,7 @@ async fn ambiguous_http_control_headers_fail_before_body_read() {
         ("Location".into(), "/v1/operations/first".into()),
         ("location".into(), "/v1/operations/second".into()),
     ]);
-    let error = receive(202, headers, body, &context, &head)
+    let error = receive(202, headers, body, &context, &clock, &head)
         .await
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Protocol);

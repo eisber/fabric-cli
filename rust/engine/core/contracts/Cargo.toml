@@ -12,5 +12,6 @@ async-trait.workspace = true
 tokio-util.workspace = true
 url.workspace = true
 serde.workspace = true
+tokio.workspace = true
 [lints]
 workspace = true

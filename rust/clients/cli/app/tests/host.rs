@@ -54,6 +54,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         UNIX_EPOCH + Duration::from_secs(946684800)
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     fn diagnostic(&self, message: &'static str) {
         self.diagnostics.lock().unwrap().push(message);
     }
@@ -119,6 +123,7 @@ impl HttpTransport for Transport {
         &self,
         request: ApiRequest,
         _: &OperationContext,
+        _: &dyn Clock,
     ) -> Result<ApiResponse, CoreError> {
         self.requests.lock().unwrap().push(request);
         if let Some(error) = &self.error {
@@ -136,9 +141,10 @@ impl HttpTransport for Transport {
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        clock: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
-        let result = self.send(request, context).await;
+        let result = self.send(request, context, clock).await;
         if let Some(response) = result.as_ref().ok().or(self.error_head.as_ref()) {
             head.record(response.status, &response.headers)?;
         }
@@ -3043,12 +3049,9 @@ mod polling_configuration {
             ),
             (
                 r#"{"poll_interval":1e-100}"#,
-                "Invalid poll_interval: must be positive and within clock range",
+                "Invalid poll_interval: must be positive",
             ),
-            (
-                r#"{"timeout":1e-100}"#,
-                "Invalid timeout: must be positive and within clock range",
-            ),
+            (r#"{"timeout":1e-100}"#, "Invalid timeout: must be positive"),
             (
                 r#"{"polling_interval":"-1"}"#,
                 "Unknown polling configuration option 'polling_interval'; use 'poll_interval'",

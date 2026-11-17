@@ -36,6 +36,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     async fn sleep(&self, duration: Duration, context: &OperationContext) -> Result<(), CoreError> {
         self.sleeps.fetch_add(1, Ordering::SeqCst);
         *self.now.lock().unwrap() += duration;
@@ -83,13 +87,19 @@ struct Transport {
 }
 #[async_trait]
 impl HttpTransport for Transport {
-    async fn send(&self, _: ApiRequest, _: &OperationContext) -> Result<ApiResponse, CoreError> {
+    async fn send(
+        &self,
+        _: ApiRequest,
+        _: &OperationContext,
+        _: &dyn Clock,
+    ) -> Result<ApiResponse, CoreError> {
         panic!("tests require response-head observation")
     }
     async fn send_with_observer(
         &self,
         request: ApiRequest,
         _: &OperationContext,
+        _: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
         self.calls.fetch_add(1, Ordering::SeqCst);

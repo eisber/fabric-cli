@@ -97,6 +97,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     fn diagnostic(&self, message: &'static str) {
         self.diagnostics.lock().unwrap().push(message);
     }
@@ -170,6 +174,7 @@ impl HttpTransport for Transport {
         &self,
         request: ApiRequest,
         _: &OperationContext,
+        _: &dyn Clock,
     ) -> Result<ApiResponse, CoreError> {
         {
             let mut calls = self.calls.lock().unwrap();
@@ -1086,6 +1091,30 @@ async fn slow_initial_raw_and_async_requests_do_not_start_a_heartbeat() {
         assert_eq!(calls, 1);
         assert!(stderr.is_empty());
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn progress_heartbeat_uses_the_injected_clock() {
+    let (code, _, stderr, calls) = run_options(
+        &["api", "items", "--method", "post"],
+        vec![
+            accepted("/v1/operations/op-1"),
+            response(200, json!({"status":"Succeeded"}), &[]),
+        ],
+        false,
+        false,
+        RunOptions {
+            real_time: true,
+            terminal: true,
+            response_delays: vec![Duration::ZERO, Duration::from_secs(25)],
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert_eq!(code, 0);
+    assert_eq!(calls, 2);
+    assert!(stderr.contains("Waiting for operation status response..."));
 }
 
 #[tokio::test]

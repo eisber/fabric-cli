@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::{
     collections::BTreeMap,
     fmt,
+    future::Future,
     time::{Duration, Instant, SystemTime},
 };
 pub use tokio_util::sync::CancellationToken;
@@ -238,7 +239,7 @@ impl fmt::Display for CoreError {
 impl std::error::Error for CoreError {}
 
 /// Caller-owned deadline and cancellation; dropping work never rolls back a mutation.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OperationContext {
     /// Local cancellation signal.
     pub cancellation: CancellationToken,
@@ -246,16 +247,26 @@ pub struct OperationContext {
     pub deadline: Option<Instant>,
 }
 impl OperationContext {
-    /// Start a real-clock bounded action.
-    pub fn new(timeout: Duration, cancellation: CancellationToken) -> Self {
+    /// Start an action with a deadline derived from an injected monotonic time.
+    pub fn new(
+        now: Instant,
+        timeout: Duration,
+        cancellation: CancellationToken,
+    ) -> Result<Self, CoreError> {
+        let deadline = now.checked_add(timeout).ok_or_else(|| {
+            CoreError::new(
+                ErrorKind::InvalidInput,
+                "Operation timeout exceeds clock range",
+            )
+        })?;
+        Ok(Self::with_deadline(Some(deadline), cancellation))
+    }
+    /// Create an action with an explicit optional deadline.
+    pub fn with_deadline(deadline: Option<Instant>, cancellation: CancellationToken) -> Self {
         Self {
             cancellation,
-            deadline: Some(Instant::now() + timeout),
+            deadline,
         }
-    }
-    /// Remaining real-clock budget, also checking cancellation; MAX when unbounded.
-    pub fn remaining(&self) -> Result<Duration, CoreError> {
-        self.remaining_at(Instant::now())
     }
     /// Remaining budget using an injected clock; MAX when unbounded.
     pub fn remaining_at(&self, now: Instant) -> Result<Duration, CoreError> {
@@ -277,6 +288,44 @@ impl OperationContext {
                     "Operation deadline reached; backend work may continue",
                 )
             })
+    }
+}
+impl fmt::Debug for OperationContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OperationContext")
+            .field("cancellation", &self.cancellation)
+            .field("deadline", &self.deadline)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Enforce deadline and cancellation using the supplied clock.
+pub async fn bounded_with_clock<T>(
+    clock: &dyn Clock,
+    context: &OperationContext,
+    action: impl Future<Output = T>,
+) -> Result<T, CoreError> {
+    context.remaining_at(clock.now())?;
+    let timeout = async {
+        match context.deadline {
+            None => std::future::pending::<Result<(), CoreError>>().await,
+            Some(deadline) => clock.wait_until(deadline, context).await,
+        }
+    };
+    tokio::select! {
+        biased;
+        () = context.cancellation.cancelled() => Err(CoreError::new(
+            ErrorKind::Cancelled,
+            "Operation cancelled locally; backend work may continue",
+        )),
+        value = action => {
+            context.remaining_at(clock.now())?;
+            Ok(value)
+        },
+        result = timeout => result.and_then(|()| Err(CoreError::new(
+            ErrorKind::Timeout,
+            "Operation deadline reached; backend work may continue",
+        ))),
     }
 }
 /// Fully materialized bounded HTTP request. Debug is deliberately redacted.
@@ -329,6 +378,12 @@ pub trait Clock: Send + Sync {
     fn wall_now(&self) -> SystemTime;
     /// Optional caller-owned safe diagnostics sink, never raw service headers.
     fn diagnostic(&self, _message: &'static str) {}
+    /// Wait until the deadline and return a timeout once it is reached.
+    async fn wait_until(
+        &self,
+        deadline: Instant,
+        context: &OperationContext,
+    ) -> Result<(), CoreError>;
     /// Sleep no longer than the context budget; never poll early.
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError>;
 }
@@ -340,6 +395,7 @@ pub trait HttpTransport: Send + Sync {
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        clock: &dyn Clock,
     ) -> Result<ApiResponse, CoreError>;
     /// Send once while publishing validated response-head recovery before reading
     /// the body. Streaming transports must override this method; the default is
@@ -348,9 +404,10 @@ pub trait HttpTransport: Send + Sync {
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        clock: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
-        let response = self.send(request, context).await?;
+        let response = self.send(request, context, clock).await?;
         head.record(response.status, &response.headers)?;
         Ok(response)
     }

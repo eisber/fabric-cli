@@ -31,10 +31,12 @@ use fabric_sdk_http::{HttpClient, SystemClock, bounded_with_clock};
 use serde_json::{Value, json};
 use std::{
     ffi::OsString,
+    future::Future,
     io::{IsTerminal, Write},
     path::PathBuf,
+    pin::Pin,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant, SystemTime},
@@ -67,6 +69,7 @@ struct ConsoleProgress {
     broken: AtomicBool,
     timing: Option<(Arc<dyn Clock>, Instant)>,
     cancellation: CancellationToken,
+    heartbeat_clock: OnceLock<Arc<dyn Clock>>,
     reporting: Mutex<ReportingState>,
 }
 
@@ -407,6 +410,17 @@ impl ProgressDisplay {
     }
 }
 
+fn progress_heartbeat<'a>(
+    clock: Option<&'a dyn Clock>,
+    interval: Duration,
+    context: &'a OperationContext,
+) -> Pin<Box<dyn Future<Output = Result<(), CoreError>> + 'a>> {
+    match clock {
+        Some(clock) => Box::pin(clock.sleep(interval, context)),
+        None => Box::pin(std::future::pending()),
+    }
+}
+
 /// Host-owned effects; fake implementations prove parser and output behavior offline.
 #[async_trait]
 pub trait Host: Send + Sync {
@@ -487,6 +501,13 @@ impl Clock for NativeClock {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .push(message);
+    }
+    async fn wait_until(
+        &self,
+        deadline: Instant,
+        context: &OperationContext,
+    ) -> Result<(), fabric_core::CoreError> {
+        SystemClock.wait_until(deadline, context).await
     }
     async fn sleep(
         &self,
@@ -766,6 +787,7 @@ pub async fn run(
             (clock, start)
         }),
         cancellation: cancellation.clone(),
+        heartbeat_clock: OnceLock::new(),
         reporting: Mutex::new(ReportingState {
             outcome: DiagnosticOutcome::BeforeSend,
             recovery: None,
@@ -784,10 +806,14 @@ pub async fn run(
             execute(&matches, host, cancellation, &observer).await
         };
         let interval = PROGRESS_INTERVAL;
-        let heartbeat = tokio::time::sleep(interval);
+        let heartbeat_context = OperationContext::with_deadline(None, CancellationToken::new());
+        let mut heartbeat = progress_heartbeat(
+            observer.heartbeat_clock.get().map(Arc::as_ref),
+            interval,
+            &heartbeat_context,
+        );
         let mut display = ProgressDisplay::default();
         tokio::pin!(execution);
-        tokio::pin!(heartbeat);
         loop {
             tokio::select! {
                 biased;
@@ -798,7 +824,11 @@ pub async fn run(
                     let result = match event.progress {
                         ConsoleUpdate::Progress(update) => {
                             let result = display.update(update, host.progress_color(), stderr);
-                            heartbeat.as_mut().reset(tokio::time::Instant::now() + interval);
+                            heartbeat = progress_heartbeat(
+                                observer.heartbeat_clock.get().map(Arc::as_ref),
+                                interval,
+                                &heartbeat_context,
+                            );
                             result
                         }
                         ConsoleUpdate::Diagnostic(event, timestamp) => {
@@ -816,14 +846,21 @@ pub async fn run(
                     // Cancellation can drop the observer while its event is queued.
                     let _ = event.written.send(result);
                 }
-                () = &mut heartbeat, if display.started.is_some() && !display.waiting_reported && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
+                result = &mut heartbeat, if display.started.is_some() && !display.waiting_reported && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
+                    if let Err(error) = result {
+                        break Err(error.into());
+                    }
                     if display.heartbeat(host.progress_color(), stderr).is_err() {
                         if observer.timing.is_some() {
                             observer.broken.store(true, Ordering::Relaxed);
                         }
                         observer.failed.cancel();
                     }
-                    heartbeat.as_mut().reset(tokio::time::Instant::now() + interval);
+                    heartbeat = progress_heartbeat(
+                        observer.heartbeat_clock.get().map(Arc::as_ref),
+                        interval,
+                        &heartbeat_context,
+                    );
                 }
             }
         }
@@ -925,7 +962,11 @@ async fn execute(
             }
             Some("login") => {
                 let started = observer.start(DiagnosticStage::Authentication).await?;
-                let context = OperationContext::new(Duration::from_secs(240), cancellation);
+                let context = OperationContext::new(
+                    host.clock().now(),
+                    Duration::from_secs(240),
+                    cancellation,
+                )?;
                 let binding = observer
                     .finish(
                         DiagnosticStage::Authentication,
@@ -999,6 +1040,10 @@ async fn execute(
                 .finish(DiagnosticStage::Selection, started, selected(host))
                 .await?;
             let clock = host.clock();
+            observer
+                .heartbeat_clock
+                .set(clock.clone())
+                .map_err(|_| CoreError::new(ErrorKind::Protocol, "Progress clock already set"))?;
             let started = observer.start(DiagnosticStage::Authentication).await?;
             let credential = observer
                 .finish(

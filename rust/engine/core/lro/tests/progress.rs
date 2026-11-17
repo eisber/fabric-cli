@@ -30,6 +30,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         *self.0.lock().unwrap() += delay;
         context.remaining_at(self.now())?;
@@ -95,6 +99,13 @@ impl Clock for StartClock<'_> {
     }
     fn wall_now(&self) -> SystemTime {
         self.clock.wall_now()
+    }
+    async fn wait_until(
+        &self,
+        deadline: Instant,
+        context: &OperationContext,
+    ) -> Result<(), CoreError> {
+        self.clock.wait_until(deadline, context).await
     }
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         assert_eq!(*self.observer.1.lock().unwrap(), [self.expected]);

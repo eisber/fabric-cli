@@ -8,15 +8,13 @@ use async_trait::async_trait;
 use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use azure_identity::{AzureCliCredential, AzureCliCredentialOptions, Executor};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use fabric_core::{Clock, CoreError, ErrorKind, OperationContext};
+use fabric_core::{Clock, CoreError, ErrorKind, OperationContext, bounded_with_clock};
 use process_wrap::tokio::{KillOnDrop, TokioChildWrapper, TokioCommandWrap};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     ffi::OsStr,
-    fmt,
-    future::Future,
-    io,
+    fmt, io,
     process::{Output, Stdio},
     sync::{
         Arc,
@@ -211,25 +209,6 @@ fn valid_id(id: &str) -> bool {
         })
 }
 
-async fn bounded<T>(
-    context: &OperationContext,
-    future: impl Future<Output = T>,
-) -> Result<T, CoreError> {
-    let remaining = context.remaining()?;
-    tokio::select! {
-        biased;
-        () = context.cancellation.cancelled() => Err(CoreError::new(ErrorKind::Cancelled, "Credential acquisition cancelled locally")),
-        () = async {
-            if context.deadline.is_some() {
-                tokio::time::sleep(remaining).await;
-            } else {
-                std::future::pending::<()>().await;
-            }
-        } => Err(CoreError::new(ErrorKind::Timeout, "Credential acquisition deadline reached")),
-        result = future => { context.remaining()?; Ok(result) }
-    }
-}
-
 /// SDK process executor with bounded output and group/job termination on acquisition drop.
 ///
 /// The Azure SDK supplies its own command. This adapter does not implement a token protocol.
@@ -349,7 +328,8 @@ impl AzureCliSession {
 
     /// Validate the current Azure CLI identity for explicit Rust login, without selecting a subscription.
     pub async fn login(&self, context: &OperationContext) -> Result<Binding, CoreError> {
-        bounded(
+        bounded_with_clock(
+            self.clock.as_ref(),
             context,
             self.acquire(
                 fabric_core::Audience::Fabric.scope(),

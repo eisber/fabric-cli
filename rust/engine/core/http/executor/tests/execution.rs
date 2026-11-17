@@ -28,6 +28,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH + *self.elapsed.lock().unwrap()
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
         let remaining = context.remaining_at(self.now())?;
         *self.elapsed.lock().unwrap() += delay.min(remaining);
@@ -77,6 +81,7 @@ impl HttpTransport for Transport {
         &self,
         request: ApiRequest,
         _: &OperationContext,
+        _: &dyn Clock,
     ) -> Result<ApiResponse, CoreError> {
         assert_eq!(
             request.headers.get("authorization").unwrap(),
@@ -254,27 +259,36 @@ async fn token_acquisition_uses_only_remaining_injected_budget() {
         cancellation: CancellationToken::new(),
         deadline: Some(clock.start + Duration::from_secs(600)),
     };
-    let client = HttpClient::new(Arc::new(PendingCredential), transport.clone(), clock);
+    let client = HttpClient::new(
+        Arc::new(PendingCredential),
+        transport.clone(),
+        clock.clone(),
+    );
     let before = tokio::time::Instant::now();
     let error = client
         .execute_poll(request("GET"), Audience::Fabric, &ctx)
         .await
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Timeout);
-    assert!(tokio::time::Instant::now().duration_since(before) < Duration::from_secs(2));
+    assert_eq!(*clock.elapsed.lock().unwrap(), Duration::from_secs(599));
+    assert_eq!(
+        tokio::time::Instant::now().duration_since(before),
+        Duration::from_secs(1)
+    );
     assert!(transport.calls.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn unlimited_wait_is_still_cancellable_without_starting_a_deadline_timer() {
-    let cancellation = CancellationToken::new();
-    let context = OperationContext {
-        cancellation: cancellation.clone(),
-        deadline: None,
+    let clock = TestClock {
+        start: Instant::now(),
+        elapsed: Mutex::new(Duration::ZERO),
     };
-    let error = fabric_sdk_http::bounded(&context, async {
+    let cancellation = CancellationToken::new();
+    let context = OperationContext::with_deadline(None, cancellation.clone());
+    let error = fabric_sdk_http::bounded_with_clock(&clock, &context, async {
         cancellation.cancel();
-        std::future::pending::<()>().await;
+        std::future::pending::<()>().await
     })
     .await
     .unwrap_err();

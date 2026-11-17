@@ -34,10 +34,15 @@ impl Clock for RealClock {
         SystemTime::now()
     }
 
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
+
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
-        context.remaining()?;
+        context.remaining_at(self.now())?;
         tokio::time::sleep(delay).await;
-        context.remaining()?;
+        context.remaining_at(self.now())?;
         Ok(())
     }
 }
@@ -190,13 +195,15 @@ async fn drive(scenario: &str) {
     let path = directory();
     let cancellation = CancellationToken::new();
     let context = OperationContext::new(
+        Instant::now(),
         if scenario == "cancel" {
             Duration::from_secs(30)
         } else {
             DEADLINE
         },
         cancellation.clone(),
-    );
+    )
+    .unwrap();
     let session = AzureCliSession::new(Arc::new(ProcessExecutor), Arc::new(RealClock)).unwrap();
     let start = Instant::now();
     let acquisition = session.login(&context);

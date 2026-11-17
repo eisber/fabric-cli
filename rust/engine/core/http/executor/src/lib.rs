@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use chrono::Datelike;
+pub use fabric_core::bounded_with_clock;
 use fabric_core::diagnostics::{
     DelaySource, DiagnosticDuration, DiagnosticEvent, DiagnosticMethod, DiagnosticObserver,
     DiagnosticOutcome, DiagnosticPhase, HttpStatus, RetryReason,
@@ -16,7 +17,6 @@ use fabric_core::{
     validate_operation_url, validate_response, validate_url,
 };
 use std::{
-    future::Future,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -36,58 +36,58 @@ impl Clock for SystemClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::now()
     }
+    async fn wait_until(
+        &self,
+        deadline: Instant,
+        context: &OperationContext,
+    ) -> Result<(), CoreError> {
+        let remaining = deadline
+            .checked_duration_since(self.now())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or_else(|| {
+                CoreError::new(
+                    ErrorKind::Timeout,
+                    "Operation deadline reached; backend work may continue",
+                )
+            })?;
+        tokio::select! {
+            biased;
+            () = context.cancellation.cancelled() => Err(CoreError::new(
+                ErrorKind::Cancelled,
+                "Operation cancelled locally; backend work may continue",
+            )),
+            () = tokio::time::sleep(remaining) => {
+                if context.remaining_at(self.now()).is_err() {
+                    Err(CoreError::new(
+                        ErrorKind::Timeout,
+                        "Operation deadline reached; backend work may continue",
+                    ))
+                } else {
+                    Err(CoreError::new(
+                        ErrorKind::Protocol,
+                        "Production clock returned before the operation deadline",
+                    ))
+                }
+            }
+        }
+    }
     async fn sleep(&self, delay: Duration, context: &OperationContext) -> Result<(), CoreError> {
-        let remaining = context.remaining()?;
+        let remaining = context.remaining_at(self.now())?;
         let delay = delay.min(remaining);
-        if Instant::now().checked_add(delay).is_none() {
+        if self.now().checked_add(delay).is_none() {
             return Err(CoreError::new(
                 ErrorKind::Protocol,
                 "Polling delay exceeds clock range",
             ));
         }
-        bounded(context, tokio::time::sleep(delay)).await?;
-        context.remaining()?;
-        Ok(())
-    }
-}
-/// Enforce deadline and cancellation by dropping a losing action future.
-pub async fn bounded<T>(
-    context: &OperationContext,
-    action: impl Future<Output = T>,
-) -> Result<T, CoreError> {
-    let remaining = context.remaining()?;
-    let value = race(context, remaining, action).await?;
-    context.remaining()?;
-    Ok(value)
-}
-/// Enforce the remaining injected-clock budget around a potentially uncooperative
-/// action, including credentials and synthetic transports.
-pub async fn bounded_with_clock<T>(
-    clock: &dyn Clock,
-    context: &OperationContext,
-    action: impl Future<Output = T>,
-) -> Result<T, CoreError> {
-    let remaining = context.remaining_at(clock.now())?;
-    let value = race(context, remaining, action).await?;
-    context.remaining_at(clock.now())?;
-    Ok(value)
-}
-async fn race<T>(
-    context: &OperationContext,
-    remaining: Duration,
-    action: impl Future<Output = T>,
-) -> Result<T, CoreError> {
-    tokio::select! {
-        biased;
-        () = context.cancellation.cancelled() => Err(CoreError::new(ErrorKind::Cancelled, "Operation cancelled locally; backend work may continue")),
-        () = async {
-            if context.deadline.is_some() {
-                tokio::time::sleep(remaining).await;
-            } else {
-                std::future::pending::<()>().await;
-            }
-        } => Err(CoreError::new(ErrorKind::Timeout, "Operation deadline reached; backend work may continue")),
-        value = action => Ok(value),
+        tokio::select! {
+            biased;
+            () = context.cancellation.cancelled() => Err(CoreError::new(
+                ErrorKind::Cancelled,
+                "Operation cancelled locally; backend work may continue",
+            )),
+            () = tokio::time::sleep(delay) => context.remaining_at(self.now()).map(|_| ()),
+        }
     }
 }
 /// Retry-After as a not-before delay; invalid syntax is an explicit safe diagnostic.
@@ -414,8 +414,12 @@ impl HttpClient {
             let mut result = bounded_with_clock(
                 self.clock.as_ref(),
                 context,
-                self.transport
-                    .send_with_observer(authenticated, context, &head),
+                self.transport.send_with_observer(
+                    authenticated,
+                    context,
+                    self.clock.as_ref(),
+                    &head,
+                ),
             )
             .await
             .and_then(|result| result)

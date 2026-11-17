@@ -15,10 +15,7 @@ use fabric_core::{
 };
 use fabric_sdk_http::{bounded_with_clock, retry_after, sleep_with_budget};
 use serde_json::Value;
-use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, time::Duration};
 use url::Url;
 
 /// First Fabric operation/job delay; next is seven, then server hints capped at twenty seconds.
@@ -117,11 +114,11 @@ impl LroConfig {
     ) -> Result<Self, CoreError> {
         for (name, duration) in [("poll_interval", poll_interval), ("timeout", timeout)] {
             if let Some(duration) = duration
-                && (duration.is_zero() || Instant::now().checked_add(duration).is_none())
+                && duration.is_zero()
             {
                 return Err(CoreError::new(
                     ErrorKind::InvalidInput,
-                    format!("Invalid {name}: must be positive and within clock range"),
+                    format!("Invalid {name}: must be positive"),
                 ));
             }
         }
@@ -306,14 +303,14 @@ async fn fetch(
     let deadline = now
         .checked_add(POLL_REQUEST_TIMEOUT)
         .ok_or_else(|| protocol("Polling request deadline exceeds clock range"))?;
-    let request_context = OperationContext {
-        deadline: Some(
+    let request_context = OperationContext::with_deadline(
+        Some(
             context
                 .deadline
                 .map_or(deadline, |overall| overall.min(deadline)),
         ),
-        cancellation: context.cancellation.clone(),
-    };
+        context.cancellation.clone(),
+    );
     let response = bounded_with_clock(
         clock,
         &request_context,
@@ -749,20 +746,18 @@ pub async fn complete_observed(
     let Some(handle) = discovered else {
         return Ok(initial);
     };
-    let context = OperationContext {
-        cancellation,
-        deadline: config
-            .timeout
-            .map(|timeout| {
-                start.checked_add(timeout).ok_or_else(|| {
-                    handle.attach(CoreError::new(
-                        ErrorKind::InvalidInput,
-                        "LRO timeout exceeds clock range",
-                    ))
-                })
+    let deadline = config
+        .timeout
+        .map(|timeout| {
+            start.checked_add(timeout).ok_or_else(|| {
+                handle.attach(CoreError::new(
+                    ErrorKind::InvalidInput,
+                    "LRO timeout exceeds clock range",
+                ))
             })
-            .transpose()?,
-    };
+        })
+        .transpose()?;
+    let context = OperationContext::with_deadline(deadline, cancellation);
     let mut terminal = None;
     let result = reconcile(
         executor,

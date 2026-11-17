@@ -32,6 +32,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     async fn sleep(&self, _: Duration, _: &OperationContext) -> Result<(), CoreError> {
         panic!("initial requests must not retry")
     }
@@ -67,13 +71,19 @@ struct HeadTransport {
 }
 #[async_trait]
 impl HttpTransport for HeadTransport {
-    async fn send(&self, _: ApiRequest, _: &OperationContext) -> Result<ApiResponse, CoreError> {
+    async fn send(
+        &self,
+        _: ApiRequest,
+        _: &OperationContext,
+        _: &dyn Clock,
+    ) -> Result<ApiResponse, CoreError> {
         panic!("streaming transport must publish its head")
     }
     async fn send_with_observer(
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        _: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
         assert_eq!(
@@ -273,7 +283,12 @@ struct RawAcceptedTransport {
 }
 #[async_trait]
 impl HttpTransport for RawAcceptedTransport {
-    async fn send(&self, _: ApiRequest, _: &OperationContext) -> Result<ApiResponse, CoreError> {
+    async fn send(
+        &self,
+        _: ApiRequest,
+        _: &OperationContext,
+        _: &dyn Clock,
+    ) -> Result<ApiResponse, CoreError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(ApiResponse {
             status: 202,
@@ -434,13 +449,19 @@ struct RejectedRawHeadTransport {
 }
 #[async_trait]
 impl HttpTransport for RejectedRawHeadTransport {
-    async fn send(&self, _: ApiRequest, _: &OperationContext) -> Result<ApiResponse, CoreError> {
+    async fn send(
+        &self,
+        _: ApiRequest,
+        _: &OperationContext,
+        _: &dyn Clock,
+    ) -> Result<ApiResponse, CoreError> {
         panic!("raw head must be published before returning its protocol error")
     }
     async fn send_with_observer(
         &self,
         _: ApiRequest,
         _: &OperationContext,
+        _: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
         self.calls.fetch_add(1, Ordering::SeqCst);

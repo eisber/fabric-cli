@@ -105,6 +105,10 @@ impl Clock for FakeClock {
     fn wall_now(&self) -> SystemTime {
         UNIX_EPOCH + Duration::from_secs(self.0.load(Ordering::SeqCst))
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     async fn sleep(&self, _: Duration, _: &OperationContext) -> Result<(), CoreError> {
         panic!("no sleeps in credential tests")
     }
@@ -125,7 +129,12 @@ fn setup(
     (session, process, clock)
 }
 fn context() -> OperationContext {
-    OperationContext::new(Duration::from_secs(5), CancellationToken::new())
+    OperationContext::new(
+        Instant::now(),
+        Duration::from_secs(5),
+        CancellationToken::new(),
+    )
+    .unwrap()
 }
 
 #[tokio::test]
@@ -382,7 +391,12 @@ async fn inflight_credential_cancellation_drops_the_injected_process_future() {
 #[tokio::test(start_paused = true)]
 async fn deadline_bounds_acquisition_and_expired_context_never_starts_process() {
     let (session, process, _) = setup(vec![], true);
-    let ctx = OperationContext::new(Duration::from_secs(5), CancellationToken::new());
+    let ctx = OperationContext::new(
+        Instant::now(),
+        Duration::from_secs(5),
+        CancellationToken::new(),
+    )
+    .unwrap();
     assert_eq!(
         session.login(&ctx).await.unwrap_err().kind,
         ErrorKind::Timeout

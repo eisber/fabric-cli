@@ -6,10 +6,9 @@
 use async_compression::tokio::bufread::{GzipDecoder, ZlibDecoder};
 use async_trait::async_trait;
 use fabric_core::{
-    ApiRequest, ApiResponse, CoreError, ErrorKind, HttpTransport, MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES, OperationContext, ResponseHeadCapture,
+    ApiRequest, ApiResponse, Clock, CoreError, ErrorKind, HttpTransport, MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES, OperationContext, ResponseHeadCapture, bounded_with_clock,
 };
-use fabric_sdk_http::bounded;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_rustls::HttpsConnector;
@@ -57,6 +56,7 @@ impl NativeHttpClient {
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        clock: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
         if request.url.scheme() != "https" {
@@ -90,7 +90,7 @@ impl NativeHttpClient {
             ));
         }
         let headers = ingest_headers(status, response.headers(), head)?;
-        receive(status, headers, response.into_body(), context, head).await
+        receive(status, headers, response.into_body(), context, clock, head).await
     }
 }
 
@@ -151,8 +151,9 @@ fn ingest_headers(
 async fn receive<B>(
     status: u16,
     headers: BTreeMap<String, String>,
-    mut incoming: B,
+    incoming: B,
     context: &OperationContext,
+    clock: &dyn Clock,
     head: &ResponseHeadCapture,
 ) -> Result<ApiResponse, CoreError>
 where
@@ -160,35 +161,47 @@ where
     B::Error: Send,
 {
     head.record(status, &headers)?;
-    bounded(context, async move {
-        let mut wire = Vec::new();
-        while let Some(frame) = incoming.frame().await {
-            let frame = frame.map_err(|_| error("HTTP response stream failed"))?;
-            if let Ok(bytes) = frame.into_data() {
-                if wire.len().saturating_add(bytes.len()) > MAX_RESPONSE_BYTES {
-                    return Err(protocol(&format!(
-                        "Response body exceeds the {MAX_RESPONSE_BYTES}-byte size limit"
-                    )));
-                }
-                wire.extend_from_slice(&bytes);
-            }
-            // An always-ready body must still yield to cancellation/deadlines.
-            tokio::task::yield_now().await;
-        }
-        let body = if status == 204 {
-            Vec::new()
-        } else {
-            decode(wire, headers.get("content-encoding").map(String::as_str)).await?
-        };
-        Ok(ApiResponse {
+    let encoding = headers.get("content-encoding").cloned();
+    bounded_with_clock(clock, context, receive_body(status, encoding, incoming))
+        .await
+        .map_err(|error| head.attach(error))?
+        .map(|body| ApiResponse {
             status,
             headers,
             body,
         })
-    })
-    .await
-    .map_err(|error| head.attach(error))?
-    .map_err(|error| head.attach(error))
+        .map_err(|error| head.attach(error))
+}
+
+async fn receive_body<B>(
+    status: u16,
+    encoding: Option<String>,
+    mut incoming: B,
+) -> Result<Vec<u8>, CoreError>
+where
+    B: hyper::body::Body<Data = Bytes> + Send + Unpin,
+    B::Error: Send,
+{
+    let mut wire = Vec::new();
+    while let Some(frame) = incoming.frame().await {
+        let frame = frame.map_err(|_| error("HTTP response stream failed"))?;
+        if let Ok(bytes) = frame.into_data() {
+            if wire.len().saturating_add(bytes.len()) > MAX_RESPONSE_BYTES {
+                return Err(protocol(&format!(
+                    "Response body exceeds the {MAX_RESPONSE_BYTES}-byte size limit"
+                )));
+            }
+            wire.extend_from_slice(&bytes);
+        }
+        // An always-ready body must still yield to cancellation/deadlines.
+        tokio::task::yield_now().await;
+    }
+    let body = if status == 204 {
+        Vec::new()
+    } else {
+        decode(wire, encoding.as_deref()).await?
+    };
+    Ok(body)
 }
 fn error(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Transport, message)
@@ -325,20 +338,27 @@ impl HttpTransport for NativeHttpClient {
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        clock: &dyn Clock,
     ) -> Result<ApiResponse, CoreError> {
         let head = ResponseHeadCapture::for_url(&request.url);
-        self.send_with_observer(request, context, &head).await
+        self.send_with_observer(request, context, clock, &head)
+            .await
     }
     async fn send_with_observer(
         &self,
         request: ApiRequest,
         context: &OperationContext,
+        clock: &dyn Clock,
         head: &ResponseHeadCapture,
     ) -> Result<ApiResponse, CoreError> {
-        bounded(context, self.send_once(request, context, head))
-            .await
-            .map_err(|error| head.attach(error))?
-            .map_err(|error| head.attach(error))
+        bounded_with_clock(
+            clock,
+            context,
+            self.send_once(request, context, clock, head),
+        )
+        .await
+        .map_err(|error| head.attach(error))?
+        .map_err(|error| head.attach(error))
     }
 }
 

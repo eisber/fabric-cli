@@ -39,6 +39,10 @@ impl Clock for TestClock {
     fn wall_now(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH + *self.elapsed.lock().unwrap()
     }
+    async fn wait_until(&self, deadline: Instant, _: &OperationContext) -> Result<(), CoreError> {
+        tokio::time::sleep(deadline.saturating_duration_since(self.now())).await;
+        Ok(())
+    }
     fn diagnostic(&self, message: &'static str) {
         self.warnings.lock().unwrap().push(message);
     }

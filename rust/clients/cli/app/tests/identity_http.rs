@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
 use azure_identity::Executor;
 use fabric_core::{
-    ApiRequest, ApiResponse, Audience, CancellationToken, CoreError, ErrorKind, HttpExecutor,
-    HttpTransport, OperationContext,
+    ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
+    HttpExecutor, HttpTransport, OperationContext,
 };
 use fabric_identity::{AzureCliSession, Binding, BoundCredential};
 use fabric_sdk_http::{HttpClient, SystemClock};
@@ -50,7 +50,12 @@ impl Executor for PendingProcess {
 struct NeverTransport;
 #[async_trait]
 impl HttpTransport for NeverTransport {
-    async fn send(&self, _: ApiRequest, _: &OperationContext) -> Result<ApiResponse, CoreError> {
+    async fn send(
+        &self,
+        _: ApiRequest,
+        _: &OperationContext,
+        _: &dyn Clock,
+    ) -> Result<ApiResponse, CoreError> {
         panic!("credential failure/cancellation must precede HTTP")
     }
 }
@@ -86,7 +91,12 @@ fn request() -> ApiRequest {
 #[tokio::test]
 async fn real_http_executor_cancels_the_bound_sdk_process_future() {
     let (client, process) = pending_client();
-    let context = OperationContext::new(Duration::from_secs(5), CancellationToken::new());
+    let context = OperationContext::new(
+        Instant::now(),
+        Duration::from_secs(5),
+        CancellationToken::new(),
+    )
+    .unwrap();
     let signal = context.cancellation.clone();
     let cancel = async {
         tokio::task::yield_now().await;
@@ -104,7 +114,12 @@ async fn real_http_executor_cancels_the_bound_sdk_process_future() {
 #[tokio::test(start_paused = true)]
 async fn real_http_executor_deadline_drops_sdk_work_and_expired_context_starts_nothing() {
     let (client, process) = pending_client();
-    let context = OperationContext::new(Duration::from_secs(5), CancellationToken::new());
+    let context = OperationContext::new(
+        Instant::now(),
+        Duration::from_secs(5),
+        CancellationToken::new(),
+    )
+    .unwrap();
     assert_eq!(
         client
             .execute(request(), Audience::Fabric, &context)
