@@ -1762,10 +1762,13 @@ dependencies = [
 name = "fabric-sdk-query"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "azure_core",
  "fabric-core",
  "fabric-sdk",
+ "fabric-sdk-http",
  "fabric-v2-contracts",
+ "futures-util",
  "serde",
  "serde_json",
  "tokio",
