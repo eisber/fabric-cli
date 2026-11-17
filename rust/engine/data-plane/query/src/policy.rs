@@ -89,7 +89,7 @@ fn parse_timeout(value: &str) -> Result<Duration, NativeError> {
     {
         return Err(NativeError::InvalidInput);
     }
-    let number = |start, end| {
+    let number = |start: usize, end: usize| {
         value[start..end]
             .parse::<u64>()
             .map_err(|_| NativeError::InvalidInput)
