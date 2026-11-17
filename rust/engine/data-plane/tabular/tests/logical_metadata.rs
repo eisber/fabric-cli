@@ -144,6 +144,24 @@ fn ignored_empty_metadata_keeps_existing_json_shape() {
 }
 
 #[test]
+fn logical_validation_does_not_change_ordinary_json_object_deserialization() {
+    let text = r#"{"$serde_json::private::RawValue":"123"}"#;
+    let parsed: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(
+        parsed,
+        serde_json::json!({"$serde_json::private::RawValue": "123"})
+    );
+    let table = result(
+        field(DataType::Utf8, "json"),
+        Arc::new(StringArray::from(vec![text])),
+    )
+    .unwrap();
+    let encoded: Value =
+        serde_json::from_slice(&encode(&table, ResultFormat::Json, limits()).unwrap()).unwrap();
+    assert_eq!(encoded["rows"][0][0], text);
+}
+
+#[test]
 fn unsupported_metadata_and_logical_physical_type_mismatches_still_fail() {
     let invalid = [
         HashMap::from([(LOGICAL_TYPE_METADATA_KEY.into(), "decimal".into())]),

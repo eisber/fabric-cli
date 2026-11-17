@@ -3,6 +3,7 @@
 
 use arrow_array::{Array, LargeStringArray, StringArray};
 use arrow_schema::{DataType, Field};
+use serde::Deserialize;
 
 use crate::TabularError;
 
@@ -64,7 +65,10 @@ pub(crate) fn validate_value(
     }
     .ok_or_else(|| invalid("logical text column does not match its schema"))?;
     let valid = match logical_type.as_str() {
-        "json" => serde_json::from_str::<&serde_json::value::RawValue>(value).is_ok(),
+        "json" => {
+            let mut input = serde_json::Deserializer::from_str(value);
+            serde::de::IgnoredAny::deserialize(&mut input).is_ok() && input.end().is_ok()
+        }
         "guid" => {
             value.len() == 36
                 && value.bytes().enumerate().all(|(index, byte)| {
