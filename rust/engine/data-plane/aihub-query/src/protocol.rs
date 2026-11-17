@@ -103,10 +103,10 @@ impl SseDecoder {
                     if self.events > 256 {
                         return Err(QueryErrorKind::Limit);
                     }
-                    if let Some(result) = envelope(&data.join("\n"), id)? {
-                        if answer.replace(result).is_some() {
-                            return Err(QueryErrorKind::Protocol);
-                        }
+                    if let Some(result) = envelope(&data.join("\n"), id)?
+                        && answer.replace(result).is_some()
+                    {
+                        return Err(QueryErrorKind::Protocol);
                     }
                 }
             }

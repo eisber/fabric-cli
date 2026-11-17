@@ -143,7 +143,7 @@ impl fmt::Debug for TypedQueryResult {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ToolResult {
-    content: Vec<Box<RawValue>>,
+    content: Vec<RawValue>,
     #[serde(default)]
     is_error: bool,
     #[serde(default)]
@@ -187,7 +187,7 @@ struct Rowset {
     max_rows: Option<usize>,
     #[serde(deserialize_with = "required_nullable")]
     total_row_count: Option<u64>,
-    rows: Vec<Vec<Box<RawValue>>>,
+    rows: Vec<Vec<RawValue>>,
 }
 
 #[derive(Deserialize)]
