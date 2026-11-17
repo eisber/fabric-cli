@@ -21,6 +21,10 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+#[cfg(test)]
+#[path = "query_host_result_tests.rs"]
+mod tests;
+
 /// Every converted native dataset and its unchanged identities and metadata.
 pub enum ConvertedQuery {
     /// Strictly typed DataAgent resources, auxiliary resources and protocol data.
