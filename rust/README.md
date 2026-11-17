@@ -47,14 +47,14 @@ Azure CLI and run Rust login again.
 
 ```text
 fab-rs workspace list
-fab-rs workspace get <name-or-guid>
+fab-rs workspace get <name-or-guid> [--destination <dir> [--overwrite]]
 fab-rs workspace create [display-name] [--payload <json-or-@file>]
-fab-rs workspace update <name-or-guid> --payload <json-or-@file>
+fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --source <dir> [--force])
 fab-rs workspace delete <name-or-guid> [--force]
 fab-rs item list --workspace <name-or-guid>
-fab-rs item get <name-or-guid> --workspace <name-or-guid>
-fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file>]
-fab-rs item update <name-or-guid> --workspace <name-or-guid> --payload <json-or-@file>
+fab-rs item get <name-or-guid> --workspace <name-or-guid> [--destination <dir> [--format <f>] [--overwrite]]
+fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file> | --source <dir> [--type <t>] [--format <f>]]
+fab-rs item update <name-or-guid> --workspace <name-or-guid> (--payload <json-or-@file> | --source <dir> [--format <f>] [--force])
 fab-rs item delete <name-or-guid> --workspace <name-or-guid> [--force]
 ```
 
@@ -88,6 +88,41 @@ item `workspaceId` are routing information, not payload properties.
 Delete prompts on stderr after resolving the target. An entered blank line,
 `y`, or `yes` confirms; `n` or `no` cancels with a failure. EOF and nonterminal
 input do not confirm. `--force` bypasses only confirmation.
+
+### Definition export and import
+
+`--destination` exports definitions; `--source` imports them. Both take an
+existing local directory. A leading `~`, `~/`, or (on Windows) `~\` expands to
+the home directory like Python `os.path.expanduser`; `~user` is literal.
+Absolute and relative paths are used as given.
+
+- `item get --destination <dir>` calls Get Item Definition and writes each
+  base64-decoded part below `<dir>/<displayName>.<type>/`.
+- `workspace get --destination <dir>` calls the beta Bulk Export Item
+  Definitions API (`mode: All`) and writes parts below `<dir>` using the
+  service paths (for example `<dir>/<name>.<type>/...`).
+- `item create --source <dir>` reads every file below `<dir>` into a base64
+  definition and creates the item. The type comes from `--type` or the
+  `.platform` file; a mismatch fails.
+- `item update --source <dir>` calls Update Item Definition.
+- `workspace update --source <dir>` calls Bulk Import Item Definitions with
+  every file below `<dir>` as `/`-prefixed parts, replacing matching items.
+  It fails if any item reports `operationStatus: Failed`. Bulk import never
+  creates the workspace.
+
+Export never overwrites an existing file unless `--overwrite` is supplied;
+files are written atomically with mode `0600` and directories with `0700` on
+Unix. Symlinks and special files are rejected on both export and import, and
+part paths must be relative, portable, and free of `..`. Import skips
+`cache.abf`, rejects `byPath` `definition.pbir`, and is bounded by the request
+size limit. Import into an existing target (`update --source`) prompts like
+delete unless `--force` is supplied. `--format` is forwarded as the definition
+format.
+
+All definition operations follow long-running operations by default.
+`--async` returns the `Accepted` envelope instead; for exports it adds
+`"saved": false` and writes no files. Completed exports return
+`{"saved": true, "path": ..., "files": [...]}`.
 
 Resource `--query` runs on the native object or complete array in `result.data`.
 For `workspace list` and `item list`, a single field identifier such as `--query id`

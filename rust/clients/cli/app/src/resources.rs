@@ -3,12 +3,16 @@
 
 //! Resource command parsing and local payload preparation.
 
+use crate::definition;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{Audience, Clock, HttpExecutor, MAX_REQUEST_BYTES, OperationContext};
 use fabric_resources::Selector;
 use serde_json::{Map, Value};
-use std::{io::Read, path::Path};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 pub(crate) struct Prepared {
     pub kind: &'static str,
@@ -20,6 +24,10 @@ pub(crate) struct Prepared {
     pub force: bool,
     pub asynchronous: bool,
     pub polling: fabric_sdk_api::LroConfig,
+    pub destination: Option<PathBuf>,
+    pub overwrite: bool,
+    pub format: Option<String>,
+    pub source: bool,
 }
 
 fn invalid(message: &str) -> CommandError {
@@ -45,20 +53,78 @@ pub(crate) fn command(kind: &'static str) -> Command {
         if verb != "list" {
             leaf = leaf.arg(Arg::new("target").required(verb != "create"));
         }
+        let sourced = verb == "update" || (verb == "create" && kind == "item");
         if verb == "create" || verb == "update" {
+            let mut arg = Arg::new("payload").long("payload");
+            arg = if verb == "update" {
+                arg.required_unless_present("source")
+            } else {
+                arg
+            };
+            leaf = leaf.arg(arg);
+        }
+        if sourced {
             leaf = leaf.arg(
-                Arg::new("payload")
-                    .long("payload")
-                    .required(verb == "update"),
+                Arg::new("source")
+                    .long("source")
+                    .conflicts_with("payload")
+                    .help("Import the definition from this local directory"),
             );
+        }
+        if verb == "get" {
+            leaf = leaf
+                .arg(
+                    Arg::new("destination")
+                        .long("destination")
+                        .help("Export the definition into this existing local directory"),
+                )
+                .arg(
+                    Arg::new("overwrite")
+                        .long("overwrite")
+                        .action(ArgAction::SetTrue)
+                        .requires("destination"),
+                );
+        }
+        let file_flag = if verb == "get" {
+            "destination"
+        } else {
+            "source"
+        };
+        if kind == "item" && (verb == "get" || sourced) {
+            leaf = leaf.arg(Arg::new("format").long("format").requires(file_flag));
+        }
+        if kind == "item" && verb == "create" {
+            leaf = leaf.arg(Arg::new("type").long("type").requires("source"));
         }
         if verb == "delete" {
             leaf = leaf.arg(Arg::new("force").long("force").action(ArgAction::SetTrue));
+        }
+        if verb == "update" {
+            leaf = leaf.arg(
+                Arg::new("force")
+                    .long("force")
+                    .action(ArgAction::SetTrue)
+                    .requires("source"),
+            );
         }
         if matches!(verb, "create" | "update" | "delete") {
             leaf = leaf
                 .arg(Arg::new("async").long("async").action(ArgAction::SetTrue))
                 .arg(Arg::new("polling-config").long("polling-config"));
+        }
+        if verb == "get" {
+            leaf = leaf
+                .arg(
+                    Arg::new("async")
+                        .long("async")
+                        .action(ArgAction::SetTrue)
+                        .requires("destination"),
+                )
+                .arg(
+                    Arg::new("polling-config")
+                        .long("polling-config")
+                        .requires("destination"),
+                );
         }
         parent = parent.subcommand(leaf);
     }
@@ -161,7 +227,9 @@ pub(crate) async fn execute(
         }
         _ => None,
     };
-    if prepared.verb == "delete" && !prepared.force {
+    let export = prepared.destination.is_some();
+    let import = prepared.source && prepared.verb == "update";
+    if (prepared.verb == "delete" || import) && !prepared.force {
         context.remaining_at(clock.now())?;
         let id = target_id
             .as_deref()
@@ -170,108 +238,101 @@ pub(crate) async fn execute(
             .as_ref()
             .map(|id| format!(" in workspace {id}"))
             .unwrap_or_default();
-        confirmer
-            .confirm(format!("Delete {} {id}{scope}? [Y/n] ", prepared.kind))
-            .await?;
+        let prompt = match (prepared.verb, prepared.kind) {
+            ("delete", kind) => format!("Delete {kind} {id}{scope}? [Y/n] "),
+            (_, "item") => format!("Replace the definition of item {id}{scope}? [Y/n] "),
+            _ => {
+                format!("Import definitions into workspace {id}, replacing matching items? [Y/n] ")
+            }
+        };
+        confirmer.confirm(prompt).await?;
         context.remaining_at(clock.now())?;
     }
-    let data = if prepared.verb == "list" {
-        fabric_resources::list(client, clock, context, &collection).await?
-    } else {
-        let endpoint = match target_id {
-            Some(id) => format!("{collection}/{id}"),
-            None => collection,
-        };
-        let method = match prepared.verb {
-            "get" => "GET",
-            "create" => "POST",
-            "update" => "PATCH",
-            "delete" => "DELETE",
-            _ => return Err(invalid("Invalid resource action")),
-        };
-        let initial =
-            fabric_resources::request(client, context, method, &endpoint, prepared.body).await?;
-        let recovery =
-            match fabric_core::operation_handle(Audience::Fabric, initial.status, &initial.headers)
-            {
-                Ok(handle) => handle.map(|handle| handle.recovery()),
-                Err(error) => error.recovery,
-            };
-        let attach = |mut error: CommandError| {
-            if error.recovery.is_none() {
-                error.recovery = recovery
-                    .as_ref()
-                    .and_then(|value| serde_json::to_value(value).ok());
-            }
-            error
-        };
-        let response = if prepared.asynchronous {
-            initial
-        } else {
-            fabric_cli_api::validate_response_body(&initial.body).map_err(&attach)?;
-            fabric_sdk_api::complete_observed(
-                client,
-                clock,
-                Audience::Fabric,
-                initial,
-                context.cancellation.clone(),
-                prepared.polling,
-                observer,
-            )
-            .await
-            .map_err(|error| attach(error.into()))?
-        };
-        if !(200..300).contains(&response.status) {
-            return Err(attach(CommandError::new(
-                "Service",
-                format!(
-                    "Fabric resource request failed with HTTP {}",
-                    response.status
-                ),
-            )));
-        }
-        let empty = response.body.iter().all(u8::is_ascii_whitespace);
-        let body = if empty && response.status == 204 && prepared.verb != "get" {
-            Value::Null
-        } else if empty && response.status == 202 {
-            Value::Null
-        } else if empty {
-            return Err(attach(CommandError::new(
-                "InvalidJson",
-                "Empty resource response",
-            )));
-        } else {
-            fabric_core_json::decode(&response.body).map_err(|_| {
-                attach(CommandError::new(
-                    "InvalidJson",
-                    "Malformed resource response JSON",
-                ))
-            })?
-        };
-        if response.status == 202 {
-            let mut accepted = Map::new();
-            accepted.insert("status_code".into(), Value::from(202));
-            accepted.insert("status".into(), Value::String("Accepted".into()));
-            accepted.insert("body".into(), body);
-            if let Some(recovery) = recovery.as_ref() {
-                if let Ok(value) = serde_json::to_value(recovery) {
-                    accepted.insert("recovery".into(), value);
-                }
-            }
-            Value::Object(accepted)
-        } else {
-            if prepared.verb == "get" && !body.is_object() {
-                return Err(attach(CommandError::new(
-                    "Protocol",
-                    "Resource response must be an object",
-                )));
-            }
-            body
-        }
+    if prepared.verb == "list" {
+        let data = fabric_resources::list(client, clock, context, &collection).await?;
+        return apply_query(data, prepared.query.as_deref(), true);
+    }
+    let endpoint = match &target_id {
+        Some(id) => format!("{collection}/{id}"),
+        None => collection.clone(),
     };
-    match prepared.query.as_deref().filter(|query| !query.is_empty()) {
+    let mut folder = None;
+    let mut body = prepared.body;
+    let (method, endpoint) = match (prepared.verb, prepared.kind) {
+        ("get", "item") if export => {
+            folder = Some(item_folder(client, context, &endpoint).await?);
+            let format = prepared
+                .format
+                .as_deref()
+                .map(|format| format!("?format={format}"))
+                .unwrap_or_default();
+            ("POST", format!("{endpoint}/getDefinition{format}"))
+        }
+        ("get", _) if export => {
+            body = br#"{"mode":"All"}"#.to_vec();
+            (
+                "POST",
+                format!("{endpoint}/items/bulkExportDefinitions?beta=true"),
+            )
+        }
+        ("update", "item") if import => ("POST", format!("{endpoint}/updateDefinition")),
+        ("update", _) if import => ("POST", format!("{endpoint}/items/bulkImportDefinitions")),
+        ("get", _) => ("GET", endpoint),
+        ("create", _) => ("POST", endpoint),
+        ("update", _) => ("PATCH", endpoint),
+        ("delete", _) => ("DELETE", endpoint),
+        _ => return Err(invalid("Invalid resource action")),
+    };
+    let (mut data, accepted) = send(
+        client,
+        clock,
+        context,
+        observer,
+        Request {
+            method,
+            endpoint: &endpoint,
+            body,
+            asynchronous: prepared.asynchronous,
+            polling: prepared.polling,
+            object: prepared.verb == "get",
+            allow_empty: import,
+        },
+    )
+    .await?;
+    if let Some(destination) = prepared.destination.as_deref() {
+        if accepted {
+            if let Value::Object(envelope) = &mut data {
+                envelope.insert("saved".into(), Value::Bool(false));
+            }
+        } else {
+            data = save(destination, folder.as_deref(), &data, prepared.overwrite)?;
+        }
+    } else if import && prepared.kind == "workspace" && !accepted {
+        let failed = data
+            .get("importItemDefinitionsDetails")
+            .and_then(Value::as_array)
+            .is_some_and(|details| {
+                details.iter().any(|detail| {
+                    detail
+                        .get("operationStatus")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| status.eq_ignore_ascii_case("Failed"))
+                })
+            });
+        if failed {
+            return Err(CommandError::new(
+                "Service",
+                "One or more item definitions failed to import",
+            ));
+        }
+    }
+    apply_query(data, prepared.query.as_deref(), false)
+}
+
+fn apply_query(data: Value, query: Option<&str>, list: bool) -> Result<Value, CommandError> {
+    match query.filter(|query| !query.is_empty()) {
         Some(query) => {
-            let result = if prepared.verb == "list" {
+            let result = if list {
                 fabric_cli_query::search_list(&data, query)
             } else {
                 fabric_cli_query::search(&data, query)
@@ -280,6 +341,170 @@ pub(crate) async fn execute(
         }
         None => Ok(data),
     }
+}
+
+async fn item_folder(
+    client: &dyn HttpExecutor,
+    context: &OperationContext,
+    endpoint: &str,
+) -> Result<String, CommandError> {
+    let response = fabric_resources::request(client, context, "GET", endpoint, Vec::new()).await?;
+    let item = fabric_core_json::decode(&response.body)
+        .map_err(|_| CommandError::new("InvalidJson", "Malformed resource response JSON"))?;
+    let field = |key: &str| {
+        item.get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| CommandError::new("Protocol", "Item response lacks displayName or type"))
+    };
+    let folder = format!("{}.{}", field("displayName")?, field("type")?);
+    definition::validate_segment(&folder)?;
+    Ok(folder)
+}
+
+fn save(
+    destination: &Path,
+    folder: Option<&str>,
+    data: &Value,
+    overwrite: bool,
+) -> Result<Value, CommandError> {
+    let (files, prefix, root) = match folder {
+        Some(folder) => {
+            let parts = data
+                .get("definition")
+                .and_then(|definition| definition.get("parts"))
+                .ok_or_else(|| CommandError::new("Protocol", "Definition response lacks parts"))?;
+            (
+                definition::decode_parts(parts, false)?,
+                vec![folder],
+                destination.join(folder),
+            )
+        }
+        None => {
+            let parts = data.get("definitionParts").ok_or_else(|| {
+                CommandError::new("Protocol", "Bulk export response lacks definitionParts")
+            })?;
+            (
+                definition::decode_parts(parts, true)?,
+                Vec::new(),
+                destination.to_path_buf(),
+            )
+        }
+    };
+    let written = definition::write_tree(destination, &prefix, &files, overwrite)?;
+    let mut result = Map::new();
+    result.insert("saved".into(), Value::Bool(true));
+    result.insert("path".into(), Value::String(root.display().to_string()));
+    result.insert(
+        "files".into(),
+        Value::Array(written.into_iter().map(Value::String).collect()),
+    );
+    Ok(Value::Object(result))
+}
+
+struct Request<'a> {
+    method: &'static str,
+    endpoint: &'a str,
+    body: Vec<u8>,
+    asynchronous: bool,
+    polling: fabric_sdk_api::LroConfig,
+    object: bool,
+    allow_empty: bool,
+}
+
+/// Send one request, reconcile its LRO unless asynchronous, and return `(data, accepted)`.
+async fn send(
+    client: &dyn HttpExecutor,
+    clock: &dyn Clock,
+    context: &OperationContext,
+    observer: &dyn fabric_sdk_api::PollObserver,
+    request: Request<'_>,
+) -> Result<(Value, bool), CommandError> {
+    let initial = fabric_resources::request(
+        client,
+        context,
+        request.method,
+        request.endpoint,
+        request.body,
+    )
+    .await?;
+    let recovery =
+        match fabric_core::operation_handle(Audience::Fabric, initial.status, &initial.headers) {
+            Ok(handle) => handle.map(|handle| handle.recovery()),
+            Err(error) => error.recovery,
+        };
+    let attach = |mut error: CommandError| {
+        if error.recovery.is_none() {
+            error.recovery = recovery
+                .as_ref()
+                .and_then(|value| serde_json::to_value(value).ok());
+        }
+        error
+    };
+    let response = if request.asynchronous {
+        initial
+    } else {
+        fabric_cli_api::validate_response_body(&initial.body).map_err(&attach)?;
+        fabric_sdk_api::complete_observed(
+            client,
+            clock,
+            Audience::Fabric,
+            initial,
+            context.cancellation.clone(),
+            request.polling,
+            observer,
+        )
+        .await
+        .map_err(|error| attach(error.into()))?
+    };
+    if !(200..300).contains(&response.status) {
+        return Err(attach(CommandError::new(
+            "Service",
+            format!(
+                "Fabric resource request failed with HTTP {}",
+                response.status
+            ),
+        )));
+    }
+    let empty = response.body.iter().all(u8::is_ascii_whitespace);
+    let body = if empty
+        && (response.status == 202
+            || request.allow_empty
+            || (response.status == 204 && !request.object))
+    {
+        Value::Null
+    } else if empty {
+        return Err(attach(CommandError::new(
+            "InvalidJson",
+            "Empty resource response",
+        )));
+    } else {
+        fabric_core_json::decode(&response.body).map_err(|_| {
+            attach(CommandError::new(
+                "InvalidJson",
+                "Malformed resource response JSON",
+            ))
+        })?
+    };
+    if response.status == 202 {
+        let mut accepted = Map::new();
+        accepted.insert("status_code".into(), Value::from(202));
+        accepted.insert("status".into(), Value::String("Accepted".into()));
+        accepted.insert("body".into(), body);
+        if let Some(recovery) = recovery.as_ref() {
+            if let Ok(value) = serde_json::to_value(recovery) {
+                accepted.insert("recovery".into(), value);
+            }
+        }
+        return Ok((Value::Object(accepted), true));
+    }
+    if request.object && !body.is_object() {
+        return Err(attach(CommandError::new(
+            "Protocol",
+            "Resource response must be an object",
+        )));
+    }
+    Ok((body, false))
 }
 
 fn finish_prepare(
@@ -300,17 +525,65 @@ fn finish_prepare(
             return Err(invalid("Invalid or oversized JMESPath query"));
         }
     }
-    let mutation = matches!(verb, "create" | "update" | "delete");
-    let asynchronous = mutation && args.get_flag("async");
-    let polling_text = if mutation {
-        text("polling-config")
-    } else {
-        None
-    };
+    let lro = matches!(verb, "get" | "create" | "update" | "delete");
+    let asynchronous = lro && args.get_flag("async");
+    let polling_text = if lro { text("polling-config") } else { None };
     if asynchronous && polling_text.is_some() {
         return Err(invalid("--async cannot be combined with --polling-config"));
     }
     let polling = fabric_cli_api::parse_polling_config(polling_text)?;
+    let destination = if verb == "get" {
+        text("destination")
+            .map(definition::expand_home)
+            .transpose()?
+    } else {
+        None
+    };
+    if let Some(path) = &destination {
+        definition::require_directory(path, "--destination")?;
+    }
+    let sourced = verb == "update" || (verb == "create" && kind == "item");
+    let source = if sourced {
+        text("source").map(definition::expand_home).transpose()?
+    } else {
+        None
+    };
+    let format = if kind == "item" && (verb == "get" || sourced) {
+        text("format").map(str::to_owned)
+    } else {
+        None
+    };
+    if let Some(value) = &format {
+        if value.is_empty()
+            || value.len() > 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        {
+            return Err(invalid("Invalid definition --format"));
+        }
+    }
+    let overwrite = verb == "get" && args.get_flag("overwrite");
+    let force = matches!(verb, "delete" | "update") && args.get_flag("force");
+    if let Some(root) = &source {
+        definition::require_directory(root, "--source")?;
+        let body = source_body(kind, verb, &target, args, root, format.as_deref())?;
+        return Ok(Prepared {
+            kind,
+            verb,
+            target,
+            workspace,
+            body,
+            query,
+            force,
+            asynchronous,
+            polling,
+            destination,
+            overwrite,
+            format,
+            source: true,
+        });
+    }
     let mut body = if matches!(verb, "create" | "update") {
         payload(text("payload"))?
     } else {
@@ -427,8 +700,61 @@ fn finish_prepare(
         workspace,
         body,
         query,
-        force: verb == "delete" && args.get_flag("force"),
+        force,
         asynchronous,
         polling,
+        destination,
+        overwrite,
+        format,
+        source: false,
     })
+}
+
+/// Build an import request body from a local definition directory.
+fn source_body(
+    kind: &str,
+    verb: &str,
+    target: &Option<Selector>,
+    args: &ArgMatches,
+    root: &Path,
+    format: Option<&str>,
+) -> Result<Vec<u8>, CommandError> {
+    let mut parts = definition::read_tree(root)?;
+    let mut body = Map::new();
+    if kind == "workspace" {
+        for part in &mut parts {
+            if let Some(Value::String(path)) = part.get_mut("path") {
+                path.insert(0, '/');
+            }
+        }
+        body.insert("definitionParts".into(), Value::Array(parts));
+    } else {
+        if verb == "create" {
+            let Some(Selector::Name(name)) = target else {
+                return Err(invalid("Creation requires displayName"));
+            };
+            let declared = args.get_one::<String>("type").cloned();
+            let platform = definition::platform_type(&parts)?;
+            let kind = match (declared, platform) {
+                (Some(declared), Some(platform)) if declared != platform => {
+                    return Err(invalid("--type does not match the .platform item type"));
+                }
+                (Some(kind), _) | (None, Some(kind)) if !kind.is_empty() => kind,
+                _ => return Err(invalid("Item creation requires --type or a .platform file")),
+            };
+            body.insert("displayName".into(), Value::String(name.clone()));
+            body.insert("type".into(), Value::String(kind));
+        }
+        let mut definition = Map::new();
+        if let Some(format) = format {
+            definition.insert("format".into(), Value::String(format.to_owned()));
+        }
+        definition.insert("parts".into(), Value::Array(parts));
+        body.insert("definition".into(), Value::Object(definition));
+    }
+    let bytes = fabric_core_json::json_dumps(&Value::Object(body)).into_bytes();
+    if bytes.len() > MAX_REQUEST_BYTES {
+        return Err(invalid("Definition exceeds request allocation bound"));
+    }
+    Ok(bytes)
 }

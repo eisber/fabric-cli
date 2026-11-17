@@ -861,6 +861,249 @@ async fn resource_payload_files_are_bounded_and_read_before_auth() {
     assert!(host.transport.requests.lock().unwrap().is_empty());
 }
 
+const WS: &str = "00000000-0000-0000-0000-00000000000a";
+const ITEM: &str = "00000000-0000-0000-0000-00000000000b";
+
+fn item_export_replies(path: &str) -> Vec<ApiResponse> {
+    vec![
+        response(200, r#"{"displayName":"nb","type":"Notebook"}"#, &[]),
+        response(
+            200,
+            &format!(
+                r#"{{"definition":{{"parts":[{{"path":"{path}","payload":"aGVsbG8=","payloadType":"InlineBase64"}}]}}}}"#
+            ),
+            &[],
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn item_get_destination_writes_decoded_parts_and_refuses_overwrite() {
+    let dir = TempDirectory::new();
+    let destination = dir.0.to_str().unwrap();
+    let args = [
+        "item",
+        "get",
+        ITEM,
+        "--workspace",
+        WS,
+        "--destination",
+        destination,
+    ];
+    let host = FakeHost::new(item_export_replies("src/a.py"));
+    let (code, stdout, stderr) = run(&args, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    let file = dir.0.join("nb.Notebook").join("src").join("a.py");
+    assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+    assert_eq!(data(&stdout)["saved"], true);
+    {
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests[1].method, "POST");
+        assert_eq!(
+            requests[1].url.path(),
+            format!("/v1/workspaces/{WS}/items/{ITEM}/getDefinition")
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    std::fs::write(&file, b"keep").unwrap();
+    let host = FakeHost::new(item_export_replies("src/a.py"));
+    let (code, _, _) = run(&args, &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(std::fs::read(&file).unwrap(), b"keep");
+    let mut overwrite = args.to_vec();
+    overwrite.push("--overwrite");
+    let host = FakeHost::new(item_export_replies("src/a.py"));
+    let (code, _, stderr) = run(&overwrite, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+}
+
+#[tokio::test]
+async fn item_get_destination_rejects_traversal_parts() {
+    let dir = TempDirectory::new();
+    let host = FakeHost::new(item_export_replies("../escape"));
+    let destination = dir.0.join("out");
+    let (code, _, _) = run(
+        &[
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--destination",
+            destination.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert!(!dir.0.join("escape").exists());
+    assert!(!destination.join("escape").exists());
+}
+
+#[tokio::test]
+async fn async_export_returns_accepted_without_writing() {
+    let dir = TempDirectory::new();
+    let host = FakeHost::new(vec![
+        response(200, r#"{"displayName":"nb","type":"Notebook"}"#, &[]),
+        response(202, "", &[("x-ms-operation-id", "op-1")]),
+    ]);
+    let (code, stdout, stderr) = run(
+        &[
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--destination",
+            dir.0.to_str().unwrap(),
+            "--async",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(data(&stdout)["saved"], false);
+    assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn item_create_source_infers_type_from_platform() {
+    let dir = TempDirectory::new();
+    std::fs::write(
+        dir.0.join(".platform"),
+        br#"{"metadata":{"type":"Notebook"}}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.0.join("a.py"), b"hello").unwrap();
+    let host = FakeHost::new(vec![response(201, r#"{"id":"x"}"#, &[])]);
+    let (code, _, stderr) = run(
+        &[
+            "item",
+            "create",
+            "nb",
+            "--workspace",
+            WS,
+            "--source",
+            dir.0.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "POST");
+    assert_eq!(requests[0].url.path(), format!("/v1/workspaces/{WS}/items"));
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["displayName"], "nb");
+    assert_eq!(body["type"], "Notebook");
+    let parts = body["definition"]["parts"].as_array().unwrap();
+    assert!(parts.iter().any(|part| part["path"] == "a.py"
+        && part["payload"] == "aGVsbG8="
+        && part["payloadType"] == "InlineBase64"));
+    assert!(parts.iter().any(|part| part["path"] == ".platform"
+        && part["payload"] == "eyJtZXRhZGF0YSI6eyJ0eXBlIjoiTm90ZWJvb2sifX0="));
+}
+
+#[tokio::test]
+async fn item_create_source_rejects_type_mismatch_before_effects() {
+    let dir = TempDirectory::new();
+    std::fs::write(
+        dir.0.join(".platform"),
+        br#"{"metadata":{"type":"Notebook"}}"#,
+    )
+    .unwrap();
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(
+        &[
+            "item",
+            "create",
+            "nb",
+            "--workspace",
+            WS,
+            "--type",
+            "Report",
+            "--source",
+            dir.0.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn item_update_source_confirms_unless_forced() {
+    let dir = TempDirectory::new();
+    std::fs::write(dir.0.join("a.py"), b"hello").unwrap();
+    let source = dir.0.to_str().unwrap();
+    let args = [
+        "item",
+        "update",
+        ITEM,
+        "--workspace",
+        WS,
+        "--source",
+        source,
+    ];
+    let host = FakeHost::new(vec![]);
+    host.confirmations.lock().unwrap().push_back(Ok(false));
+    let (code, _, _) = run(&args, &host).await;
+    assert_eq!(code, 1);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+    let mut forced = args.to_vec();
+    forced.push("--force");
+    let host = FakeHost::new(vec![response(200, "", &[])]);
+    let (code, _, stderr) = run(&forced, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(host.confirmation_calls.load(Ordering::SeqCst), 0);
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(
+        requests[0].url.path(),
+        format!("/v1/workspaces/{WS}/items/{ITEM}/updateDefinition")
+    );
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["definition"]["parts"][0]["path"], "a.py");
+}
+
+#[tokio::test]
+async fn workspace_update_source_reports_failed_item_imports() {
+    let dir = TempDirectory::new();
+    std::fs::create_dir(dir.0.join("nb.Notebook")).unwrap();
+    std::fs::write(dir.0.join("nb.Notebook").join("a.py"), b"hello").unwrap();
+    let host = FakeHost::new(vec![response(
+        200,
+        r#"{"importItemDefinitionsDetails":[{"operationStatus":"Failed"}]}"#,
+        &[],
+    )]);
+    let (code, _, _) = run(
+        &[
+            "workspace",
+            "update",
+            WS,
+            "--source",
+            dir.0.to_str().unwrap(),
+            "--force",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(
+        requests[0].url.path(),
+        format!("/v1/workspaces/{WS}/items/bulkImportDefinitions")
+    );
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["definitionParts"][0]["path"], "/nb.Notebook/a.py");
+}
+
 #[tokio::test]
 async fn root_and_subhelp_are_completely_effect_free() {
     for args in [

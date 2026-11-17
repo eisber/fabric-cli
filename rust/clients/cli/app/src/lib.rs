@@ -4,6 +4,7 @@
 //! Thin injectable parser/host/output composition. Only the executable owns runtime and signals.
 #![forbid(unsafe_code)]
 
+mod definition;
 pub mod lifecycle;
 mod resources;
 mod selection;
@@ -61,7 +62,7 @@ impl ConsoleConfirmation {
         {
             Ok(())
         } else {
-            Err(CommandError::new("Cancelled", "Deletion cancelled"))
+            Err(CommandError::new("Cancelled", "Operation cancelled"))
         }
     }
 }

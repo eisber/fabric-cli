@@ -348,6 +348,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "azure_identity",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "fabric-cli-api",
