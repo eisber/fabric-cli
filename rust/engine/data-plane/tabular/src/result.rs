@@ -113,6 +113,13 @@ impl TabularResult {
                     if array.is_null(row) {
                         continue;
                     }
+                    crate::metadata::validate_value(
+                        schema.field(column),
+                        array.as_ref(),
+                        column,
+                        row,
+                        rows - batch.num_rows() + row,
+                    )?;
                     let finite = match array.data_type() {
                         DataType::Float32 => array
                             .as_any()
@@ -300,11 +307,17 @@ pub(crate) fn validate_schema(schema: &Schema, limits: OutputLimits) -> Result<(
         }
     }
     let mut evidence = Vec::new();
-    collect_metadata(schema.metadata(), MetadataLocation::Schema, &mut evidence);
+    collect_metadata(
+        schema.metadata(),
+        MetadataLocation::Schema,
+        None,
+        &mut evidence,
+    );
     for (column, field) in schema.fields().iter().enumerate() {
         collect_metadata(
             field.metadata(),
             MetadataLocation::Field(column),
+            Some(field),
             &mut evidence,
         );
     }
@@ -336,11 +349,15 @@ fn metadata_size(
 fn collect_metadata(
     metadata: &Metadata,
     location: MetadataLocation,
+    field: Option<&arrow_schema::Field>,
     evidence: &mut Vec<MetadataEvidence>,
 ) {
     let mut entries: Vec<_> = metadata.iter().collect();
     entries.sort_by(|left, right| left.0.cmp(right.0));
     for (key, value) in entries {
+        if field.is_some_and(|field| crate::metadata::supported(field, key, value)) {
+            continue;
+        }
         if !key.is_empty() || !value.is_empty() {
             evidence.push(MetadataEvidence {
                 location: location.clone(),

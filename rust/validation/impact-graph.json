@@ -3309,6 +3309,13 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "query-tabular-aihub",
+      "packages": ["fabric-sdk-query-tabular"],
+      "features": ["fabric-sdk-query-tabular/aihub"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "v2-query-headless",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-query", "fabric-cli/headless"],
