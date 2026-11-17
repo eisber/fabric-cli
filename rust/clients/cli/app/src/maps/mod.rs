@@ -10,3 +10,4 @@ mod projection;
 
 pub use output::{export_table, render};
 pub use parser::{MapsCommand, maps_command, parse};
+pub(crate) use parser::{from_matches, validate_arguments};

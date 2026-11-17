@@ -62,10 +62,6 @@ type UpdateLifetime = ();
 
 fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     let arguments = std::env::args_os().collect::<Vec<_>>();
-    #[cfg(feature = "maps")]
-    if arguments.get(1).is_some_and(|argument| argument == "maps") {
-        return maps_main::run(arguments.iter().skip(2).cloned()).map(ExitCode::from);
-    }
     #[cfg(feature = "v2-deploy")]
     if arguments
         .get(1)
@@ -104,6 +100,10 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(&arguments);
+    #[cfg(feature = "maps")]
+    if let Ok(Invocation::Maps(command)) = &invocation {
+        return maps_main::run(command).map(ExitCode::from);
+    }
     if let Err(error) = &invocation
         && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
     {
@@ -165,6 +165,10 @@ fn dispatch(
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        #[cfg(feature = "maps")]
+        Ok(Invocation::Maps(command)) => {
+            return maps_main::run(&command).map(CommandOutcome::Returned);
+        }
         Ok(Invocation::NativeTabular(command)) => {
             #[cfg(feature = "v2-run")]
             if matches!(

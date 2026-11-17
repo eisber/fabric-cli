@@ -19,7 +19,7 @@ fn run(args: &[&str]) -> Output {
 #[test]
 fn native_help_version_invalidinput_and_defaultoff_do_not_require_identity() {
     assert!(run(&["--version"]).status.success());
-    let help = run(&["maps", "--help"]);
+    let help = run(&["item", "maps", "--help"]);
     assert!(help.status.success());
     assert!(
         String::from_utf8(help.stdout)
@@ -27,6 +27,7 @@ fn native_help_version_invalidinput_and_defaultoff_do_not_require_identity() {
             .contains("dailyhistoricalweather")
     );
     let invalid = run(&[
+        "item",
         "maps",
         "current",
         "--coordinates",
@@ -34,7 +35,7 @@ fn native_help_version_invalidinput_and_defaultoff_do_not_require_identity() {
         "--experimental-private-contract",
     ]);
     assert_eq!(invalid.status.code(), Some(2));
-    let blocked = run(&["maps", "current", "--coordinates", "0,0"]);
+    let blocked = run(&["item", "maps", "current", "--coordinates", "0,0"]);
     assert_eq!(blocked.status.code(), Some(2));
     assert!(
         String::from_utf8(blocked.stderr)
@@ -51,6 +52,7 @@ fn actual_native_geocode_and_weather_fixture_flows_preserve_data_and_export() {
     std::fs::write(&fixture, serde_json::to_vec(&payload).unwrap()).unwrap();
     let path = fixture.to_str().unwrap();
     let output = run(&[
+        "item",
         "maps",
         "current",
         "--coordinates",
@@ -64,6 +66,7 @@ fn actual_native_geocode_and_weather_fixture_flows_preserve_data_and_export() {
     assert_eq!(document["validation"], "offline-synthetic-fixture");
     let export = temp.path().join("weather.parquet");
     let output = run(&[
+        "item",
         "maps",
         "current",
         "--coordinates",
@@ -82,6 +85,7 @@ fn actual_native_geocode_and_weather_fixture_flows_preserve_data_and_export() {
     let payload = json!({"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-73.96016896337983,40.781764687428804]},"properties":{"confidence":"High","within250m":false,"distanceFromReferenceMeters":366}}]});
     std::fs::write(&geocode, serde_json::to_vec(&payload).unwrap()).unwrap();
     let output = run(&[
+        "item",
         "maps",
         "geocode",
         "--address",
@@ -98,6 +102,7 @@ fn actual_native_geocode_and_weather_fixture_flows_preserve_data_and_export() {
 fn unsupported_headless_mode_is_rejected_before_secret_configuration_capture() {
     let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
         .args([
+            "item",
             "maps",
             "current",
             "--coordinates",
@@ -127,6 +132,7 @@ fn csv_expansion_budget_fails_without_publishing_a_native_data_file() {
     let payload = json!({"type":"FeatureCollection","metadata":"\"".repeat(300_000),"features":vec![candidate;12]});
     std::fs::write(&fixture, serde_json::to_vec(&payload).unwrap()).unwrap();
     let output = run(&[
+        "item",
         "maps",
         "geocode",
         "--address",
@@ -146,6 +152,7 @@ fn csv_expansion_budget_fails_without_publishing_a_native_data_file() {
 #[test]
 fn expanding_query_fails_before_offline_file_or_identity_access() {
     let output = run(&[
+        "item",
         "maps",
         "current",
         "--coordinates",
@@ -159,7 +166,7 @@ fn expanding_query_fails_before_offline_file_or_identity_access() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("InvalidArguments")
+            .contains("invalid_arguments")
     );
 }
 
@@ -169,6 +176,7 @@ fn outer200_fixture_matrix_missing_and_failed_pairs_produce_nonzero_native_statu
     let path = temp.path().join("synthetic-partial-matrix.json");
     std::fs::write(&path,serde_json::to_vec(&json!({"type":"Feature","geometry":null,"properties":{"matrix":[{"originIndex":0,"destinationIndex":0,"statusCode":403}]}})).unwrap()).unwrap();
     let output = run(&[
+        "item",
         "maps",
         "matrix",
         "--origin",
@@ -190,4 +198,58 @@ fn outer200_fixture_matrix_missing_and_failed_pairs_produce_nonzero_native_statu
             .unwrap()
             .contains("PartialResult")
     );
+}
+
+#[test]
+fn nested_maps_is_discoverable_and_top_level_maps_is_rejected() {
+    let root = run(&["--help"]);
+    assert!(root.status.success());
+    let root_help = String::from_utf8(root.stdout).unwrap();
+    assert!(
+        root_help
+            .lines()
+            .any(|line| line.trim_start().starts_with("item "))
+    );
+    assert!(
+        !root_help
+            .lines()
+            .any(|line| line.trim_start().starts_with("maps "))
+    );
+    for args in [&["item"][..], &["item", "--help"]] {
+        let output = run(args);
+        assert!(output.status.success());
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(help.contains("maps"));
+        assert!(help.contains("fab-rs item"));
+    }
+    let leaf = run(&["item", "maps", "current", "--help"]);
+    assert!(leaf.status.success());
+    assert!(
+        String::from_utf8(leaf.stdout)
+            .unwrap()
+            .contains("fab-rs item maps current")
+    );
+    let old = run(&["maps", "current", "--coordinates", "0,0"]);
+    assert_eq!(old.status.code(), Some(2));
+    assert!(old.stdout.is_empty());
+}
+
+#[test]
+fn nested_maps_fixture_uses_the_same_dispatch_in_batch_mode() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = temp.path().join("weather.json");
+    let payload = json!({"results":[{"dateTime":"2026-11-15T17:47:00-05:00","temperature":{"value":8.3,"unit":"C"}}]});
+    std::fs::write(&fixture, serde_json::to_vec(&payload).unwrap()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+        .current_dir(temp.path())
+        .args([
+            "-c",
+            "item maps current --coordinates 0,0 --offline-fixture weather.json",
+        ])
+        .env("FAB_RUST_AUTH_MODE", "invalid-offline-test-mode")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["data"], payload);
 }

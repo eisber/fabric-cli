@@ -69,6 +69,9 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// Opt-in Maps processing under the item command group.
+    #[cfg(feature = "maps")]
+    Maps(Box<crate::maps::MapsCommand>),
     /// Native serving operations on an exact owning MLModel item.
     MlEndpoint(crate::ml_endpoint::EndpointCommand),
     /// Real run/query/execute frontend with an explicitly injected backend boundary.
@@ -145,6 +148,13 @@ pub fn command() -> Command {
                 .global(true)
                 .value_parser(["json", "text"]),
         );
+    #[cfg(feature = "maps")]
+    let command = command.subcommand(
+        Command::new("item")
+            .about("Item-specific operations")
+            .arg_required_else_help(true)
+            .subcommand(crate::maps::maps_command()),
+    );
     #[cfg(any(feature = "windows-broker", feature = "interactive"))]
     let command = auth::register(command);
     #[cfg(feature = "self-update")]
@@ -240,6 +250,15 @@ where
 {
     let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let root = root_argument(&args);
+    #[cfg(feature = "maps")]
+    if let Some(index) = root
+        && args[index] == "item"
+        && args
+            .get(index + 1)
+            .is_some_and(|argument| argument == "maps")
+    {
+        crate::maps::validate_arguments(&args[index + 2..])?;
+    }
     if root.and_then(|index| args[index].to_str()) == Some("delete") {
         args = delete::normalize(&args, root.expect("selected delete root"));
     }
@@ -328,6 +347,17 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    #[cfg(feature = "maps")]
+    if name == "item" {
+        let maps = values
+            .subcommand_matches("maps")
+            .ok_or_else(invalid_arguments)?;
+        let mut command = crate::maps::from_matches(maps)?;
+        if let Some(format) = matches.get_one::<String>("output_format") {
+            command.output_format.clone_from(format);
+        }
+        return Ok(Invocation::Maps(Box::new(command)));
+    }
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
     }

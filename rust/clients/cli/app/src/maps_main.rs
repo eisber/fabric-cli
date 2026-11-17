@@ -7,28 +7,9 @@ use fabric_cli::{
 };
 use fabric_sdk::maps::{MAX_RESPONSE_BYTES, ProcessingResult};
 use serde_json::json;
-use std::{
-    ffi::OsString,
-    io::{self, Read, Write},
-};
+use std::io::{self, Read, Write};
 
-pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<u8> {
-    let command = match fabric_cli::maps::parse(arguments) {
-        Ok(command) => command,
-        Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
-            write!(io::stdout().lock(), "{error}")?;
-            return Ok(0);
-        }
-        Err(_) => {
-            return failed(
-                Failure::new(
-                    "InvalidArguments",
-                    "Invalid Maps input; run fab-rs maps <operation> --help.",
-                ),
-                2,
-            );
-        }
-    };
+pub(crate) fn run(command: &MapsCommand) -> io::Result<u8> {
     if command.offline_fixture.is_none() && !command.experimental_private_contract {
         return failed(
             Failure::new(
@@ -80,7 +61,7 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<u
         };
         read()
     } else {
-        online(&command)
+        online(command)
     };
     let result = match result {
         Ok(result) => result,

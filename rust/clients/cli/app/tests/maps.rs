@@ -12,6 +12,7 @@ use azure_core::{
     time::OffsetDateTime,
 };
 use fabric_cli::maps::{execution, export_table, parse, render};
+use fabric_cli::parser::{Invocation, parse_args};
 use fabric_cli_output::tabular::{TabularFormat, encode};
 use fabric_sdk::maps::{POWER_BI_SCOPE, ProcessingResult};
 use serde_json::{Value, json};
@@ -111,6 +112,140 @@ fn response(status: u16, body: Value) -> azure_core::Result<AsyncRawResponse> {
 }
 fn command(args: &[&str]) -> fabric_cli::maps::MapsCommand {
     parse(args.iter().map(OsString::from)).unwrap()
+}
+
+#[test]
+fn root_parser_routes_only_the_nested_item_maps_surface() {
+    let command = parse_args([
+        "fab-rs",
+        "item",
+        "maps",
+        "current",
+        "--coordinates",
+        "-73.9632,40.7794",
+    ])
+    .unwrap();
+    let Invocation::Maps(command) = command else {
+        panic!("item maps must route to the Maps invocation");
+    };
+    assert_eq!(command.request.operation(), "current");
+    assert!(parse_args(["fab-rs", "maps", "current", "--coordinates", "0,0"]).is_err());
+    assert!(parse_args(["fab-rs", "item", "unknown"]).is_err());
+}
+
+#[test]
+fn nested_operations_preserve_the_existing_provider_requests_and_options() {
+    let operations = [
+        vec!["geocode", "--address", "synthetic"],
+        vec!["reverse", "--coordinates", "-73.9632,40.7794"],
+        vec!["current", "--coordinates", "-73.9632,40.7794", "--details"],
+        vec!["dailyforecast", "--coordinates", "0,0", "--duration", "5"],
+        vec![
+            "dailyhistoricalweather",
+            "--coordinates",
+            "0,0",
+            "--start-date",
+            "2026-11-13",
+            "--end-date",
+            "2026-11-13",
+        ],
+        vec![
+            "directions",
+            "--point",
+            "0,0",
+            "--point",
+            "1,1",
+            "--traffic",
+            "live",
+        ],
+        vec![
+            "matrix",
+            "--origin",
+            "0,0",
+            "--destination",
+            "1,1",
+            "--traffic",
+            "historical",
+            "--depart-at",
+            "any",
+        ],
+    ];
+    for args in operations {
+        let expected = command(&args);
+        let invocation = parse_args(
+            [
+                "fab-rs",
+                "item",
+                "maps",
+                "--timeout",
+                "45",
+                "--output-format",
+                "text",
+            ]
+            .into_iter()
+            .chain(args.iter().copied())
+            .chain(["--experimental-private-contract"]),
+        )
+        .unwrap();
+        let Invocation::Maps(actual) = invocation else {
+            panic!("expected Maps operation");
+        };
+        assert_eq!(actual.request.operation(), expected.request.operation());
+        assert_eq!(actual.request.url(), expected.request.url());
+        assert_eq!(actual.request.method(), expected.request.method());
+        assert_eq!(actual.request.body(), expected.request.body());
+        assert_eq!(actual.request.context(), expected.request.context());
+        assert_eq!(actual.timeout, Duration::from_secs(45));
+        assert_eq!(actual.output_format, "text");
+        assert!(actual.experimental_private_contract);
+    }
+}
+
+#[test]
+fn root_output_format_is_honored_for_nested_maps() {
+    let Invocation::Maps(command) = parse_args([
+        "fab-rs",
+        "--output_format",
+        "text",
+        "item",
+        "maps",
+        "current",
+        "--coordinates",
+        "0,0",
+    ])
+    .unwrap() else {
+        panic!("expected Maps operation");
+    };
+    assert_eq!(command.output_format, "text");
+}
+
+#[test]
+fn nested_parser_preserves_budgets_and_existing_root_commands() {
+    let mut args = vec![
+        "fab-rs",
+        "item",
+        "maps",
+        "geocode",
+        "--address",
+        "synthetic",
+    ];
+    args.extend(std::iter::repeat_n("--experimental-private-contract", 301));
+    assert!(parse_args(args).is_err());
+    assert!(
+        parse_args([
+            "fab-rs",
+            "item",
+            "maps",
+            "geocode",
+            "--address",
+            &"x".repeat(4097),
+        ])
+        .is_err()
+    );
+    assert!(matches!(
+        parse_args(["fab-rs", "get", "Demo.Workspace"]),
+        Ok(Invocation::Read(_))
+    ));
 }
 fn wire(last: azure_core::Result<AsyncRawResponse>) -> Arc<Wire> {
     Arc::new(Wire {

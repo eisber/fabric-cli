@@ -104,7 +104,7 @@ pub fn maps_command() -> Command {
 fn invalid() -> clap::Error {
     maps_command().error(
         ErrorKind::ValueValidation,
-        "Invalid or excessive Maps input; see maps <operation> --help.",
+        "Invalid or excessive Maps input; see fab-rs item maps <operation> --help.",
     )
 }
 
@@ -137,11 +137,21 @@ fn points(args: &ArgMatches, name: &str) -> Result<Vec<Coordinate>, clap::Error>
 /// Parse and validate every option before credentials, filesystem or networking.
 pub fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<MapsCommand, clap::Error> {
     let arguments: Vec<_> = arguments.into_iter().take(301).collect();
+    validate_arguments(&arguments)?;
+    let matches = maps_command()
+        .bin_name("fab-rs item maps")
+        .try_get_matches_from(std::iter::once(OsString::from("maps")).chain(arguments))?;
+    from_matches(&matches)
+}
+
+pub(crate) fn validate_arguments(arguments: &[OsString]) -> Result<(), clap::Error> {
     if arguments.len() > 300 || arguments.iter().any(|a| a.len() > 4096) {
         return Err(invalid());
     }
-    let matches = maps_command()
-        .try_get_matches_from(std::iter::once(OsString::from("maps")).chain(arguments))?;
+    Ok(())
+}
+
+pub(crate) fn from_matches(matches: &ArgMatches) -> Result<MapsCommand, clap::Error> {
     let (name, args) = matches.subcommand().ok_or_else(invalid)?;
     let location = || coordinate(value(args, "coordinates")?);
     let units = || -> Result<Units, clap::Error> {
@@ -202,7 +212,7 @@ pub fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<MapsComman
         _ => return Err(invalid()),
     };
     let request = operation.prepare().map_err(|_| invalid())?;
-    let seconds: u64 = value(&matches, "timeout")?.parse().map_err(|_| invalid())?;
+    let seconds: u64 = value(matches, "timeout")?.parse().map_err(|_| invalid())?;
     if !(1..=120).contains(&seconds) {
         return Err(invalid());
     }
@@ -218,7 +228,7 @@ pub fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<MapsComman
             Ok(crate::tabular_export::ExportRequest {
                 format: fabric_cli_output::tabular::TabularFormat::parse(format)
                     .map_err(|_| invalid())?,
-                output: PathBuf::from(value(&matches, "output")?),
+                output: PathBuf::from(value(matches, "output")?),
             })
         })
         .transpose()?;
@@ -237,6 +247,6 @@ pub fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<MapsComman
         offline_fixture: matches
             .get_one::<String>("offline-fixture")
             .map(PathBuf::from),
-        output_format: value(&matches, "output-format")?.into(),
+        output_format: value(matches, "output-format")?.into(),
     })
 }
