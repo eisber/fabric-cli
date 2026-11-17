@@ -221,6 +221,44 @@ test('committed source changes invalidate inventory and never reuse a watermark'
   assert.equal(p.debt('affected').watermark, null);
 });
 
+test('real declared text/CRLF checkout matches pinned blob while retaining raw byte hashes', t => {
+  const {root, run} = fixture(t);
+  fs.writeFileSync(path.join(root, '.gitattributes'), '*.bim text eol=crlf\n');
+  fs.writeFileSync(path.join(root, 'model.bim'), '{\n  "fixture": true\n}\n');
+  run(['add', '.gitattributes', 'model.bim']);
+  run(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Declared CRLF fixture']);
+  fs.unlinkSync(path.join(root, 'model.bim'));
+  run(['checkout-index', '--force', '--index', '--', 'model.bim']);
+  const actual = fs.readFileSync(path.join(root, 'model.bim'));
+  assert.equal(actual.toString(), '{\r\n  "fixture": true\r\n}\r\n');
+  const before = p.snapshot(root);
+  const model = before.files.find(file => file.path === 'model.bim');
+  assert.equal(model.bytes, 25);
+  assert.equal(model.blob, run(['rev-parse', 'HEAD:model.bim']));
+  assert.equal(model.checkout_representation, 'declared-text-crlf');
+  p.unchanged(before, p.snapshot(root));
+  run(['update-index', '--assume-unchanged', 'model.bim']);
+  fs.writeFileSync(path.join(root, 'model.bim'), '{\n  "fixture": true\n}\n');
+  assert.throws(() => p.snapshot(root), /declared CRLF checkout bytes/);
+  fs.writeFileSync(path.join(root, 'model.bim'), '{\r\n  "fixture": false\r\n}\r\n');
+  assert.throws(() => p.snapshot(root), /dirty|Actual source bytes differ/);
+});
+
+test('unsupported filters, ident and encodings fail without executing a source-defined transform', t => {
+  const {root, run} = fixture(t);
+  const attributes = {text: 'set', eol: 'crlf', filter: 'unspecified',
+    ident: 'unspecified', 'working-tree-encoding': 'unspecified'};
+  for (const [key, value] of [['filter', 'arbitrary'], ['ident', 'set'],
+    ['working-tree-encoding', 'UTF-16']]) {
+    assert.throws(() => p.verifyCheckoutBytes(Buffer.from('fixture\r\n'), source,
+      {...attributes, [key]: value}, 'fixture'), /Unsupported checkout transformation/);
+  }
+  fs.writeFileSync(path.join(root, '.gitattributes'), 'Cargo.lock filter=never-execute\n');
+  run(['add', '.gitattributes']);
+  run(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Unsupported filter fixture']);
+  assert.throws(() => p.snapshot(root), /Unsupported checkout transformation filter/);
+});
+
 test('foreign checkout origin and symlink/submodule tree entries cannot qualify', t => {
   const {root, run} = fixture(t);
   run(['remote', 'set-url', 'origin', 'https://github.com/foreign/fork.git']);

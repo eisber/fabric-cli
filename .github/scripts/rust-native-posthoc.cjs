@@ -6,6 +6,8 @@
  * Non-executing post-hoc request facade. No native admission or native pass is
  * possible here, including when every source guard passes. Exit 78 means a
  * prepared but NOT_ADMITTED request, not a successful validation run.
+ * Inspection requires Git 2.43+ for pinned-tree attributes. Declared text/CRLF
+ * checkout is supported; custom filters, ident and encodings are rejected.
  *
  * Activation prerequisites (separate ownership/authorization, not this patch):
  * 1. Publish/register this path on default main; dispatch there with full source
@@ -157,14 +159,16 @@ function gitEnvironment(env = process.env) {
     'PATHEXT', 'COMSPEC'];
   return {...Object.fromEntries(names.filter(name => env[name] !== undefined)
     .map(name => [name, env[name]])), GIT_CONFIG_NOSYSTEM: '1',
-  GIT_CONFIG_GLOBAL: GIT_NULL, GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1'};
+  GIT_CONFIG_GLOBAL: GIT_NULL, GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1',
+  GIT_ATTR_NOSYSTEM: '1'};
 }
 
-function git(root, args, commands = []) {
-  const argv = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=' + GIT_NULL, ...args];
+function git(root, args, commands = [], input) {
+  const argv = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=' + GIT_NULL,
+    '-c', 'core.attributesFile=' + GIT_NULL, ...args];
   const result = spawnSync('git', argv, {cwd: root, encoding: 'utf8', shell: false,
     windowsHide: true, timeout: LIMITS.gitMilliseconds, maxBuffer: LIMITS.artifactBytes,
-    env: gitEnvironment()});
+    env: gitEnvironment(), input});
   commands.push({program: 'git', args, exit: result.status, signal: result.signal,
     error_code: result.error?.code || null, output_sha256: hash(result.stdout || '')});
   assert.ifError(result.error);
@@ -188,19 +192,64 @@ function repositoryRoot(root, commands) {
   return actual;
 }
 
+function checkoutAttributes(root, names, commands) {
+  const keys = ['text', 'eol', 'filter', 'ident', 'working-tree-encoding'];
+  const fields = git(root, ['check-attr', '--source=HEAD', '-z', '--stdin', ...keys],
+    commands, `${names.join('\0')}\0`).split('\0');
+  assert.equal(fields.pop(), '', 'Malformed checkout-attribute output');
+  assert.equal(fields.length, names.length * keys.length * 3, 'Incomplete checkout attributes');
+  const attributes = new Map();
+  let index = 0;
+  for (const name of names) {
+    const values = {};
+    for (const key of keys) {
+      assert.equal(fields[index++], name, 'Checkout attribute names differ from the pinned tree');
+      assert.equal(fields[index++], key, 'Unexpected checkout attribute');
+      values[key] = fields[index++];
+    }
+    attributes.set(name, values);
+  }
+  return attributes;
+}
+
+/** Support declared EOL conversion without invoking Git smudge/clean filters. */
+function verifyCheckoutBytes(content, expectedBlob, attributes, name) {
+  for (const key of ['filter', 'ident', 'working-tree-encoding']) {
+    assert.ok(['unspecified', 'unset'].includes(attributes[key]),
+      `Unsupported checkout transformation ${key}: ${name}`);
+  }
+  const blob = bytes => crypto.createHash('sha1')
+    .update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+  let canonical = content, representation = 'blob-bytes';
+  if (attributes.text === 'set' && attributes.eol === 'crlf') {
+    const text = content.toString('latin1');
+    assert.ok(!/(^|[^\r])\n/.test(text), `Expected declared CRLF checkout bytes: ${name}`);
+    canonical = Buffer.from(text.replace(/\r\n/g, '\n'), 'latin1');
+    representation = 'declared-text-crlf';
+  }
+  assert.ok(blob(canonical) === expectedBlob ||
+    (representation === 'declared-text-crlf' && blob(content) === expectedBlob),
+  `Actual source bytes differ from Git: ${name}`);
+  return representation;
+}
+
 /** Inventory actual bytes, not just HEAD or Git stat-cache metadata. Never load DUT code. */
 function snapshot(root, commands = []) {
   clean(root, commands);
   const listing = git(root, ['ls-tree', '-r', '-z', '--full-tree', 'HEAD'], commands);
   const entries = listing.split('\0').filter(Boolean);
   assert.ok(entries.length > 0 && entries.length <= LIMITS.files, 'Source file count is out of bounds');
-  let bytes = 0;
-  const files = entries.map(entry => {
+  const tracked = entries.map(entry => {
     const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(entry);
     assert.ok(match, 'Source must contain only regular tracked files, not submodules or symlinks');
     const [, mode, blob, name] = match;
     assert.ok(!name.includes('\\') && !name.split('/').some(part =>
       !part || part === '.' || part === '..') && !path.isAbsolute(name), 'Unsafe source path');
+    return {mode, blob, name};
+  });
+  const attributes = checkoutAttributes(root, tracked.map(entry => entry.name), commands);
+  let bytes = 0;
+  const files = tracked.map(({mode, blob, name}) => {
     let file = root;
     for (const part of name.split('/')) {
       file = path.join(file, part);
@@ -212,10 +261,9 @@ function snapshot(root, commands = []) {
     assert.ok(bytes <= LIMITS.sourceBytes, 'Source byte budget exceeded');
     const content = fs.readFileSync(file);
     assert.equal(content.length, stat.size, 'Source changed during inventory');
-    const actualBlob = crypto.createHash('sha1')
-      .update(`blob ${content.length}\0`).update(content).digest('hex');
-    assert.equal(actualBlob, blob, `Actual source bytes differ from Git: ${name}`);
-    return {path: name, mode, blob, bytes: content.length, sha256: hash(content)};
+    const representation = verifyCheckoutBytes(content, blob, attributes.get(name), name);
+    return {path: name, mode, blob, checkout_representation: representation,
+      bytes: content.length, sha256: hash(content)};
   });
   clean(root, commands);
   const result = {head: sha(git(root, ['rev-parse', 'HEAD'], commands)),
@@ -396,7 +444,8 @@ async function main(argv, env = process.env) {
 
 module.exports = {REPOSITORY, BRANCH, MAIN_BASE, ANCHOR, REFERENCE_SOURCE, WORKFLOW,
   LIMITS, ADMISSION, BRIDGE_BLOBS, sha, requestContext, resolveHead, matchResolved,
-  proveLineage, gitEnvironment, git, clean, repositoryRoot, snapshot, verifyBridge,
+  proveLineage, gitEnvironment, git, clean, repositoryRoot, checkoutAttributes,
+  verifyCheckoutBytes, snapshot, verifyBridge,
   unchanged, debt, artifactDirectory, writeJson, fixedRoots, runStage, main};
 if (require.main === module) {
   main(process.argv.slice(2)).then(code => { process.exitCode = code; })
