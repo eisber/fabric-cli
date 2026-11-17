@@ -52,6 +52,24 @@ pull requests, change entries, and the code of conduct.
 before any Cargo build, run, check, test, clippy, or doc command. Run only one
 heavy job at a time.** Formatting and metadata inspection do not require a lease.
 
+## Build an individual package
+
+Select a workspace package with `-p`. For example, from `rust/`, build the
+query library:
+
+```bash
+cargo build --offline --locked -p fabric-cli-query --lib
+```
+
+Cargo also builds that package's dependencies; this is not a standalone build
+outside the workspace. Packages share the workspace configuration and lockfile,
+and are not published independently. The executable package can be selected
+separately as shown below.
+
+The native CI jobs run the full workspace checks on each platform and package
+the `fab-rs` executable, not separate artifacts for each library. The manual
+preview uploads one unsigned bundle per target.
+
 ## Build and run locally
 
 Build the development binary from `rust/`:
