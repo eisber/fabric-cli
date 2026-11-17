@@ -636,45 +636,6 @@ fn malformed_combined_roots_and_facades_reject_before_input_or_identity() {
             assert!(!diagnostic.contains(target));
             assert!(!diagnostic.contains("unopened"));
         }
-
-        #[cfg(feature = "headless")]
-        #[test]
-        fn native_invalid_shortcut_names_reject_before_open_stdin_or_authentication() {
-            for name in [
-                "*",
-                "bad+name",
-                "bad:name",
-                "bad\"name",
-                "<name>",
-                "bad|name",
-                " name",
-                "name ",
-                "nonascii-\u{e9}",
-            ] {
-                let target = format!("/w.Workspace/db.KQLDatabase/Tables/{name}.Shortcut");
-                assert!(KqlDestination::parse(&target).is_err());
-                for args in [
-                    vec!["link", target.as_str(), "--input", "-"],
-                    vec![
-                        "artifact",
-                        "kql-database",
-                        "link",
-                        target.as_str(),
-                        "--input",
-                        "-",
-                    ],
-                ] {
-                    let output = offline_process(&args);
-                    assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
-                    assert!(output.stdout.is_empty());
-                    assert_eq!(
-                        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
-                        "InvalidArguments"
-                    );
-                    assert!(!String::from_utf8(output.stderr).unwrap().contains(&target));
-                }
-            }
-        }
     }
     for args in [
         vec![
@@ -698,5 +659,44 @@ fn malformed_combined_roots_and_facades_reject_before_input_or_identity() {
             serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
             "InvalidArguments"
         );
+    }
+}
+
+#[cfg(feature = "headless")]
+#[test]
+fn native_invalid_shortcut_names_reject_before_open_stdin_or_authentication() {
+    for name in [
+        "*",
+        "bad+name",
+        "bad:name",
+        "bad\"name",
+        "<name>",
+        "bad|name",
+        " name",
+        "name ",
+        "nonascii-\u{e9}",
+    ] {
+        let target = format!("/w.Workspace/db.KQLDatabase/Tables/{name}.Shortcut");
+        assert!(KqlDestination::parse(&target).is_err());
+        for args in [
+            vec!["link", target.as_str(), "--input", "-"],
+            vec![
+                "artifact",
+                "kql-database",
+                "link",
+                target.as_str(),
+                "--input",
+                "-",
+            ],
+        ] {
+            let output = offline_process(&args);
+            assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+            assert!(output.stdout.is_empty());
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+                "InvalidArguments"
+            );
+            assert!(!String::from_utf8(output.stderr).unwrap().contains(&target));
+        }
     }
 }

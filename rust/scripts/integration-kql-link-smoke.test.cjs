@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const {spawnSync} = require('node:child_process');
 const {test} = require('node:test');
 const {plan} = require('./impact-plan.cjs');
 const dataagent = require('./integration-dataagent-smoke.cjs');
@@ -21,6 +22,132 @@ const graph = () => JSON.parse(read('rust/validation/impact-graph.json'));
 const features = ({args}) => args.includes('--features') ? args[args.indexOf('--features') + 1].split(',') : [];
 const output = (names, filtered = 0) => names.map(name => `test ${name} ... ok\n`).join('') +
   `test result: ok. ${names.length} passed; 0 failed; 0 ignored; 0 measured; ${filtered} filtered out\n`;
+
+// Lexical scope check only; actual Rust compilation/registration remains required.
+function rustCode(source) {
+  const code = source.split('');
+  const hide = (start, end) => {
+    for (let index = start; index < end; index++) {
+      if (!/[\r\n]/.test(code[index])) code[index] = ' ';
+    }
+  };
+  for (let index = 0; index < source.length;) {
+    const start = index;
+    if (source.startsWith('//', index)) {
+      const end = source.indexOf('\n', index + 2);
+      index = end < 0 ? source.length : end;
+    } else if (source.startsWith('/*', index)) {
+      let depth = 1;
+      index += 2;
+      while (depth && index < source.length) {
+        if (source.startsWith('/*', index)) { depth++; index += 2; }
+        else if (source.startsWith('*/', index)) { depth--; index += 2; }
+        else index++;
+      }
+      assert.equal(depth, 0, 'Unterminated Rust block comment');
+    } else {
+      const raw = source.slice(index).match(/^(?:b|c)?r(#{0,255})"/);
+      const quoted = source.slice(index).match(/^(?:b|c)?"/);
+      const character = source.slice(index).match(
+        /^b?'(?:\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|[^\r\n])|[^'\\\r\n])'/u,
+      );
+      if (raw) {
+        const end = source.indexOf(`"${raw[1]}`, index + raw[0].length);
+        assert.ok(end >= 0, 'Unterminated Rust raw string');
+        index = end + raw[1].length + 1;
+      } else if (quoted) {
+        index += quoted[0].length;
+        while (index < source.length && source[index] !== '"') {
+          index += source[index] === '\\' ? 2 : 1;
+        }
+        assert.ok(index < source.length, 'Unterminated Rust string');
+        index++;
+      } else if (character) index += character[0].length;
+      else { index++; continue; }
+    }
+    hide(start, index);
+  }
+  return code.join('');
+}
+
+function moduleTestDeclarations(source) {
+  const code = rustCode(source), depths = [];
+  let depth = 0;
+  for (let index = 0; index < code.length; index++) {
+    depths[index] = depth;
+    if (code[index] === '{') depth++;
+    if (code[index] === '}') depth--;
+    assert.ok(depth >= 0, 'Unbalanced Rust braces');
+  }
+  assert.equal(depth, 0, 'Unbalanced Rust braces');
+  const tests = [...code.matchAll(
+    /#\[(?:tokio::)?test(?:\([^\]]*\))?\]\s*(?:async\s+)?fn\s+(\w+)/g,
+  )].map(match => ({name: match[1], depth: depths[match.index]}));
+  assert.ok(tests.length > 0, 'No lexical test declarations');
+  for (const test of tests) assert.equal(test.depth, 0, `Test is not at module scope: ${test.name}`);
+  return tests.map(test => test.name);
+}
+
+test('KQL host regressions are module-scoped siblings, not nested declarations counted as registrations', () => {
+  const file = 'rust/clients/cli/app/tests/v2_link_kql_host.rs';
+  const historical = spawnSync('git', ['show', `ac93cd06f554c3b1a609c79ed0d55260be32ea64:${file}`], {
+    cwd: ROOT, encoding: 'utf8', windowsHide: true, timeout: 30000,
+  });
+  assert.equal(historical.error, undefined);
+  assert.equal(historical.status, 0);
+  assert.throws(() => moduleTestDeclarations(historical.stdout),
+    /Test is not at module scope: native_invalid_shortcut_names_reject_before_open_stdin_or_authentication/);
+  assert.deepEqual(moduleTestDeclarations(read(file)), update.registeredTests(file));
+  assert.match(read(file), /#!\[deny\(unnameable_test_items\)\]/);
+  const regression = source => {
+    const text = source.replace(/\r\n/g, '\n'), code = rustCode(text);
+    const declaration = code.indexOf(
+      'fn native_invalid_shortcut_names_reject_before_open_stdin_or_authentication(');
+    assert.ok(declaration >= 0);
+    const attribute = text.lastIndexOf('#[cfg(feature = "headless")]', declaration);
+    assert.match(text.slice(attribute, declaration),
+      /^#\[cfg\(feature = "headless"\)\]\s*#\[test\]\s*$/);
+    const start = text.lastIndexOf('\n', attribute) + 1;
+    let end = code.indexOf('{', declaration), depth = 1;
+    assert.ok(end >= 0);
+    for (end++; depth && end < code.length; end++) {
+      if (code[end] === '{') depth++;
+      if (code[end] === '}') depth--;
+    }
+    assert.equal(depth, 0);
+    return {text: text.slice(start, end), remaining: text.slice(0, start) + text.slice(end)};
+  };
+  const before = regression(historical.stdout), after = regression(read(file));
+  assert.equal(after.text, before.text.replace(/^ {8}/gm, ''),
+    'Move only indentation and lexical placement; keep the entire cfg, body and assertions');
+  const nonblank = text => text.split('\n').filter(line => line.trim()).join('\n');
+  assert.equal(nonblank(after.remaining), nonblank(before.remaining),
+    'Every other nonblank source line, including outer test semantics and lint, is unchanged');
+});
+
+test('lexical test placement ignores Rust comments and literals but rejects nested blocks regardless of indentation', () => {
+  const siblings = [
+    '// } #[test] fn fake_line() {}',
+    '/* { /* } */ #[test] fn fake_block() {} */',
+    'const RAW: &str = br##"} #[test] fn fake_raw() { //"##;',
+    'const TEXT: &str = "} \\" #[test] fn fake_string() {}";',
+    "const CHARACTER: char = '}';",
+    "const BYTE: u8 = b'{';",
+    "fn borrowed<'a>(value: &'a str) -> &'a str { value }",
+    '#[test] fn first() { let _ = format!("{value}"); }',
+    '#[tokio::test] async fn second() {}',
+  ].join('\n');
+  assert.deepEqual(moduleTestDeclarations(siblings), ['first', 'second']);
+  for (const opening of ['fn outer() {', 'fn outer() { for _ in 0..1 {']) {
+    const closing = opening.includes('for ') ? '}}' : '}';
+    assert.throws(() => moduleTestDeclarations(`${opening}\n${siblings}\n${closing}`),
+      /Test is not at module scope: first/);
+  }
+  for (const malformed of ['/*', 'const A: &str = r#"open;', 'const A: &str = "open;',
+    '#[test] fn test() {', '} #[test] fn test() {}']) {
+    assert.throws(() => moduleTestDeclarations(malformed), /Unterminated|Unbalanced/);
+  }
+});
 
 test('PR55 proof is candidate-only, immutable-pinned, and retains the existing finite hosted runner', () => {
   const workflow = read('.github/workflows/integration-smoke.yml').replace(/\r\n/g, '\n');
