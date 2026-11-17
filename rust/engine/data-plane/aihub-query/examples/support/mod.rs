@@ -241,7 +241,7 @@ pub fn initialize() -> Reply {
 }
 
 pub fn tool() -> Value {
-    json!({"name":"execute_query","inputSchema":{
+    json!({"name":"execute_query","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{
         "type":"object","required":["artifactId","query"],
         "properties":{
             "artifactId":{"type":"string"}, "query":{"type":"string"},

@@ -134,7 +134,7 @@ async fn real_lifecycle_opt_in_binding_and_no_export_preserve_exact_values() {
     for message in messages {
         assert_eq!(
             message["params"]["_meta"]["variants"],
-            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults"
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce"
         );
     }
     assert!(!format!("{result:?}").contains("184467"));
@@ -174,7 +174,7 @@ async fn sandbox_template_multiple_outputs_and_auxiliary_resources_are_retained(
     for message in messages(&wire) {
         assert_eq!(
             message["params"]["_meta"]["variants"],
-            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.DataAgent.Sandbox,Fabric.Routing.Documents.QueryTemplates"
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.DataAgent.TypedQueryResults,Fabric.Routing.Documents.SqlReadOnlyEnforce,Fabric.Routing.Documents.DataAgent.Sandbox,Fabric.Routing.Documents.QueryTemplates"
         );
     }
     assert_eq!(
@@ -421,6 +421,55 @@ async fn tool_rpc_unknown_and_task_errors_never_return_completed_data() {
             .execute_query(&request(),&deadline(),pending()).await.unwrap_err();
         assert!(error.query_dispatched);
         assert!(!format!("{error} {error:?}").contains("synthetic-sensitive"));
+    }
+}
+
+#[tokio::test]
+async fn discovery_requires_explicit_safe_read_annotations_before_query_dispatch() {
+    let annotations = [
+        None,
+        Some(Value::Null),
+        Some(json!({})),
+        Some(json!({"readOnlyHint":true})),
+        Some(json!({"destructiveHint":false})),
+        Some(json!({"readOnlyHint":false,"destructiveHint":false})),
+        Some(json!({"readOnlyHint":true,"destructiveHint":true})),
+        Some(json!({"readOnlyHint":"true","destructiveHint":false})),
+        Some(json!({"readOnlyHint":true,"destructiveHint":0})),
+        Some(json!({"readOnlyHint":null,"destructiveHint":false})),
+        Some(json!(["readOnlyHint", true])),
+    ];
+    for mode in [QueryMode::Native, QueryMode::Template] {
+        for annotations in &annotations {
+            let mut advertised = tool();
+            if let Some(annotations) = annotations {
+                advertised["annotations"] = annotations.clone();
+            } else {
+                advertised.as_object_mut().unwrap().remove("annotations");
+            }
+            let wire = Wire::new([
+                initialize(),
+                response(202, vec![], "application/json", None),
+                rpc(2, json!({"tools":[advertised]})),
+            ]);
+            let error = client(
+                wire.clone(),
+                Arc::new(Credential::default()),
+                Arc::new(Timer::default()),
+                Limits::default(),
+            )
+            .execute_query(&request().with_mode(mode), &deadline(), pending())
+            .await
+            .unwrap_err();
+            assert_eq!(error.kind, QueryErrorKind::UnsupportedTool);
+            assert!(!error.query_dispatched);
+            assert_eq!(wire.requests.lock().unwrap().len(), 3);
+            assert!(
+                messages(&wire)
+                    .iter()
+                    .all(|message| message["method"] != "tools/call")
+            );
+        }
     }
 }
 

@@ -172,6 +172,14 @@ pub(crate) struct Tool {
     pub(crate) name: String,
     input_schema: Box<RawValue>,
     execution: Option<ToolExecution>,
+    annotations: Option<Box<RawValue>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolAnnotations {
+    read_only_hint: bool,
+    destructive_hint: bool,
 }
 
 #[derive(Deserialize)]
@@ -214,6 +222,11 @@ impl Property {
 
 pub(crate) fn validate_tool(tool: &Tool, request: &QueryRequest) -> Result<(), QueryErrorKind> {
     let unsupported = QueryErrorKind::UnsupportedTool;
+    let annotations: ToolAnnotations =
+        parse(tool.annotations.as_ref().ok_or(unsupported)?.get()).map_err(|_| unsupported)?;
+    if !annotations.read_only_hint || annotations.destructive_hint {
+        return Err(unsupported);
+    }
     if tool
         .execution
         .as_ref()

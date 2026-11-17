@@ -46,6 +46,7 @@ opt-in explicit; legacy CSV is not a typed-result mode.
 | Authentication | Caller-injected credential and exact scope/account/tenant labels | Labels are caller attestations, not token inspection; supported live caller contract remains unverified |
 | Production auth | No automatic user-token or broker composition | Available source evidence describes S2sObo; user CLI token compatibility is **not established** |
 | Typed execution route | Explicit DataAgent/datasource with both routing and typed-result variants | Source-snapshot contract only; opt-in is not routing eligibility or authorization |
+| Read policy | Always request the existing positive SQL/GQL policy variant; require discovery `readOnlyHint: true` and `destructiveHint: false` before query dispatch | Requested policy and an untrusted discovery contract, not cryptographic or live enforcement proof |
 | Direct Report/SemanticModel | Not advertised as a typed SDK route | No universal typed-result coverage claim |
 | Stage | Explicit Production (Sandbox token absent) or Sandbox (existing token present) | Never inferred from typed opt-in; no alternate-stage fallback |
 | Templates | Explicit `QueryMode::Template`, `language: "jmespath"` and existing template variant; positive tool-schema enum or quoted selector advertisement required | A selector advertisement is not evidence that a particular template exists or that the caller is eligible |
@@ -67,11 +68,22 @@ SDK does **not** also send `FABAIHUB-X-Variants`, which is a server-side fallbac
 | --- | --- | --- |
 | `Fabric.Routing.Documents.DataAgent` | DataAgent route opt-in | Always for this explicit route |
 | `Fabric.Routing.Documents.DataAgent.TypedQueryResults` | Versioned JSON resource opt-in | Always, because typed JSON is required |
+| `Fabric.Routing.Documents.SqlReadOnlyEnforce` | One-way positive SQL/GQL read-policy request | Always, including lifecycle and discovery |
 | `Fabric.Routing.Documents.DataAgent.Sandbox` | Draft configuration stage | Only explicit Sandbox |
 | `Fabric.Routing.Documents.QueryTemplates` | Curated template selector | Only explicit Template mode |
 
 These are existing request variants, not new service flights, rollout changes,
 permission grants, or a request to modify shared settings.
+
+The positive read-policy variant takes precedence over an operator disable
+flight in the available source contract, but an explicit in-process server
+override can still take precedence over it. The SQL/GQL policy does not validate
+DAX or KQL. Discovery hints are server-supplied and not an independent enforcement
+mechanism: missing, malformed, false read-only, or true destructive hints fail
+closed before query HTTP dispatch. These checks do not prove a trusted server,
+deployed policy, or safe live target; caller qualification and the documented
+authentication/source limits still apply. The SDK offers no write-approval bypass,
+client SQL-text heuristic, disable-policy token, or alternate query provider.
 
 Tool arguments are `artifactId`, `query`, optional `filename`, optional
 `language` (only `jmespath`), and `max_rows`. Native mode omits `language`; the

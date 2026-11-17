@@ -3,7 +3,7 @@
 
 use crate::{
     DATA_AGENT_VARIANT, Limits, NativeDeadline, QueryError, QueryErrorKind, QueryMode,
-    QueryOutcome, QueryRequest, QueryStage, SANDBOX_VARIANT, TEMPLATE_VARIANT,
+    QueryOutcome, QueryRequest, QueryStage, READ_ONLY_VARIANT, SANDBOX_VARIANT, TEMPLATE_VARIANT,
     TYPED_RESULTS_VARIANT, decode, json::RawValue, protocol,
 };
 use azure_core::{
@@ -195,7 +195,7 @@ impl AiHubQueryClient {
         if secret.is_empty() || secret.len() > 32 * 1024 || secret.chars().any(char::is_control) {
             return Err(QueryErrorKind::Authentication);
         }
-        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT];
+        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT, READ_ONLY_VARIANT];
         if request.target.stage == QueryStage::Sandbox {
             variants.push(SANDBOX_VARIANT);
         }

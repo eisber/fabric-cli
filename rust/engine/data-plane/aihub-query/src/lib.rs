@@ -26,6 +26,8 @@ pub use fabric_sdk_http::ExecutionTimer;
 pub const DATA_AGENT_VARIANT: &str = "Fabric.Routing.Documents.DataAgent";
 /// Existing typed-result wire variant; it does not select a stage or datasource.
 pub const TYPED_RESULTS_VARIANT: &str = "Fabric.Routing.Documents.DataAgent.TypedQueryResults";
+/// Existing one-way SQL/GQL read-policy request; not live enforcement proof.
+pub const READ_ONLY_VARIANT: &str = "Fabric.Routing.Documents.SqlReadOnlyEnforce";
 /// Existing explicit draft-stage wire variant.
 pub const SANDBOX_VARIANT: &str = "Fabric.Routing.Documents.DataAgent.Sandbox";
 /// Existing curated-template wire variant, used only for template requests.
