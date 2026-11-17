@@ -250,19 +250,29 @@ impl<'de> Deserializer<'de> for Span<'de> {
         if !self.0.starts_with('[') {
             return Err(invalid());
         }
-        visitor.visit_seq(Sequence {
+        let mut sequence = Sequence {
             remaining: &self.0[1..self.0.len() - 1],
-        })
+        };
+        let value = visitor.visit_seq(&mut sequence)?;
+        if !sequence.remaining.trim().is_empty() {
+            return Err(invalid());
+        }
+        Ok(value)
     }
 
     fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         if !self.0.starts_with('{') {
             return Err(invalid());
         }
-        visitor.visit_map(Mapping {
+        let mut mapping = Mapping {
             remaining: &self.0[1..self.0.len() - 1],
             value: None,
-        })
+        };
+        let value = visitor.visit_map(&mut mapping)?;
+        if mapping.value.is_some() || !mapping.remaining.trim().is_empty() {
+            return Err(invalid());
+        }
+        Ok(value)
     }
 
     fn deserialize_struct<V: Visitor<'de>>(
@@ -274,17 +284,33 @@ impl<'de> Deserializer<'de> for Span<'de> {
         self.deserialize_map(visitor)
     }
 
-    fn deserialize_tuple<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value> {
+    fn deserialize_tuple<V: Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value> {
+        if !self.0.starts_with('[') {
+            return Err(invalid());
+        }
+        let mut sequence = Sequence {
+            remaining: &self.0[1..self.0.len() - 1],
+        };
+        let mut count = 0;
+        while sequence.next_span()?.is_some() {
+            count += 1;
+            if count > len {
+                return Err(invalid());
+            }
+        }
+        if count != len {
+            return Err(invalid());
+        }
         self.deserialize_seq(visitor)
     }
 
     fn deserialize_tuple_struct<V: Visitor<'de>>(
         self,
         _name: &'static str,
-        _len: usize,
+        len: usize,
         visitor: V,
     ) -> Result<V::Value> {
-        self.deserialize_seq(visitor)
+        self.deserialize_tuple(len, visitor)
     }
 
     fn deserialize_enum<V: Visitor<'de>>(
@@ -348,5 +374,8 @@ mod tests {
         }
         assert!(parse::<de::IgnoredAny>(r#"{"a":1,"\u0061":2}"#).is_err());
         assert!(parse::<de::IgnoredAny>("null true").is_err());
+        assert_eq!(parse::<[usize; 2]>("[0,2]").unwrap(), [0, 2]);
+        assert!(parse::<[usize; 2]>("[0,2,999]").is_err());
+        assert!(parse::<[usize; 2]>("[0]").is_err());
     }
 }

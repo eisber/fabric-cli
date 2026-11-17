@@ -331,7 +331,7 @@ async fn legacy_csv_markdown_direct_strings_and_structured_content_are_not_typed
 
 #[tokio::test]
 async fn invalid_version_count_schema_metadata_ids_nulls_and_duplicate_resources_fail() {
-    for mutation in 0..15 {
+    for mutation in 0..16 {
         let mut block = typed(&rowset(), "opaque:result");
         match mutation {
             0 => mutate_text(&mut block, |r| r["schemaVersion"] = json!(2)),
@@ -353,7 +353,8 @@ async fn invalid_version_count_schema_metadata_ids_nulls_and_duplicate_resources
             11 => mutate_text(&mut block, |r| r["resultId"] = json!("invalid")),
             12 => mutate_text(&mut block, |r| r["rows"][0][0] = json!(-1)),
             13 => mutate_text(&mut block, |r| r["rows"][0][1] = json!("0.1")),
-            _ => mutate_text(&mut block, |r| r["maxRows"] = json!(0)),
+            14 => mutate_text(&mut block, |r| r["maxRows"] = json!(0)),
+            _ => block["resource"]["_meta"]["fabric.queryResult"]["nulls"] = json!([[0, 2, 999]]),
         }
         assert!(
             observe(json!({"content":[block]})).await.is_err(),
