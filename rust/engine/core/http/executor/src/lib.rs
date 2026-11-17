@@ -98,6 +98,7 @@ mod items;
 pub mod native_runtime;
 pub mod native_stream;
 mod operations;
+pub mod scoped_native_stream;
 pub use evidence::{ExecutionEvidence, ExecutionTrace};
 #[cfg(test)]
 mod tests;

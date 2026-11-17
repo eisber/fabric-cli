@@ -13,7 +13,7 @@ use azure_core::{
     Bytes,
     credentials::AccessToken,
     error::ErrorKind,
-    http::{AsyncRawResponse, AsyncResponseBody, Method, Url},
+    http::{AsyncRawResponse, AsyncResponseBody, HttpClient, Method, Url},
 };
 use fabric_core::{AuthenticatedExecution, RequestError};
 use fabric_sdk::{
@@ -32,6 +32,8 @@ use std::{
     task::Poll,
     time::Duration,
 };
+
+pub use crate::scoped_native_stream::{NativeScopeStreamExecutor, NativeStreamPreflight};
 
 /// Opens single-dispatch native Fabric streams without collecting their bodies.
 ///
@@ -101,33 +103,14 @@ impl NativeStreamExecutor for NativeFabricStreamExecutor {
                         .await
                         .map_err(authentication_error)?
                 };
-                let (status, headers, body) = raw.deconstruct();
-                let status = u16::from(status);
-                if !(100..=599).contains(&status) {
-                    return Err(NativeError::InvalidResponse);
-                }
-                state.status = Some(status);
-                let (headers, content_type) = response_metadata(
-                    headers
-                        .iter()
-                        .map(|(name, value)| (name.as_str(), value.as_str())),
-                )?;
-                Ok(NativeStreamResponse {
-                    status,
-                    content_type,
-                    headers,
-                    body: Box::new(FabricBody {
-                        stream: Some(body),
-                        remainder: None,
-                        terminal: None,
-                        received: 0,
-                        limits,
-                        deadline: deadline.clone(),
-                        timer: Arc::clone(&self.http.timer),
-                        method: prepared.method,
-                        state,
-                    }),
-                })
+                stream_response(
+                    raw,
+                    limits,
+                    deadline,
+                    Arc::clone(&self.http.timer),
+                    prepared.method,
+                    &mut state,
+                )
             };
             match before_deadline(self.http.timer.as_ref(), deadline, None, exchange).await {
                 Ok(Ok(response)) => Ok(response),
@@ -138,7 +121,7 @@ impl NativeStreamExecutor for NativeFabricStreamExecutor {
 }
 
 #[derive(Clone, Copy, Default)]
-struct DispatchState {
+pub(super) struct DispatchState {
     sent: bool,
     status: Option<u16>,
 }
@@ -159,27 +142,75 @@ impl AuthenticatedExecution for StreamDispatch<'_, '_> {
         url: &'a Url,
         token: &'a AccessToken,
     ) -> ExecutionFuture<'a, Result<Self::Response, Self::Error>> {
-        Box::pin(async move {
-            self.deadline.remaining()?;
-            HttpExecutor::validate_token(token).map_err(|_| NativeError::InvalidInput)?;
-            let mut request = HttpExecutor::authenticated_request(
-                self.prepared.method,
-                url,
-                token,
-                self.prepared.body.as_ref(),
-            );
-            for (name, value) in &self.prepared.headers {
-                request.insert_header(name.clone(), value.clone());
-            }
-            self.deadline.remaining()?;
-            self.state.sent = true;
-            self.http
-                .client
-                .execute_request(&request)
-                .await
-                .map_err(stream_error)
-        })
+        Box::pin(send_stream(
+            self.http.client.as_ref(),
+            self.prepared,
+            url,
+            token,
+            self.deadline,
+            self.state,
+            || Ok(()),
+        ))
     }
+}
+
+pub(super) async fn send_stream(
+    client: &dyn HttpClient,
+    prepared: &PreparedRequest<'_>,
+    url: &Url,
+    token: &AccessToken,
+    deadline: &NativeDeadline,
+    state: &mut DispatchState,
+    before_send: impl FnOnce() -> Result<(), NativeError> + Send,
+) -> Result<AsyncRawResponse, NativeError> {
+    deadline.remaining()?;
+    HttpExecutor::validate_token(token).map_err(|_| NativeError::InvalidInput)?;
+    let mut request =
+        HttpExecutor::authenticated_request(prepared.method, url, token, prepared.body.as_ref());
+    for (name, value) in &prepared.headers {
+        request.insert_header(name.clone(), value.clone());
+    }
+    before_send()?;
+    deadline.remaining()?;
+    state.sent = true;
+    client.execute_request(&request).await.map_err(stream_error)
+}
+
+pub(super) fn stream_response(
+    raw: AsyncRawResponse,
+    limits: NativeStreamLimits,
+    deadline: &NativeDeadline,
+    timer: Arc<dyn ExecutionTimer>,
+    method: Method,
+    state: &mut DispatchState,
+) -> Result<NativeStreamResponse, NativeError> {
+    let (status, headers, body) = raw.deconstruct();
+    let status = u16::from(status);
+    if !(100..=599).contains(&status) {
+        return Err(NativeError::InvalidResponse);
+    }
+    state.status = Some(status);
+    let (headers, content_type) = response_metadata(
+        headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str())),
+    )?;
+    Ok(NativeStreamResponse {
+        status,
+        content_type,
+        headers,
+        body: Box::new(FabricBody {
+            stream: Some(body),
+            remainder: None,
+            terminal: None,
+            received: 0,
+            limits,
+            deadline: deadline.clone(),
+            timer,
+            method,
+            state: *state,
+        }),
+    })
 }
 
 fn stream_error(error: azure_core::Error) -> NativeError {
@@ -199,7 +230,11 @@ fn authentication_error(error: RequestError<NativeError>) -> NativeError {
     }
 }
 
-fn response_error(error: NativeError, method: Method, state: DispatchState) -> NativeError {
+pub(super) fn response_error(
+    error: NativeError,
+    method: Method,
+    state: DispatchState,
+) -> NativeError {
     if !state.sent {
         return error;
     }
@@ -229,7 +264,7 @@ fn remaining(
     })
 }
 
-async fn before_deadline<T>(
+pub(super) async fn before_deadline<T>(
     timer: &dyn ExecutionTimer,
     original: &NativeDeadline,
     supplied: Option<&NativeDeadline>,
