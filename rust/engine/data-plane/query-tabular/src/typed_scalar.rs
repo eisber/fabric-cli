@@ -267,7 +267,7 @@ fn decimal_parts(value: &NativeValue) -> Result<DecimalParts<'_>, &'static str> 
     };
     let (negative, text) = match text.strip_prefix('-') {
         Some(text) => (true, text),
-        None => (false, text),
+        None => (false, text.as_str()),
     };
     let (mantissa, exponent) = match text.split_once(['e', 'E']) {
         Some((mantissa, exponent)) => {
