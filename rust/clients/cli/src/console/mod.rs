@@ -34,6 +34,48 @@ pub(super) struct ProgressEvent {
     written: oneshot::Sender<Result<(), CoreError>>,
 }
 
+pub(super) struct ConfirmationEvent {
+    prompt: String,
+    context: OperationContext,
+    clock: Arc<dyn Clock>,
+    answered: oneshot::Sender<Result<bool, CommandError>>,
+}
+
+pub(super) struct ConsoleConfirmation(mpsc::Sender<ConfirmationEvent>);
+
+impl ConsoleConfirmation {
+    pub(super) async fn confirm(
+        &self,
+        prompt: String,
+        clock: Arc<dyn Clock>,
+        context: &OperationContext,
+    ) -> Result<(), CommandError> {
+        let (answered, received) = oneshot::channel();
+        self.0
+            .send(ConfirmationEvent {
+                prompt,
+                context: context.clone(),
+                clock,
+                answered,
+            })
+            .await
+            .map_err(|_| CommandError::new("Cancelled", "Confirmation unavailable"))?;
+        if received
+            .await
+            .map_err(|_| CommandError::new("Cancelled", "Confirmation unavailable"))??
+        {
+            Ok(())
+        } else {
+            Err(CommandError::new("Cancelled", "Operation cancelled"))
+        }
+    }
+}
+
+pub(super) fn confirmations() -> (ConsoleConfirmation, mpsc::Receiver<ConfirmationEvent>) {
+    let (sender, events) = mpsc::channel(1);
+    (ConsoleConfirmation(sender), events)
+}
+
 enum ConsoleUpdate {
     Progress(ProgressUpdate),
     Diagnostic(Box<DiagnosticEvent>, SystemTime),
@@ -280,6 +322,7 @@ pub(super) async fn drive<T>(
     stderr: &mut dyn Write,
     observer: &ConsoleProgress,
     mut events: mpsc::Receiver<ProgressEvent>,
+    mut confirmations: mpsc::Receiver<ConfirmationEvent>,
     execution: impl Future<Output = Result<T, CommandError>>,
 ) -> (Result<T, CommandError>, bool) {
     let mut result = {
@@ -323,6 +366,21 @@ pub(super) async fn drive<T>(
                     }
                     // Cancellation can drop the observer while its event is queued.
                     let _ = event.written.send(result);
+                }
+                Some(event) = confirmations.recv() => {
+                    let answer = if write!(stderr, "{}", event.prompt).and_then(|()| stderr.flush()).is_err() {
+                        Err(CommandError::new("InvalidInput", "Cannot write confirmation prompt"))
+                    } else {
+                        bounded_with_clock(
+                            event.clock.as_ref(),
+                            &event.context,
+                            host.confirm(event.context.cancellation.clone()),
+                        )
+                        .await
+                        .map_err(CommandError::from)
+                        .and_then(|answer| answer)
+                    };
+                    let _ = event.answered.send(answer);
                 }
                 result = &mut heartbeat, if display.needs_heartbeat() && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
                     if let Err(error) = result {

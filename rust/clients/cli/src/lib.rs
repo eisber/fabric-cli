@@ -5,11 +5,13 @@
 #![forbid(unsafe_code)]
 
 mod console;
+mod definition;
 mod invocation;
 #[path = "process/mod.rs"]
 pub mod lifecycle;
 mod native;
 mod output;
+mod resources;
 
 use fabric_cli_command_contracts::EXECUTABLE_NAME;
 pub use fabric_cli_command_contracts::Host;

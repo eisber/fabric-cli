@@ -1,0 +1,6 @@
+kind: added
+body: Add workspace and item CRUD and definition import and export to the experimental fab-rs CLI.
+time: 2026-11-16T17:43:39.422965+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

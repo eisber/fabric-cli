@@ -160,6 +160,8 @@ struct FakeHost {
     credential: Arc<Credential>,
     transport: Arc<Transport>,
     clock: Arc<TestClock>,
+    confirmations: Mutex<VecDeque<Result<bool, CommandError>>>,
+    confirmation_calls: AtomicUsize,
 }
 impl FakeHost {
     fn new(responses: Vec<ApiResponse>) -> Self {
@@ -185,6 +187,8 @@ impl FakeHost {
                 sleeps: AtomicUsize::new(0),
                 diagnostics: Mutex::new(Vec::new()),
             }),
+            confirmations: Mutex::new(VecDeque::new()),
+            confirmation_calls: AtomicUsize::new(0),
         }
     }
     fn hook(&self) {
@@ -227,6 +231,19 @@ impl Host for FakeHost {
         self.hook();
         Ok(self.transport.clone())
     }
+    async fn confirm(&self, _: CancellationToken) -> Result<bool, CommandError> {
+        self.confirmation_calls.fetch_add(1, Ordering::SeqCst);
+        self.confirmations
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(CommandError::new(
+                    "InvalidInput",
+                    "Confirmation unavailable",
+                ))
+            })
+    }
     fn take_diagnostics(&self) -> Vec<&'static str> {
         std::mem::take(&mut *self.clock.diagnostics.lock().unwrap())
     }
@@ -265,6 +282,955 @@ async fn run(args: &[&str], host: &dyn Host) -> (u8, String, String) {
 
 fn data(stdout: &str) -> Value {
     serde_json::from_str::<Value>(stdout).unwrap()["result"]["data"].clone()
+}
+
+#[tokio::test]
+async fn resources_validate_locally_before_credentials_or_http() {
+    let guid = "00000000-0000-0000-0000-000000000001";
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["workspace", "list", "--workspace", guid],
+        vec!["item", "list"],
+        vec!["item", "create", "new", "--payload", r#"{"type":"X"}"#],
+        vec!["item", "get", guid],
+        vec![
+            "item",
+            "update",
+            guid,
+            "--payload",
+            r#"{"displayName":"new"}"#,
+        ],
+        vec!["item", "delete", guid, "--force"],
+        vec!["workspace", "create", guid],
+        vec!["item", "create", guid, "--workspace", guid],
+        vec!["workspace", "create"],
+        vec![
+            "workspace",
+            "create",
+            "one",
+            "--payload",
+            r#"{"displayName":"two"}"#,
+        ],
+        vec!["item", "create", "one", "--workspace", guid],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","workspaceId":"x"}"#,
+        ],
+        vec![
+            "item",
+            "update",
+            guid,
+            "--workspace",
+            guid,
+            "--payload",
+            "[]",
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","definition":{},"creationPayload":{}}"#,
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","options":{}}"#,
+        ],
+        vec!["workspace", "get", guid, "--type", "x"],
+        vec!["workspace", "delete", guid, "--workspace", guid],
+        vec!["workspace", "create", "Admin monitoring"],
+        vec![
+            "workspace",
+            "create",
+            "one",
+            "--payload",
+            r#"{"capacityId":"invalid"}"#,
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X","folderId":42}"#,
+        ],
+    ];
+    for args in cases {
+        let host = FakeHost::new(vec![]);
+        let (code, _, _) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+    let name = "a".repeat(257);
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(&["workspace", "create", &name], &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn resources_use_direct_ids_and_native_output() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let item = "00000000-0000-0000-0000-000000000002";
+    let host = FakeHost::new(vec![response(
+        200,
+        r#"{"id":"answer","displayName":"result"}"#,
+        &[],
+    )]);
+    let (code, stdout, _) = run(
+        &[
+            "item",
+            "get",
+            item,
+            "--workspace",
+            workspace,
+            "--query",
+            "displayName",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout), json!("result"));
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(
+        requests[0].url.path(),
+        format!("/v1/workspaces/{workspace}/items/{item}")
+    );
+}
+
+#[tokio::test]
+async fn resource_list_field_projection_runs_after_name_resolution_and_all_pages() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    for kind in ["workspace", "item"] {
+        let mut responses = Vec::new();
+        if kind == "item" {
+            responses.push(response(
+                200,
+                &format!(r#"{{"value":[{{"id":"{workspace}","displayName":"testrustcrud"}}]}}"#),
+                &[],
+            ));
+        }
+        responses.extend([
+            response(
+                200,
+                r#"{"value":[{"id":"b2fe34d2-2197-4f2f-933f-8352fd0318fb","hidden":"CANARY"}],"continuationToken":"next"}"#,
+                &[],
+            ),
+            response(200, r#"{"value":[{"id":"second","hidden":"CANARY"}]}"#, &[]),
+        ]);
+        let host = FakeHost::new(responses);
+        let mut args = vec![kind, "list", "--query", "id"];
+        if kind == "item" {
+            args.extend(["--workspace", "testrustcrud"]);
+        }
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout} {stderr}");
+        assert_eq!(
+            data(&stdout),
+            json!([{"id":"b2fe34d2-2197-4f2f-933f-8352fd0318fb"}, {"id":"second"}])
+        );
+        assert!(!stdout.contains("CANARY"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), if kind == "item" { 3 } else { 2 });
+        let last = requests.last().unwrap();
+        assert_eq!(last.url.query(), Some("continuationToken=next"));
+        assert_eq!(
+            last.url.path(),
+            if kind == "item" {
+                format!("/v1/workspaces/{workspace}/items")
+            } else {
+                "/v1/workspaces".to_owned()
+            }
+        );
+    }
+}
+
+#[tokio::test]
+async fn resource_list_field_projection_keeps_json_fidelity_and_empty_results() {
+    for (body, query, expected) in [
+        (r#"{"value":[]}"#, "id", "[]"),
+        (
+            r#"{"value":[{"v":false},{"v":0},{"v":""},{"v":null},{}]}"#,
+            "v",
+            r#"[{"v":false},{"v":0},{"v":""},{"v":null},{"v":null}]"#,
+        ),
+        (
+            r#"{"value":[{"v":184467440737095516170},{"v":-0},{"v":[null,false]},{"v":{"$serde_json::private::Number":"123","é":1.0}}]}"#,
+            "v",
+            r#"[{"v":184467440737095516170},{"v":0},{"v":[null,false]},{"v":{"$serde_json::private::Number":"123","é":1.0}}]"#,
+        ),
+        (
+            r#"{"value":[{"$serde_json::private::Number":123,"hidden":"CANARY"},{}]}"#,
+            r#""$serde_json::private::Number""#,
+            r#"[{"$serde_json::private::Number":123},{"$serde_json::private::Number":null}]"#,
+        ),
+    ] {
+        let host = FakeHost::new(vec![response(200, body, &[])]);
+        let (code, stdout, stderr) = run(&["workspace", "list", "--query", query], &host).await;
+        assert_eq!(code, 0, "{stdout} {stderr}");
+        let result = fabric_core_json::decode(stdout.as_bytes()).unwrap();
+        assert_eq!(
+            result["result"]["data"],
+            fabric_core_json::decode(expected.as_bytes()).unwrap(),
+            "{query}"
+        );
+        assert!(!stdout.contains("CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn resource_list_queries_preserve_explicit_jmespath_and_identity() {
+    let body = r#"{"value":[{"id":"b","n":2},{"id":"a","n":1}]}"#;
+    for (query, expected) in [
+        ("[].id", json!(["b", "a"])),
+        ("[0].id", json!("b")),
+        ("[?n > `1`].id", json!(["b"])),
+        ("[].{key: id}", json!([{"key":"b"}, {"key":"a"}])),
+        ("sort_by(@, &n)[].id", json!(["a", "b"])),
+        ("length(@)", json!("2")),
+        ("@ | id", json!("None")),
+        ("[?n > `9`]", json!([])),
+        ("", json!([{"id":"b","n":2}, {"id":"a","n":1}])),
+        (".", json!([{"id":"b","n":2}, {"id":"a","n":1}])),
+        ("@", json!([{"id":"b","n":2}, {"id":"a","n":1}])),
+    ] {
+        let host = FakeHost::new(vec![response(200, body, &[])]);
+        let (code, stdout, stderr) = run(&["workspace", "list", "--query", query], &host).await;
+        assert_eq!(code, 0, "{query}: {stdout} {stderr}");
+        assert_eq!(data(&stdout), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn resource_field_shortcut_does_not_change_single_resources_or_raw_api() {
+    let guid = "00000000-0000-0000-0000-000000000001";
+    for kind in ["workspace", "item"] {
+        for (query, expected) in [
+            ("id", json!("answer")),
+            ("n", json!("0")),
+            ("missing", json!("None")),
+            ("{key: id}", json!({"key":"answer"})),
+            ("v", json!([])),
+        ] {
+            let host = FakeHost::new(vec![response(200, r#"{"id":"answer","n":0,"v":[]}"#, &[])]);
+            let mut args = vec![kind, "get", guid, "--query", query];
+            if kind == "item" {
+                args.extend(["--workspace", guid]);
+            }
+            let (code, stdout, stderr) = run(&args, &host).await;
+            assert_eq!(code, 0, "{stdout} {stderr}");
+            assert_eq!(data(&stdout), expected, "{kind} {query}");
+        }
+    }
+    for (query, expected) in [
+        ("id", json!("None")),
+        ("text.value[].id", json!(["answer"])),
+        ("text.value[].{id: id}", json!([{"id":"answer"}])),
+    ] {
+        let host = FakeHost::new(vec![response(
+            200,
+            r#"{"value":[{"id":"answer","hidden":"CANARY"}],"continuationToken":"next"}"#,
+            &[],
+        )]);
+        let (code, stdout, stderr) = run(&["api", "workspaces", "--query", query], &host).await;
+        assert_eq!(code, 0, "{stdout} {stderr}");
+        assert_eq!(data(&stdout), expected, "{query}");
+        assert!(!stdout.contains("CANARY"));
+        assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn resource_projection_does_not_publish_partial_lists_or_bypass_preflight() {
+    for second in [
+        response(403, r#"{"error":"CANARY"}"#, &[]),
+        response(200, r#"{"value":[null]}"#, &[]),
+    ] {
+        let host = FakeHost::new(vec![
+            response(
+                200,
+                r#"{"value":[{"id":"PARTIAL-CANARY"}],"continuationToken":"next"}"#,
+                &[],
+            ),
+            second,
+        ]);
+        let (code, stdout, _) = run(&["workspace", "list", "--query", "id"], &host).await;
+        assert_ne!(code, 0);
+        assert!(!stdout.contains("PARTIAL-CANARY"));
+        assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+    }
+    for query in ["[?", "[?id='CANARY']", "length()", "[::0]"] {
+        let host = FakeHost::new(vec![]);
+        let (code, _, _) = run(&["workspace", "list", "--query", query], &host).await;
+        assert_eq!(code, 1, "{query}");
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn item_selector_combinations_only_fetch_required_names() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let item = "00000000-0000-0000-0000-000000000002";
+    for (workspace_name, item_name) in [(false, false), (true, false), (false, true), (true, true)]
+    {
+        let mut replies = Vec::new();
+        if workspace_name {
+            replies.push(response(
+                200,
+                &format!(r#"{{"value":[{{"id":"{workspace}","displayName":"workspace"}}]}}"#),
+                &[],
+            ));
+        }
+        if item_name {
+            replies.push(response(
+                200,
+                &format!(r#"{{"value":[{{"id":"{item}","displayName":"item"}}]}}"#),
+                &[],
+            ));
+        }
+        replies.push(response(200, "{}", &[]));
+        let host = FakeHost::new(replies);
+        let target = if item_name { "item" } else { item };
+        let scope = if workspace_name {
+            "workspace"
+        } else {
+            workspace
+        };
+        let (code, _, _) = run(&["item", "get", target, "--workspace", scope], &host).await;
+        assert_eq!(code, 0);
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(
+            requests.len(),
+            1 + usize::from(workspace_name) + usize::from(item_name)
+        );
+        assert_eq!(
+            requests.last().unwrap().url.path(),
+            format!("/v1/workspaces/{workspace}/items/{item}")
+        );
+    }
+}
+
+#[tokio::test]
+async fn resource_page_errors_and_missing_names_do_not_mutate() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let cases = [
+        response(200, r#"{"value":[]}"#, &[]),
+        response(200, r#"{"value":[],"continuationToken":42}"#, &[]),
+        response(503, r#"{"private":"not-for-output"}"#, &[]),
+        response(200, "{", &[]),
+    ];
+    for reply in cases {
+        let host = FakeHost::new(vec![reply]);
+        let (code, stdout, _) = run(
+            &[
+                "item",
+                "delete",
+                "absent",
+                "--workspace",
+                workspace,
+                "--force",
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 1);
+        assert!(!stdout.contains("not-for-output"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "GET");
+    }
+}
+
+#[tokio::test]
+async fn resource_creation_accepts_payload_name_and_matching_names() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    for args in [
+        vec![
+            "workspace",
+            "create",
+            "--payload",
+            r#"{"displayName":"00000000-0000-0000-0000-000000000001"}"#,
+        ],
+        vec![
+            "workspace",
+            "create",
+            "ws",
+            "--payload",
+            r#"{"displayName":"ws"}"#,
+        ],
+        vec!["workspace", "create", "ws"],
+        vec![
+            "item",
+            "create",
+            "--workspace",
+            id,
+            "--payload",
+            r#"{"displayName":"item","type":"UnknownType"}"#,
+        ],
+    ] {
+        let host = FakeHost::new(vec![response(201, "{}", &[])]);
+        let (code, _, _) = run(&args, &host).await;
+        assert_eq!(code, 0, "{args:?}");
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "POST");
+    }
+}
+
+#[tokio::test]
+async fn resource_resolution_reads_all_pages_and_rejects_duplicate_names() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let first = response(200, r#"{"value":[],"continuationToken":"a+/="}"#, &[]);
+    let second = response(
+        200,
+        &format!(r#"{{"value":[{{"id":"{id}","displayName":"ws"}}]}}"#),
+        &[],
+    );
+    let item = "00000000-0000-0000-0000-000000000002";
+    let host = FakeHost::new(vec![
+        first.clone(),
+        second.clone(),
+        response(200, "{}", &[]),
+    ]);
+    let (code, _, _) = run(&["item", "get", item, "--workspace", "ws"], &host).await;
+    assert_eq!(code, 0);
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[1].url.query(),
+        Some("continuationToken=a%2B%2F%3D")
+    );
+    drop(requests);
+
+    let host = FakeHost::new(vec![
+        response(
+            200,
+            r#"{"value":[],"continuationToken":"ABCsMTAwMDAwLDA%3D&x=y"}"#,
+            &[],
+        ),
+        response(200, r#"{"value":[]}"#, &[]),
+    ]);
+    let (code, _, _) = run(&["workspace", "list"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(
+        host.transport.requests.lock().unwrap()[1].url.query(),
+        Some("continuationToken=ABCsMTAwMDAwLDA%3D%26x%3Dy")
+    );
+
+    let duplicate = response(
+        200,
+        &format!(r#"{{"value":[{{"id":"{id}","displayName":"ws"}}],"continuationToken":"next"}}"#),
+        &[],
+    );
+    let host = FakeHost::new(vec![duplicate, second]);
+    let (code, stdout, _) = run(&["workspace", "get", "ws"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("Ambiguous"));
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn resource_creation_and_patch_keep_native_payloads() {
+    let workspace = "00000000-0000-0000-0000-000000000001";
+    let host = FakeHost::new(vec![response(201, r#"{"id":"created"}"#, &[])]);
+    let input = r#"{"type":"FutureType","other":{"$serde_json::private::Number":"x","big":123456789012345678901234567890}}"#;
+    let (code, stdout, _) = run(
+        &[
+            "item",
+            "create",
+            "new",
+            "--workspace",
+            workspace,
+            "--payload",
+            input,
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["id"], "created");
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "POST");
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["displayName"], "new");
+    assert_eq!(body["type"], "FutureType");
+    assert_eq!(body["other"]["$serde_json::private::Number"], "x");
+    drop(requests);
+
+    let host = FakeHost::new(vec![response(200, r#"{"displayName":"new"}"#, &[])]);
+    let (code, _, _) = run(
+        &[
+            "workspace",
+            "update",
+            workspace,
+            "--payload",
+            r#"{"displayName":"new"}"#,
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0);
+    assert_eq!(host.transport.requests.lock().unwrap()[0].method, "PATCH");
+}
+
+#[tokio::test]
+async fn deletion_confirms_after_resolution_and_force_never_reads() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let lookup = response(
+        200,
+        &format!(r#"{{"value":[{{"id":"{id}","displayName":"ws"}}]}}"#),
+        &[],
+    );
+    let host = FakeHost::new(vec![lookup]);
+    host.confirmations.lock().unwrap().push_back(Ok(false));
+    let (code, stdout, stderr) = run(&["workspace", "delete", "ws"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("Cancelled"));
+    assert!(stderr.contains(id));
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+    let host = FakeHost::new(vec![response(204, "", &[])]);
+    let (code, _, stderr) = run(&["workspace", "delete", id, "--force"], &host).await;
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert_eq!(host.confirmation_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(host.transport.requests.lock().unwrap()[0].method, "DELETE");
+}
+
+#[tokio::test]
+async fn resource_requests_and_polling_use_the_configured_fabric_endpoint() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let mut host = FakeHost::new(vec![
+        response(202, "", &[("x-ms-operation-id", "operation-1")]),
+        response(200, r#"{"status":"Succeeded"}"#, &[]),
+    ]);
+    host.environment.insert(
+        "FABRIC_API_ENDPOINT".into(),
+        OsString::from("msitapi.fabric.microsoft.com"),
+    );
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force"], &host).await;
+    assert_eq!(code, 0, "{stdout}");
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    for request in requests.iter() {
+        assert_eq!(request.url.host_str(), Some("msitapi.fabric.microsoft.com"));
+    }
+}
+
+#[tokio::test]
+async fn invalid_resource_endpoint_is_rejected_before_credentials_or_http() {
+    let mut host = FakeHost::new(vec![]);
+    host.environment.insert(
+        "FABRIC_API_ENDPOINT".into(),
+        OsString::from("api.fabric.microsoft.com.evil.example"),
+    );
+    let (code, stdout, _) = run(&["workspace", "list"], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("FABRIC_API_ENDPOINT"));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn resource_empty_delete_and_accepted_mutation_are_distinct() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let host = FakeHost::new(vec![response(204, "", &[])]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout), Value::Null);
+
+    let host = FakeHost::new(vec![response(200, "", &[])]);
+    let (code, stdout, _) = run(&["workspace", "get", id], &host).await;
+    assert_eq!(code, 1);
+    assert!(stdout.contains("Empty resource response"));
+
+    let host = FakeHost::new(vec![response(202, "", &[("x-ms-operation-id", id)])]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["status_code"], 202);
+    assert_eq!(data(&stdout)["status"], "Accepted");
+    assert_eq!(data(&stdout)["recovery"]["operation_id"], id);
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+
+    let host = FakeHost::new(vec![response(202, "", &[])]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["status"], "Accepted");
+    assert!(data(&stdout).get("recovery").is_none());
+
+    let host = FakeHost::new(vec![response(
+        202,
+        "",
+        &[
+            (
+                "location",
+                "https://evil.invalid/operation?secret=synthetic",
+            ),
+            ("x-ms-operation-id", id),
+        ],
+    )]);
+    let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
+    assert_eq!(code, 0);
+    assert_eq!(data(&stdout)["status"], "Accepted");
+    assert_eq!(data(&stdout)["recovery"]["operation_id"], id);
+    assert!(!stdout.contains("evil.invalid"));
+    assert!(!stdout.contains("synthetic"));
+}
+
+#[tokio::test]
+async fn resource_mutations_complete_or_preserve_operation_recovery() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    for (status, success) in [("Succeeded", true), ("Failed", false)] {
+        let host = FakeHost::new(vec![
+            response(202, "", &[("x-ms-operation-id", "operation-1")]),
+            response(200, &format!(r#"{{"status":"{status}"}}"#), &[]),
+        ]);
+        let (code, stdout, _) = run(&["workspace", "delete", id, "--force"], &host).await;
+        assert_eq!(code == 0, success);
+        if !success {
+            assert!(stdout.contains("operation-1"));
+        }
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].method, "DELETE");
+        assert_eq!(requests[1].method, "GET");
+    }
+}
+
+#[tokio::test]
+async fn resource_payload_files_are_bounded_and_read_before_auth() {
+    let directory = TempDirectory::new();
+    let path = directory.0.join("payload.json");
+    std::fs::write(&path, br#"{"displayName":"file"}"#).unwrap();
+    let argument = format!("@{}", path.display());
+    let host = FakeHost::new(vec![response(201, "{}", &[])]);
+    let (code, _, _) = run(&["workspace", "create", "--payload", &argument], &host).await;
+    assert_eq!(code, 0);
+
+    std::fs::write(&path, vec![b' '; fabric_core::MAX_REQUEST_BYTES + 1]).unwrap();
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(&["workspace", "create", "--payload", &argument], &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+const WS: &str = "00000000-0000-0000-0000-00000000000a";
+const ITEM: &str = "00000000-0000-0000-0000-00000000000b";
+
+fn item_export_replies(path: &str) -> Vec<ApiResponse> {
+    vec![
+        response(200, r#"{"displayName":"nb","type":"Notebook"}"#, &[]),
+        response(
+            200,
+            &format!(
+                r#"{{"definition":{{"parts":[{{"path":"{path}","payload":"aGVsbG8=","payloadType":"InlineBase64"}}]}}}}"#
+            ),
+            &[],
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn item_get_destination_writes_decoded_parts_and_refuses_overwrite() {
+    let dir = TempDirectory::new();
+    let destination = dir.0.to_str().unwrap();
+    let args = [
+        "item",
+        "get",
+        ITEM,
+        "--workspace",
+        WS,
+        "--export-to",
+        destination,
+    ];
+    let host = FakeHost::new(item_export_replies("src/a.py"));
+    let (code, stdout, stderr) = run(&args, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    let file = dir.0.join("nb.Notebook").join("src").join("a.py");
+    assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+    assert_eq!(data(&stdout)["saved"], true);
+    {
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests[1].method, "POST");
+        assert_eq!(
+            requests[1].url.path(),
+            format!("/v1/workspaces/{WS}/items/{ITEM}/getDefinition")
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    std::fs::write(&file, b"keep").unwrap();
+    let host = FakeHost::new(item_export_replies("src/a.py"));
+    let (code, _, _) = run(&args, &host).await;
+    assert_eq!(code, 1);
+    assert_eq!(std::fs::read(&file).unwrap(), b"keep");
+    let mut overwrite = args.to_vec();
+    overwrite.push("--overwrite");
+    let host = FakeHost::new(item_export_replies("src/a.py"));
+    let (code, _, stderr) = run(&overwrite, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+}
+
+#[tokio::test]
+async fn item_get_destination_rejects_traversal_parts() {
+    let dir = TempDirectory::new();
+    let host = FakeHost::new(item_export_replies("../escape"));
+    let destination = dir.0.join("out");
+    std::fs::create_dir(&destination).unwrap();
+    let (code, _, _) = run(
+        &[
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--export-to",
+            destination.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 2);
+    assert!(!dir.0.join("escape").exists());
+    assert!(!destination.join("escape").exists());
+}
+
+#[tokio::test]
+async fn item_get_destination_rejects_traversal_in_service_display_name() {
+    let dir = TempDirectory::new();
+    let host = FakeHost::new(vec![
+        response(200, r#"{"displayName":"../escape","type":"Notebook"}"#, &[]),
+        response(
+            200,
+            r#"{"definition":{"parts":[{"path":"file","payload":"aA==","payloadType":"InlineBase64"}]}}"#,
+            &[],
+        ),
+    ]);
+    let (code, _, _) = run(
+        &[
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--export-to",
+            dir.0.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert_eq!(host.transport.requests.lock().unwrap().len(), 1);
+    assert!(!dir.0.join("escape.Notebook").exists());
+}
+
+#[tokio::test]
+async fn async_export_returns_accepted_without_writing() {
+    let dir = TempDirectory::new();
+    let host = FakeHost::new(vec![
+        response(200, r#"{"displayName":"nb","type":"Notebook"}"#, &[]),
+        response(202, "", &[("x-ms-operation-id", "op-1")]),
+    ]);
+    let (code, stdout, stderr) = run(
+        &[
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--export-to",
+            dir.0.to_str().unwrap(),
+            "--async",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(data(&stdout)["saved"], false);
+    assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn old_definition_path_flags_are_rejected() {
+    let dir = TempDirectory::new();
+    let path = dir.0.to_str().unwrap();
+    let cases = [
+        vec![
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--destination",
+            path,
+        ],
+        vec!["item", "update", ITEM, "--workspace", WS, "--source", path],
+        vec!["workspace", "get", WS, "--destination", path],
+        vec!["workspace", "update", WS, "--source", path],
+    ];
+    for args in cases {
+        let host = FakeHost::new(vec![]);
+        let (code, _, _) = run(&args, &host).await;
+        assert_ne!(code, 0, "{args:?}");
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn item_create_source_infers_type_from_platform() {
+    let dir = TempDirectory::new();
+    std::fs::write(
+        dir.0.join(".platform"),
+        br#"{"metadata":{"type":"Notebook"}}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.0.join("a.py"), b"hello").unwrap();
+    let host = FakeHost::new(vec![response(201, r#"{"id":"x"}"#, &[])]);
+    let (code, _, stderr) = run(
+        &[
+            "item",
+            "create",
+            "nb",
+            "--workspace",
+            WS,
+            "--import-from",
+            dir.0.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "POST");
+    assert_eq!(requests[0].url.path(), format!("/v1/workspaces/{WS}/items"));
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["displayName"], "nb");
+    assert_eq!(body["type"], "Notebook");
+    let parts = body["definition"]["parts"].as_array().unwrap();
+    assert!(parts.iter().any(|part| part["path"] == "a.py"
+        && part["payload"] == "aGVsbG8="
+        && part["payloadType"] == "InlineBase64"));
+    assert!(parts.iter().any(|part| part["path"] == ".platform"
+        && part["payload"] == "eyJtZXRhZGF0YSI6eyJ0eXBlIjoiTm90ZWJvb2sifX0="));
+}
+
+#[tokio::test]
+async fn item_create_source_rejects_type_mismatch_before_effects() {
+    let dir = TempDirectory::new();
+    std::fs::write(
+        dir.0.join(".platform"),
+        br#"{"metadata":{"type":"Notebook"}}"#,
+    )
+    .unwrap();
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(
+        &[
+            "item",
+            "create",
+            "nb",
+            "--workspace",
+            WS,
+            "--type",
+            "Report",
+            "--import-from",
+            dir.0.to_str().unwrap(),
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn item_update_source_confirms_unless_forced() {
+    let dir = TempDirectory::new();
+    std::fs::write(dir.0.join("a.py"), b"hello").unwrap();
+    let source = dir.0.to_str().unwrap();
+    let args = [
+        "item",
+        "update",
+        ITEM,
+        "--workspace",
+        WS,
+        "--import-from",
+        source,
+    ];
+    let host = FakeHost::new(vec![]);
+    host.confirmations.lock().unwrap().push_back(Ok(false));
+    let (code, _, _) = run(&args, &host).await;
+    assert_eq!(code, 1);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+    let mut forced = args.to_vec();
+    forced.push("--force");
+    let host = FakeHost::new(vec![response(200, "", &[])]);
+    let (code, _, stderr) = run(&forced, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(host.confirmation_calls.load(Ordering::SeqCst), 0);
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(
+        requests[0].url.path(),
+        format!("/v1/workspaces/{WS}/items/{ITEM}/updateDefinition")
+    );
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["definition"]["parts"][0]["path"], "a.py");
+}
+
+#[tokio::test]
+async fn workspace_update_source_reports_failed_item_imports() {
+    let dir = TempDirectory::new();
+    std::fs::create_dir(dir.0.join("nb.Notebook")).unwrap();
+    std::fs::write(dir.0.join("nb.Notebook").join("a.py"), b"hello").unwrap();
+    let host = FakeHost::new(vec![response(
+        200,
+        r#"{"importItemDefinitionsDetails":[{"operationStatus":"Failed"}]}"#,
+        &[],
+    )]);
+    let (code, _, _) = run(
+        &[
+            "workspace",
+            "update",
+            WS,
+            "--import-from",
+            dir.0.to_str().unwrap(),
+            "--force",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(
+        requests[0].url.path(),
+        format!("/v1/workspaces/{WS}/items/bulkImportDefinitions")
+    );
+    let body = fabric_core_json::decode(&requests[0].body).unwrap();
+    assert_eq!(body["definitionParts"][0]["path"], "/nb.Notebook/a.py");
 }
 
 #[tokio::test]
@@ -1116,6 +2082,119 @@ async fn rejected_headers_precede_payload_file_access() {
     assert!(stderr.is_empty());
     assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
     assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn missing_item_workspace_is_actionable_in_the_existing_failure_envelope() {
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, stderr) = run(&["item", "list"], &host).await;
+    assert_eq!(code, 1);
+    let envelope: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "Failure");
+    assert_eq!(envelope["command"], "item list");
+    assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+    let message = envelope["result"]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("Missing required argument:")
+            || message.starts_with("A required argument is missing."),
+        "{message}"
+    );
+    assert!(message.ends_with("Run fab-rs item list --help."));
+    assert!(stderr.is_empty());
+    assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+    assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn parser_diagnostics_identify_schema_arguments_without_echoing_values() {
+    for (args, details, help) in [
+        (vec!["item", "update"], vec![], "fab-rs item update --help"),
+        (
+            vec!["workspace", "get"],
+            vec![],
+            "fab-rs workspace get --help",
+        ),
+        (
+            vec!["api", "--headers", "authorization=SECRET-CANARY"],
+            vec![],
+            "fab-rs api --help",
+        ),
+        (
+            vec!["item", "list", "--workspace"],
+            vec![],
+            "fab-rs item list --help",
+        ),
+        (
+            vec!["workspace", "create", "SECRET-CANARY", "--payload"],
+            vec![],
+            "fab-rs workspace create --help",
+        ),
+        (
+            vec!["api", "SECRET-CANARY", "--headers"],
+            vec![],
+            "fab-rs api --help",
+        ),
+        (
+            vec!["api", "SECRET-CANARY", "--audience=SECRET-CANARY"],
+            vec!["Invalid value for --audience <audience>."],
+            "fab-rs api --help",
+        ),
+        (
+            vec![
+                "item",
+                "list",
+                "--workspace",
+                "SECRET-CANARY",
+                "--query",
+                "FIRST-SECRET-CANARY",
+                "--query",
+                "SECOND-SECRET-CANARY",
+            ],
+            vec![],
+            "fab-rs item list --help",
+        ),
+        (
+            vec!["item"],
+            vec!["A subcommand is required."],
+            "fab-rs item --help",
+        ),
+        (
+            vec!["item", "SECRET-CANARY"],
+            vec!["Unrecognized command."],
+            "fab-rs item --help",
+        ),
+        (
+            vec![
+                "item",
+                "list",
+                "--workspace",
+                "SECRET-CANARY",
+                "--SECRET-CANARY=SECRET-CANARY",
+            ],
+            vec!["Unrecognized argument or option."],
+            "fab-rs item list --help",
+        ),
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["status"], "Failure");
+        assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+        let message = envelope["result"]["message"].as_str().unwrap();
+        for detail in details {
+            assert!(message.contains(detail), "{args:?}: {message}");
+        }
+        assert!(message.ends_with(&format!("Run {help}.")), "{message}");
+        assert!(!stdout.contains("CANARY"), "{stdout}");
+        assert!(stderr.is_empty());
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

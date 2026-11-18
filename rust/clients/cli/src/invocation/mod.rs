@@ -4,6 +4,7 @@
 mod dispatch;
 mod parser;
 
+pub(crate) use parser::help_arg;
 pub use parser::parser;
 pub(crate) use parser::{parse_arguments, welcome_requested};
 
@@ -78,6 +79,7 @@ pub async fn run(
     let name = parsed_command_name(matches);
     let (observer, events) =
         console::observe(host, matches.get_flag("verbose"), cancellation.clone());
+    let (confirmer, confirmations) = console::confirmations();
     let execution = async {
         observer
             .stage(
@@ -86,9 +88,10 @@ pub async fn run(
                 Duration::ZERO,
             )
             .await?;
-        dispatch::execute(&invocation, host, cancellation, &observer).await
+        dispatch::execute(&invocation, host, cancellation, &observer, &confirmer).await
     };
-    let (result, stderr_broken) = console::drive(host, stderr, &observer, events, execution).await;
+    let (result, stderr_broken) =
+        console::drive(host, stderr, &observer, events, confirmations, execution).await;
     match result {
         Ok(data) => {
             let output = output::success_typed(&output::timestamp(host), name, data);

@@ -3,7 +3,8 @@
 # Minimal CLI composition
 
 `fabric-cli` builds only `fab-rs`. It supports argument-free `auth login`,
-`auth status`, `auth logout`, and raw `api`. Azure CLI 2.54+ is the sole credential
+`auth status`, `auth logout`, raw `api`, and minimal workspace/item CRUDL.
+Azure CLI 2.54+ is the sole credential
 source; sign in using `az login` separately. No Rust command changes Azure CLI's
 account, subscription, tenant, login, or logout state.
 

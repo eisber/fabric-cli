@@ -15,6 +15,7 @@ MEMBERS = {
     "engine/core/http/executor": "fabric-sdk-http",
     "engine/core/http/transport": "fabric-sdk-transport",
     "engine/core/lro": "fabric-sdk-operations",
+    "engine/resources": "fabric-resources",
     "clients/cli/contracts": "fabric-cli-command-contracts",
     "clients/cli/commands/api": "fabric-cli-api",
     "clients/cli/commands/auth": "fabric-cli-auth",
@@ -33,6 +34,7 @@ EDGES = {
         "fabric-core", "fabric-core-json", "fabric-sdk-http", "fabric-sdk-operations",
     },
     "fabric-cli-command-contracts": {"fabric-core"},
+    "fabric-resources": {"fabric-core", "fabric-core-json", "fabric-sdk-api", "fabric-sdk-http"},
     "fabric-cli-api": {
         "fabric-cli-command-contracts", "fabric-cli-query", "fabric-core", "fabric-core-json",
         "fabric-sdk-api", "fabric-sdk-http",
@@ -41,8 +43,8 @@ EDGES = {
     "fabric-cli-query": {"fabric-core-json"},
     "fabric-cli": {
         "fabric-cli-api", "fabric-cli-auth", "fabric-cli-command-contracts", "fabric-cli-query",
-        "fabric-core", "fabric-core-json", "fabric-identity", "fabric-sdk-http", "fabric-sdk-operations",
-        "fabric-sdk-transport",
+        "fabric-core", "fabric-core-json", "fabric-identity", "fabric-resources", "fabric-sdk-api",
+        "fabric-sdk-http", "fabric-sdk-operations", "fabric-sdk-transport",
     },
 }
 FORBIDDEN = ("broker", "updater", "pagination", "deployment", "azure-identity-broker")

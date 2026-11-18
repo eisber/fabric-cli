@@ -8,7 +8,7 @@ use clap::{
 use fabric_cli_command_contracts::ValidatedInvocation;
 use std::ffi::OsString;
 
-fn help_arg() -> Arg {
+pub(crate) fn help_arg() -> Arg {
     Arg::new("help").long("help").action(ArgAction::Help)
 }
 
@@ -28,6 +28,8 @@ pub fn parser() -> Command {
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
         .subcommand(fabric_cli_auth::command())
         .subcommand(fabric_cli_api::command())
+        .subcommand(crate::resources::command("workspace"))
+        .subcommand(crate::resources::command("item"))
 }
 
 pub(crate) fn parse_arguments(args: &[OsString]) -> Result<ValidatedInvocation, clap::Error> {
@@ -51,6 +53,7 @@ pub(super) fn command_name(args: &[OsString]) -> &'static str {
         (Some("auth"), Some("status")) => "auth status",
         (Some("auth"), Some("logout")) => "auth logout",
         (Some("auth"), _) => "auth",
+        (Some(kind @ ("workspace" | "item")), action) => resource_name(kind, action),
         _ => "",
     }
 }
@@ -64,6 +67,25 @@ pub(super) fn parsed_command_name(matches: &clap::ArgMatches) -> &'static str {
             Some("logout") => "auth logout",
             _ => "auth",
         },
+        Some((kind @ ("workspace" | "item"), args)) => resource_name(kind, args.subcommand_name()),
+        _ => "",
+    }
+}
+
+fn resource_name(kind: &str, action: Option<&str>) -> &'static str {
+    match (kind, action) {
+        ("workspace", Some("list")) => "workspace list",
+        ("workspace", Some("get")) => "workspace get",
+        ("workspace", Some("create")) => "workspace create",
+        ("workspace", Some("update")) => "workspace update",
+        ("workspace", Some("delete")) => "workspace delete",
+        ("item", Some("list")) => "item list",
+        ("item", Some("get")) => "item get",
+        ("item", Some("create")) => "item create",
+        ("item", Some("update")) => "item update",
+        ("item", Some("delete")) => "item delete",
+        ("workspace", _) => "workspace",
+        ("item", _) => "item",
         _ => "",
     }
 }
@@ -99,7 +121,7 @@ fn command_tokens(args: &[OsString]) -> Option<Vec<&std::ffi::OsStr>> {
             continue;
         }
         tokens.push(arg);
-        if arg != "auth" || tokens.len() != 1 {
+        if !matches!(arg.to_str(), Some("auth" | "workspace" | "item")) || tokens.len() != 1 {
             tokens.extend(args);
             break;
         }

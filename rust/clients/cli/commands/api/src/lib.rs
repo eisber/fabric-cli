@@ -8,8 +8,10 @@ mod metadata;
 mod request;
 mod response;
 
-pub use args::{command, parse_failure_message};
-pub use request::parse_headers;
+pub use args::{command, parse_failure_message, parse_polling_config};
+pub use metadata::request_metadata;
+pub use request::{parse_headers, resolve_endpoint};
+pub use response::validate_response_body;
 
 use fabric_cli_command_contracts::{
     CommandDiagnostics, CommandError, CommandOutput, Host, ValidatedInvocation, selected,
@@ -56,8 +58,11 @@ pub async fn execute(
             request::prepare(api, host),
         )
         .await?;
-    let metadata =
-        metadata::request_metadata(host, api.get_one::<String>("skill").map(String::as_str))?;
+    let metadata = request_metadata(
+        host,
+        api.get_one::<String>("skill").map(String::as_str),
+        fabric_core::RequestCommand::Api,
+    )?;
     let started = observer.start(DiagnosticStage::Selection).await?;
     let binding = observer
         .finish(DiagnosticStage::Selection, started, selected(host))

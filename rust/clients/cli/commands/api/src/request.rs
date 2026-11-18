@@ -48,16 +48,7 @@ pub(super) fn prepare(matches: &ArgMatches, host: &dyn Host) -> Result<PreparedA
             ));
         }
     };
-    let variable = Endpoint::environment_variable(audience);
-    let endpoint = match host.environment(variable) {
-        Some(value) => Endpoint::from_hostname(
-            audience,
-            value
-                .to_str()
-                .ok_or_else(|| invalid(format!("Invalid hostname in {variable}")))?,
-        )?,
-        None => Endpoint::public(audience),
-    };
+    let endpoint = resolve_endpoint(host, audience)?;
     // Pinned process_nargs strips boundary quote characters on queries.
     let query = value("query").map(|text| text.trim_matches(['"', '\'']).to_owned());
     if let Some(query) = query.as_deref() {
@@ -91,6 +82,21 @@ pub(super) fn prepare(matches: &ArgMatches, host: &dyn Host) -> Result<PreparedA
         asynchronous,
         lro_config,
     })
+}
+
+/// Resolve an audience endpoint through the host before acquiring credentials.
+pub fn resolve_endpoint(host: &dyn Host, audience: Audience) -> Result<Endpoint, CommandError> {
+    let variable = Endpoint::environment_variable(audience);
+    match host.environment(variable) {
+        Some(value) => Endpoint::from_hostname(
+            audience,
+            value
+                .to_str()
+                .ok_or_else(|| invalid(format!("Invalid hostname in {variable}")))?,
+        )
+        .map_err(Into::into),
+        None => Ok(Endpoint::public(audience)),
+    }
 }
 
 /// Parse a bounded JSON string map with a case-insensitive allowlist and no duplicates.

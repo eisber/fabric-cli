@@ -14,6 +14,7 @@ pub fn success_typed(timestamp: &str, command: &str, data: CommandOutput) -> Str
     let data = match data {
         CommandOutput::Api(value) => value,
         CommandOutput::Auth(auth) => auth_data(auth),
+        CommandOutput::Resource(value) => return resource_success(timestamp, command, value),
     };
     success(timestamp, command, data)
 }
@@ -60,7 +61,13 @@ pub(super) fn success(timestamp: &str, command: &str, data: Value) -> String {
     {
         result.insert("data".into(), Value::Array(vec![data]));
     }
-    envelope(timestamp, command, "Success", result)
+    envelope(timestamp, command, "Success", result, false)
+}
+
+fn resource_success(timestamp: &str, command: &str, data: Value) -> String {
+    let mut result = Map::new();
+    result.insert("data".into(), data);
+    envelope(timestamp, command, "Success", result, true)
 }
 
 /// Ordered Python failure envelope. Recovery and job failure details are approved extensions.
@@ -85,10 +92,16 @@ pub(super) fn failure(timestamp: &str, command: &str, error: &CommandError) -> S
         details.insert("message".into(), Value::String(reason.message.clone()));
         result.insert("failure_reason".into(), Value::Object(details));
     }
-    envelope(timestamp, command, "Failure", result)
+    envelope(timestamp, command, "Failure", result, false)
 }
 
-fn envelope(timestamp: &str, command: &str, status: &str, result: Map<String, Value>) -> String {
+fn envelope(
+    timestamp: &str,
+    command: &str,
+    status: &str,
+    result: Map<String, Value>,
+    resource: bool,
+) -> String {
     let mut root = Map::new();
     root.insert("timestamp".into(), Value::String(timestamp.into()));
     root.insert("status".into(), Value::String(status.into()));
@@ -96,7 +109,12 @@ fn envelope(timestamp: &str, command: &str, status: &str, result: Map<String, Va
         root.insert("command".into(), Value::String(command.into()));
     }
     root.insert("result".into(), Value::Object(result));
-    let mut text = fabric_core_json::encode(&Value::Object(root), Format::Pretty(Indent::Four));
+    let value = Value::Object(root);
+    let mut text = if resource {
+        fabric_core_json::encode_unicode(&value, Format::Default)
+    } else {
+        fabric_core_json::encode(&value, Format::Pretty(Indent::Four))
+    };
     text.push('\n');
     text
 }
@@ -131,6 +149,19 @@ pub(super) fn write_failure(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn resource_envelope_avoids_pretty_print_amplification() {
+        let mut nested = json!("é");
+        for _ in 0..80 {
+            nested = json!({"x": nested});
+        }
+        let text = success_typed("time", "item list", CommandOutput::Resource(nested.clone()));
+        assert!(text.len() < 1024);
+        assert!(text.contains('é'));
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["result"]["data"], nested);
+    }
 
     #[test]
     fn output_result_lists_stay_flat_and_non_api_falsey_nonlists_omit_data() {

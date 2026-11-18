@@ -5,7 +5,7 @@ use crate::CommandError;
 use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
 use fabric_core::{
-    Binding, Clock, HttpTransport, OperationContext,
+    Binding, CancellationToken, Clock, HttpTransport, OperationContext,
     diagnostics::{DiagnosticPhase, DiagnosticStage},
 };
 use std::{sync::Arc, time::Duration};
@@ -32,6 +32,13 @@ pub trait Host: Send + Sync {
     fn credential(&self, binding: Binding) -> Result<Arc<dyn TokenCredential>, CommandError>;
     /// Construct transport only after request and selection validation.
     fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError>;
+    /// Obtain interactive confirmation; injected hosts default to refusing it.
+    async fn confirm(&self, _cancellation: CancellationToken) -> Result<bool, CommandError> {
+        Err(CommandError::new(
+            "InvalidInput",
+            "Interactive confirmation is unavailable; use --force",
+        ))
+    }
     /// Drain safe static diagnostics for the host to write to stderr, never JSON stdout.
     fn take_diagnostics(&self) -> Vec<&'static str> {
         Vec::new()

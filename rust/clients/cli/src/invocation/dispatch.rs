@@ -1,16 +1,22 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{Host, console::ConsoleProgress};
+use crate::{
+    Host,
+    console::{ConsoleConfirmation, ConsoleProgress},
+    definition, resources,
+};
 use async_trait::async_trait;
 use fabric_cli_api::ApiReporting;
 use fabric_cli_command_contracts::{
-    CommandDiagnostics, CommandError, CommandOutput, ValidatedInvocation,
+    CommandDiagnostics, CommandError, CommandOutput, ValidatedInvocation, selected,
 };
 use fabric_core::{
-    CancellationToken, Clock, CoreError, OperationKind, RecoveryInfo,
+    Audience, CancellationToken, Clock, CoreError, OperationContext, OperationKind, RecoveryInfo,
+    RequestCommand,
     diagnostics::{DiagnosticEvent, DiagnosticObserver, DiagnosticPhase, DiagnosticStage},
 };
+use fabric_sdk_http::HttpClient;
 use fabric_sdk_operations::{PollObserver, PollProgress};
 use std::{sync::Arc, time::Duration};
 
@@ -19,6 +25,7 @@ pub(super) async fn execute(
     host: &dyn Host,
     cancellation: CancellationToken,
     observer: &Arc<ConsoleProgress>,
+    confirmer: &ConsoleConfirmation,
 ) -> Result<CommandOutput, CommandError> {
     match invocation.matches().subcommand_name() {
         Some("auth") => {
@@ -27,6 +34,57 @@ pub(super) async fn execute(
         Some("api") => {
             let reporting = Arc::new(ApiConsole(observer.clone()));
             fabric_cli_api::execute(invocation, host, cancellation, &reporting).await
+        }
+        Some(kind @ ("workspace" | "item")) => {
+            let kind = if kind == "workspace" {
+                "workspace"
+            } else {
+                "item"
+            };
+            let args = invocation.command(kind)?;
+            let started = observer.start(DiagnosticStage::Prepare).await?;
+            let prepared = (|| {
+                let prepared = resources::prepare(kind, args, &|| {
+                    definition::home_from_env(cfg!(windows), |name| host.environment(name))
+                })?;
+                let endpoint = fabric_cli_api::resolve_endpoint(host, Audience::Fabric)?;
+                let metadata = fabric_cli_api::request_metadata(
+                    host,
+                    args.get_one::<String>("skill").map(String::as_str),
+                    RequestCommand::Http,
+                )?;
+                Ok((prepared, endpoint, metadata))
+            })();
+            let (prepared, endpoint, metadata) = observer
+                .finish(DiagnosticStage::Prepare, started, prepared)
+                .await?;
+            let started = observer.start(DiagnosticStage::Selection).await?;
+            let binding = observer
+                .finish(DiagnosticStage::Selection, started, selected(host))
+                .await?;
+            let clock = host.clock();
+            observer.set_poll_clock(clock.clone())?;
+            let started = observer.start(DiagnosticStage::Authentication).await?;
+            let credential = observer
+                .finish(
+                    DiagnosticStage::Authentication,
+                    started,
+                    host.credential(binding),
+                )
+                .await?;
+            let mut client = HttpClient::new(credential, host.transport()?, clock.clone())
+                .with_request_metadata(metadata)
+                .with_endpoint(endpoint.clone());
+            if observer.diagnostics_enabled() {
+                client = client.with_diagnostics(observer.clone());
+            }
+            let context =
+                OperationContext::new(clock.now(), Duration::from_secs(240), cancellation)?;
+            resources::execute(
+                prepared, &client, clock, &endpoint, &context, observer, confirmer,
+            )
+            .await
+            .map(CommandOutput::Resource)
         }
         _ => Err(CommandError::new(
             "InvalidInput",

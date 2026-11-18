@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 
 /// Validate initial response JSON before reconciliation can replace its body.
 /// Empty bodies use the same whitespace policy as final output.
-pub(super) fn validate_response_body(body: &[u8]) -> Result<(), CommandError> {
+pub fn validate_response_body(body: &[u8]) -> Result<(), CommandError> {
     response_body(body).map(|_| ())
 }
 

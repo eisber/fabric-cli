@@ -3,9 +3,9 @@
 # Minimal Rust Fabric API CLI
 
 `fab-rs` is an independent, narrow Rust executable installed **alongside**, not
-instead of, Python `fab`. It supports only `auth login`, `auth status`,
-`auth logout`, and raw `api`. It has no REPL, resource commands, pagination,
-deployment, installer, updater, or alternative credential providers.
+instead of, Python `fab`. It supports `auth login`, `auth status`, `auth logout`,
+raw `api`, and minimal workspace/item CRUDL. It has no REPL, deployment,
+installer, updater, or alternative credential providers.
 
 This is implementation-stage source, not an official signed release. Native
 validation and minimum supported OS evidence are still required.
@@ -42,6 +42,112 @@ subscription, account, or credential-mode overrides. Rust logout clears only
 Rust's non-secret selection. API requires that selection even if Azure CLI is
 already signed in. Identity drift fails closed; select the intended identity in
 Azure CLI and run Rust login again.
+
+## Workspace and item commands
+
+```text
+fab-rs workspace list
+fab-rs workspace get <name-or-guid> [--export-to <dir> [--overwrite]]
+fab-rs workspace create [display-name] [--payload <json-or-@file>]
+fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--force])
+fab-rs workspace delete <name-or-guid> [--force]
+fab-rs item list --workspace <name-or-guid>
+fab-rs item get <name-or-guid> --workspace <name-or-guid> [--export-to <dir> [--format <f>] [--overwrite]]
+fab-rs item create [display-name] --workspace <name-or-guid> [--payload <json-or-@file> | --import-from <dir> [--type <t>] [--format <f>]]
+fab-rs item update <name-or-guid> --workspace <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--format <f>] [--force])
+fab-rs item delete <name-or-guid> --workspace <name-or-guid> [--force]
+```
+
+Selectors are single display names or GUIDs; GUID-shaped names are interpreted
+as IDs for existing resources. Exact name lookup scans every page and fails on
+missing or ambiguous names. All item commands require `--workspace`. GUID
+selectors are used directly without lookup. Workspace names are resolved by
+exact display name; item names are resolved by exact display name within the
+selected workspace's item collection. Workspace commands do not accept
+`--workspace`.
+
+Argument errors retain the JSON `Failure` envelope and `InvalidInput` code.
+Missing required arguments identify their option or positional placeholder;
+for example, `fab-rs item list` reports:
+
+```text
+Missing required argument: --workspace <workspace>. Run fab-rs item list --help.
+```
+
+Other parser failures identify known arguments or the kind of mistake and point
+to the relevant command's help.
+Diagnostics never echo supplied argument values or unknown argument names.
+
+Payloads are inline JSON objects or `@` followed by a regular UTF-8 JSON file.
+Creation requires `displayName` either positionally or in the payload. If both
+are present they must match; a positional GUID is rejected. Item creation also
+requires an open-string `type` property. A GUID-shaped payload `displayName`
+is a literal name. Update payloads may rename the existing target. `id` and
+item `workspaceId` are routing information, not payload properties.
+
+Delete prompts on stderr after resolving the target. An entered blank line,
+`y`, or `yes` confirms; `n` or `no` cancels with a failure. EOF and nonterminal
+input do not confirm. `--force` bypasses only confirmation. In an embedding
+process, a cancelled or timed-out prompt can leave its stdin reader blocked
+until a line is entered; do not start concurrent prompts on the same stdin.
+
+### Definition export and import
+
+`--export-to` exports definitions; `--import-from` imports them. Both take an
+existing local directory. A leading `~`, `~/`, or (on Windows) `~\` expands to
+the home directory like Python `os.path.expanduser`; `~user` is literal.
+Absolute and relative paths are used as given.
+
+- `item get --export-to <dir>` calls Get Item Definition and writes each
+  base64-decoded part below `<dir>/<displayName>.<type>/`.
+- `workspace get --export-to <dir>` calls the beta Bulk Export Item
+  Definitions API (`mode: All`) and writes parts below `<dir>` using the
+  service paths (for example `<dir>/<name>.<type>/...`).
+- `item create --import-from <dir>` reads every file below `<dir>` into a base64
+  definition and creates the item. The type comes from `--type` or the
+  `.platform` file; a mismatch fails.
+- `item update --import-from <dir>` calls Update Item Definition.
+- `workspace update --import-from <dir>` calls Bulk Import Item Definitions with
+  every file below `<dir>` as `/`-prefixed parts, replacing matching items.
+  It fails if any item reports `operationStatus: Failed`. Bulk import never
+  creates the workspace.
+
+Export never overwrites an existing file unless `--overwrite` is supplied;
+files are written atomically with mode `0600` and directories with `0700` on
+Unix. A destination filesystem must support hard links for no-overwrite exports.
+The selected directory must not itself be a symlink; symlinks and special files
+inside it are rejected. Part paths must be relative, portable, and free of `..`.
+Import skips `cache.abf`, rejects `byPath` `definition.pbir`, and is bounded by
+the request size limit. Import into an existing target (`update --import-from`)
+prompts like delete unless `--force` is supplied. `--format` is forwarded as the
+definition format.
+
+All definition operations follow long-running operations by default.
+`--async` returns the `Accepted` envelope instead; for exports it adds
+`"saved": false` and writes no files. Completed exports return
+`{"saved": true, "path": ..., "files": [...]}`.
+
+Resource `--query` runs on the native object or complete array in `result.data`.
+For `workspace list` and `item list`, a single field identifier such as `--query id`
+is shorthand for `--query '[].{id: id}'`, returning `[{"id":"..."}]`.
+Quoted JMESPath identifiers select literal keys, for example `--query '"a.b"'`.
+Rows retain their order, missing or null fields produce `{"id":null}`, and
+selected values retain their JSON types (including arrays and objects).
+An empty list remains `[]`. No unselected fields are returned.
+Other expressions retain ordinary JMESPath behavior on the complete list:
+`--query '[].id'` returns an array of values, `--query "[?type=='Lakehouse']"`
+filters rows, and `--query 'length(@)'` returns the existing scalar string.
+Single-resource queries are unchanged: `workspace get <id> --query id` returns
+the selected scalar, not a projected object. Empty queries bypass projection;
+`.` and `@` select the complete resource data. This list-only shortcut does not
+apply to raw `api`, which still requires explicit wrapper paths below.
+Resource success envelopes use a non-indented UTF-8 JSON layout. List fetches all
+pages and fails if the complete unfiltered compact JSON array
+exceeds 32 MiB. Mutations accept `--async` or `--polling-config` with the same
+polling rules as raw API. An unresolved HTTP 202 is instead represented as
+`{"status_code":202,"status":"Accepted","body":...}` with sanitized `recovery`
+when available; it does not claim completion. A bodyless successful HTTP 204
+delete returns `null`. Raw `api` retains its existing wrapper and paging behavior.
 
 Successful login/status output reports `logged_in`,
 `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id`. These are

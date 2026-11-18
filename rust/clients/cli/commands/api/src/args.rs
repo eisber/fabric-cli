@@ -61,9 +61,8 @@ pub fn command() -> Command {
         )
 }
 
-pub(super) fn parse_polling_config(
-    text: Option<&str>,
-) -> Result<fabric_sdk_api::LroConfig, CommandError> {
+/// Validate the shared per-command polling configuration.
+pub fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig, CommandError> {
     let Some(text) = text else {
         return Ok(fabric_sdk_api::LroConfig::default());
     };

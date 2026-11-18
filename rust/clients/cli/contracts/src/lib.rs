@@ -24,6 +24,8 @@ pub enum CommandOutput {
     Auth(AuthOutput),
     /// Arbitrary service response or JMESPath projection.
     Api(Value),
+    /// Native workspace or item data or its JMESPath projection.
+    Resource(Value),
 }
 
 /// Authentication command outcomes, without credentials or tokens.

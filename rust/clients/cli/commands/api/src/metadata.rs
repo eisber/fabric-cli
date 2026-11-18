@@ -7,9 +7,11 @@ use crate::Host;
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{AgentKind, RequestCommand, RequestMetadata, diagnostics::RequestId};
 
-pub(crate) fn request_metadata(
+/// Resolve validated request metadata from injected host hints.
+pub fn request_metadata(
     host: &dyn Host,
     skill: Option<&str>,
+    command: RequestCommand,
 ) -> Result<RequestMetadata, CommandError> {
     use AgentKind::*;
     // ID candidates and presence flags have different roles. In particular a
@@ -60,7 +62,7 @@ pub(crate) fn request_metadata(
         }
     }
     RequestMetadata::new(
-        RequestCommand::Api,
+        command,
         agent.filter(|_| !agent_conflict),
         session.filter(|_| !session_conflict),
         skill,

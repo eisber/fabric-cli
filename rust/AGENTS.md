@@ -2,12 +2,13 @@
 
 # Minimal Rust API contributor instructions
 
-This independent `fab-rs` slice supports only raw API and argument-free
-`auth login`, `auth status`, and `auth logout`. Python `fab` remains unchanged.
+This independent `fab-rs` slice supports raw API, minimal workspace/item CRUDL,
+and argument-free `auth login`, `auth status`, and `auth logout`. Python `fab` remains unchanged.
 Reusable libraries belong under `engine/`; executable/presentation code belongs
 under `clients/cli/`. Shared HTTP contracts belong to `fabric-core`, never a
-resource service. Do not retain SDK facades, resource families, paging, brokers,
-REPL, updater, or credential fallback providers.
+resource service. Resource paging is limited to complete workspace/item collection
+scans. Do not retain SDK facades, unrelated resource families, brokers, REPL,
+updater, or credential fallback providers.
 
 The CLI explicitly constructs `azure_identity::AzureCliCredential` for the
 current Azure CLI context. Azure CLI is the sole supported authentication

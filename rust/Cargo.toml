@@ -10,6 +10,7 @@ members = [
     "engine/core/http/executor",
     "engine/core/http/transport",
     "engine/core/lro",
+    "engine/resources",
     "clients/cli/contracts",
     "clients/cli/commands/api",
     "clients/cli/commands/auth",
@@ -33,6 +34,7 @@ fabric-sdk-api = { path = "engine/core/http/requests" }
 fabric-sdk-http = { path = "engine/core/http/executor" }
 fabric-sdk-transport = { path = "engine/core/http/transport", default-features = false }
 fabric-sdk-operations = { path = "engine/core/lro" }
+fabric-resources = { path = "engine/resources" }
 fabric-cli-command-contracts = { path = "clients/cli/contracts" }
 fabric-cli-api = { path = "clients/cli/commands/api" }
 fabric-cli-auth = { path = "clients/cli/commands/auth" }
@@ -41,6 +43,8 @@ azure_core = { version = "1.1.0", default-features = false }
 azure_identity = { version = "=1.0.0", default-features = false }
 async-trait = "0.1"
 base64 = "0.22.1"
+cap-fs-ext = "=4.0.3"
+cap-std = "=4.0.3"
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip", "arbitrary_precision", "raw_value"] }
@@ -59,6 +63,8 @@ async-compression = { version = "=0.4.51", default-features = false, features = 
 tokio-util = { version = "=0.7.20", default-features = false, features = ["io", "rt"] }
 process-wrap = { version = "=8.2.1", default-features = false, features = ["tokio1", "process-group", "job-object", "kill-on-drop"] }
 url = "2.5"
+uuid = "1.29.2"
+libc = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

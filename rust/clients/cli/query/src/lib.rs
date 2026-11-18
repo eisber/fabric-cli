@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Pure Python-compatible JMESPath search for raw API responses.
+//! Pure JMESPath search for CLI responses.
 //!
 //! [`search`] translates the Python wrapper, including empty-query path inventory
 //! and scalar stringification. [`project`] additionally distinguishes absent queries.
+//! [`search_list`] adds the resource-list single-field shorthand only.
 //! All inputs are caller-owned JSON; this library does no I/O or ambient discovery.
 //! Numeric results outside JSON's integer/finite-float boundary, ambiguous
 //! Python-version-dependent sums, and unsupported parser extensions fail explicitly
@@ -120,6 +121,30 @@ fn unsupported() -> QueryError {
 /// Evaluate a CLI query, preserving `.` identity and Python scalar strings.
 pub fn search(data: &Value, expression: &str) -> Result<Value, QueryError> {
     search_with_options(data, expression, SearchOptions::default())
+}
+
+/// Query a resource list, projecting a single field into one object per row.
+///
+/// A lone JMESPath identifier (including a quoted identifier) is equivalent to
+/// `[].{field: field}`. Missing fields become JSON null, and selected values keep
+/// their JSON types. All other expressions use [`search`] unchanged, as do
+/// non-array inputs. Callers must bypass empty expressions if they want identity
+/// rather than the library's path inventory.
+pub fn search_list(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    budget::expression(expression)?;
+    if data.is_array()
+        && !expression.is_empty()
+        && expression != "."
+        && matches!(
+            validation::parse(expression)?,
+            jpx_core::ast::Ast::Field { .. }
+        )
+    {
+        // Only a complete field AST can enter this rewrite, never arbitrary
+        // query fragments. Reuse normal admission and evaluation budgets.
+        return search(data, &format!("[].{{{expression}: {expression}}}"));
+    }
+    search(data, expression)
 }
 
 /// Path-inventory options corresponding to Python's `deep_traversal` argument.

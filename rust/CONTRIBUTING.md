@@ -116,7 +116,7 @@ These paths assume no target-directory override and no explicit `--target`.
 An explicit target places binaries under `target/<target>/debug/` or
 `target/<target>/release/`; Cargo metadata reports the actual target directory.
 
-Only authentication commands and raw `api` are implemented. For authenticated
+Authentication, raw `api`, and minimal workspace/item CRUDL are implemented. For authenticated
 use, read the [run instructions](README.md#run) and the
 [compatibility contract](docs/authoring/compatibility.md). Azure CLI 2.54 or later
 is the sole credential source. Rust authentication binds to an existing Azure CLI
