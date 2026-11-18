@@ -86,16 +86,22 @@ pub(super) fn run(
         }.await;
         match result {
             Ok(()) => CommandOutcome::Returned(0),
-            Err(error) => {
-                let exit = error.2;
-                match super::output::owned_stream(fabric_cli_output::OutputStream::Stderr, false) {
-                    Ok(output) => diagnostic_to(error, output, deadline).await,
-                    Err(_) => CommandOutcome::Stop(exit),
-                }
-            }
+            Err(error) => diagnostic_selected(error, deadline, super::output::owned_stream).await,
         }
     });
     Ok(super::finish_runtime(runtime, outcome))
+}
+
+async fn diagnostic_selected<W: std::io::Write + Send + 'static>(
+    error: super::Failure,
+    deadline: Instant,
+    select: impl FnOnce(fabric_cli_output::OutputStream, bool) -> io::Result<W>,
+) -> CommandOutcome {
+    let exit = error.2;
+    match select(fabric_cli_output::OutputStream::Stderr, true) {
+        Ok(output) => diagnostic_to(error, output, deadline).await,
+        Err(_) => CommandOutcome::Stop(exit),
+    }
 }
 
 async fn diagnostic_to(
@@ -103,9 +109,20 @@ async fn diagnostic_to(
     output: impl std::io::Write + Send + 'static,
     deadline: Instant,
 ) -> CommandOutcome {
-    let mut bytes =
-        serde_json::to_vec(&serde_json::json!({"error":{"code":code,"message":message}}))
-            .expect("bounded diagnostic values serialize");
+    use std::io::Write;
+    let json = serde_json::to_string(&serde_json::json!({"error":{"code":code,"message":message}}))
+        .expect("bounded diagnostic values serialize");
+    let mut bytes = Vec::with_capacity(json.len());
+    for character in json.chars() {
+        if character.is_ascii() {
+            bytes.push(character as u8);
+        } else {
+            let mut units = [0; 2];
+            for unit in character.encode_utf16(&mut units) {
+                write!(&mut bytes, "\\u{unit:04x}").expect("memory output is writable");
+            }
+        }
+    }
     bytes.push(b'\n');
     let deadline = deadline.min(Instant::now() + std::time::Duration::from_secs(1));
     let delivery = super::output::write_owned(
@@ -334,5 +351,42 @@ mod tests {
         gate.1.notify_all();
         assert!(matches!(result, CommandOutcome::Stop(1)));
         assert_eq!(writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn diagnostics_select_console_ascii_capability_with_lossless_json_escapes() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let message = "Discovery failed: 雪 \u{1f642}";
+        let outcome = diagnostic_selected(
+            failure("dataflow_discovery_failed", message, 1),
+            Instant::now() + std::time::Duration::from_secs(5),
+            |stream, ascii_only| {
+                assert_eq!(stream, fabric_cli_output::OutputStream::Stderr);
+                assert!(
+                    ascii_only,
+                    "Windows console capability must not be rejected"
+                );
+                Ok(Capture(captured.clone()))
+            },
+        )
+        .await;
+        assert!(matches!(outcome, CommandOutcome::Stop(1)));
+        let bytes = captured.lock().unwrap();
+        assert!(bytes.is_ascii());
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["error"]["message"], message);
     }
 }
