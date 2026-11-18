@@ -7,7 +7,8 @@ use fabric_cli_command_contracts::CommandError;
 use std::time::Duration;
 
 /// Long-only approved API parser, with explicit per-command polling configuration.
-pub(crate) fn command() -> Command {
+/// Define the raw API arguments and options.
+pub fn command() -> Command {
     Command::new("api")
         .about("Send a raw API request; recognized operations poll by default until completion or local cancellation")
         .disable_help_flag(true)

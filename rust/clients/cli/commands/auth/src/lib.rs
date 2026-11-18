@@ -1,18 +1,22 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use super::selected;
-use crate::{Host, progress::ConsoleProgress};
+//! Auth command grammar, validation, and identity selection workflows.
+
 use azure_core::credentials::TokenRequestOptions;
 use clap::{Arg, ArgAction, Command};
-use fabric_cli_command_contracts::CommandError;
-use fabric_core::{Audience, CancellationToken, OperationContext, diagnostics::DiagnosticStage};
-use fabric_identity::Binding;
-use fabric_sdk_http::bounded_with_clock;
+use fabric_cli_command_contracts::{
+    CommandDiagnostics, CommandError, Host, ValidatedInvocation, selected,
+};
+use fabric_core::{
+    Audience, Binding, CancellationToken, OperationContext, bounded_with_clock,
+    diagnostics::DiagnosticStage,
+};
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-pub(crate) fn command() -> Command {
+/// Define the auth command and its argument-free actions.
+pub fn command() -> Command {
     let help_arg = || Arg::new("help").long("help").action(ArgAction::Help);
     let auth_leaf = |name| Command::new(name).disable_help_flag(true).arg(help_arg());
     Command::new("auth")
@@ -40,12 +44,14 @@ fn auth_data(binding: &Binding) -> Value {
     })
 }
 
-pub(super) async fn execute(
-    auth: &clap::ArgMatches,
+/// Validate the auth action and execute it with injected effects.
+pub async fn execute(
+    invocation: &ValidatedInvocation,
     host: &dyn Host,
     cancellation: CancellationToken,
-    observer: &Arc<ConsoleProgress>,
+    observer: &impl CommandDiagnostics,
 ) -> Result<Value, CommandError> {
+    let auth = invocation.command("auth")?;
     match auth.subcommand_name() {
         Some("logout") => {
             let started = observer.start(DiagnosticStage::Selection).await?;

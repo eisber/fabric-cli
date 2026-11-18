@@ -16,9 +16,14 @@ MEMBERS = {
     "engine/core/http/transport": "fabric-sdk-transport",
     "engine/core/lro": "fabric-sdk-operations",
     "clients/cli/contracts": "fabric-cli-command-contracts",
-    "clients/cli/output": "fabric-cli-output",
-    "clients/cli/query": "fabric-cli-query",
-    "clients/cli/app": "fabric-cli",
+    "clients/cli/commands/api": "fabric-cli-api",
+    "clients/cli/commands/auth": "fabric-cli-auth",
+    "clients/cli/utils/auth": "fabric-cli-selection",
+    "clients/cli/utils/logging": "fabric-cli-logging",
+    "clients/cli/utils/output": "fabric-cli-output",
+    "clients/cli/utils/polling": "fabric-cli-polling",
+    "clients/cli/utils/query": "fabric-cli-query",
+    "clients/cli": "fabric-cli",
 }
 # Allowed internal edges. Includes all dependency kinds and target/optional edges.
 EDGES = {
@@ -31,10 +36,23 @@ EDGES = {
     "fabric-sdk-api": {
         "fabric-core", "fabric-core-json", "fabric-sdk-http", "fabric-sdk-operations",
     },
-    "fabric-cli-command-contracts": {"fabric-core", "fabric-core-json"},
+    "fabric-cli-command-contracts": {"fabric-core"},
+    "fabric-cli-api": {
+        "fabric-cli-command-contracts", "fabric-cli-query", "fabric-core", "fabric-core-json",
+        "fabric-sdk-api", "fabric-sdk-http",
+    },
+    "fabric-cli-auth": {"fabric-cli-command-contracts", "fabric-core"},
+    "fabric-cli-selection": {"fabric-cli-command-contracts", "fabric-core"},
+    "fabric-cli-logging": {"fabric-core"},
     "fabric-cli-query": {"fabric-core-json"},
-    "fabric-cli-output": {"fabric-core", "fabric-core-json", "fabric-cli-command-contracts"},
-    "fabric-cli": set(MEMBERS.values()) - {"fabric-cli"},
+    "fabric-cli-output": {"fabric-core-json", "fabric-cli-command-contracts"},
+    "fabric-cli-polling": {"fabric-core", "fabric-sdk-operations"},
+    "fabric-cli": {
+        "fabric-cli-api", "fabric-cli-auth", "fabric-cli-command-contracts", "fabric-cli-logging",
+        "fabric-cli-output", "fabric-cli-polling", "fabric-cli-query", "fabric-cli-selection",
+        "fabric-core", "fabric-identity", "fabric-sdk-http", "fabric-sdk-operations",
+        "fabric-sdk-transport",
+    },
 }
 FORBIDDEN = ("broker", "updater", "pagination", "deployment", "azure-identity-broker")
 

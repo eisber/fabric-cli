@@ -5,6 +5,7 @@ use clap::{
     Arg, ArgAction, Command,
     error::{ContextKind, ContextValue, ErrorKind as ParseErrorKind},
 };
+use fabric_cli_command_contracts::ValidatedInvocation;
 use std::ffi::OsString;
 
 fn help_arg() -> Arg {
@@ -24,17 +25,19 @@ pub fn parser() -> Command {
         .arg(Arg::new("verbose").long("verbose").global(true).action(ArgAction::SetTrue)
             .help("Print debug diagnostics logs to console"))
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
-        .subcommand(crate::commands::auth::command())
-        .subcommand(crate::commands::api_command())
+        .subcommand(fabric_cli_auth::command())
+        .subcommand(fabric_cli_api::command())
 }
 
-pub(super) fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
+pub(super) fn parse_arguments(args: &[OsString]) -> Result<ValidatedInvocation, clap::Error> {
     let mut command = args.iter().skip(1).filter(|arg| *arg != "--verbose");
     if command.next().is_some_and(|arg| arg == "auth") && command.next().is_none() {
-        return parser()
-            .try_get_matches_from(args.iter().cloned().chain([OsString::from("--help")]));
+        return ValidatedInvocation::parse(
+            parser(),
+            args.iter().cloned().chain([OsString::from("--help")]),
+        );
     }
-    parser().try_get_matches_from(args)
+    ValidatedInvocation::parse(parser(), args.iter().cloned())
 }
 
 pub(super) fn command_name(args: &[OsString]) -> &'static str {

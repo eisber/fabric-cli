@@ -4,21 +4,23 @@
 //! Thin injectable parser/host/output composition. Only the executable owns runtime and signals.
 #![forbid(unsafe_code)]
 
-mod commands;
-mod diagnostics;
+mod console;
+mod dispatch;
 mod host;
 pub mod lifecycle;
 mod parser;
-mod progress;
-mod selection;
 
-pub use host::{Host, NativeHost};
+pub use fabric_cli_command_contracts::Host;
+pub use fabric_cli_selection::SelectionFile;
+pub use host::NativeHost;
 pub use parser::parser;
-pub use selection::SelectionFile;
 
 use clap::error::ErrorKind as ParseErrorKind;
-use commands::execute;
-use fabric_cli_command_contracts::CommandError;
+use console::{ConsoleProgress, ConsoleUpdate, ReportingState};
+use dispatch::execute;
+use fabric_cli_command_contracts::{CommandDiagnostics, CommandError};
+use fabric_cli_logging as diagnostics;
+use fabric_cli_polling::{PROGRESS_INTERVAL, ProgressDisplay, progress_heartbeat};
 use fabric_core::{
     CancellationToken, OperationContext,
     diagnostics::{
@@ -27,10 +29,6 @@ use fabric_core::{
 };
 use parser::{
     command_name, parse_arguments, parse_failure_message, parsed_command_name, welcome_requested,
-};
-use progress::{
-    ConsoleProgress, ConsoleUpdate, PROGRESS_INTERVAL, ProgressDisplay, ReportingState,
-    progress_heartbeat,
 };
 use std::{
     ffi::OsString,
@@ -96,8 +94,8 @@ pub async fn run(
         return welcome(stdout, stderr);
     }
     let name = command_name(&args);
-    let matches = match parse_arguments(&args) {
-        Ok(matches) => matches,
+    let invocation = match parse_arguments(&args) {
+        Ok(invocation) => invocation,
         Err(error)
             if matches!(
                 error.kind(),
@@ -123,7 +121,8 @@ pub async fn run(
             );
         }
     };
-    let name = parsed_command_name(&matches);
+    let matches = invocation.matches();
+    let name = parsed_command_name(matches);
     let (sender, mut events) = mpsc::channel(1);
     let observer = Arc::new(ConsoleProgress {
         events: sender,
@@ -151,7 +150,7 @@ pub async fn run(
                     Duration::ZERO,
                 )
                 .await?;
-            execute(&matches, host, cancellation, &observer).await
+            execute(&invocation, host, cancellation, &observer).await
         };
         let interval = PROGRESS_INTERVAL;
         let heartbeat_context = OperationContext::with_deadline(None, CancellationToken::new());
@@ -194,7 +193,7 @@ pub async fn run(
                     // Cancellation can drop the observer while its event is queued.
                     let _ = event.written.send(result);
                 }
-                result = &mut heartbeat, if display.started.is_some() && !display.waiting_reported && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
+                result = &mut heartbeat, if display.needs_heartbeat() && !observer.failed.is_cancelled() && !observer.broken.load(Ordering::Relaxed) => {
                     if let Err(error) = result {
                         break Err(error.into());
                     }

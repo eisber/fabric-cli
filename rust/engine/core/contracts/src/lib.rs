@@ -16,6 +16,8 @@ pub use tokio_util::sync::CancellationToken;
 use url::Url;
 
 pub mod diagnostics;
+mod identity;
+pub use identity::{AZURE_CLI_LOGIN_REQUIRED, Binding};
 mod operation;
 pub use operation::{
     OperationHandle, OperationKind, ResponseHeadCapture, operation_handle, resolve_operation_url,

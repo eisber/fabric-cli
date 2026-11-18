@@ -1,8 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Minimal safe command failures and Python output truthiness.
+//! Shared CLI invocation, injected effects, and safe command failures.
 #![forbid(unsafe_code)]
+
+mod invocation;
+mod runtime;
+
+pub use invocation::ValidatedInvocation;
+pub use runtime::{CommandDiagnostics, Host, selected};
 
 use fabric_core::{CoreError, ErrorKind, JobFailureReason};
 use serde_json::Value;

@@ -70,23 +70,36 @@ reporting failure does not imply a failed or rolled-back remote operation.
 
 ### Source and command ownership
 
-The app's `lib.rs` composes parsing, execution, and final output. `parser.rs`
-owns the root command and sanitized parse errors; `host.rs` owns the injected
-`Host` contract and native adapters; `progress.rs` owns the shared stderr queue,
-polling display, and diagnostic observation. Runtime and signal ownership remain
-in `lifecycle.rs`, and selection persistence remains in `selection.rs`.
+`cli/Cargo.toml` defines the `fabric-cli` composition package. There is no separate
+`app/` package. Rust convention places the library entry point in `cli/src/lib.rs`
+and the executable in `cli/src/main.rs`. The root package registers commands,
+dispatches invocations, owns the single stderr writer, and constructs native
+adapters. Only the executable starts the runtime and installs signal handlers.
 
-`app/src/commands/` dispatches to `auth.rs` and `api/`. Each command owns its
-arguments and execution. For `api`, `args.rs` defines flags and parses polling
-options, `request.rs` validates and prepares input, and `response.rs` validates
-and projects response data. `api/mod.rs` connects those steps to the injected
-host, engine HTTP and polling, and shared progress reporting. The helpers do not
-access the host, console, or network; only request preparation reads input files.
+| Package directory | Owns |
+|---|---|
+| `commands/api/` | Raw API args/options, request preparation, execution, and response projection |
+| `commands/auth/` | Auth args, action selection, and login/status/logout workflows |
+| `contracts/` | Validated invocation, command errors, and injected host and stage-reporting interfaces |
+| `utils/auth/` | Local tenant/principal selection persistence, not credential acquisition |
+| `utils/logging/`, `utils/polling/` | Rendering safe diagnostics and engine polling updates, respectively |
+| `utils/output/`, `utils/query/` | JSON envelopes and JMESPath evaluation, respectively |
 
-The sibling CLI crates still own cross-command concerns: `contracts/` defines
-shared command errors, `output/` formats final JSON envelopes, and `query/`
-evaluates JMESPath on caller-provided JSON. Engine packages remain independent of
-Clap, CLI output, local selection, and native host discovery.
+Each directory in the table has its own `Cargo.toml`. Packages depend only on
+the contracts, utilities, and engine pieces they use; they never depend on the
+composition package or on sibling commands. For example, from `rust/`,
+`cargo test --offline --locked -p fabric-cli-auth` does not build the raw API,
+query evaluator, native transport, or Azure CLI credential adapter. Separate
+packages help targeted builds and let Cargo reuse unrelated artifacts, but this
+is not a measured improvement to a clean build of the full binary.
+
+For a new command family, define its grammar and local validation in its own
+package, then register it in the root parser and dispatcher and declare its
+allowed dependencies in `scripts/check_boundaries.py`. Give execution a
+`ValidatedInvocation` rather than raw arguments and keep validated,
+command-specific state private to that package. Keep HTTP and polling policy
+in the engine. CLI commands receive injected capabilities; only native
+composition selects the credential adapter.
 
 ### Execution ordering
 
@@ -94,8 +107,11 @@ Clap, CLI output, local selection, and native host discovery.
 an injected `Host`, cancellation token, and stdout/stderr. The executable alone
 owns Tokio and Ctrl+C. Help/version, including subcommand help, return before
 host hooks; the executable handles metadata before even creating its runtime.
-API input files, body bounds, endpoint origins, custom headers, and query syntax
-are validated before loading selection or constructing a provider/transport.
+Every executable command passes through `ValidatedInvocation::parse`, which
+applies the root grammar and global options and requires a subcommand before
+dispatch. Each command then validates its own inputs. In particular, API input
+files, body bounds, endpoint origins, custom headers, and query syntax are
+validated before loading selection or constructing a provider/transport.
 
 The CLI composes an `HttpExecutor` from injected Azure SDK `TokenCredential`,
 transport, and clock boundaries, using shared `fabric_core::ApiRequest`/

@@ -848,6 +848,25 @@ async fn genuine_argument_errors_remain_sanitized_failures_without_auth_effects(
 }
 
 #[tokio::test]
+async fn invalid_global_option_cannot_dispatch_any_command_family() {
+    for args in [
+        ["--verbose=BAD-VERBOSE-CANARY", "auth", "logout"],
+        ["--verbose=BAD-VERBOSE-CANARY", "api", "workspaces"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+        assert!(!stdout.contains("BAD-VERBOSE-CANARY"));
+        assert!(stderr.is_empty());
+        // Only the failure envelope reads the clock.
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
+    }
+}
+
+#[tokio::test]
 async fn invalid_methods_explain_lowercase_values_without_disclosure_or_auth_effects() {
     for method in [
         "POST",

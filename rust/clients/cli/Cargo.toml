@@ -21,13 +21,16 @@ harness = false
 [dependencies]
 fabric-core.workspace = true
 fabric-identity.workspace = true
-fabric-sdk-api.workspace = true
+fabric-sdk-operations.workspace = true
 fabric-sdk-http.workspace = true
 fabric-sdk-transport.workspace = true
 fabric-cli-command-contracts.workspace = true
+fabric-cli-api.workspace = true
+fabric-cli-auth.workspace = true
+fabric-cli-logging.workspace = true
 fabric-cli-output.workspace = true
-fabric-cli-query.workspace = true
-fabric-core-json.workspace = true
+fabric-cli-polling.workspace = true
+fabric-cli-selection.workspace = true
 async-trait.workspace = true
 azure_core.workspace = true
 clap.workspace = true
@@ -37,6 +40,7 @@ tokio.workspace = true
 
 [dev-dependencies]
 azure_identity.workspace = true
+fabric-cli-query.workspace = true
 
 [lints]
 workspace = true

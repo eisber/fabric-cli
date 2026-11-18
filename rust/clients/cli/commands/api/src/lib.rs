@@ -1,32 +1,50 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Raw API arguments, validation, execution, and response projection.
+
 mod args;
 mod request;
 mod response;
 
-pub(crate) use args::command;
+pub use args::command;
 
-use super::selected;
-use crate::{
-    Host,
-    progress::{ConsoleProgress, ProgressUpdate, progress_error},
+use fabric_cli_command_contracts::{
+    CommandDiagnostics, CommandError, Host, ValidatedInvocation, selected,
 };
-use fabric_cli_command_contracts::CommandError;
 use fabric_core::{
-    CancellationToken, CoreError, ErrorKind, HttpExecutor, OperationContext,
-    diagnostics::DiagnosticStage,
+    CancellationToken, Clock, CoreError, HttpExecutor, OperationContext, RecoveryInfo,
+    diagnostics::{DiagnosticObserver, DiagnosticStage},
 };
+use fabric_sdk_api::PollObserver;
 use fabric_sdk_http::HttpClient;
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 
-pub(super) async fn execute(
-    api: &clap::ArgMatches,
+/// Reporting effects needed by raw API execution. The caller owns the console.
+pub trait ApiReporting: CommandDiagnostics + DiagnosticObserver + PollObserver {
+    /// Set the clock that drives the console polling heartbeat.
+    fn set_poll_clock(&self, clock: Arc<dyn Clock>) -> Result<(), CoreError>;
+    /// Whether HTTP diagnostics should be enabled.
+    fn diagnostics_enabled(&self) -> bool;
+    /// Record the current safe recovery evidence, if any.
+    fn set_recovery(&self, recovery: Option<RecoveryInfo>);
+    /// Read the latest recovery evidence for a failed command.
+    fn recovery(&self) -> Option<RecoveryInfo>;
+    /// Wait for a progress output failure and return its error.
+    fn progress_failure(&self) -> impl Future<Output = CoreError> + Send;
+    /// Emit the final progress update.
+    fn finish_progress(&self) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+/// Validate and prepare raw API inputs, then execute with injected effects.
+pub async fn execute(
+    invocation: &ValidatedInvocation,
     host: &dyn Host,
     cancellation: CancellationToken,
-    observer: &Arc<ConsoleProgress>,
+    observer: &Arc<impl ApiReporting + 'static>,
 ) -> Result<Value, CommandError> {
+    let api = invocation.command("api")?;
     // Validate local inputs before identity, configuration, or transport effects.
     let started = observer.start(DiagnosticStage::Prepare).await?;
     let prepared = observer
@@ -37,10 +55,7 @@ pub(super) async fn execute(
         .finish(DiagnosticStage::Selection, started, selected(host))
         .await?;
     let clock = host.clock();
-    observer
-        .heartbeat_clock
-        .set(clock.clone())
-        .map_err(|_| CoreError::new(ErrorKind::Protocol, "Progress clock already set"))?;
+    observer.set_poll_clock(clock.clone())?;
     let started = observer.start(DiagnosticStage::Authentication).await?;
     let credential = observer
         .finish(
@@ -50,7 +65,7 @@ pub(super) async fn execute(
         )
         .await?;
     let mut client = HttpClient::new(credential, host.transport()?, clock.clone());
-    if observer.timing.is_some() {
+    if observer.diagnostics_enabled() {
         client = client.with_diagnostics(observer.clone());
     }
     let context = OperationContext {
@@ -66,18 +81,11 @@ pub(super) async fn execute(
             Ok(handle) => handle.map(|handle| handle.recovery()),
             Err(error) => error.recovery,
         };
-    observer
-        .reporting
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .recovery = recovery.clone();
+    observer.set_recovery(recovery.clone());
     let attach_recovery = |mut error: CommandError| {
         if error.recovery.is_none() {
             error.recovery = observer
-                .reporting
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .recovery
+                .recovery()
                 .as_ref()
                 .and_then(|value| serde_json::to_value(value).ok());
         }
@@ -98,8 +106,8 @@ pub(super) async fn execute(
         );
         tokio::select! {
             biased;
-            () = observer.failed.cancelled() => {
-                return Err(attach_recovery(progress_error().into()));
+            error = observer.progress_failure() => {
+                return Err(attach_recovery(error.into()));
             }
             result = reconciliation => result?,
         }
@@ -113,7 +121,7 @@ pub(super) async fn execute(
         .await?;
     if !prepared.asynchronous && recovery.is_some() {
         observer
-            .send(ProgressUpdate::Finished)
+            .finish_progress()
             .await
             .map_err(|error| attach_recovery(error.into()))?;
     }

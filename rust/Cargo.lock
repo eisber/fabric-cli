@@ -350,25 +350,66 @@ dependencies = [
  "azure_identity",
  "chrono",
  "clap",
+ "fabric-cli-api",
+ "fabric-cli-auth",
  "fabric-cli-command-contracts",
+ "fabric-cli-logging",
  "fabric-cli-output",
+ "fabric-cli-polling",
  "fabric-cli-query",
+ "fabric-cli-selection",
  "fabric-core",
- "fabric-core-json",
  "fabric-identity",
- "fabric-sdk-api",
  "fabric-sdk-http",
+ "fabric-sdk-operations",
  "fabric-sdk-transport",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
+name = "fabric-cli-api"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-query",
+ "fabric-core",
+ "fabric-core-json",
+ "fabric-sdk-api",
+ "fabric-sdk-http",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-auth"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-core",
+ "serde_json",
+]
+
+[[package]]
 name = "fabric-cli-command-contracts"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "azure_core",
+ "clap",
  "fabric-core",
  "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-logging"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fabric-core",
 ]
 
 [[package]]
@@ -381,6 +422,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-polling"
+version = "0.1.0"
+dependencies = [
+ "fabric-core",
+ "fabric-sdk-operations",
+]
+
+[[package]]
 name = "fabric-cli-query"
 version = "0.1.0"
 dependencies = [
@@ -388,6 +437,15 @@ dependencies = [
  "jpx-core",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "fabric-cli-selection"
+version = "0.1.0"
+dependencies = [
+ "fabric-cli-command-contracts",
+ "fabric-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -419,7 +477,6 @@ dependencies = [
  "base64 0.22.1",
  "fabric-core",
  "process-wrap",
- "serde",
  "serde_json",
  "tokio",
 ]

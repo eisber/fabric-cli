@@ -353,7 +353,7 @@ class BoundaryTests(unittest.TestCase):
             metadata = self.metadata(root)
             boundaries.validate(metadata, root)
             metadata["packages"][0]["dependencies"].append({
-                "name": "fabric-cli", "kind": "dev", "path": str(root / "clients/cli/app"),
+                "name": "fabric-cli", "kind": "dev", "path": str(root / "clients/cli"),
             })
             with self.assertRaisesRegex(ValueError, "Forbidden dependency"):
                 boundaries.validate(metadata, root)
@@ -369,6 +369,18 @@ class BoundaryTests(unittest.TestCase):
                     "source": None, "dependencies": [],
                 })
                 with self.subTest(name=name), self.assertRaises(ValueError):
+                    boundaries.validate(metadata, root)
+
+    def test_auth_cannot_depend_on_api_or_native_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for path in ("clients/cli/commands/api", "engine/core/auth/provider"):
+                metadata = self.metadata(root)
+                auth = next(p for p in metadata["packages"] if p["name"] == "fabric-cli-auth")
+                auth["dependencies"].append({
+                    "name": boundaries.MEMBERS[path], "kind": "dev", "path": str(root / path),
+                })
+                with self.subTest(path=path), self.assertRaisesRegex(ValueError, "Forbidden dependency"):
                     boundaries.validate(metadata, root)
 
 
