@@ -66,10 +66,10 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
         run: node rust/scripts/integration-smoke.cjs "$env:RUNNER_TEMP/integration-smoke-receipts"
-      - name: Check the Dataflow diagnostics candidate offline
+      - name: Check the three Dataflow enhancements offline
         if: >-
           github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'dev/marcozo/dataflow-connection-diagnostics-af846' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/dataflow-three-enhancements-af846' &&
           github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
           github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
         timeout-minutes: 10
@@ -94,15 +94,15 @@ jobs:
           const {testObservations} = require('./rust/scripts/integration-dataagent-smoke.cjs');
           const root = fs.realpathSync(process.cwd());
           const rust = path.join(root, 'rust');
-          const artifacts = path.join(process.env.RUNNER_TEMP, 'integration-smoke-receipts', 'dataflow-diagnostics');
+          const artifacts = path.join(process.env.RUNNER_TEMP, 'integration-smoke-receipts', 'dataflow-enhancements');
           fs.mkdirSync(artifacts, {recursive: false});
           const started = Date.now(), deadline = started + 570000;
-          const source = 'c3b56389aa1e799ff6cdf5202c7ff733c92e9581';
+          const source = '81685ace547574fc29a7564cb04e20b34c935d59';
           const base = 'af846fe7e3ea444051aae3881491078323527d5f';
           const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
           const prefixed = (file, prefix = '') => registeredTests(file).map(name => `${prefix}${name}`);
           const report = {
-            schema: 1, passed: false, qualification: 'candidate-only offline Dataflow diagnostic contracts',
+            schema: 2, passed: false, qualification: 'candidate-only offline Dataflow raw M, metadata discovery and diagnostic contracts',
             original_source: source, integration_base: base, commands: [], plan: [],
             run_id: process.env.GITHUB_RUN_ID, run_attempt: process.env.GITHUB_RUN_ATTEMPT,
             phase: {started_unix_ms: started, deadline_unix_ms: deadline, workflow_step_minutes: 10},
@@ -119,7 +119,7 @@ jobs:
           };
           const remaining = () => {
             const value = deadline - Date.now();
-            assert.ok(value > 0, 'Finite Dataflow diagnostic phase expired');
+            assert.ok(value > 0, 'Finite Dataflow enhancement phase expired');
             return value;
           };
           const run = (file, args, cwd = root) => capture(file, args, {
@@ -142,7 +142,7 @@ jobs:
             assert.equal(path.resolve(process.env.CARGO_TARGET_DIR),
               path.join(process.env.RUNNER_TEMP, 'integration-smoke-target'));
             const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-            assert.equal(event.pull_request.head.ref, 'dev/marcozo/dataflow-connection-diagnostics-af846');
+            assert.equal(event.pull_request.head.ref, 'dev/marcozo/dataflow-three-enhancements-af846');
             assert.equal(event.pull_request.head.repo.full_name, 'eisber/fabric-cli');
             assert.equal(event.pull_request.base.sha, base, 'Integration base moved; rebind before admission');
             const actual = git(['rev-parse', 'HEAD']);
@@ -159,6 +159,20 @@ jobs:
               'rust/clients/cli/app/src/native_execute_diagnostics.rs',
               'rust/clients/cli/app/src/native_execute_diagnostics_tests.rs',
               'rust/clients/cli/app/src/native_execute_tests.rs',
+              'rust/clients/cli/app/src/execute_m.rs',
+              'rust/clients/cli/app/src/execute_host.rs',
+              'rust/clients/cli/app/src/execute.rs',
+              'rust/clients/cli/app/src/native_dataflow_queries.rs',
+              'rust/clients/cli/app/src/native_read.rs',
+              'rust/clients/cli/app/src/main.rs',
+              'rust/clients/cli/app/src/parser.rs',
+              'rust/clients/cli/app/tests/execute_host.rs',
+              'rust/clients/cli/app/tests/execute_arguments.rs',
+              'rust/clients/cli/app/tests/execute_cli_contract.rs',
+              'rust/engine/sdk/Cargo.toml',
+              'rust/engine/sdk/src/lib.rs',
+              'rust/engine/sdk/src/dataflow_queries.rs',
+              'rust/engine/sdk/tests/dataflow_queries.rs',
             ].map(file => [file, sha256(fs.readFileSync(path.join(root, file)))]));
             before = sourceInventory(root);
             fs.writeFileSync(path.join(artifacts, 'source-before.json'), JSON.stringify(before, null, 2));
@@ -175,14 +189,31 @@ jobs:
                 ...prefixed('rust/clients/cli/app/src/native_execute_diagnostics_tests.rs',
                   'native_read::execute::tests::diagnostics_tests::')]},
               {id: 'prepared-host', args: [...test, '-p', 'fabric-cli', '--no-default-features', '--features', 'headless',
-                '--test', 'execute_host', '--', '--test-threads=1'], targets: 1,
-                required: prefixed('rust/clients/cli/app/tests/execute_host.rs')},
+                '--test', 'execute_host', '--test', 'execute_arguments', '--test', 'execute_cli_contract',
+                '--', '--test-threads=1'], targets: 3, required: [
+                ...prefixed('rust/clients/cli/app/tests/execute_host.rs'),
+                ...prefixed('rust/clients/cli/app/tests/execute_arguments.rs'),
+                ...prefixed('rust/clients/cli/app/tests/execute_cli_contract.rs')]},
+              {id: 'discovery-sdk', args: [...test, '-p', 'fabric-sdk', '--test', 'dataflow_queries',
+                '--', '--test-threads=1'], targets: 1,
+                required: prefixed('rust/engine/sdk/tests/dataflow_queries.rs')},
+              {id: 'raw-m-lexer', args: [...test, '-p', 'fabric-cli', '--no-default-features', '--features', 'headless',
+                '--lib', 'execute::m::tests::', '--', '--test-threads=1'], targets: 1, filtered: true,
+                required: prefixed('rust/clients/cli/app/src/execute_m.rs', 'execute::m::tests::')},
+              {id: 'discovery-host', args: [...test, '-p', 'fabric-cli', '--no-default-features', '--features', 'headless',
+                '--bin', 'fab-rs', 'native_read::dataflow_queries::tests::', '--', '--test-threads=1'],
+                targets: 1, filtered: true,
+                required: prefixed('rust/clients/cli/app/src/native_dataflow_queries.rs', 'native_read::dataflow_queries::tests::')},
+              {id: 'discovery-no-host', args: [...test, '-p', 'fabric-cli', '--no-default-features',
+                '--test', 'execute_cli_contract', 'explicit_discovery_needs_a_host_but_not_execution_approval_or_stdin',
+                '--', '--test-threads=1'], targets: 1, filtered: true, required: [
+                'explicit_discovery_needs_a_host_but_not_execution_approval_or_stdin']},
               {id: 'tabular-oracle', args: [...test, '-p', 'fabric-sdk-tabular', '--test', 'diagnostic_column',
                 '--', '--test-threads=1'], targets: 1,
                 required: prefixed('rust/engine/data-plane/tabular/tests/diagnostic_column.rs')},
               {id: 'all-target-registration', args: ['check', '--offline', '--locked', '-p', 'fabric-sdk-dataflow',
-                '-p', 'fabric-cli', '--all-targets', '--no-default-features', '--features', 'fabric-cli/headless']},
-              {id: 'changed-package-format', args: ['fmt', '--check', '-p', 'fabric-sdk-dataflow', '-p', 'fabric-cli']},
+                '-p', 'fabric-sdk', '-p', 'fabric-cli', '--all-targets', '--no-default-features', '--features', 'fabric-cli/headless']},
+              {id: 'changed-package-format', args: ['fmt', '--check', '-p', 'fabric-sdk-dataflow', '-p', 'fabric-sdk', '-p', 'fabric-cli']},
             ].map(item => ({...item, state: 'UNRUN'}));
             fs.writeFileSync(path.join(artifacts, 'command-plan.json'), JSON.stringify(report.plan, null, 2));
             save();
@@ -205,8 +236,9 @@ jobs:
                   const executable = fs.realpathSync(value[1]);
                   assert.ok(executable.startsWith(fs.realpathSync(process.env.CARGO_TARGET_DIR) + path.sep));
                   return {path: executable, sha256: sha256(fs.readFileSync(executable)),
-                    cargo_args: item.args, feature_profile: item.id === 'native-consumer' || item.id === 'prepared-host'
-                      ? 'headless (includes native-host)' : 'manifest defaults'};
+                    cargo_args: item.args, feature_profile: item.args.includes('headless')
+                      ? 'headless (includes native-host)' : item.args.includes('--no-default-features')
+                        ? 'no-default-features' : 'manifest defaults'};
                 });
                 assert.equal(item.executables.length, item.targets, 'Missing actual test executable binding');
               }
