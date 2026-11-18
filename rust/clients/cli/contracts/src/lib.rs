@@ -1,12 +1,42 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Minimal safe command failures and Python output truthiness.
+//! Typed command results, safe failures, and Python output truthiness.
 #![forbid(unsafe_code)]
 
 use fabric_core::{CoreError, ErrorKind, JobFailureReason};
 use serde_json::Value;
 use std::fmt;
+
+/// Successful command data before presentation.
+#[derive(Clone, Debug)]
+pub enum CommandOutput {
+    /// Validated authentication metadata or a selection change.
+    Auth(AuthOutput),
+    /// Arbitrary service response or JMESPath projection.
+    Api(Value),
+}
+
+/// Authentication command outcomes, without credentials or tokens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthOutput {
+    /// A validated Azure CLI identity was selected.
+    Login {
+        /// Entra tenant object ID.
+        tenant_id: String,
+        /// Entra principal object ID.
+        principal_id: String,
+    },
+    /// The selected Azure CLI identity was validated.
+    Status {
+        /// Entra tenant object ID.
+        tenant_id: String,
+        /// Entra principal object ID.
+        principal_id: String,
+    },
+    /// The local identity selection was cleared.
+    Logout,
+}
 
 /// Safe presentation failure. Never construct messages from credential/process/HTTP bodies.
 #[derive(Clone, Debug)]

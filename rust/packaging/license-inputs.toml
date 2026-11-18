@@ -87,12 +87,12 @@ files = [
 
 [[package]]
 name = "jpx-core"
-version = "0.3.1"
-checksum = "d7932defff2fb2ccc4a5c4ef9e5108f880333d1cf3dbd82b47b4452d85b80705"
+version = "0.4.0"
+checksum = "b0e606ad4dec305bcdee93a0e569fc9edcd2a2c19e86ab8f4f652ed1ec17686b"
 license = "MIT OR Apache-2.0"
 selected_license = "MIT"
 repository = "https://github.com/joshrotenberg/jpx"
-revision = "b25f7dc27392d9e18479d9954583a73c5624f937"
+revision = "859bd93df20cc422fd2273e8aef1a570d1bc6c1e"
 path_in_vcs = "crates/jpx-core"
 files = [
     { file = "licenses/jpx-LICENSE-MIT", source_path = "LICENSE-MIT", sha256 = "25b21d18fe6b3564c726b18f1d03e1f2b3e2f724c855268cb2a7bb388cf5339e" },

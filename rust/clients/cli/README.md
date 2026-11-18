@@ -73,6 +73,27 @@ reporting failure does not imply a failed or rolled-back remote operation.
 
 ## Host boundary
 
+### Source and command ownership
+
+The app's `lib.rs` composes parsing, execution, and final output. `parser.rs`
+owns the root command and sanitized parse errors; `host.rs` owns the injected
+`Host` contract and native adapters; `progress.rs` owns the shared stderr queue,
+polling display, and diagnostic observation. Runtime and signal ownership remain
+in `lifecycle.rs`, and selection persistence remains in `selection.rs`.
+
+`app/src/commands/` dispatches to separate `auth` and `api` handlers. The small
+auth command family owns its parser alongside its host-dependent handler; it
+does not warrant a separate crate yet. The existing `fabric-cli-api` package
+owns API arguments, local preparation, and response projection. Its app handler
+only composes those operations with the injected host, HTTP executor, polling,
+and shared progress reporting. This keeps command-specific logic out of the
+root app without making command packages depend on app host or console types.
+Additional command packages should own their arguments and preparation/projection
+as needed; app adapters retain host-specific orchestration. Engine packages
+remain independent of Clap, CLI output, local selection, and native host discovery.
+
+### Execution ordering
+
 `fabric_cli::run` connects the real parser, preparation, engine, and renderer to
 an injected `Host`, cancellation token, and stdout/stderr. The executable alone
 owns Tokio and Ctrl+C. Help/version, including subcommand help, return before

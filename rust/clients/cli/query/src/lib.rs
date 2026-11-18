@@ -85,6 +85,13 @@ impl From<jpx_core::JmespathError> for QueryError {
             ErrorReason::Parse(message) if message == "Expected valid number" => {
                 QueryErrorKind::Unsupported
             }
+            // jpx 0.4 rejects misplaced expression references during parsing;
+            // the adapter previously classified them during AST validation.
+            ErrorReason::Parse(message)
+                if message.starts_with("Expression references (&expr) are only allowed as ") =>
+            {
+                QueryErrorKind::Unsupported
+            }
             ErrorReason::Parse(_) => QueryErrorKind::Syntax,
             ErrorReason::Runtime(
                 RuntimeError::InvalidType { .. } | RuntimeError::InvalidReturnType { .. },
@@ -158,10 +165,10 @@ pub fn search_with_options(
     budget::expression(expression)?;
     let mut ast = validation::parse(expression)?;
     let numeric_sensitive = validation::validate(&ast)?;
-    // Admission also limits AST depth before the recursive comparison adapter
-    // clones any ASTs. It must precede all native result materialization.
+    // Admission limits AST depth before the recursive ordering adapter runs.
+    // It must precede all native result materialization.
     budget::admit(data, &ast, expression)?;
-    validation::adapt_comparisons(&mut ast);
+    validation::adapt_ordering(&mut ast);
     let runtime = functions::runtime(numeric_sensitive);
     let compiled = jpx_core::Expression::new(expression, ast, &runtime);
     let result = compiled.search(data).map_err(QueryError::from)?;

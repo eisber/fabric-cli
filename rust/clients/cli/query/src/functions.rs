@@ -8,6 +8,8 @@ use jpx_core::functions::{
 use jpx_core::{Context, JmespathError, Runtime, ValueExt};
 use serde_json::{Number, Value};
 
+pub(crate) const ORDER_KEY: &str = "__fab_order_key";
+
 /// jpx does not expose signatures through `dyn Function`. Probe only with null
 /// placeholders: every registered function checks its shared runtime signature
 /// before its body, and bodies accepting null have no data-dependent work.
@@ -201,6 +203,18 @@ impl Function for BoundedFunction {
 pub(crate) fn runtime(numeric_sensitive: bool) -> Runtime {
     let mut runtime = Runtime::new();
     runtime.register_builtin_functions();
+    runtime.register_function(
+        ORDER_KEY,
+        Box::new(CustomFunction::new(
+            Signature::new(vec![Type::Any], None),
+            Box::new(|args, ctx| {
+                if arbitrary_integer(&args[0]) {
+                    return Err(unsupported(ctx));
+                }
+                Ok(args[0].clone())
+            }),
+        )),
+    );
     for (name, comparator) in [
         ("__fab_eq", Comparator::Equal),
         ("__fab_ne", Comparator::NotEqual),
@@ -328,4 +342,24 @@ pub(crate) fn runtime(numeric_sensitive: bool) -> Runtime {
         runtime.register_function(name, Box::new(BoundedFunction(function)));
     }
     runtime
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evaluated_order_key_rejects_integers_outside_native_comparator_range() {
+        let runtime = runtime(true);
+        let mut ctx = Context::new("", &runtime);
+        let validate_key = runtime.get_function(ORDER_KEY).unwrap();
+        for number in ["18446744073709551616", "-9223372036854775809"] {
+            let key = serde_json::from_str(number).unwrap();
+            let error = validate_key.evaluate(&[key], &mut ctx).unwrap_err();
+            assert_eq!(
+                crate::QueryError::from(error).kind(),
+                crate::QueryErrorKind::Unsupported
+            );
+        }
+    }
 }
