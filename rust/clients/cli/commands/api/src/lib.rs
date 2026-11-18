@@ -7,7 +7,7 @@ mod args;
 mod request;
 mod response;
 
-pub use args::command;
+pub use args::{command, parse_failure_message};
 
 use fabric_cli_command_contracts::{
     CommandDiagnostics, CommandError, Host, ValidatedInvocation, selected,

@@ -2292,28 +2292,6 @@ async fn invalid_retry_after_is_a_safe_stderr_warning_not_json_progress_or_heade
     assert!(!stdout.contains("HEADER-CANARY"));
 }
 
-#[test]
-fn output_result_lists_stay_flat_and_non_api_falsey_nonlists_omit_data() {
-    for (input, expected) in [
-        (
-            json!([{"id":1},{"id":2}]),
-            json!({"data":[{"id":1},{"id":2}]}),
-        ),
-        (json!([]), json!({"data":[]})),
-        (json!({}), json!({})),
-        (json!(false), json!({})),
-        (json!(0), json!({})),
-        (json!(""), json!({})),
-    ] {
-        let output = fabric_cli_output::success("2000-01-01T00:00:00Z", "auth status", input);
-        assert_eq!(
-            serde_json::from_str::<Value>(&output).unwrap()["result"],
-            expected
-        );
-        assert!(output.ends_with('\n'));
-    }
-}
-
 struct TempDirectory(PathBuf);
 impl TempDirectory {
     fn new() -> Self {

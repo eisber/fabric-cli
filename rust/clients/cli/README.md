@@ -76,18 +76,22 @@ and the executable in `cli/src/main.rs`. The root package registers commands,
 dispatches invocations, owns the single stderr writer, and constructs native
 adapters. Only the executable starts the runtime and installs signal handlers.
 
-| Package directory | Owns |
+| Directory | Owns |
 |---|---|
 | `commands/api/` | Raw API args/options, request preparation, execution, and response projection |
 | `commands/auth/` | Auth args, action selection, and login/status/logout workflows |
 | `contracts/` | Validated invocation, command errors, and injected host and stage-reporting interfaces |
-| `utils/auth/` | Local tenant/principal selection persistence, not credential acquisition |
-| `utils/logging/`, `utils/polling/` | Rendering safe diagnostics and engine polling updates, respectively |
-| `utils/output/`, `utils/query/` | JSON envelopes and JMESPath evaluation, respectively |
+| `query/` | JMESPath validation and evaluation |
+| `src/invocation/` | Root parser, baseline validation, and dispatch, including command-specific adapters |
+| `src/process/` | Runtime, signals, and process streams |
+| `src/native/` | Concrete host wiring and local tenant/principal selection persistence |
+| `src/console/` | Ordered stderr writes, diagnostic formatting, and progress rendering; polling policy stays in the engine |
+| `src/output/` | JSON stdout envelopes |
 
-Each directory in the table has its own `Cargo.toml`. Packages depend only on
-the contracts, utilities, and engine pieces they use; they never depend on the
-composition package or on sibling commands. For example, from `rust/`,
+`commands/*`, `contracts/`, and `query/` have their own manifests. Directories
+under `src/` are modules of `fabric-cli`, not standalone packages. Command
+packages depend only on the contracts, query evaluator, and engine pieces
+they use; they never depend on the CLI executable or on sibling commands. For example, from `rust/`,
 `cargo test --offline --locked -p fabric-cli-auth` does not build the raw API,
 query evaluator, native transport, or Azure CLI credential adapter. Separate
 packages help targeted builds and let Cargo reuse unrelated artifacts, but this

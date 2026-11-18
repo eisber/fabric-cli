@@ -29,7 +29,7 @@ pub fn parser() -> Command {
         .subcommand(fabric_cli_api::command())
 }
 
-pub(super) fn parse_arguments(args: &[OsString]) -> Result<ValidatedInvocation, clap::Error> {
+pub(crate) fn parse_arguments(args: &[OsString]) -> Result<ValidatedInvocation, clap::Error> {
     let mut command = args.iter().skip(1).filter(|arg| *arg != "--verbose");
     if command.next().is_some_and(|arg| arg == "auth") && command.next().is_none() {
         return ValidatedInvocation::parse(
@@ -70,11 +70,16 @@ pub(super) fn parsed_command_name(matches: &clap::ArgMatches) -> &'static str {
     }
 }
 
-pub(super) fn welcome_requested(args: &[OsString]) -> bool {
+pub(crate) fn welcome_requested(args: &[OsString]) -> bool {
     args.len() == 1 || (args.len() == 2 && args[1] == "--verbose")
 }
 
 pub(super) fn parse_failure_message(command: &str, error: &clap::Error) -> String {
+    if command == "api"
+        && let Some(message) = fabric_cli_api::parse_failure_message(error)
+    {
+        return message.to_owned();
+    }
     let defined_arg = || match error.get(ContextKind::InvalidArg) {
         Some(ContextValue::String(arg)) => Some(arg.clone()),
         Some(ContextValue::Strings(args)) if !args.is_empty() => Some(args.join(", ")),
@@ -92,15 +97,6 @@ pub(super) fn parse_failure_message(command: &str, error: &clap::Error) -> Strin
         format!("Run fab-rs {command} --help.")
     };
     match error.kind() {
-        ParseErrorKind::InvalidValue
-            if command == "api"
-                && matches!(
-                    error.get(ContextKind::InvalidArg),
-                    Some(ContextValue::String(arg)) if arg == "--method <method>"
-                ) =>
-        {
-            "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST.".to_owned()
-        }
         ParseErrorKind::InvalidValue | ParseErrorKind::ValueValidation => match defined_arg() {
             Some(arg) => format!("Invalid value for {arg}.{} {help}", valid_values()),
             None => format!("Invalid argument value. {help}"),

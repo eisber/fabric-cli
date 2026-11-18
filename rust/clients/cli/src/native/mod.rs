@@ -1,13 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::SelectionFile;
+mod selection;
+
 use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{Binding, Clock, HttpTransport, OperationContext};
 use fabric_identity::{AzureCliSession, BoundCredential, ProcessExecutor};
 use fabric_sdk_http::SystemClock;
+pub use selection::SelectionFile;
 use std::{
     io::IsTerminal,
     path::PathBuf,

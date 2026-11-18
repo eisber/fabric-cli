@@ -13,11 +13,7 @@ members = [
     "clients/cli/contracts",
     "clients/cli/commands/api",
     "clients/cli/commands/auth",
-    "clients/cli/utils/auth",
-    "clients/cli/utils/logging",
-    "clients/cli/utils/output",
-    "clients/cli/utils/polling",
-    "clients/cli/utils/query",
+    "clients/cli/query",
     "clients/cli",
 ]
 resolver = "3"
@@ -40,11 +36,7 @@ fabric-sdk-operations = { path = "engine/core/lro" }
 fabric-cli-command-contracts = { path = "clients/cli/contracts" }
 fabric-cli-api = { path = "clients/cli/commands/api" }
 fabric-cli-auth = { path = "clients/cli/commands/auth" }
-fabric-cli-selection = { path = "clients/cli/utils/auth" }
-fabric-cli-logging = { path = "clients/cli/utils/logging" }
-fabric-cli-output = { path = "clients/cli/utils/output" }
-fabric-cli-polling = { path = "clients/cli/utils/polling" }
-fabric-cli-query = { path = "clients/cli/utils/query" }
+fabric-cli-query = { path = "clients/cli/query" }
 azure_core = { version = "1.1.0", default-features = false }
 azure_identity = { version = "=1.0.0", default-features = false }
 async-trait = "0.1"

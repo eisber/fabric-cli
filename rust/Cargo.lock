@@ -353,12 +353,9 @@ dependencies = [
  "fabric-cli-api",
  "fabric-cli-auth",
  "fabric-cli-command-contracts",
- "fabric-cli-logging",
- "fabric-cli-output",
- "fabric-cli-polling",
  "fabric-cli-query",
- "fabric-cli-selection",
  "fabric-core",
+ "fabric-core-json",
  "fabric-identity",
  "fabric-sdk-http",
  "fabric-sdk-operations",
@@ -405,31 +402,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fabric-cli-logging"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "fabric-core",
-]
-
-[[package]]
-name = "fabric-cli-output"
-version = "0.1.0"
-dependencies = [
- "fabric-cli-command-contracts",
- "fabric-core-json",
- "serde_json",
-]
-
-[[package]]
-name = "fabric-cli-polling"
-version = "0.1.0"
-dependencies = [
- "fabric-core",
- "fabric-sdk-operations",
-]
-
-[[package]]
 name = "fabric-cli-query"
 version = "0.1.0"
 dependencies = [
@@ -437,15 +409,6 @@ dependencies = [
  "jpx-core",
  "serde_json",
  "thiserror",
-]
-
-[[package]]
-name = "fabric-cli-selection"
-version = "0.1.0"
-dependencies = [
- "fabric-cli-command-contracts",
- "fabric-core",
- "serde_json",
 ]
 
 [[package]]

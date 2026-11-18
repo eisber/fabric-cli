@@ -3,7 +3,10 @@
 
 //! Process lifecycle shared by the native executable and offline process tests.
 
-use crate::Host;
+use crate::{
+    Host,
+    invocation::{parse_arguments, welcome, welcome_requested},
+};
 use fabric_core::CancellationToken;
 use std::{ffi::OsString, io::Write};
 
@@ -12,10 +15,10 @@ use std::{ffi::OsString, io::Write};
 /// The executable supplies its native host. Tests can supply offline effects
 /// without adding an environment-controlled authentication bypass to `fab-rs`.
 pub fn run_process(args: Vec<OsString>, host: &dyn Host) -> u8 {
-    if crate::welcome_requested(&args) {
-        return crate::welcome(&mut std::io::stdout(), &mut std::io::stderr());
+    if welcome_requested(&args) {
+        return welcome(&mut std::io::stdout(), &mut std::io::stderr());
     }
-    if let Err(error) = crate::parse_arguments(&args)
+    if let Err(error) = parse_arguments(&args)
         && matches!(
             error.kind(),
             clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion

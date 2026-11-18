@@ -114,3 +114,14 @@ pub(super) fn parse_polling_config(
     fabric_sdk_api::LroConfig::new(duration("poll_interval")?, duration("timeout")?)
         .map_err(Into::into)
 }
+/// Explain the method-specific parse error without echoing the supplied value.
+pub fn parse_failure_message(error: &clap::Error) -> Option<&'static str> {
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+
+    (error.kind() == ErrorKind::InvalidValue
+        && matches!(
+            error.get(ContextKind::InvalidArg),
+            Some(ContextValue::String(arg)) if arg == "--method <method>"
+        ))
+    .then_some("Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST.")
+}
