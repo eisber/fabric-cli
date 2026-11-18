@@ -54,6 +54,10 @@ heavy job at a time.** Formatting and metadata inspection do not require a lease
 
 ## Build an individual package
 
+Keep each Rust package buildable on its own with its declared dependencies.
+Follow the [independent build guidance](docs/authoring/validation.md#preserve-independent-rust-builds)
+when changing Rust code or dependencies.
+
 Select a workspace package with `-p`. For example, from `rust/`, build the
 query library:
 
