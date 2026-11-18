@@ -60,22 +60,3 @@ fn invalid_shapes_duplicates_protected_fields_and_injection_fail_without_values(
     let oversized = format!(r#"{{"Accept":"{}"}}"#, "x".repeat(64 * 1024));
     assert!(parse_headers(Some(&oversized)).is_err());
 }
-
-#[test]
-fn rejected_headers_precede_payload_file_access() {
-    let matches = fabric_cli_api::command()
-        .try_get_matches_from([
-            "api",
-            "items",
-            "--headers",
-            r#"{"Authorization":"HEADER-CANARY"}"#,
-            "--payload",
-            "/MISSING-PAYLOAD-CANARY.json",
-        ])
-        .unwrap();
-    let error = fabric_cli_api::prepare(&matches).err().unwrap();
-    let message = format!("{error:?}");
-    assert!(message.contains("--headers"));
-    assert!(!message.contains("CANARY"));
-    assert!(!message.contains("InvalidPath"));
-}

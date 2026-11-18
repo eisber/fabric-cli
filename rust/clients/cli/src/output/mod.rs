@@ -1,12 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Python envelopes only. The caller owns timestamps and output streams.
-#![forbid(unsafe_code)]
+//! JSON envelopes and stdout reporting.
 
+use crate::Host;
 use fabric_cli_command_contracts::{AuthOutput, CommandError, CommandOutput, python_truthy};
 use fabric_core_json::{Format, Indent};
 use serde_json::{Map, Value};
+use std::io::Write;
 
 /// Render typed command data using the existing Python-compatible JSON envelope.
 pub fn success_typed(timestamp: &str, command: &str, data: CommandOutput) -> String {
@@ -50,7 +51,7 @@ fn auth_data(auth: AuthOutput) -> Value {
 }
 
 /// Ordered success envelope, preserving empty API query objects and strings.
-pub fn success(timestamp: &str, command: &str, data: Value) -> String {
+pub(super) fn success(timestamp: &str, command: &str, data: Value) -> String {
     let mut result = Map::new();
     if data.is_array() {
         result.insert("data".into(), data);
@@ -63,7 +64,7 @@ pub fn success(timestamp: &str, command: &str, data: Value) -> String {
 }
 
 /// Ordered Python failure envelope. Recovery and job failure details are approved extensions.
-pub fn failure(timestamp: &str, command: &str, error: &CommandError) -> String {
+pub(super) fn failure(timestamp: &str, command: &str, error: &CommandError) -> String {
     let mut result = Map::new();
     let mut message = error.message.clone();
     if let Some(recovery) = &error.recovery {
@@ -100,10 +101,58 @@ fn envelope(timestamp: &str, command: &str, status: &str, result: Map<String, Va
     text
 }
 
+pub(super) fn timestamp(host: &dyn Host) -> String {
+    let date: chrono::DateTime<chrono::Utc> = host.clock().wall_now().into();
+    let precision = if date.timestamp_subsec_micros() == 0 {
+        chrono::SecondsFormat::Secs
+    } else {
+        chrono::SecondsFormat::Micros
+    };
+    date.to_rfc3339_opts(precision, true)
+}
+
+pub(super) fn write_failure(
+    host: &dyn Host,
+    command: &str,
+    error: CommandError,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    let code = error.exit_code();
+    let output = failure(&timestamp(host), command, &error);
+    if stdout.write_all(output.as_bytes()).is_err() {
+        let _ = stderr.write_all(b"Cannot write JSON output\n");
+        return 1;
+    }
+    code
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn output_result_lists_stay_flat_and_non_api_falsey_nonlists_omit_data() {
+        for (input, expected) in [
+            (
+                json!([{"id":1},{"id":2}]),
+                json!({"data":[{"id":1},{"id":2}]}),
+            ),
+            (json!([]), json!({"data":[]})),
+            (json!({}), json!({})),
+            (json!(false), json!({})),
+            (json!(0), json!({})),
+            (json!(""), json!({})),
+        ] {
+            let output = success("2000-01-01T00:00:00Z", "auth status", input);
+            assert_eq!(
+                serde_json::from_str::<Value>(&output).unwrap()["result"],
+                expected
+            );
+            assert!(output.ends_with('\n'));
+        }
+    }
 
     #[test]
     fn typed_auth_results_match_legacy_json_including_field_order() {

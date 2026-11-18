@@ -1,55 +1,23 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::SelectionFile;
+mod selection;
+
 use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
 use fabric_cli_command_contracts::CommandError;
-use fabric_core::{Clock, HttpTransport, OperationContext};
-use fabric_identity::{AzureCliSession, Binding, BoundCredential, ProcessExecutor};
+use fabric_core::{Binding, Clock, HttpTransport, OperationContext};
+use fabric_identity::{AzureCliSession, BoundCredential, ProcessExecutor};
 use fabric_sdk_http::SystemClock;
+pub use selection::SelectionFile;
 use std::{
-    ffi::OsString,
     io::IsTerminal,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
 
-/// Host-owned effects; fake implementations prove parser and output behavior offline.
-#[async_trait]
-pub trait Host: Send + Sync {
-    /// Read one explicitly named inherited hint; injected hosts default to no hints.
-    fn environment(&self, _name: &str) -> Option<OsString> {
-        None
-    }
-    /// Explicit clock used for timestamps, deadlines, and polling.
-    fn clock(&self) -> Arc<dyn Clock>;
-    /// Read only this Rust CLI's non-secret selection.
-    fn selection(&self) -> Result<Option<Binding>, CommandError>;
-    /// Atomically persist tenant/principal only.
-    fn save_selection(&self, binding: &Binding) -> Result<(), CommandError>;
-    /// Clear only Rust selection; absent selection is success.
-    fn clear_selection(&self) -> Result<(), CommandError>;
-    /// Validate the current Azure CLI context, without signing in or mutating it.
-    async fn login(&self, context: &OperationContext) -> Result<Binding, CommandError>;
-    /// Bind an explicit existing selection to an injected credential source.
-    fn credential(&self, binding: Binding) -> Result<Arc<dyn TokenCredential>, CommandError>;
-    /// Construct transport only after request and selection validation.
-    fn transport(&self) -> Result<Arc<dyn HttpTransport>, CommandError>;
-    /// Drain safe static diagnostics for the host to write to stderr, never JSON stdout.
-    fn take_diagnostics(&self) -> Vec<&'static str> {
-        Vec::new()
-    }
-    /// Whether progress can use ANSI color. Injected/nonterminal streams default to plain text.
-    fn progress_color(&self) -> bool {
-        false
-    }
-    /// Whether stderr is an interactive terminal, independently of color.
-    fn progress_terminal(&self) -> bool {
-        false
-    }
-}
+use fabric_cli_command_contracts::Host;
 
 /// Production composition with lazy configuration discovery.
 #[derive(Default)]
@@ -119,9 +87,10 @@ impl Clock for NativeClock {
 
 #[async_trait]
 impl Host for NativeHost {
-    fn environment(&self, name: &str) -> Option<OsString> {
+    fn environment(&self, name: &str) -> Option<std::ffi::OsString> {
         std::env::var_os(name)
     }
+
     fn clock(&self) -> Arc<dyn Clock> {
         Arc::new(NativeClock {
             diagnostics: self.diagnostics.clone(),

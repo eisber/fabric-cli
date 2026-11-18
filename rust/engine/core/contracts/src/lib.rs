@@ -16,6 +16,8 @@ pub use tokio_util::sync::CancellationToken;
 use url::Url;
 
 pub mod diagnostics;
+mod identity;
+pub use identity::{AZURE_CLI_LOGIN_REQUIRED, Binding};
 mod request_metadata;
 pub use request_metadata::{
     AgentKind, CLIENT_REQUEST_ID_HEADER, FABRIC_SKILL_HEADER, RequestCommand, RequestMetadata,

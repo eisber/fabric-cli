@@ -157,7 +157,7 @@ rust-lldb target/debug/fab-rs -- --help
 ```
 
 At the LLDB prompt, set a source breakpoint in
-`clients/cli/app/src/main.rs` before running the short-lived help command:
+`clients/cli/src/main.rs` before running the short-lived help command:
 
 ```text
 (lldb) breakpoint set --file main.rs --source-pattern-regexp 'fn main'
@@ -182,7 +182,7 @@ From a Visual Studio Developer PowerShell in `rust/`, open the executable:
 devenv /debugexe .\target\debug\fab-rs.exe "--help"
 ```
 
-Open `clients/cli/app/src/main.rs`, set a breakpoint inside `main`, and select
+Open `clients/cli/src/main.rs`, set a breakpoint inside `main`, and select
 **Debug > Start Debugging**. Use **Step Over** to advance through source lines
 and **Locals** to inspect values. Rust-specific type display differs between
 debuggers; see the [Visual Studio executable debugging instructions](https://learn.microsoft.com/en-us/visualstudio/debugger/how-to-debug-an-executable-not-part-of-a-visual-studio-solution?view=vs-2022)

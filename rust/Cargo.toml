@@ -10,11 +10,11 @@ members = [
     "engine/core/http/executor",
     "engine/core/http/transport",
     "engine/core/lro",
-    "clients/cli/commands/api",
     "clients/cli/contracts",
-    "clients/cli/output",
+    "clients/cli/commands/api",
+    "clients/cli/commands/auth",
     "clients/cli/query",
-    "clients/cli/app",
+    "clients/cli",
 ]
 resolver = "3"
 
@@ -33,9 +33,9 @@ fabric-sdk-api = { path = "engine/core/http/requests" }
 fabric-sdk-http = { path = "engine/core/http/executor" }
 fabric-sdk-transport = { path = "engine/core/http/transport", default-features = false }
 fabric-sdk-operations = { path = "engine/core/lro" }
-fabric-cli-api = { path = "clients/cli/commands/api" }
 fabric-cli-command-contracts = { path = "clients/cli/contracts" }
-fabric-cli-output = { path = "clients/cli/output" }
+fabric-cli-api = { path = "clients/cli/commands/api" }
+fabric-cli-auth = { path = "clients/cli/commands/auth" }
 fabric-cli-query = { path = "clients/cli/query" }
 azure_core = { version = "1.1.0", default-features = false }
 azure_identity = { version = "=1.0.0", default-features = false }

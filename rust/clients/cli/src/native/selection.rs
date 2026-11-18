@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Persistence for the CLI's non-secret identity selection; no credential adapter.
+
 use fabric_cli_command_contracts::CommandError;
-use fabric_identity::Binding;
+use fabric_core::Binding;
 #[cfg(not(windows))]
 use std::path::Path;
 use std::{

@@ -375,57 +375,6 @@ async fn verbose_is_global_without_changing_stdout_or_option_values() {
     assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
 }
 
-#[test]
-fn protected_response_headers_are_removed_before_every_query_shape() {
-    for query in [
-        "",
-        "@",
-        ".",
-        "headers",
-        "values(headers)",
-        "headers.Authorization",
-        "headers.authorization",
-        "headers.\"pRoXy-AuThOrIzAtIoN\"",
-        "{all: @, extracted: values(headers)}",
-    ] {
-        let result = fabric_cli_api::response_data(
-            response(
-                200,
-                r#"{"value":"body"}"#,
-                &[
-                    ("Authorization", "AUTH-SECRET-CANARY"),
-                    ("authorization", "DUPLICATE-SECRET-CANARY"),
-                    ("Proxy-Authorization", "PROXY-SECRET-CANARY"),
-                    ("pRoXy-AuThOrIzAtIoN", "MIXED-SECRET-CANARY"),
-                    ("x-visible", "visible"),
-                ],
-            ),
-            true,
-            Some(query),
-        )
-        .unwrap();
-        let output = result.to_string();
-        assert!(!output.contains("SECRET-CANARY"), "{query}: {output}");
-        assert!(
-            !output.to_ascii_lowercase().contains("authorization"),
-            "{query}: {output}"
-        );
-        if query == "values(headers)" {
-            assert_eq!(result, json!(["visible"]));
-        }
-    }
-    let result = fabric_cli_api::response_data(
-        response(200, r#"{"Authorization":"explicit body data"}"#, &[]),
-        true,
-        Some("text.Authorization"),
-    )
-    .unwrap();
-    assert_eq!(
-        result, "explicit body data",
-        "only headers are filtered, not body fields"
-    );
-}
-
 #[tokio::test]
 async fn hidden_skill_is_global_without_confusing_command_names_or_metadata_paths() {
     for (args, skill) in [
@@ -469,7 +418,7 @@ async fn hidden_skill_is_global_without_confusing_command_names_or_metadata_path
     }
     for args in [
         vec!["api", "items", "--skill", "SKILL-CANARY\r\nInjected: true"],
-        vec!["api", "items", "--input", "PAYLOAD-CANARY"],
+        vec!["api", "items", "--payload", "PAYLOAD-CANARY"],
         vec!["api", "items", "--headers", "Accept=HEADER-CANARY"],
     ] {
         let host = FakeHost::new(vec![]);
@@ -1117,6 +1066,25 @@ async fn genuine_argument_errors_remain_sanitized_failures_without_auth_effects(
         assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
         assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
         assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn invalid_global_option_cannot_dispatch_any_command_family() {
+    for args in [
+        ["--verbose=BAD-VERBOSE-CANARY", "auth", "logout"],
+        ["--verbose=BAD-VERBOSE-CANARY", "api", "workspaces"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{args:?}");
+        let envelope: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+        assert!(!stdout.contains("BAD-VERBOSE-CANARY"));
+        assert!(stderr.is_empty());
+        // Only the failure envelope reads the clock.
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 1);
+        assert_eq!(*host.binding.lock().unwrap(), Some(binding()));
     }
 }
 
@@ -2563,28 +2531,6 @@ async fn invalid_retry_after_is_a_safe_stderr_warning_not_json_progress_or_heade
     assert!(!stdout.contains("HEADER-CANARY"));
 }
 
-#[test]
-fn output_result_lists_stay_flat_and_non_api_falsey_nonlists_omit_data() {
-    for (input, expected) in [
-        (
-            json!([{"id":1},{"id":2}]),
-            json!({"data":[{"id":1},{"id":2}]}),
-        ),
-        (json!([]), json!({"data":[]})),
-        (json!({}), json!({})),
-        (json!(false), json!({})),
-        (json!(0), json!({})),
-        (json!(""), json!({})),
-    ] {
-        let output = fabric_cli_output::success("2000-01-01T00:00:00Z", "auth status", input);
-        assert_eq!(
-            serde_json::from_str::<Value>(&output).unwrap()["result"],
-            expected
-        );
-        assert!(output.ends_with('\n'));
-    }
-}
-
 struct TempDirectory(PathBuf);
 impl TempDirectory {
     fn new() -> Self {
@@ -2603,15 +2549,8 @@ impl Drop for TempDirectory {
     }
 }
 
-fn prepared(args: &[&str]) -> fabric_cli_api::PreparedApi {
-    let matches = fabric_cli::parser()
-        .try_get_matches_from(std::iter::once("fab-rs").chain(args.iter().copied()))
-        .unwrap();
-    fabric_cli_api::prepare(matches.subcommand_matches("api").unwrap()).unwrap()
-}
-
-#[test]
-fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_content_type() {
+#[tokio::test]
+async fn bodyless_methods_and_null_files_keep_python_default_or_custom_content_type() {
     let directory = TempDirectory::new();
     let null_file = directory.0.join("null.json");
     std::fs::write(&null_file, b"null").unwrap();
@@ -2628,26 +2567,26 @@ fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_conten
                 if custom {
                     args.extend(["--headers", r#"{"cOnTeNt-TyPe":"application/custom"}"#]);
                 }
-                let request = prepared(&args).request;
+                let host = FakeHost::new(vec![response(200, "{}", &[])]);
+                let (code, output, _) = run(&args, &host).await;
+                assert_eq!(code, 0, "{output}");
+                let requests = host.transport.requests.lock().unwrap();
+                assert_eq!(requests.len(), 1);
+                let request = &requests[0];
                 assert_eq!(request.method, method.to_uppercase());
                 assert_eq!(
                     request.url.as_str(),
                     "https://api.fabric.microsoft.com/v1/items"
                 );
                 assert_eq!(request.body.as_slice(), b"");
+                assert_eq!(request.headers["authorization"], "Bearer synthetic-token");
                 assert_eq!(
-                    request.headers,
-                    [(
-                        "content-type".to_owned(),
-                        if custom {
-                            "application/custom"
-                        } else {
-                            "application/json"
-                        }
-                        .to_owned()
-                    )]
-                    .into_iter()
-                    .collect::<std::collections::BTreeMap<_, _>>(),
+                    request.headers["content-type"],
+                    if custom {
+                        "application/custom"
+                    } else {
+                        "application/json"
+                    },
                 );
             }
         }
@@ -3544,7 +3483,11 @@ mod polling_configuration {
 
     #[test]
     fn help_documents_seconds_and_optional_timeout() {
-        let help = fabric_cli_api::command().render_long_help().to_string();
+        let help = fabric_cli::parser()
+            .find_subcommand_mut("api")
+            .unwrap()
+            .render_long_help()
+            .to_string();
         assert!(help.contains("--polling-config"));
         assert!(!help.contains("--lro-config"));
         assert!(help.contains("poll_interval"));

@@ -1,8 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Typed command results, safe failures, and Python output truthiness.
+//! Shared CLI invocation, injected effects, typed results, and safe failures.
 #![forbid(unsafe_code)]
+
+mod invocation;
+mod runtime;
+
+pub use invocation::ValidatedInvocation;
+pub use runtime::{CommandDiagnostics, Host, selected};
+
+/// Name used by the CLI parser and user-facing messages.
+pub const EXECUTABLE_NAME: &str = "fab-rs";
 
 use fabric_core::{CoreError, ErrorKind, JobFailureReason};
 use serde_json::Value;

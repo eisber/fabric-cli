@@ -15,11 +15,11 @@ MEMBERS = {
     "engine/core/http/executor": "fabric-sdk-http",
     "engine/core/http/transport": "fabric-sdk-transport",
     "engine/core/lro": "fabric-sdk-operations",
-    "clients/cli/commands/api": "fabric-cli-api",
     "clients/cli/contracts": "fabric-cli-command-contracts",
-    "clients/cli/output": "fabric-cli-output",
+    "clients/cli/commands/api": "fabric-cli-api",
+    "clients/cli/commands/auth": "fabric-cli-auth",
     "clients/cli/query": "fabric-cli-query",
-    "clients/cli/app": "fabric-cli",
+    "clients/cli": "fabric-cli",
 }
 # Allowed internal edges. Includes all dependency kinds and target/optional edges.
 EDGES = {
@@ -32,14 +32,18 @@ EDGES = {
     "fabric-sdk-api": {
         "fabric-core", "fabric-core-json", "fabric-sdk-http", "fabric-sdk-operations",
     },
-    "fabric-cli-command-contracts": {"fabric-core", "fabric-core-json"},
-    "fabric-cli-query": {"fabric-core-json"},
-    "fabric-cli-output": {"fabric-core", "fabric-core-json", "fabric-cli-command-contracts"},
+    "fabric-cli-command-contracts": {"fabric-core"},
     "fabric-cli-api": {
-        "fabric-core", "fabric-core-json", "fabric-sdk-api", "fabric-sdk-http",
-        "fabric-cli-command-contracts", "fabric-cli-output", "fabric-cli-query",
+        "fabric-cli-command-contracts", "fabric-cli-query", "fabric-core", "fabric-core-json",
+        "fabric-sdk-api", "fabric-sdk-http",
     },
-    "fabric-cli": set(MEMBERS.values()) - {"fabric-cli"},
+    "fabric-cli-auth": {"fabric-cli-command-contracts", "fabric-core"},
+    "fabric-cli-query": {"fabric-core-json"},
+    "fabric-cli": {
+        "fabric-cli-api", "fabric-cli-auth", "fabric-cli-command-contracts", "fabric-cli-query",
+        "fabric-core", "fabric-core-json", "fabric-identity", "fabric-sdk-http", "fabric-sdk-operations",
+        "fabric-sdk-transport",
+    },
 }
 FORBIDDEN = ("broker", "updater", "pagination", "deployment", "azure-identity-broker")
 

@@ -12,11 +12,13 @@ use std::{fmt::Display, io::Write, time::SystemTime};
 const MAX_EVENT_BYTES: usize = 2048;
 const MAX_EVENT_LINES: usize = 8;
 
-pub(crate) fn error() -> CoreError {
+/// Report a verbose diagnostics output failure.
+pub fn error() -> CoreError {
     CoreError::new(ErrorKind::Diagnostic, "Cannot write verbose diagnostics")
 }
 
-pub(crate) fn category(kind: ErrorKind) -> &'static str {
+/// Return a bounded, user-safe label for an error kind.
+pub fn category(kind: ErrorKind) -> &'static str {
     match kind {
         ErrorKind::InvalidInput => "invalid input",
         ErrorKind::Unauthorized => "unauthorized",
@@ -60,7 +62,8 @@ fn headers(block: &mut String, values: SafeHeaders) {
     header(block, "Location", values.location());
 }
 
-pub(crate) fn write(
+/// Render and flush one safe diagnostic event.
+pub fn write(
     event: &DiagnosticEvent,
     timestamp: SystemTime,
     color: bool,

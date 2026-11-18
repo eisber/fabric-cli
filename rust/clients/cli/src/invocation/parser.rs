@@ -5,6 +5,7 @@ use clap::{
     Arg, ArgAction, Command,
     error::{ContextKind, ContextValue, ErrorKind as ParseErrorKind},
 };
+use fabric_cli_command_contracts::ValidatedInvocation;
 use std::ffi::OsString;
 
 fn help_arg() -> Arg {
@@ -25,17 +26,19 @@ pub fn parser() -> Command {
             .help("Print debug diagnostics logs to console"))
         .arg(Arg::new("skill").long("skill").global(true).hide(true))
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
-        .subcommand(crate::commands::auth::command())
+        .subcommand(fabric_cli_auth::command())
         .subcommand(fabric_cli_api::command())
 }
 
-pub(super) fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
+pub(crate) fn parse_arguments(args: &[OsString]) -> Result<ValidatedInvocation, clap::Error> {
     let command = command_tokens(args);
     if command.is_some_and(|tokens| tokens.len() == 1 && tokens[0] == "auth") {
-        return parser()
-            .try_get_matches_from(args.iter().cloned().chain([OsString::from("--help")]));
+        return ValidatedInvocation::parse(
+            parser(),
+            args.iter().cloned().chain([OsString::from("--help")]),
+        );
     }
-    parser().try_get_matches_from(args)
+    ValidatedInvocation::parse(parser(), args.iter().cloned())
 }
 
 pub(super) fn command_name(args: &[OsString]) -> &'static str {
@@ -65,7 +68,7 @@ pub(super) fn parsed_command_name(matches: &clap::ArgMatches) -> &'static str {
     }
 }
 
-pub(super) fn welcome_requested(args: &[OsString]) -> bool {
+pub(crate) fn welcome_requested(args: &[OsString]) -> bool {
     command_tokens(args).is_some_and(|tokens| tokens.is_empty())
         && parser()
             .subcommand_required(false)
@@ -105,6 +108,11 @@ fn command_tokens(args: &[OsString]) -> Option<Vec<&std::ffi::OsStr>> {
 }
 
 pub(super) fn parse_failure_message(command: &str, error: &clap::Error) -> String {
+    if command == "api"
+        && let Some(message) = fabric_cli_api::parse_failure_message(error)
+    {
+        return message.to_owned();
+    }
     let defined_arg = || match error.get(ContextKind::InvalidArg) {
         Some(ContextValue::String(arg)) => Some(arg.clone()),
         Some(ContextValue::Strings(args)) if !args.is_empty() => Some(args.join(", ")),
@@ -122,15 +130,6 @@ pub(super) fn parse_failure_message(command: &str, error: &clap::Error) -> Strin
         format!("Run {} {command} --help.", crate::EXECUTABLE_NAME)
     };
     match error.kind() {
-        ParseErrorKind::InvalidValue
-            if command == "api"
-                && matches!(
-                    error.get(ContextKind::InvalidArg),
-                    Some(ContextValue::String(arg)) if arg == "--method <method>"
-                ) =>
-        {
-            "Invalid HTTP method for --method. Supported values are lowercase: get, post, delete, put, patch. For example, use post instead of POST.".to_owned()
-        }
         ParseErrorKind::InvalidValue | ParseErrorKind::ValueValidation => match defined_arg() {
             Some(arg) => format!("Invalid value for {arg}.{} {help}", valid_values()),
             None => format!("Invalid argument value. {help}"),

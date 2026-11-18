@@ -8,9 +8,12 @@ use async_trait::async_trait;
 use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use azure_identity::{AzureCliCredential, AzureCliCredentialOptions, Executor};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use fabric_core::{Clock, CoreError, ErrorKind, OperationContext, bounded_with_clock};
+pub use fabric_core::Binding;
+use fabric_core::{
+    AZURE_CLI_LOGIN_REQUIRED as LOGIN_REQUIRED, Clock, CoreError, ErrorKind, OperationContext,
+    bounded_with_clock,
+};
 use process_wrap::tokio::{KillOnDrop, TokioChildWrapper, TokioCommandWrap};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     ffi::OsStr,
@@ -28,7 +31,6 @@ use tokio::{
 };
 
 const MAX_PROVIDER_BYTES: usize = 256 * 1024;
-const LOGIN_REQUIRED: &str = "Azure CLI identity unavailable or changed. Install Azure CLI 2.54+ and run az login, then fab-rs auth login";
 const CLI_UNAVAILABLE: &str = "Azure CLI executable is unavailable. Install Azure CLI 2.54+ or make az available on PATH, then run az login and fab-rs auth login";
 const CLI_SIGNED_OUT: &str =
     "Azure CLI reports no signed-in account. Run az login, then fab-rs auth login";
@@ -150,63 +152,30 @@ fn validate_scope(scope: &str) -> Result<(), CoreError> {
     }
 }
 
-/// Non-secret identity consistency metadata, not cryptographic token verification.
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Binding {
-    /// Entra tenant object ID.
-    pub tenant: String,
-    /// Entra principal object ID. Subscription is deliberately not selected.
-    pub principal: String,
-}
-
-impl Binding {
-    /// Validate persisted metadata without accepting incomplete bindings.
-    pub fn validate(&self) -> Result<(), CoreError> {
-        if valid_id(&self.tenant) && valid_id(&self.principal) {
-            Ok(())
-        } else {
-            Err(unauthorized())
-        }
+fn binding_from_token(token: &str) -> Result<Binding, CoreError> {
+    if token.len() > MAX_PROVIDER_BYTES {
+        return Err(unauthorized());
     }
-
-    fn from_token(token: &str) -> Result<Self, CoreError> {
-        if token.len() > MAX_PROVIDER_BYTES {
-            return Err(unauthorized());
-        }
-        let parts: Vec<_> = token.split('.').collect();
-        if parts.len() != 3 || parts.iter().any(|part| part.is_empty()) {
-            return Err(unauthorized());
-        }
-        let bytes = URL_SAFE_NO_PAD
-            .decode(parts[1])
-            .map_err(|_| unauthorized())?;
-        let claims: serde_json::Value =
-            serde_json::from_slice(&bytes).map_err(|_| unauthorized())?;
-        let binding = Self {
-            tenant: claims["tid"]
-                .as_str()
-                .ok_or_else(unauthorized)?
-                .to_ascii_lowercase(),
-            principal: claims["oid"]
-                .as_str()
-                .ok_or_else(unauthorized)?
-                .to_ascii_lowercase(),
-        };
-        binding.validate()?;
-        Ok(binding)
+    let parts: Vec<_> = token.split('.').collect();
+    if parts.len() != 3 || parts.iter().any(|part| part.is_empty()) {
+        return Err(unauthorized());
     }
-}
-
-fn valid_id(id: &str) -> bool {
-    id.len() == 36
-        && id.bytes().enumerate().all(|(i, b)| {
-            if [8, 13, 18, 23].contains(&i) {
-                b == b'-'
-            } else {
-                b.is_ascii_hexdigit()
-            }
-        })
+    let bytes = URL_SAFE_NO_PAD
+        .decode(parts[1])
+        .map_err(|_| unauthorized())?;
+    let claims: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| unauthorized())?;
+    let binding = Binding {
+        tenant: claims["tid"]
+            .as_str()
+            .ok_or_else(unauthorized)?
+            .to_ascii_lowercase(),
+        principal: claims["oid"]
+            .as_str()
+            .ok_or_else(unauthorized)?
+            .to_ascii_lowercase(),
+    };
+    binding.validate()?;
+    Ok(binding)
 }
 
 /// SDK process executor with bounded output and group/job termination on acquisition drop.
@@ -315,7 +284,7 @@ impl AzureCliSession {
             .get_token(&[scope], options)
             .await
             .map_err(login_error)?;
-        let binding = Binding::from_token(value.token.secret())
+        let binding = binding_from_token(value.token.secret())
             .map_err(|_| CoreError::new(ErrorKind::Unauthorized, LOGIN_FAILED))?;
         if token_expiry(&value)
             .map_err(|_| CoreError::new(ErrorKind::Unauthorized, LOGIN_FAILED))?
