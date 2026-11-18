@@ -28,6 +28,10 @@ use fabric_sdk_operations::{OperationExecutor, OperationLimits};
 use fabric_sdk_query::{EngineBinding, QueryError};
 use std::{collections::BTreeSet, future::Future, num::NonZeroUsize, pin::pin, time::Duration};
 
+#[cfg(test)]
+#[path = "query_host_resolution_tests.rs"]
+mod tests;
+
 /// One real item resolved and type-checked through the existing metadata APIs.
 pub struct QueryOwner {
     /// Original query path, not a new datasource or provider path grammar.
@@ -138,9 +142,6 @@ where
         return Err(QueryResolutionError::UnsupportedOwner);
     };
 
-    #[cfg(test)]
-    #[path = "query_host_resolution_tests.rs"]
-    mod tests;
     let metadata = client
         .get_item_metadata(
             executor,
