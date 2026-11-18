@@ -124,6 +124,9 @@ Discovery rejects execution-only `--wait`, `--input`, `--format`, `--output` and
 attached Windows console output is refused before credentials to preserve exact
 Unicode. Cancellation or an interrupted write can leave partial output, so the
 host stops rather than continuing another batch command.
+Error delivery also uses an owned stderr handle within the remaining deadline
+(at most one second). If the error pipe is blocked or time has expired, delivery
+is unconfirmed; the host returns a stopping failure without a synchronous retry.
 
 ## Evaluation approval and lifecycle
 

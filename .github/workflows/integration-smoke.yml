@@ -169,6 +169,7 @@ jobs:
               'rust/clients/cli/app/tests/execute_host.rs',
               'rust/clients/cli/app/tests/execute_arguments.rs',
               'rust/clients/cli/app/tests/execute_cli_contract.rs',
+              'rust/clients/cli/app/tests/parser_support/mod.rs',
               'rust/engine/sdk/Cargo.toml',
               'rust/engine/sdk/src/lib.rs',
               'rust/engine/sdk/src/dataflow_queries.rs',

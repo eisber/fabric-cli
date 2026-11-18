@@ -26,14 +26,25 @@ fn single_expression(expression: &str) -> bool {
     let mut first = true;
     while index < bytes.len() {
         let current = bytes[index];
-        if current.is_ascii_whitespace() {
-            index += 1;
+        let character = expression[index..]
+            .chars()
+            .next()
+            .expect("remaining character");
+        if character.is_whitespace() {
+            index += character.len_utf8();
             continue;
         }
         if bytes[index..].starts_with(b"//") {
             index += 2;
-            while index < bytes.len() && !matches!(bytes[index], b'\r' | b'\n') {
-                index += 1;
+            while index < bytes.len() {
+                let character = expression[index..]
+                    .chars()
+                    .next()
+                    .expect("comment character");
+                if matches!(character, '\r' | '\n' | '\u{85}' | '\u{2028}' | '\u{2029}') {
+                    break;
+                }
+                index += character.len_utf8();
             }
             continue;
         }
@@ -93,7 +104,10 @@ fn single_expression(expression: &str) -> bool {
                     return false;
                 }
             }
-            _ => {}
+            _ => {
+                index += character.len_utf8();
+                continue;
+            }
         }
         index += 1;
     }
@@ -140,5 +154,17 @@ mod tests {
         let actual = document("A\"#(lf)雪", "1").unwrap();
         assert!(actual.starts_with("section Section1;\nshared #\"A\"\"#(#)(lf)雪\" =\n"));
         assert!(document("bad\nname", "1").is_none());
+    }
+
+    #[test]
+    fn every_m_newline_ends_comments_before_section_syntax() {
+        for newline in ["\r", "\n", "\u{85}", "\u{2028}", "\u{2029}"] {
+            let injected = format!("1 // comment{newline}; shared Injected = 2");
+            assert!(document("Orders", &injected).is_none());
+            let valid = format!("let // comment{newline}Source = \"雪\" in Source");
+            assert!(document("Orders", &valid).is_some());
+            assert!(document("Orders", &format!("{newline} // comment")).is_none());
+        }
+        assert!(document("Orders", "\u{2009}\u{2028}").is_none());
     }
 }

@@ -294,6 +294,9 @@ async fn invalid_input_and_denied_approval_never_touch_credentials_or_transport(
         b"{\"mExpression\":\"1\",\"customMashupDocument\":\"section Section1; shared Orders = 1;\"}",
         b"{\"mExpression\":\" // comment only\"}",
         b"{\"mExpression\":\"1; shared Injected = 2\"}",
+        b"{\"mExpression\":\"1 // comment\\u0085; shared Injected = 2\"}",
+        b"{\"mExpression\":\"1 // comment\\u2028; shared Injected = 2\"}",
+        b"{\"mExpression\":\"1 // comment\\u2029; shared Injected = 2\"}",
         b"{\"arrowVersion\":1,\"arrowVersion\":2}",
     ] {
         assert!(PreparedExecution::new(&command("json"), Some(input)).is_err());

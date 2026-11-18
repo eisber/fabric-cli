@@ -17,29 +17,25 @@ pub(super) fn run(
     command: &ListQueriesCommand,
     state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
-    let result = (|| {
-        use std::io::IsTerminal;
-        if cfg!(windows) && io::stdout().is_terminal() {
-            return Err(failure(
-                "UnsupportedCapability",
-                "Redirect stdout to a file or pipe to preserve query-name Unicode. No definition was requested.",
-                1,
-            ));
-        }
-        let deadline = Instant::now()
-            .checked_add(command.timeout)
-            .ok_or_else(|| failure("invalid_arguments", "Invalid discovery deadline.", 2))?;
-        let endpoint = super::selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
-        let credential = super::selected_credential()?;
-        credential.bind_get(state).map_err(|_| {
-            failure(
-                "invalid_configuration",
-                "Discovery identity binding changed.",
-                2,
-            )
-        })?;
-        let runtime = super::native_runtime()?;
-        let result = runtime.block_on(async {
+    let deadline = Instant::now()
+        .checked_add(command.timeout)
+        .ok_or_else(|| io::Error::other("Invalid discovery deadline"))?;
+    let runtime = super::native_runtime().map_err(|(_, message, _)| io::Error::other(message))?;
+    let outcome = runtime.block_on(async {
+        let result = async {
+            use std::io::IsTerminal;
+            if cfg!(windows) && io::stdout().is_terminal() {
+                return Err(failure(
+                    "UnsupportedCapability",
+                    "Redirect stdout to a file or pipe to preserve query-name Unicode. No definition was requested.",
+                    1,
+                ));
+            }
+            let endpoint = super::selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
+            let credential = super::selected_credential()?;
+            credential.bind_get(state).map_err(|_| {
+                failure("invalid_configuration", "Discovery identity binding changed.", 2)
+            })?;
             let (http, identity_http) = super::native_clients(&credential, false)?;
             let (sdk, executor) = super::connect_native(
                 credential,
@@ -68,8 +64,10 @@ pub(super) fn run(
                         failure("output_failed", "Unable to retain discovery stdout.", 1)
                     })?;
             let cancelled = async {
-                let _ = tokio::signal::ctrl_c().await;
-                failure("cancelled", "Discovery output waiting was interrupted.", 2)
+                match tokio::signal::ctrl_c().await {
+                    Ok(()) => failure("cancelled", "Discovery output waiting was interrupted.", 2),
+                    Err(_) => failure("signal_failed", "Discovery output cancellation handler failed.", 1),
+                }
             };
             match super::output::write_owned(output, deadline, cancelled, move |output| {
                 use std::io::Write;
@@ -85,16 +83,46 @@ pub(super) fn run(
                     1,
                 )),
             }
-        });
-        super::finish_runtime(runtime, result)
-    })();
-    match result {
-        Ok(()) => Ok(CommandOutcome::Returned(0)),
-        Err(error) => {
-            let code = error.2;
-            super::write_error(error)?;
-            Ok(CommandOutcome::Stop(code))
+        }.await;
+        match result {
+            Ok(()) => CommandOutcome::Returned(0),
+            Err(error) => {
+                let exit = error.2;
+                match super::output::owned_stream(fabric_cli_output::OutputStream::Stderr, false) {
+                    Ok(output) => diagnostic_to(error, output, deadline).await,
+                    Err(_) => CommandOutcome::Stop(exit),
+                }
+            }
         }
+    });
+    Ok(super::finish_runtime(runtime, outcome))
+}
+
+async fn diagnostic_to(
+    (code, message, exit): super::Failure,
+    output: impl std::io::Write + Send + 'static,
+    deadline: Instant,
+) -> CommandOutcome {
+    let mut bytes =
+        serde_json::to_vec(&serde_json::json!({"error":{"code":code,"message":message}}))
+            .expect("bounded diagnostic values serialize");
+    bytes.push(b'\n');
+    let deadline = deadline.min(Instant::now() + std::time::Duration::from_secs(1));
+    let delivery = super::output::write_owned(
+        output,
+        deadline,
+        std::future::pending::<()>(),
+        move |output| {
+            output.write_all(&bytes)?;
+            output.flush()
+        },
+    )
+    .await;
+    match delivery {
+        super::output::OwnedWrite::Complete(Ok(())) => CommandOutcome::Stop(exit),
+        // Diagnostic delivery is unconfirmed. Never synchronously retry a full
+        // stderr/combined pipe, or continue a batch while an OS write can finish.
+        _ => CommandOutcome::Stop(exit.max(1)),
     }
 }
 
@@ -239,5 +267,72 @@ mod tests {
         );
         command.max_bytes = bytes.len();
         assert_eq!(render(&command, inventory).unwrap(), bytes);
+    }
+
+    struct CountWrites(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl io::Write for CountWrites {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn expired_discovery_deadline_never_starts_an_error_write_or_continues_batch() {
+        let writes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let outcome = diagnostic_to(
+            failure("timed_out", "Complete output is unconfirmed.", 1),
+            CountWrites(writes.clone()),
+            Instant::now() - std::time::Duration::from_millis(1),
+        )
+        .await;
+        assert!(matches!(outcome, CommandOutcome::Stop(1)));
+        assert_eq!(writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    struct BlockWrites {
+        gate: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+        writes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl io::Write for BlockWrites {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.writes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (gate, changed) = &*self.gate;
+            let mut released = gate.lock().unwrap();
+            while !*released {
+                released = changed.wait(released).unwrap();
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn blocked_diagnostic_pipe_returns_stop_without_synchronous_retry() {
+        let gate = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let writes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let result = diagnostic_to(
+            failure("output_failed", "Output is unconfirmed.", 1),
+            BlockWrites {
+                gate: gate.clone(),
+                writes: writes.clone(),
+            },
+            Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .await;
+        *gate.0.lock().unwrap() = true;
+        gate.1.notify_all();
+        assert!(matches!(result, CommandOutcome::Stop(1)));
+        assert_eq!(writes.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }
