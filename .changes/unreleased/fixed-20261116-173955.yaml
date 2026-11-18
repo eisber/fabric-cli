@@ -1,0 +1,6 @@
+kind: fixed
+body: Expose Fabric job failureReason codes and messages in final Rust CLI JSON, distinguish failed and cancelled jobs, and replace the public outcome uncertainty boolean with check-status-before-retry guidance only when the final status is unknown, without leaking service messages into progress or verbose logs.
+time: 2026-11-16T17:39:55.53523+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

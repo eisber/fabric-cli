@@ -1,0 +1,528 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Shared safe response-head evidence, independent of HTTP/LRO implementations.
+use crate::{
+    ApiResponse, Audience, CoreError, Endpoint, ErrorKind, RecoveryInfo, validate_path,
+    validate_response_headers, validate_url_for_host,
+};
+use std::{collections::BTreeMap, sync::Mutex};
+use url::Url;
+
+/// Recognized operation protocol advertised by an accepted response head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationKind {
+    /// Fabric status JSON.
+    Fabric,
+    /// Fabric job-instance status JSON.
+    FabricJob,
+    /// Azure/Storage Azure-AsyncOperation status JSON.
+    ArmStatus,
+    /// Azure/Storage Location HTTP status semantics.
+    ArmLocation,
+}
+/// Validated service operation handle. No bearer/custom request headers.
+#[derive(Clone)]
+pub struct OperationHandle {
+    /// Full validated status URL, including any query needed for polling.
+    url: Url,
+    /// Validated Fabric operation ID when known.
+    operation_id: Option<String>,
+    /// Advertised protocol.
+    kind: OperationKind,
+}
+impl std::fmt::Debug for OperationHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OperationHandle")
+            .field("recovery", &self.recovery())
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+impl OperationHandle {
+    /// Full validated status URL, including any query needed for polling.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+    /// Validated operation identifier, when available.
+    pub fn operation_id(&self) -> Option<&str> {
+        self.operation_id.as_deref()
+    }
+    /// Recognized protocol.
+    pub fn kind(&self) -> OperationKind {
+        self.kind
+    }
+    /// Select this Fabric operation's canonical result route on a validated
+    /// advertised origin. Only a matching result route retains its query.
+    pub fn fabric_result_url(&self, value: &str) -> Result<Url, CoreError> {
+        self.fabric_result_url_with_endpoint(&Endpoint::public(Audience::Fabric), value)
+    }
+
+    /// Resolve a Fabric result using the same endpoint as the status request.
+    pub fn fabric_result_url_with_endpoint(
+        &self,
+        endpoint: &Endpoint,
+        value: &str,
+    ) -> Result<Url, CoreError> {
+        let id = self
+            .operation_id()
+            .filter(|_| {
+                self.kind == OperationKind::Fabric && endpoint.audience() == Audience::Fabric
+            })
+            .ok_or_else(|| protocol("Canonical result URL requires a Fabric operation"))?;
+        let mut url = resolve_location(endpoint, value, &self.url)?;
+        if fabric_id(&url).is_some_and(|advertised| advertised != id)
+            || fabric_route_id(&url).is_some_and(|advertised| advertised != id)
+        {
+            return Err(protocol("Conflicting Fabric result operation identifier"));
+        }
+        let path = format!("/v1/operations/{id}/result");
+        if url.path() != path {
+            url.set_path(&path);
+            url.set_query(None);
+        }
+        validate_operation_components(endpoint, &url)?;
+        Ok(url)
+    }
+    /// Safe recovery evidence, excluding query values.
+    pub fn recovery(&self) -> RecoveryInfo {
+        let mut url = self.url.clone();
+        url.set_query(None);
+        RecoveryInfo {
+            operation_id: self.operation_id.clone(),
+            status_url: url.to_string(),
+            outcome_uncertain: true,
+        }
+    }
+    /// Preserve this known handle on a safe error.
+    pub fn attach(&self, mut error: CoreError) -> CoreError {
+        error.recovery = Some(self.recovery());
+        error
+    }
+}
+fn protocol(message: &str) -> CoreError {
+    CoreError::new(ErrorKind::Protocol, message)
+}
+
+/// Validate a status/result URL before normalization can hide unsafe paths.
+/// Fabric trusts service-advertised hostnames, matching Python's LRO client.
+pub fn validate_operation_url(audience: Audience, value: &str) -> Result<Url, CoreError> {
+    let endpoint = Endpoint::public(audience);
+    resolve_operation_url_with_endpoint(&endpoint, value, endpoint.base_url())
+}
+
+/// Validate an advertised status/result URL, resolving origin-relative URLs
+/// against a previously validated service URL rather than the public API origin.
+pub fn resolve_operation_url(
+    audience: Audience,
+    value: &str,
+    base: &Url,
+) -> Result<Url, CoreError> {
+    let endpoint = Endpoint::public(audience);
+    resolve_operation_url_with_endpoint(&endpoint, value, base)
+}
+
+/// Validate and resolve an advertised status/result URL against a configured
+/// endpoint. Fabric's configured origin may serve general operation paths;
+/// other Fabric-advertised origins remain restricted to operation/job routes.
+pub fn resolve_operation_url_with_endpoint(
+    endpoint: &Endpoint,
+    value: &str,
+    base: &Url,
+) -> Result<Url, CoreError> {
+    let url = resolve_location(endpoint, value, base)?;
+    validate_operation_components(endpoint, &url)?;
+    Ok(url)
+}
+fn resolve_location(endpoint: &Endpoint, value: &str, base: &Url) -> Result<Url, CoreError> {
+    validate_operation_components(endpoint, base)?;
+    if value.len() > 16 * 1024 {
+        return Err(protocol("Unsafe operation URL: length limit exceeded"));
+    }
+    if value.chars().any(|c| c.is_control() || c == ' ') {
+        return Err(protocol(
+            "Unsafe operation URL: control or space characters rejected",
+        ));
+    }
+    validate_path(value.split(['?', '#']).next().unwrap_or_default())
+        .map_err(|_| protocol("Unsafe operation URL: unsafe path rejected"))?;
+    let url = if value.starts_with("https://") {
+        Url::parse(value)
+    } else if value.starts_with('/') && !value.starts_with("//") {
+        base.join(value)
+    } else {
+        return Err(protocol(
+            "Operation URL must be absolute HTTPS or origin-relative",
+        ));
+    }
+    .map_err(|_| protocol("Malformed operation URL"))?;
+    validate_location_components(endpoint, &url)?;
+    Ok(url)
+}
+fn validate_operation_components(endpoint: &Endpoint, url: &Url) -> Result<(), CoreError> {
+    if endpoint.audience() == Audience::Fabric
+        && url.host_str() != endpoint.base_url().host_str()
+        && !(fabric_operation_route(url) || fabric_job(url))
+    {
+        return Err(protocol(
+            "Unsafe operation URL: selected HTTPS origin or normalized components rejected",
+        ));
+    }
+    validate_location_components(endpoint, url)
+}
+fn validate_location_components(endpoint: &Endpoint, url: &Url) -> Result<(), CoreError> {
+    let audience = endpoint.audience();
+    let host = url.host_str().unwrap_or_default();
+    let result = if audience == Audience::Fabric {
+        validate_url_for_host(url, host)
+    } else {
+        endpoint.validate_url(url)
+    };
+    result.map_err(|_| {
+        protocol("Unsafe operation URL: selected HTTPS origin or normalized components rejected")
+    })
+}
+fn fabric_operation_route(url: &Url) -> bool {
+    fabric_route_id(url).is_some()
+}
+fn fabric_route_id(url: &Url) -> Option<&str> {
+    let tail = url.path().strip_prefix("/v1/operations/")?;
+    let id = tail.strip_suffix("/result").unwrap_or(tail);
+    valid_id(id).then_some(id)
+}
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 256
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+}
+fn fabric_id(url: &Url) -> Option<String> {
+    let tail = url
+        .path()
+        .strip_prefix("/v1/operations/")?
+        .trim_end_matches('/');
+    valid_id(tail).then(|| tail.to_owned())
+}
+fn fabric_job(url: &Url) -> bool {
+    let segments: Vec<_> = url.path().split('/').collect();
+    matches!(
+        segments.as_slice(),
+        ["", "v1", "workspaces", workspace, "items", item, "jobs", "instances", job]
+            if valid_id(workspace) && valid_id(item) && valid_id(job)
+    )
+}
+fn id_handle(endpoint: &Endpoint, id: &str) -> OperationHandle {
+    fabric_status_handle(endpoint.base_url().clone(), id)
+}
+fn async_location(endpoint: &Endpoint, value: &str) -> Result<Url, CoreError> {
+    let base = endpoint.base_url();
+    let host = base.host_str().expect("fixed audience host");
+    if let Some((_, suffix)) = value.split_once(host) {
+        let relative = format!("/{}", suffix.trim_start_matches('/'));
+        resolve_operation_url_with_endpoint(endpoint, &relative, base)
+    } else {
+        resolve_operation_url_with_endpoint(endpoint, value, base)
+    }
+}
+fn fabric_status_handle(mut url: Url, id: &str) -> OperationHandle {
+    url.set_path(&format!("/v1/operations/{id}"));
+    url.set_query(None);
+    OperationHandle {
+        url,
+        operation_id: Some(id.to_owned()),
+        kind: OperationKind::Fabric,
+    }
+}
+// A rejected head is not safe to interpret as an operation advertisement.
+// Independently retain only a single valid ID: never join/select duplicate IDs,
+// salvage a Location, or turn the header error into permission to poll.
+fn independent_id_recovery<'a>(
+    endpoint: &Endpoint,
+    status: u16,
+    headers: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+) -> Option<RecoveryInfo> {
+    if endpoint.audience() != Audience::Fabric || status != 202 {
+        return None;
+    }
+    let mut seen = false;
+    let mut candidate = None;
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("x-ms-operation-id") {
+            if seen {
+                return None;
+            }
+            seen = true;
+            candidate = std::str::from_utf8(value).ok().filter(|id| valid_id(id));
+        }
+    }
+    candidate.map(|id| id_handle(endpoint, id).recovery())
+}
+fn discover(endpoint: &Endpoint, head: &ApiResponse) -> Result<Option<OperationHandle>, CoreError> {
+    let audience = endpoint.audience();
+    match audience {
+        Audience::Fabric if head.status == 202 => {
+            let id = head.header("x-ms-operation-id");
+            if id.is_some_and(|id| !valid_id(id)) {
+                return Err(protocol("Malformed Fabric operation identifier"));
+            }
+            if let Some(location) = head.header("location") {
+                let url = resolve_location(endpoint, location, endpoint.base_url())?;
+                if fabric_job(&url) {
+                    validate_operation_components(endpoint, &url)?;
+                    return Ok(Some(OperationHandle {
+                        url,
+                        operation_id: None,
+                        kind: OperationKind::FabricJob,
+                    }));
+                }
+                if url.path().contains("/jobs/instances/") {
+                    validate_operation_components(endpoint, &url)?;
+                    return Ok(None);
+                }
+                let Some(location_id) = fabric_id(&url) else {
+                    if let Some(id) = id {
+                        if fabric_route_id(&url).is_some_and(|advertised| advertised != id) {
+                            return Err(protocol("Conflicting Fabric operation handles"));
+                        }
+                        let handle = fabric_status_handle(url, id);
+                        validate_operation_components(endpoint, handle.url())?;
+                        return Ok(Some(handle));
+                    }
+                    validate_operation_components(endpoint, &url)?;
+                    return Ok(None);
+                };
+                validate_operation_components(endpoint, &url)?;
+                let handle = OperationHandle {
+                    url,
+                    operation_id: Some(location_id.clone()),
+                    kind: OperationKind::Fabric,
+                };
+                if id.is_some_and(|id| id != location_id) {
+                    return Err(handle.attach(protocol("Conflicting Fabric operation handles")));
+                }
+                return Ok(Some(handle));
+            }
+            Ok(id.map(|id| id_handle(endpoint, id)))
+        }
+        Audience::Azure | Audience::Storage if matches!(head.status, 201 | 202) => {
+            let selected = head
+                .header("azure-asyncoperation")
+                .map(|v| (v, OperationKind::ArmStatus))
+                .or_else(|| {
+                    head.header("location")
+                        .map(|v| (v, OperationKind::ArmLocation))
+                });
+            selected
+                .map(|(location, kind)| {
+                    async_location(endpoint, location).map(|url| {
+                        Some(OperationHandle {
+                            url,
+                            operation_id: None,
+                            kind,
+                        })
+                    })
+                })
+                .unwrap_or(Ok(None))
+        }
+        _ => Ok(None),
+    }
+}
+/// Interpret only validated bounded response-head fields. Unsafe/conflicting
+/// handles fail explicitly and retain separately validated recovery evidence.
+/// This shared implementation is used before body reads and by LRO discovery.
+pub fn operation_handle(
+    audience: Audience,
+    status: u16,
+    headers: &BTreeMap<String, String>,
+) -> Result<Option<OperationHandle>, CoreError> {
+    operation_handle_with_endpoint(&Endpoint::public(audience), status, headers)
+}
+
+/// Interpret a response head using its selected, validated endpoint origin.
+pub fn operation_handle_with_endpoint(
+    endpoint: &Endpoint,
+    status: u16,
+    headers: &BTreeMap<String, String>,
+) -> Result<Option<OperationHandle>, CoreError> {
+    validate_response_headers(headers).map_err(|mut error| {
+        error.recovery = independent_id_recovery(
+            endpoint,
+            status,
+            headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        );
+        error
+    })?;
+    let head = ApiResponse {
+        status,
+        headers: headers.clone(),
+        body: Vec::new(),
+    };
+    discover(endpoint, &head).map_err(|mut error| {
+        if error.recovery.is_none() && endpoint.audience() == Audience::Fabric && status == 202 {
+            if let Some(id) = head.header("x-ms-operation-id").filter(|id| valid_id(id)) {
+                error = id_handle(endpoint, id).attach(error);
+            } else if let Some(handle) = head
+                .header("location")
+                .and_then(|value| {
+                    resolve_operation_url_with_endpoint(endpoint, value, endpoint.base_url()).ok()
+                })
+                .and_then(|url| {
+                    fabric_id(&url).map(|id| OperationHandle {
+                        url,
+                        operation_id: Some(id),
+                        kind: OperationKind::Fabric,
+                    })
+                })
+            {
+                error = handle.attach(error);
+            }
+        }
+        error
+    })
+}
+
+/// Caller-owned safe head capture, kept alive outside body/transport futures so
+/// dropping those futures on timeout/cancellation does not erase recovery.
+/// Only validated recovery data is retained, never arbitrary headers or tokens.
+#[derive(Debug)]
+pub struct ResponseHeadCapture {
+    endpoint: Option<Endpoint>,
+    evidence: Mutex<HeadEvidence>,
+}
+#[derive(Debug, Default)]
+struct HeadEvidence {
+    status: Option<u16>,
+    recovery: Option<RecoveryInfo>,
+    problem: Option<String>,
+}
+impl ResponseHeadCapture {
+    /// Capture evidence for a request bound to the selected audience.
+    pub fn new(audience: Audience) -> Self {
+        Self::with_endpoint(Endpoint::public(audience))
+    }
+    /// Capture evidence for a request bound to a configured service endpoint.
+    pub fn with_endpoint(endpoint: Endpoint) -> Self {
+        Self {
+            endpoint: Some(endpoint),
+            evidence: Mutex::new(HeadEvidence::default()),
+        }
+    }
+    /// Capture recognized service evidence for a direct generic transport call.
+    /// Unknown HTTPS origins do not produce service-operation evidence.
+    pub fn for_url(url: &Url) -> Self {
+        Self {
+            endpoint: [
+                Audience::Fabric,
+                Audience::Storage,
+                Audience::Azure,
+                Audience::PowerBi,
+            ]
+            .into_iter()
+            .map(Endpoint::public)
+            .find(|endpoint| endpoint.validate_url(url).is_ok()),
+            evidence: Mutex::new(HeadEvidence::default()),
+        }
+    }
+    /// Record a complete bounded response head before any body read or decode.
+    /// Malformed HTTP fields fail here; operation-handle errors are retained as
+    /// evidence, not raised yet, so raw/async execution still returns the actual
+    /// response. Reconciliation validates handles before making any poll.
+    pub fn record(&self, status: u16, headers: &BTreeMap<String, String>) -> Result<(), CoreError> {
+        *self
+            .evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = HeadEvidence::default();
+        if let Err(error) = validate_response_headers(headers) {
+            return Err(self.reject_headers(
+                status,
+                headers
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_bytes())),
+                error,
+            ));
+        }
+        let result = if let Some(endpoint) = self.endpoint.as_ref() {
+            operation_handle_with_endpoint(endpoint, status, headers)
+        } else {
+            Ok(None)
+        };
+        let evidence = match result {
+            Ok(handle) => HeadEvidence {
+                status: Some(status),
+                recovery: handle.as_ref().map(OperationHandle::recovery),
+                problem: None,
+            },
+            Err(error) => HeadEvidence {
+                status: Some(status),
+                recovery: error.recovery,
+                problem: Some(error.message),
+            },
+        };
+        *self
+            .evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = evidence;
+        Ok(())
+    }
+    /// Retain independently safe recovery while returning a header-ingestion
+    /// error unchanged in kind/message. Supply all raw fields, including every
+    /// duplicate; only one valid Fabric ID can provide evidence. Locations are
+    /// never salvaged from an invalid head, and this does not authorize polling.
+    pub fn reject_headers<'a>(
+        &self,
+        status: u16,
+        headers: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+        mut error: CoreError,
+    ) -> CoreError {
+        let recovery = self
+            .endpoint
+            .as_ref()
+            .and_then(|endpoint| independent_id_recovery(endpoint, status, headers));
+        error.recovery = recovery.clone();
+        *self
+            .evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = HeadEvidence {
+            status: Some(status),
+            recovery,
+            problem: Some(error.message.clone()),
+        };
+        error
+    }
+    /// Snapshot only safe recovery data.
+    pub fn recovery(&self) -> Option<RecoveryInfo> {
+        self.evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .recovery
+            .clone()
+    }
+    /// Received status, even when body decoding or diagnostic delivery failed.
+    pub fn status(&self) -> Option<u16> {
+        self.evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .status
+    }
+    /// Attach captured evidence to body, decode, deadline, or cancellation errors.
+    pub fn attach(&self, mut error: CoreError) -> CoreError {
+        let evidence = self
+            .evidence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(recovery) = &evidence.recovery {
+            error.recovery = Some(recovery.clone());
+        }
+        if error.kind != ErrorKind::Diagnostic
+            && let Some(problem) = &evidence.problem
+            && !error.message.contains(problem.as_str())
+        {
+            error.message.push_str("; ");
+            error.message.push_str(problem);
+        }
+        error
+    }
+}

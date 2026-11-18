@@ -1,0 +1,7 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+kind: fixed
+body: Clarify invalid fab-rs API HTTP methods with a sanitized lowercase-method diagnostic before authentication or request effects.
+time: 2026-11-15T23:26:48.582523+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

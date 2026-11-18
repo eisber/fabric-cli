@@ -1,0 +1,7 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+kind: breaking
+body: Align fab-rs API query input with Python raw API's response object inside result.data. Use explicit text.value or text paths instead of implicit body unwrapping or bare-field row shortcuts; preserve empty-result nondisclosure.
+time: 2026-11-15T22:48:38.015057+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun
