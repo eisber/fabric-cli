@@ -61,7 +61,7 @@ const HOSTS = Object.freeze({
 });
 const BOOTSTRAP_BLOBS = Object.freeze({
   'rust/scripts/integration-smoke.cjs': 'fa9b140899537c9fa0776b0df42a6260b459cecb',
-  'rust/scripts/validate-impact.cjs': BRIDGE_BLOBS['rust/scripts/validate-impact.cjs'],
+  'rust/scripts/validate-impact.cjs': '5246494b32ae4fe60da30f69468d0e3982a5ba61',
   'rust/scripts/validation-process.cjs': BRIDGE_BLOBS['rust/scripts/validation-process.cjs'],
   'rust/scripts/validation-process.py': 'dda079affe45a76f18b6964d0c935c30a12db356',
   'rust/scripts/validation_posix.py': '3f034b1ba4a6168e13f5d4e7dca5ef87d3bb3321',

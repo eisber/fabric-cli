@@ -633,6 +633,17 @@ test('bootstrap inputs re-audit exact existing APIs and all unmodified core asse
     index === 0 ? {...item, blob: base} : item)}), /re-audit/);
 });
 
+test('audited af846 bootstrap inventory pin does not repin the full/affected bridge', () => {
+  const file = 'rust/scripts/validate-impact.cjs';
+  assert.equal(p.BOOTSTRAP_BLOBS[file], '5246494b32ae4fe60da30f69468d0e3982a5ba61');
+  assert.equal(p.BRIDGE_BLOBS[file], '26d56b2b321bf629f8bd51bae6a0db3b117e7c7a');
+  const files = Object.entries(p.BOOTSTRAP_BLOBS).map(([path, blob]) =>
+    ({path, blob: path === file ? p.BRIDGE_BLOBS[file] : blob}));
+  files.push(...['rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
+    'rust/clients/cli/app/Cargo.toml'].map(path => ({path, blob: base})));
+  assert.throws(() => p.verifyBootstrapInputs({files}), /Bootstrap API\/workload changed; re-audit/);
+});
+
 test('exact complete core suite rejects empty, list-only, duplicate, filtered, ignored and partial output', () => {
   const lines = p.CORE_TESTS.map(name => `test ${name} ... ok`).join('\n');
   const summary = `test result: ok. ${p.CORE_TESTS.length} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n`;
