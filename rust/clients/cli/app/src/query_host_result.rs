@@ -8,7 +8,7 @@ use crate::tabular_export::{ExportDelivery, ExportRequest, ExportSink};
 use fabric_cli_output::{OutputStream, RenderPlan, tabular::TabularFormat, text::TextPlan};
 use fabric_cli_query_commands::{QueryEncodingError, encode_presentation, encode_single};
 use fabric_sdk::runtime::NativeDeadline;
-use fabric_sdk_aihub_query::QueryOutcome;
+use fabric_sdk_aihub_query::{NativeWorkbookResponse, QueryError, QueryOutcome};
 use fabric_sdk_query_tabular::{
     AihubTabularResult, ConversionControl, ConversionError, ConversionLimits, KqlTabularResult,
     convert_aihub, convert_kql,
@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use std::{
     fmt,
     io::{self, Write},
+    path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -54,6 +55,9 @@ pub enum QueryDeliveryError {
     /// All native sets are retained; encoding does not select or infer one.
     #[error(transparent)]
     Encoding(#[from] QueryEncodingError),
+    /// A successful tool response did not contain exactly one usable workbook.
+    #[error(transparent)]
+    Workbook(QueryError),
     /// Local cancellation wins before final file publication.
     #[error("Query output observation was canceled locally; do not replay the query")]
     Canceled,
@@ -73,6 +77,10 @@ pub struct QueryDelivery {
     pub export: Option<ExportRequest>,
     /// Every successfully converted set, even when encoding or file delivery fails.
     pub converted: Option<ConvertedQuery>,
+    /// Original successful MCP response, retained even on attachment/output failure.
+    pub native_workbook: Option<Box<NativeWorkbookResponse>>,
+    /// Explicit local native-artifact destination, never an embedded resource URI.
+    pub workbook_output: Option<PathBuf>,
     /// Standard execution/file receipt; no data bytes are inserted into it.
     pub receipt: ExportDelivery,
     /// Normal no-export rich JSON, including its trailing newline.
@@ -102,6 +110,8 @@ impl QueryObservation {
             identity: self.identity,
             export: self.export,
             converted: None,
+            native_workbook: None,
+            workbook_output: self.workbook_output,
             receipt: ExportDelivery {
                 receipt: json!({
                     "source":"query",
@@ -115,6 +125,16 @@ impl QueryObservation {
         };
         let result: Result<(), QueryDeliveryError> = (|| {
             let native = self.result?;
+            if let NativeQueryResult::Workbook(result) = native {
+                delivery.native_workbook = Some(result);
+                return publish_workbook(
+                    &mut delivery,
+                    output_limits,
+                    deadline,
+                    canceled,
+                    sink,
+                );
+            }
             check_output_control(deadline, canceled)?;
             validate_declared_native(&native)?;
             let converted = match native {
@@ -128,6 +148,7 @@ impl QueryObservation {
                     conversion_limits,
                     conversion,
                 )?)),
+                NativeQueryResult::Workbook(_) => unreachable!("native bytes are handled above"),
             };
             delivery.converted = Some(converted);
             let tables = delivery
@@ -199,7 +220,7 @@ impl QueryObservation {
 
 fn validate_declared_native(result: &NativeQueryResult) -> Result<(), ConversionError> {
     match result {
-        NativeQueryResult::AiHub(_) => {}
+        NativeQueryResult::AiHub(_) | NativeQueryResult::Workbook(_) => {}
         NativeQueryResult::Kql(result) => {
             if !result.evidence.completed
                 || !result.evidence.http_eof
@@ -214,6 +235,51 @@ fn validate_declared_native(result: &NativeQueryResult) -> Result<(), Conversion
             }
         }
     }
+    Ok(())
+}
+
+fn publish_workbook(
+    delivery: &mut QueryDelivery,
+    output_limits: OutputLimits,
+    deadline: &NativeDeadline,
+    canceled: &AtomicBool,
+    sink: &mut impl ExportSink,
+) -> Result<(), QueryDeliveryError> {
+    check_output_control(deadline, canceled)?;
+    let response = delivery
+        .native_workbook
+        .as_ref()
+        .expect("native response was retained");
+    let workbook = response.workbook.as_ref().map_err(|kind| {
+        QueryDeliveryError::Workbook(QueryError {
+            kind: *kind,
+            query_dispatched: true,
+        })
+    })?;
+    let path = delivery
+        .workbook_output
+        .as_ref()
+        .ok_or(QueryHostError::WrongInvocation)?;
+    if delivery.export.is_some() {
+        return Err(QueryHostError::WrongInvocation.into());
+    }
+    if workbook.bytes.len() > output_limits.max_bytes() {
+        return Err(QueryEncodingError::OutputLimit(output_limits.max_bytes()).into());
+    }
+    delivery.receipt.receipt["delivery"] = json!({
+        "status":"not_started",
+        "stage":"file",
+        "file":path.to_string_lossy(),
+        "file_display_lossy":path.to_str().is_none(),
+        "format":"xlsx",
+        "representation":"workload-native",
+        "connectivity":"unverified",
+        "bytes":workbook.bytes.len()
+    });
+    check_output_control(deadline, canceled)?;
+    sink.publish_bytes(path, &workbook.bytes)
+        .map_err(QueryDeliveryError::File)?;
+    delivery.receipt.receipt["delivery"]["status"] = json!("succeeded");
     Ok(())
 }
 
@@ -330,6 +396,7 @@ fn error_code(error: &QueryDeliveryError) -> (&'static str, &'static str) {
         QueryDeliveryError::Native(_) => ("execution", "native_query_failed"),
         QueryDeliveryError::Conversion(_) => ("conversion", "query_type_conversion_failed"),
         QueryDeliveryError::Encoding(_) => ("encoding", "query_encoding_failed"),
+        QueryDeliveryError::Workbook(_) => ("attachment", "native_workbook_unavailable"),
         QueryDeliveryError::Canceled => ("delivery", "query_output_canceled"),
         QueryDeliveryError::Deadline => ("delivery", "query_output_deadline"),
         QueryDeliveryError::File(_) => ("file", "query_file_delivery_failed"),
@@ -338,6 +405,19 @@ fn error_code(error: &QueryDeliveryError) -> (&'static str, &'static str) {
 
 fn execution_snapshot(result: &Result<NativeQueryResult, QueryHostError>) -> Value {
     match result {
+        Ok(NativeQueryResult::Workbook(result)) => json!({
+            "status":"succeeded",
+            "metadata":{
+                "provider":"aihub",
+                "representation":"workload-native-xlsx",
+                "protocolVersion":result.protocol_version,
+                "queryDispatched":true,
+                "nativeResponseObserved":true,
+                "requestedCacheMaxRows":result.requested_max_rows,
+                "rowCompleteness":"unverified",
+                "attachment":if result.workbook.is_ok() { "selected" } else { "failed" }
+            }
+        }),
         Ok(NativeQueryResult::AiHub(result)) => json!({
             "status":"succeeded",
             "metadata":{

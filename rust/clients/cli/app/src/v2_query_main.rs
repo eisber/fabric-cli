@@ -99,6 +99,8 @@ pub(crate) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
         }
         Err(error) => return Err(failed("QueryTargetFailed", error.to_string(), 1)),
     };
+    fabric_cli::query_host::validate_native_format(&command, &parsed)
+        .map_err(|error| failed("UnsupportedFormat", error.to_string(), 2))?;
     let timeout = fabric_sdk_http::ExecutionOptions::default().timeout;
     let deadline = NativeDeadline::new(timeout)
         .map_err(|_| failed("InvalidConfiguration", "Invalid finite query deadline.", 2))?;

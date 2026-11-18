@@ -14,15 +14,16 @@ use crate::{
 };
 use fabric_cli_query_commands::{
     AiHubPreparationError, Artifact, InputReader, KqlPreparationError, PreparationError,
-    PreparedAiHub, PreparedKql, QueryInput, QueryTarget, ResolvedRoute,
+    PreparedAiHub, PreparedAiHubWorkbook, PreparedKql, QueryInput, QueryTarget, ResolvedRoute,
     TextSource as QueryTextSource, prepare_input,
 };
 use fabric_sdk::runtime::NativeDeadline;
 use fabric_sdk_aihub_query::{
-    AiHubQueryClient, QueryError as AiHubError, QueryOutcome, TypedQueryResult,
+    AiHubQueryClient, NativeWorkbookResponse, QueryError as AiHubError, QueryOutcome,
+    TypedQueryResult,
 };
 use fabric_sdk_query::{EngineExecutor, QueryError as KqlError, QueryLimits, QueryResult};
-use std::{future::Future, time::Duration};
+use std::{future::Future, path::PathBuf, time::Duration};
 
 /// Optional non-secret query connection bound to the existing trusted service.
 #[path = "query_host_connection.rs"]
@@ -92,11 +93,13 @@ pub struct QueryIdentity {
 pub struct PreparedQuery<'a> {
     identity: QueryIdentity,
     export: Option<ExportRequest>,
+    workbook_output: Option<PathBuf>,
     operation: PreparedProvider<'a>,
 }
 
 enum PreparedProvider<'a> {
     AiHub(PreparedAiHub),
+    Workbook(PreparedAiHubWorkbook),
     Kql(PreparedKql, &'a dyn EngineExecutor),
 }
 
@@ -107,6 +110,8 @@ enum PreparedProvider<'a> {
 pub enum NativeQueryResult {
     /// Complete explicitly typed AIHub resources and auxiliary evidence.
     AiHub(Box<TypedQueryResult>),
+    /// Successful native MCP response and explicit workbook-selection evidence.
+    Workbook(Box<NativeWorkbookResponse>),
     /// Complete native KQL tables and terminal evidence.
     Kql(Box<QueryResult>),
 }
@@ -117,6 +122,8 @@ pub struct QueryObservation {
     pub identity: QueryIdentity,
     /// Original explicit format/destination, absent for normal presentation.
     pub export: Option<ExportRequest>,
+    /// Explicit native byte destination, mutually exclusive with tabular export.
+    pub workbook_output: Option<PathBuf>,
     /// Every completed dataset or the actual native failure/partial evidence.
     pub result: Result<NativeQueryResult, QueryHostError>,
 }
@@ -136,6 +143,9 @@ pub enum QueryHostError {
     /// A format/file request failed standard no-clobber preflight.
     #[error("Query output is unavailable or already exists; no query was dispatched")]
     OutputPreflight,
+    /// Direct KQL has no native workbook capability; no fallback is permitted.
+    #[error("Workload-native XLSX requires an explicitly DataAgent-qualified target; native KQL and ID-only targets are unsupported")]
+    UnsupportedFormat,
     /// Actual SDK AIHub request preparation failed before execution.
     #[error(transparent)]
     AiHubPreparation(#[from] AiHubPreparationError),
@@ -173,6 +183,12 @@ pub fn prepare<'a>(
         return Err(QueryHostError::WrongInvocation);
     }
     let route = bound.target.resolve(options.engine.as_deref())?;
+    if options.workbook_output.is_some() && !matches!(&route, ResolvedRoute::AiHub(_)) {
+        return Err(QueryHostError::UnsupportedFormat);
+    }
+    if options.workbook_output.is_some() && command.export.is_some() {
+        return Err(QueryHostError::WrongInvocation);
+    }
     // Both released native request schemas currently reject parameters.
     // Do this before output staging or opening the statement reader.
     if options.parameters.is_some() {
@@ -195,6 +211,11 @@ pub fn prepare<'a>(
             .preflight(request)
             .map_err(|_| QueryHostError::OutputPreflight)?;
     }
+    if let Some(path) = &options.workbook_output {
+        output
+            .preflight_bytes(path)
+            .map_err(|_| QueryHostError::OutputPreflight)?;
+    }
     let statement = prepare_input(
         QueryInput {
             text: match &options.text {
@@ -213,6 +234,14 @@ pub fn prepare<'a>(
         route: route.clone(),
     };
     let operation = match route {
+        route @ ResolvedRoute::AiHub(_) if options.workbook_output.is_some() => {
+            PreparedProvider::Workbook(PreparedAiHubWorkbook::new(
+                route,
+                statement,
+                providers.aihub.ok_or(QueryHostError::NotConfigured)?.clone(),
+                policy.aihub_max_rows,
+            )?)
+        }
         route @ ResolvedRoute::AiHub(_) => PreparedProvider::AiHub(PreparedAiHub::new(
             route,
             statement,
@@ -236,8 +265,24 @@ pub fn prepare<'a>(
     Ok(PreparedQuery {
         identity,
         export: command.export.clone(),
+        workbook_output: options.workbook_output.clone(),
         operation,
     })
+}
+
+/// Require an explicit DataAgent XLSX owner before metadata, input or credentials.
+pub fn validate_native_format(
+    command: &NativeCommand,
+    owner: &crate::get_target::GetTarget,
+) -> Result<(), QueryHostError> {
+    if matches!(&command.operation, Operation::Query(options) if options.workbook_output.is_some())
+        && !matches!(owner, crate::get_target::GetTarget::Item {
+            item_type: Some(kind), ..
+        } if kind == "DataAgent")
+    {
+        return Err(QueryHostError::UnsupportedFormat);
+    }
+    Ok(())
 }
 
 /// Truthful root/binary result until a supported native provider is injected.
@@ -277,12 +322,16 @@ impl PreparedQuery<'_> {
                 PreparedProvider::Kql(operation, executor) => NativeQueryResult::Kql(Box::new(
                     operation.execute(executor, deadline, cancelled).await?,
                 )),
+                PreparedProvider::Workbook(operation) => NativeQueryResult::Workbook(Box::new(
+                    operation.execute(deadline, cancelled).await?,
+                )),
             })
         }
         .await;
         QueryObservation {
             identity: self.identity,
             export: self.export,
+            workbook_output: self.workbook_output,
             result,
         }
     }

@@ -240,6 +240,22 @@ pub trait ExportSink {
     fn preflight(&mut self, request: &ExportRequest) -> io::Result<()>;
     /// Publish only complete encoded bytes, atomically and without replacement.
     fn publish(&mut self, request: &ExportRequest, bytes: &[u8]) -> io::Result<()>;
+    /// Preflight opaque native bytes using the same atomic no-clobber policy.
+    ///
+    /// Table-only embedders reject this capability explicitly by default.
+    fn preflight_bytes(&mut self, _output: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "This sink does not support native byte artifacts",
+        ))
+    }
+    /// Publish unchanged native bytes to the previously preflighted destination.
+    fn publish_bytes(&mut self, _output: &Path, _bytes: &[u8]) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "This sink does not support native byte artifacts",
+        ))
+    }
 }
 
 fn checked_destination(path: &Path) -> io::Result<PathBuf> {

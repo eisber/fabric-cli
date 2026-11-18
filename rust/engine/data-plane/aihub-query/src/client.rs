@@ -5,7 +5,8 @@ use crate::{
     CatalogView, DATA_AGENT_VARIANT, DataAgentTarget, Limits, NativeCatalogResponse,
     NativeDeadline, QueryError, QueryErrorKind, QueryMode, QueryOutcome, QueryRequest, QueryStage,
     READ_ONLY_VARIANT, SANDBOX_VARIANT, TEMPLATE_VARIANT, TYPED_RESULTS_VARIANT, TypedJson,
-    catalog, decode, json::RawValue, protocol,
+    NativeWorkbookRequest, NativeWorkbookResponse, catalog, decode, json::RawValue, protocol,
+    workbook,
 };
 use azure_core::{
     credentials::{AccessToken, TokenCredential},
@@ -113,6 +114,12 @@ pub struct AiHubQueryClient {
     limits: Limits,
 }
 
+#[derive(Clone, Copy)]
+enum Representation {
+    TypedJson,
+    NativeWorkbook,
+}
+
 impl fmt::Debug for AiHubQueryClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AiHubQueryClient(<injected, redacted>)")
@@ -148,9 +155,32 @@ impl AiHubQueryClient {
         deadline: &NativeDeadline,
         canceled: impl Future<Output = ()> + Send,
     ) -> Result<QueryOutcome, QueryError> {
-        self.invoke(request, deadline, canceled, |raw, version| {
+        self.invoke(request, Representation::TypedJson, deadline, canceled, |raw, version| {
             decode::decode(raw, self.limits, request.max_rows as usize, version)
         })
+        .await
+    }
+
+    /// Request and retain one workload-native workbook using one execution.
+    ///
+    /// Omits only the typed-results token. No typed JSON, local workbook
+    /// generation, resource download, alternate provider or replay is attempted.
+    /// A successful tool response retains explicit attachment failures separately.
+    pub async fn execute_native_workbook(
+        &self,
+        request: &NativeWorkbookRequest,
+        deadline: &NativeDeadline,
+        canceled: impl Future<Output = ()> + Send,
+    ) -> Result<NativeWorkbookResponse, QueryError> {
+        self.invoke(
+            &request.inner,
+            Representation::NativeWorkbook,
+            deadline,
+            canceled,
+            |raw, version| {
+                workbook::decode(raw, self.limits, version, request.inner.max_rows)
+            },
+        )
         .await
     }
 
@@ -182,7 +212,7 @@ impl AiHubQueryClient {
     ) -> Result<NativeCatalogResponse, QueryError> {
         let request = QueryRequest::new(target, view.expression().into(), TypedJson::Required)?
             .with_mode(QueryMode::Template);
-        self.invoke(&request, deadline, canceled, |raw, version| {
+        self.invoke(&request, Representation::TypedJson, deadline, canceled, |raw, version| {
             catalog::decode(raw, self.limits, version)
         })
         .await
@@ -191,6 +221,7 @@ impl AiHubQueryClient {
     async fn invoke<T>(
         &self,
         request: &QueryRequest,
+        representation: Representation,
         deadline: &NativeDeadline,
         canceled: impl Future<Output = ()> + Send,
         decode_result: impl FnOnce(&RawValue, String) -> Result<T, QueryErrorKind> + Send,
@@ -203,7 +234,9 @@ impl AiHubQueryClient {
             latched: AtomicBool::new(false),
         };
         let mut operation = pin!(async {
-            let (raw, version) = self.run(request, deadline, &dispatched, &canceled).await?;
+            let (raw, version) = self
+                .run(request, representation, deadline, &dispatched, &canceled)
+                .await?;
             let result = decode_result(&raw, version)?;
             canceled.check().await?;
             deadline.remaining().map_err(|_| QueryErrorKind::Deadline)?;
@@ -235,6 +268,7 @@ impl AiHubQueryClient {
     async fn run(
         &self,
         request: &QueryRequest,
+        representation: Representation,
         deadline: &NativeDeadline,
         dispatched: &AtomicBool,
         canceled: &Cancellation<'_>,
@@ -249,7 +283,11 @@ impl AiHubQueryClient {
         if secret.is_empty() || secret.len() > 32 * 1024 || secret.chars().any(char::is_control) {
             return Err(QueryErrorKind::Authentication);
         }
-        let mut variants = vec![DATA_AGENT_VARIANT, TYPED_RESULTS_VARIANT, READ_ONLY_VARIANT];
+        let mut variants = vec![DATA_AGENT_VARIANT];
+        if matches!(representation, Representation::TypedJson) {
+            variants.push(TYPED_RESULTS_VARIANT);
+        }
+        variants.push(READ_ONLY_VARIANT);
         if request.target.stage == QueryStage::Sandbox {
             variants.push(SANDBOX_VARIANT);
         }

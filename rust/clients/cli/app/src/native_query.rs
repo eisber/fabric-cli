@@ -50,6 +50,9 @@ pub(super) fn run(command: &NativeCommand) -> io::Result<CommandOutcome> {
             return super::write_error(failure("query_target_failed", error.to_string(), 1));
         }
     };
+    if let Err(error) = fabric_cli::query_host::validate_native_format(command, &parsed) {
+        return super::write_error(failure("unsupported_format", error.to_string(), 2));
+    }
     let timeout = fabric_sdk_http::ExecutionOptions::default().timeout;
     let deadline = NativeDeadline::new(timeout)
         .map_err(|_| io::Error::other("Invalid finite query deadline"))?;

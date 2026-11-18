@@ -147,6 +147,7 @@ impl NativeQueryHost {
             .remaining()
             .map_err(|_| NativeQueryError::Deadline)?;
         let parsed = resolution::parse_owner(&command.path)?;
+        super::validate_native_format(command, &parsed)?;
         if matches!(&parsed,crate::get_target::GetTarget::Item {
             item_type:Some(kind),..
         } if kind=="KQLDatabase")

@@ -346,6 +346,70 @@ fn aihub_replies_with_content(content: Value) -> Vec<Reply> {
 }
 
 #[tokio::test]
+async fn native_kql_and_id_only_xlsx_are_rejected_before_metadata_input_or_credentials() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("unsupported.xlsx");
+    let http = Http::new([]);
+    let credential = Arc::new(Credential::default());
+    let host = host(http.clone(), credential.clone(), None);
+    let deadline = NativeDeadline::new(Duration::from_secs(120)).unwrap();
+    let canceled = AtomicBool::new(false);
+    let mut sink = FileSink::default();
+    for path in [
+        format!("/{WS}.Workspace/{ITEM}.KQLDatabase"),
+        format!("/workspaces/{WS}/items/{ITEM}"),
+    ] {
+        let mut command = command("KQLDatabase", Some(("xlsx", &output)));
+        command.path = path;
+        let result = host.dispatch(
+            &command,
+            QueryControl { deadline: &deadline, end: Instant::now() + Duration::from_secs(120),
+                canceled: &canceled, request_id: "query;unsupported-xlsx" },
+            &mut NoInput, &mut sink, pending(),
+        ).await;
+        assert!(matches!(result, Err(NativeQueryError::Host(QueryHostError::UnsupportedFormat))));
+    }
+    assert!(http.requests.lock().unwrap().is_empty());
+    assert!(credential.scopes.lock().unwrap().is_empty());
+    drop(sink);
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn actual_native_dataagent_xlsx_uses_same_binding_and_single_native_execution() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("native.data");
+    let content = json!({"content":[{"type":"resource","resource":{
+        "uri":"file:///not-the-local-output.xlsx",
+        "mimeType":fabric_sdk_aihub_query::WORKBOOK_MIME,"blob":"0M8R4A=="
+    },"annotations":{"audience":["user"]}}]});
+    let http = Http::new(aihub_replies_with_content(content));
+    let credential = Arc::new(Credential::default());
+    let host = host(http.clone(), credential.clone(), Some(settings()));
+    let deadline = NativeDeadline::new(Duration::from_secs(120)).unwrap();
+    let canceled = AtomicBool::new(false);
+    let mut sink = FileSink::default();
+    let delivery = host.dispatch(
+        &command("DataAgent", Some(("xlsx", &output))),
+        QueryControl { deadline: &deadline, end: Instant::now() + Duration::from_secs(120),
+            canceled: &canceled, request_id: "query;native-xlsx" },
+        &mut NoInput, &mut sink, pending(),
+    ).await.unwrap();
+    assert!(delivery.error.is_none());
+    assert!(delivery.converted.is_none());
+    assert_eq!(std::fs::read(&output).unwrap(), b"\xd0\xcf\x11\xe0");
+    assert_eq!(delivery.native_workbook.unwrap().workbook.unwrap().bytes, b"\xd0\xcf\x11\xe0");
+    let requests = http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 5);
+    for request in &requests[2..] {
+        let body = Bytes::from(request.body());
+        let message: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(message["params"]["_meta"]["variants"],
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.SqlReadOnlyEnforce");
+    }
+    assert_eq!(credential.scopes.lock().unwrap().last().unwrap(), Audience::Fabric.scope());
+}
+#[tokio::test]
 async fn actual_native_kql_context_sdk_read_policy_scope_and_all_three_codecs() {
     for format in ["json", "csv", "parquet"] {
         let directory = tempfile::tempdir().unwrap();

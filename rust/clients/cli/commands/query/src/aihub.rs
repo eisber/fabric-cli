@@ -4,7 +4,7 @@
 use crate::{PreparedInput, ResolvedRoute, Stage};
 use fabric_sdk_aihub_query::{
     AiHubQueryClient, DataAgentTarget, NativeDeadline, QueryError, QueryOutcome, QueryRequest,
-    QueryStage, TypedJson,
+    NativeWorkbookRequest, NativeWorkbookResponse, QueryStage, TypedJson,
 };
 use std::future::Future;
 
@@ -15,6 +15,23 @@ use std::future::Future;
 pub struct PreparedAiHub {
     client: AiHubQueryClient,
     request: QueryRequest,
+}
+
+/// One explicit workload-native workbook execution, never a typed fallback.
+pub struct PreparedAiHubWorkbook {
+    client: AiHubQueryClient,
+    request: NativeWorkbookRequest,
+}
+
+fn target(route: ResolvedRoute) -> Result<DataAgentTarget, AiHubPreparationError> {
+    let ResolvedRoute::AiHub(route) = route else {
+        return Err(AiHubPreparationError::WrongProvider);
+    };
+    let stage = match route.stage {
+        Stage::Production => QueryStage::Production,
+        Stage::Sandbox => QueryStage::Sandbox,
+    };
+    Ok(DataAgentTarget::new(&route.agent.item, &route.datasource, stage)?)
 }
 
 /// An unsupported provider or invalid typed DataAgent request before dispatch.
@@ -40,14 +57,7 @@ impl PreparedAiHub {
         client: AiHubQueryClient,
         max_rows: u32,
     ) -> Result<Self, AiHubPreparationError> {
-        let ResolvedRoute::AiHub(route) = route else {
-            return Err(AiHubPreparationError::WrongProvider);
-        };
-        let stage = match route.stage {
-            Stage::Production => QueryStage::Production,
-            Stage::Sandbox => QueryStage::Sandbox,
-        };
-        let target = DataAgentTarget::new(&route.agent.item, &route.datasource, stage)?;
+        let target = target(route)?;
         let request = QueryRequest::new(target, input.text().to_owned(), TypedJson::Required)?
             .with_max_rows(max_rows)?;
         Ok(Self { client, request })
@@ -65,6 +75,31 @@ impl PreparedAiHub {
     ) -> Result<QueryOutcome, QueryError> {
         self.client
             .execute_query(&self.request, deadline, cancelled)
+            .await
+    }
+}
+
+impl PreparedAiHubWorkbook {
+    /// Bind the authoritative datasource without acquiring credentials or I/O.
+    pub fn new(
+        route: ResolvedRoute,
+        input: PreparedInput,
+        client: AiHubQueryClient,
+        max_rows: u32,
+    ) -> Result<Self, AiHubPreparationError> {
+        let request = NativeWorkbookRequest::new(target(route)?, input.text().to_owned())?
+            .with_max_rows(max_rows)?;
+        Ok(Self { client, request })
+    }
+
+    /// Execute once, retaining successful-response and attachment-failure evidence.
+    pub async fn execute(
+        self,
+        deadline: &NativeDeadline,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<NativeWorkbookResponse, QueryError> {
+        self.client
+            .execute_native_workbook(&self.request, deadline, cancelled)
             .await
     }
 }

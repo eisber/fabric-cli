@@ -8,6 +8,9 @@
 #[path = "../examples/support/mod.rs"]
 mod support;
 
+#[path = "cases/workbook.rs"]
+mod workbook;
+
 use azure_core::http::Url;
 use fabric_sdk_aihub_query::{
     AuthBinding, Completeness, DataAgentTarget, Limits, NativeValue, QueryErrorKind, QueryMode,

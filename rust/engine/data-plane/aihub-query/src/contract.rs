@@ -139,12 +139,55 @@ impl fmt::Debug for QueryRequest {
     }
 }
 
+/// Explicit workload-native workbook request, never a typed-JSON downgrade.
+///
+/// The service chooses the engine and constructs the workbook. This request
+/// cannot request typed JSON alongside Excel in the same execution.
+#[derive(Clone)]
+pub struct NativeWorkbookRequest {
+    pub(crate) inner: QueryRequest,
+}
+
+impl NativeWorkbookRequest {
+    /// Validate one native workbook query with the service's default row cap.
+    pub fn new(target: DataAgentTarget, query: String) -> Result<Self, QueryError> {
+        Ok(Self {
+            inner: QueryRequest::new(target, query, TypedJson::Required)?,
+        })
+    }
+
+    /// Select native execution or the existing curated-template selector.
+    pub fn with_mode(mut self, mode: QueryMode) -> Self {
+        self.inner = self.inner.with_mode(mode);
+        self
+    }
+
+    /// Set a safe service-side filename hint, never a local destination.
+    pub fn with_filename(mut self, filename: &str) -> Result<Self, QueryError> {
+        self.inner = self.inner.with_filename(filename)?;
+        Ok(self)
+    }
+
+    /// Limit cached rows, not query compute or subsequent Excel refresh.
+    pub fn with_max_rows(mut self, max_rows: u32) -> Result<Self, QueryError> {
+        self.inner = self.inner.with_max_rows(max_rows)?;
+        Ok(self)
+    }
+}
+
+impl fmt::Debug for NativeWorkbookRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("NativeWorkbookRequest(<redacted>)")
+    }
+}
+
 /// Finite application bounds, in addition to the one caller-supplied deadline.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     /// Decoded HTTP response bound, including MCP content (default 32 MiB).
     pub response_bytes: usize,
-    /// Combined resource text and metadata bound (default 16 MiB).
+    /// Combined typed resource text/metadata or whole native workbook result bound
+    /// (default 16 MiB). Native base64 is bounded before decoded allocation.
     pub resource_bytes: usize,
     /// Maximum content blocks (default 128).
     pub content_blocks: usize,
@@ -265,6 +308,12 @@ pub enum QueryErrorKind {
     ToolError,
     /// Require DataAgent routing and typed JSON; CSV/Markdown is not a fallback.
     MissingTypedJson,
+    /// Successful tool response has no native Excel blob (including zero rows).
+    MissingNativeWorkbook,
+    /// One local destination cannot select among multiple native workbooks.
+    MultipleNativeWorkbooks,
+    /// Native Excel resource has an invalid shape, empty bytes or bad base64.
+    InvalidNativeWorkbook,
     /// Version, schema, value, ID, count or metadata validation failed.
     InvalidTypedResource,
     /// A resource/URI/result ID appeared more than once.
@@ -323,6 +372,15 @@ impl fmt::Display for QueryError {
             }
             QueryErrorKind::MissingTypedJson => {
                 "typed application/json result missing; verify DataAgent routing, eligibility and TypedQueryResults opt-in; CSV is not supported"
+            }
+            QueryErrorKind::MissingNativeWorkbook => {
+                "workload-native Excel attachment missing (including possible zero-row output); no workbook was synthesized and the query must not be replayed automatically"
+            }
+            QueryErrorKind::MultipleNativeWorkbooks => {
+                "single-file output requires exactly one workload-native Excel attachment; no attachment was silently selected"
+            }
+            QueryErrorKind::InvalidNativeWorkbook => {
+                "workload-native Excel attachment is empty, malformed or invalid base64; original response evidence is retained without replay"
             }
             QueryErrorKind::InvalidTypedResource => {
                 "AIHub typed resource schema, metadata, value or counts are inconsistent"

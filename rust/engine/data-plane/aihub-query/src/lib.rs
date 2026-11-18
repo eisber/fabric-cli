@@ -14,16 +14,18 @@ mod decode;
 mod json;
 mod media;
 mod protocol;
+mod workbook;
 
 pub use catalog::{CatalogView, NativeCatalogContent, NativeCatalogResponse};
 pub use client::{AiHubQueryClient, AuthBinding};
 pub use contract::{
     Completeness, DataAgentTarget, Limits, QueryError, QueryErrorKind, QueryMode, QueryOutcome,
-    QueryRequest, QueryStage, TypedJson,
+    NativeWorkbookRequest, QueryRequest, QueryStage, TypedJson,
 };
 pub use decode::{Column, EmbeddedResource, NativeValue, QueryResource, TypedQueryResult};
 pub use fabric_sdk::runtime::NativeDeadline;
 pub use fabric_sdk_http::ExecutionTimer;
+pub use workbook::{NativeWorkbook, NativeWorkbookResponse, WORKBOOK_MIME};
 
 /// Existing DataAgent routing wire variant; this is not an eligibility grant.
 pub const DATA_AGENT_VARIANT: &str = "Fabric.Routing.Documents.DataAgent";

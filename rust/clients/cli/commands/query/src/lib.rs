@@ -13,7 +13,7 @@ mod kql;
 mod output;
 mod target;
 
-pub use aihub::{AiHubPreparationError, PreparedAiHub};
+pub use aihub::{AiHubPreparationError, PreparedAiHub, PreparedAiHubWorkbook};
 pub use input::{InputReader, InputSource, PreparedInput, QueryInput, TextSource, prepare_input};
 pub use kql::{KqlPreparationError, PreparedKql};
 pub use output::{QueryEncodingError, encode_presentation, encode_single};

@@ -40,6 +40,55 @@ verified by the service, not guessed locally. Select `Production` or `Sandbox`
 explicitly. `QueryRequest::new(..., TypedJson::Required)` makes typed-result
 opt-in explicit; legacy CSV is not a typed-result mode.
 
+## Workload-native workbook representation
+
+Use the separate `NativeWorkbookRequest` and
+`AiHubQueryClient::execute_native_workbook` API to request native Excel:
+
+```rust,ignore
+let request = NativeWorkbookRequest::new(target, query)?.with_max_rows(1000)?;
+let response = client.execute_native_workbook(&request, &deadline, canceled).await?;
+let workbook = response.workbook.as_ref(); // Handle attachment failure explicitly.
+```
+
+This uses the same injected HTTP/credential/timer/cancellation/deadline lifecycle,
+fixed initialize(1), initialized acknowledgement and `execute_query`(2). It
+omits **only** `Fabric.Routing.Documents.DataAgent.TypedQueryResults` on all
+three exchanges; routing, read-policy, stage and explicit SDK template tokens
+remain. Native mode still omits `language`; the existing explicit template mode
+uses only `jmespath`. There is no `format`/`includeExports` argument, discovery,
+alternate endpoint, URI download, retry, fallback, or local workbook generator.
+`QueryRequest`/`TypedJson::Required`/`execute_query` remain strictly typed.
+
+A successful terminal non-error tool response returns
+`NativeWorkbookResponse`, retaining exact result JSON, annotations, resource and
+top-level metadata, actual protocol and requested cache cap. Its `workbook`
+field is explicitly fallible: exactly one Excel MIME-essence blob with strict
+base64 and nonempty bytes is required. Missing output (including zero-row
+results), multiple workbooks, duplicate URIs, bad encoding and exceeded bounds
+do not discard completed-response evidence or permit replay. Transport,
+JSON-RPC, unsupported task/protocol and tool errors retain the shared
+`QueryError::query_dispatched` semantics.
+
+The whole HTTP response is bounded by `response_bytes`. The complete native
+result, including encoded blobs and metadata, must fit `resource_bytes` before
+blob decoding; content blocks are checked before materialization. Decoded byte
+allocations therefore fit within that encoded budget. Row/cell/schema limits
+apply to typed rowsets, not opaque workbook contents: native Excel has no
+`fabric.queryResult`, typed result ID, row count or truncation marker. Delivery
+means retaining all attachment bytes, not proving all engine rows were returned.
+
+Bytes are never unpacked, repacked, resaved or evaluated, preserving native
+connections, labels and any protection/encryption without a ZIP-magic
+requirement. A valid native artifact is **not** a generic connectivity or label
+certificate: missing service connection metadata can produce a static workbook.
+Observed AIHub connected output uses manual refresh with the opener's Excel
+credentials, permissions and native-query consent; desktop refresh has not been
+qualified here. Refresh runs the baked-in native query, not the template or
+service policy, and is not constrained by the cached `max_rows`. Typed JSON
+replaces native XLSX in this workload, so both representations require separate
+explicit executions with no snapshot-equivalence claim.
+
 ## Capabilities and evidence limits
 
 | Surface | Implemented behavior | Qualification |

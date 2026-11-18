@@ -145,6 +145,28 @@ This is not a claim that every native provider type has an Arrow representation.
 Normal no-export presentation is rich JSON and retains all datasets. Exports
 use a preflighted standard `FileSink` and atomic no-clobber publication; encoding,
 file or receipt failure retains completed-query evidence without resubmission.
+The additive DataAgent-only `--format xlsx --output NEW_FILE` path instead uses
+`PreparedAiHubWorkbook` and the separate SDK native-workbook representation.
+It omits only the typed-results token, never passes through Arrow or a local
+Excel writer, and publishes the original strictly decoded bytes through the
+same atomic `FileSink`. Exactly one native Excel resource is required; missing,
+invalid or multiple attachments retain the successful MCP response as explicit
+output failures. The resource URI is opaque, never fetched or used as a path.
+Native KQL rejects this unsupported format before credentials or query dispatch.
+The table-only injected backend also rejects XLSX rather than synthesizing it.
+
+Typed JSON and native Excel are mutually exclusive in the current workload
+contract; no hidden second execution or shared-snapshot claim is made. Native
+artifact delivery attests to attachment bytes, not typed row completeness,
+result IDs, native row types or truncation. Label/protection bytes and native
+annotations/metadata survive unchanged. Connectivity remains unverified:
+AIHub may return data-only output when connection metadata is unavailable.
+Observed connected workbooks refresh manually in Excel using the opener's
+credentials and embedded query, not through the original service's row cap,
+template invocation or read-policy pipeline. No desktop refresh success,
+automatic refresh or source-label parity is promised. See
+[native Excel usage and limits](../../app/README.md#workload-native-excel-output).
+
 The native KQL server policy is explicitly 30 seconds, independent of the
 existing overall native command budget. Metadata, authentication, transport,
 conversion and output share the original invocation deadline. Row/byte limits

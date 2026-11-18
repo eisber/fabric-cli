@@ -157,5 +157,44 @@ fn opaque_unbound_paths_keep_the_existing_receipt_before_config_identity_or_stdi
         assert_eq!(receipt["execution"]["status"], "not_started");
         assert!(!String::from_utf8_lossy(&output.stdout).contains("arbitrary-table"));
     }
+
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn both_real_roots_require_explicit_xlsx_output_and_reject_binary_stdout() {
+    let directory = tempfile::tempdir().unwrap();
+    for binary in binaries() {
+        for suffix in [vec![], vec!["--output", "-"]] {
+            let mut args = vec!["query", TARGET, "--text", "private-query", "--format", "xlsx"];
+            args.extend(suffix);
+            let output = run(binary, directory.path(), &args);
+            assert!(!output.status.success());
+            assert!(output.stdout.is_empty());
+            let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+            assert!(matches!(error["error"]["code"].as_str(), Some("invalid_arguments" | "InvalidArguments")));
+            assert!(!String::from_utf8_lossy(&output.stderr).contains("private-query"));
+        }
+    }
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn both_real_roots_reject_native_kql_and_id_only_xlsx_before_identity_or_input() {
+    let directory = tempfile::tempdir().unwrap();
+    let id_only = "/workspaces/11111111-1111-4111-8111-111111111111/items/22222222-2222-4222-8222-222222222222";
+    for binary in binaries() {
+        for target in [TARGET, id_only] {
+            let output = Command::new(binary).env_clear()
+                .env("FAB_RUST_CONFIG_ROOT", directory.path().join("must-not-initialize"))
+                .env("FAB_RUST_AUTH_MODE", "invalid")
+                .args(["query", target, "--file", "-", "--format", "xlsx", "--output", "native.xlsx"])
+                .output().unwrap();
+            assert!(!output.status.success());
+            assert!(output.stdout.is_empty());
+            let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+            assert!(matches!(error["error"]["code"].as_str(), Some("unsupported_format" | "UnsupportedFormat")));
+        }
+    }
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
