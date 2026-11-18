@@ -182,6 +182,22 @@ fn response_from_batch(batch: RecordBatch) -> OperationResponse {
     }
 }
 
+fn assert_debug_omits(value: &impl std::fmt::Debug, sensitive: &[&str]) {
+    for rendered in [
+        format!("{value:?}"),
+        format!("{value:#?}"),
+        format!("{:?}", Some(value)),
+        format!("{:#?}", Some(value)),
+    ] {
+        for sentinel in sensitive {
+            assert!(
+                !rendered.contains(sentinel),
+                "Debug exposed retained evidence"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn native_pq_diagnostic_column_fails_before_success_in_every_output_format() {
     let batch = RecordBatch::try_new(
@@ -216,6 +232,16 @@ async fn native_pq_diagnostic_column_fails_before_success_in_every_output_format
             .await
             .unwrap();
         let failure = approved.execute(&mut session).await.err().unwrap();
+        let response_debug = format!("{original:?}");
+        assert_debug_omits(
+            &failure,
+            &[
+                "synthetic mashup failure",
+                "PQ Arrow Metadata",
+                response_debug.as_str(),
+            ],
+        );
+        assert!(format!("{failure:?}").contains("<redacted>"));
         let fabric_cli::execute::host::ExecutionFailure::Result {
             error,
             response,
@@ -439,6 +465,10 @@ async fn actual_202_state_and_result_preserve_operation_handle_without_resubmiss
         .unwrap();
     let result = approved.execute(&mut session).await.unwrap();
     assert_eq!(result.evidence.operation_id.as_deref(), Some(OPERATION));
+    let original_uncertainty = result.evidence.mutation_may_have_occurred;
+    assert_debug_omits(&result.evidence, &[OPERATION]);
+    assert_eq!(result.evidence.operation_id.as_deref(), Some(OPERATION));
+    assert_eq!(result.evidence.mutation_may_have_occurred, original_uncertainty);
     let requests = wire.requests.lock().unwrap();
     assert_eq!(requests.len(), 3);
     assert!(requests[1].0.ends_with(OPERATION));
@@ -500,6 +530,8 @@ async fn service_permission_failure_retains_classification_and_does_not_retry_su
         .await
         .unwrap();
     let error = approved.execute(&mut session).await.err().unwrap();
+    assert_debug_omits(&error, &["Synthetic permission denial"]);
+    assert!(format!("{error:?}").contains("Query"));
     let fabric_cli::execute::host::ExecutionFailure::Query(error) = error else {
         panic!("original endpoint error");
     };
@@ -507,6 +539,26 @@ async fn service_permission_failure_retains_classification_and_does_not_retry_su
         error.operation_error().unwrap().kind,
         OperationErrorKind::Http { status: 403, .. }
     ));
+    let retained = error.operation_error().unwrap();
+    let evidence = fabric_cli::execute::host::ExecutionEvidence::from(retained);
+    let original_service_error = evidence.raw_service_error.clone();
+    let original_uncertainty = evidence.mutation_may_have_occurred;
+    assert_debug_omits(
+        &evidence,
+        &["Synthetic permission denial", "InsufficientPrivileges"],
+    );
+    assert!(format!("{evidence:?}").contains("<redacted>"));
+    assert_eq!(evidence.http_status, Some(403));
+    assert_eq!(
+        evidence.raw_service_error.as_deref(),
+        retained.raw_service_error.as_deref()
+    );
+    assert_eq!(evidence.raw_service_error, original_service_error);
+    assert_eq!(evidence.mutation_may_have_occurred, original_uncertainty);
+    assert_eq!(
+        evidence.raw_service_error.as_deref().unwrap()["message"],
+        "Synthetic permission denial"
+    );
     assert_eq!(wire.requests.lock().unwrap().len(), 1);
 }
 

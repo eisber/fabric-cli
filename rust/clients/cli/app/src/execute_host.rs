@@ -212,7 +212,9 @@ pub struct ExecutionResult {
 }
 
 /// Reconciliation facts without inventing an error classification on success.
-#[derive(Clone, Debug)]
+///
+/// Debug output redacts source-sensitive values; explicit fields retain them.
+#[derive(Clone)]
 pub struct ExecutionEvidence {
     /// Actual native accepted operation ID, when one was returned.
     pub operation_id: Option<String>,
@@ -222,6 +224,24 @@ pub struct ExecutionEvidence {
     pub http_status: Option<u16>,
     /// Exact structured service failure, when the shared engine retained one.
     pub raw_service_error: Option<Box<serde_json::Value>>,
+}
+
+impl std::fmt::Debug for ExecutionEvidence {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecutionEvidence")
+            .field(
+                "operation_id",
+                &self.operation_id.as_ref().map(|_| "<retained>"),
+            )
+            .field("mutation_may_have_occurred", &self.mutation_may_have_occurred)
+            .field("http_status", &self.http_status)
+            .field(
+                "raw_service_error",
+                &self.raw_service_error.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl From<&OperationError> for ExecutionEvidence {
@@ -239,7 +259,9 @@ impl From<&OperationError> for ExecutionEvidence {
 }
 
 /// Typed native execution or result-format failure; never a successful receipt.
-#[derive(Debug, thiserror::Error)]
+///
+/// Debug output omits native payloads without changing explicit error evidence.
+#[derive(thiserror::Error)]
 pub enum ExecutionFailure {
     /// Native service errors preserve their original operation and response.
     #[error("Native Dataflow query failed or its completion is unconfirmed.")]
@@ -254,6 +276,23 @@ pub enum ExecutionFailure {
         /// Original operation reconciliation evidence.
         evidence: Box<OperationError>,
     },
+}
+
+impl std::fmt::Debug for ExecutionFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Query(error) => formatter
+                .debug_struct("Query")
+                .field("kind", &error.kind())
+                .finish_non_exhaustive(),
+            Self::Result { .. } => formatter
+                .debug_struct("Result")
+                .field("error", &"<redacted>")
+                .field("response", &"<redacted>")
+                .field("evidence", &"<retained>")
+                .finish(),
+        }
+    }
 }
 
 fn encode_response<E: OperationExecutor>(
