@@ -84,6 +84,8 @@ pub enum Invocation {
     Cancel(CancelCommand),
     /// Explicit v2 named Dataflow query execution, separate from item jobs.
     Execute(crate::execute::ExecuteCommand),
+    /// Explicit read-only Dataflow query metadata discovery.
+    DataflowQueries(crate::execute::ListQueriesCommand),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
@@ -399,6 +401,10 @@ where
     if name == "execute" {
         if matches.contains_id("output_format") {
             return Err(invalid_arguments());
+        }
+        if values.get_flag("list_queries") {
+            return crate::execute::list_queries_from_matches(values)
+                .map(Invocation::DataflowQueries);
         }
         return crate::execute::from_matches(values).map(Invocation::Execute);
     }

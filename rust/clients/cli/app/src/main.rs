@@ -288,6 +288,10 @@ fn dispatch(
             return native_read::run_execute(&command, local_state);
         }
         #[cfg(feature = "native-host")]
+        Ok(Invocation::DataflowQueries(command)) => {
+            return native_read::run_dataflow_queries(&command, local_state);
+        }
+        #[cfg(feature = "native-host")]
         Ok(Invocation::JobRead(command)) => return native_read::run_job(&command, local_state),
         #[cfg(feature = "native-host")]
         Ok(Invocation::JobRun(command)) => {
@@ -302,6 +306,7 @@ fn dispatch(
             Invocation::Read(_)
             | Invocation::MlEndpoint(_)
             | Invocation::Execute(_)
+            | Invocation::DataflowQueries(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_),

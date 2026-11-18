@@ -27,6 +27,7 @@ use std::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct QueryInput {
     custom_mashup_document: Option<String>,
+    m_expression: Option<String>,
     arrow_version: Option<u8>,
 }
 
@@ -79,6 +80,7 @@ impl PreparedExecution {
         let input = match input {
             None => QueryInput {
                 custom_mashup_document: None,
+                m_expression: None,
                 arrow_version: None,
             },
             Some(bytes) => {
@@ -108,12 +110,21 @@ impl PreparedExecution {
         };
         let target = ExecuteQueryTarget::new(&command.target.workspace, &command.target.dataflow)
             .map_err(|_| invalid())?;
+        if input.custom_mashup_document.is_some() && input.m_expression.is_some() {
+            return Err(invalid());
+        }
+        let document = match input.m_expression {
+            Some(expression) => {
+                Some(super::m::document(&command.target.query, &expression).ok_or_else(invalid)?)
+            }
+            None => input.custom_mashup_document,
+        };
         let mut request = ExecuteQueryRequest::new(command.target.query.clone(), version)
             .map_err(|_| invalid())?;
         let mut approval = serde_json::json!({
             "arrowVersion": input.arrow_version.unwrap_or(1),
         });
-        if let Some(document) = input.custom_mashup_document {
+        if let Some(document) = document {
             approval["customMashupDocument"] = serde_json::Value::String(document.clone());
             request = request
                 .with_custom_mashup_document(document)
@@ -234,7 +245,10 @@ impl std::fmt::Debug for ExecutionEvidence {
                 "operation_id",
                 &self.operation_id.as_ref().map(|_| "<retained>"),
             )
-            .field("mutation_may_have_occurred", &self.mutation_may_have_occurred)
+            .field(
+                "mutation_may_have_occurred",
+                &self.mutation_may_have_occurred,
+            )
             .field("http_status", &self.http_status)
             .field(
                 "raw_service_error",

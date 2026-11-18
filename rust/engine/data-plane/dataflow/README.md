@@ -126,7 +126,7 @@ The public REST contract remains authoritative where the wrapper differs:
 | Concern | Rust contract |
 | --- | --- |
 | Request shape | Lower-camel `queryName`; `customMashupDocument` is optional, so an existing named query needs no definition download or rewrite. The MCP request model instead declares `QueryName` and requires a custom document. |
-| Custom M | Pass an explicit document unchanged for this evaluation; no `updateDefinition`, connection mutation or refresh prerequisite. The MCP tool documentation advertises raw-expression auto-wrapping; that convenience is not implemented here. |
+| Custom M | This SDK passes an explicit document unchanged. The CLI additionally accepts explicit `mExpression`, safely wraps one shared query, and approves the complete final document. Neither path updates the definition, mutates connections or refreshes. |
 | Response media | Negotiate native Arrow streaming with an explicit version. The wrapper's `application/octet-stream` response property is not evidence that the REST endpoint returns that media type. |
 | Completion and failures | Preserve actual 202 operation handles and retrieve the result without another POST. Consumers inspect `PQ Arrow Metadata`; an HTTP success or parsed summary is not sufficient. |
 | Export fidelity | Decode the original Arrow bytes into the shared typed result. Do not route exports through the MCP reader's summary, which converts null cells to empty strings and formats timestamps to whole seconds. Unsupported or lossy conversion remains an error. |
@@ -135,6 +135,12 @@ Dataflow named-query execution stays on the existing root `execute` path, separa
 from the AIHub/KQL root `query` providers. Neither should silently fall back to
 the other after a service failure. See the
 [CLI custom-document example](../../../authoring-docs/dataflow-execution.md#input-and-execution-lifecycle).
+Explicit named-query discovery is a separate SDK facade operation,
+`fabric_sdk::dataflow_queries::list_queries`, and CLI `execute <Dataflow path>
+--list-queries`. It reuses definition retrieval and generic operation observation
+and projects the documented `queryMetadata.json` index without M evaluation or
+connection data. Missing optional index coverage is reported explicitly; it is
+not inferred from Mashup text.
 This comparison is source-level evidence, not a new compiled or live Dataflow
 qualification result.
 

@@ -87,4 +87,44 @@ fn help_is_available_without_credentials_or_files() {
     assert!(help.contains("parquet"));
     assert!(help.contains("Dataflow"));
     assert!(help.contains("--wait"));
+    assert!(help.contains("--list-queries"));
+    assert!(help.contains("mExpression"));
+}
+
+#[test]
+fn metadata_discovery_is_explicit_and_never_ignores_execution_options() {
+    let item = TARGET.strip_suffix("/queries/Orders").unwrap();
+    let Invocation::DataflowQueries(command) = parse_args([
+        "fab-rs",
+        "execute",
+        item,
+        "--list-queries",
+        "--timeout",
+        "30s",
+    ])
+    .unwrap() else {
+        panic!("expected metadata discovery")
+    };
+    assert_eq!(
+        command.target.workspace_id(),
+        "11111111-1111-1111-1111-111111111111"
+    );
+    assert_eq!(command.timeout.as_secs(), 30);
+    for extra in [
+        vec!["--wait"],
+        vec!["--input", "-"],
+        vec!["--format", "json"],
+        vec!["--output", "-"],
+        vec!["--limit", "10"],
+        vec!["--max-bytes", "16777217"],
+        vec!["--timeout", "0s"],
+        vec!["--output_format", "json"],
+        vec!["--list-queries"],
+    ] {
+        let mut args = vec!["fab-rs", "execute", item, "--list-queries"];
+        args.extend(extra);
+        assert!(parse_args(args).is_err());
+    }
+    assert!(parse_args(["fab-rs", "execute", TARGET, "--list-queries"]).is_err());
+    assert!(parse_args(["fab-rs", "execute", item]).is_err());
 }

@@ -58,7 +58,74 @@ apply changes, or start a background refresh as a prerequisite. It still uses
 the addressed Dataflow's execution context and service-side source credentials;
 it does not provision missing connections. M evaluation itself can have source
 effects, so an unchanged Dataflow definition is not a read-only guarantee.
-There is no client-side M parser or automatic wrapping of raw expressions.
+For a single expression instead of a complete document, use `mExpression`:
+
+```json
+{
+  "mExpression": "let Source = #table(type table [OrderId = number], {{1}}) in Source",
+  "arrowVersion": 1
+}
+```
+
+The CLI wraps this exact expression in a section with one shared query named
+after the target's final path segment. It escapes the name as an M quoted
+identifier, and the approval prompt shows the complete final document sent to
+the service. `mExpression` and `customMashupDocument` are mutually exclusive.
+There is no implicit detection or conversion of existing document input.
+An empty/comment-only expression, NUL, unbalanced delimiters, unterminated
+strings/comments, nested block comments, a section document, or an unquoted
+semicolon is rejected before approval or credentials. This conservative lexical
+guard prevents additional section members; it is not an M semantic validator.
+Use `customMashupDocument` for complete documents. The 1 MiB request ceiling
+also includes the generated wrapper, query name and JSON escaping. Neither form
+saves a definition or changes connections.
+
+## Discover existing named queries
+
+Discovery is an explicit, separate operation; normal execution never downloads
+a definition to guess a query name:
+
+```powershell
+fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow" --list-queries --timeout 30s > queries.json
+```
+
+This uses the existing native `getDefinition` reader, including its actual
+accepted operation and result when necessary. It reads the public
+[`202502` query metadata format](https://learn.microsoft.com/rest/api/fabric/articles/item-management/definitions/dataflow-definition),
+not Mashup code or connection credentials. It does not evaluate M, request
+execution approval, refresh, call `executeQuery`, update a definition or repair
+connections. Definition-read authorization is still required; an execution
+permission alone does not establish access to a definition.
+
+JSON stdout contains `queries`, `queryMetadataPresent`, the actual `operationId`
+when one was returned, and `queryExecuted: false`. Each query preserves its
+exact `queryId`, `queryName`, `isHidden` and `loadEnabled`; hidden and non-loaded
+entries are not filtered out or claimed to return tables. `executePath` is
+provided only when the name is representable by the execution path grammar.
+Otherwise `addressable` is false and `executePath` is null; names are not
+silently normalized, escaped or omitted.
+
+The optional `queriesMetadata` index may be absent. In that case
+`queryMetadataPresent` is false and `queries` is empty: this is **not proof that
+the Mashup defines no queries**. Discovery does not guess names from M text.
+An explicit empty index is distinguished by `queryMetadataPresent: true`.
+Malformed/duplicate metadata, part aliases, non-inline payloads, unsupported
+versions, failed retrieval and exceeded bounds are nonzero failures, not empty
+successful listings. Connections, complete definitions and M source are never
+included in the projection.
+
+The timeout spans credentials, retrieval/observation and output. `--max-bytes`
+bounds each complete definition response and complete JSON output (default and
+ceiling 16 MiB); metadata is additionally limited to 1 MiB and 4,096 entries.
+The existing observer permits at most 100 status/result requests and a maximum
+60-second advertised polling delay. Results are never clipped.
+Discovery rejects execution-only `--wait`, `--input`, `--format`, `--output` and
+`--limit`, rather than silently ignoring them. Redirect stdout for a file;
+attached Windows console output is refused before credentials to preserve exact
+Unicode. Cancellation or an interrupted write can leave partial output, so the
+host stops rather than continuing another batch command.
+
+## Evaluation approval and lifecycle
 
 Execution can consume compute and access external data sources. Before selecting
 or acquiring credentials, the native host validates the target, reads and

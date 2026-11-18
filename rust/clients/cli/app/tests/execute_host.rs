@@ -289,6 +289,11 @@ async fn invalid_input_and_denied_approval_never_touch_credentials_or_transport(
         b"{\"arrowVersion\":\"1\"}",
         b"{\"arrowVersion\":null}",
         b"{\"customMashupDocument\":null}",
+        b"{\"mExpression\":null}",
+        b"{\"mExpression\":\"1\",\"mExpression\":\"2\"}",
+        b"{\"mExpression\":\"1\",\"customMashupDocument\":\"section Section1; shared Orders = 1;\"}",
+        b"{\"mExpression\":\" // comment only\"}",
+        b"{\"mExpression\":\"1; shared Injected = 2\"}",
         b"{\"arrowVersion\":1,\"arrowVersion\":2}",
     ] {
         assert!(PreparedExecution::new(&command("json"), Some(input)).is_err());
@@ -303,6 +308,60 @@ async fn invalid_input_and_denied_approval_never_touch_credentials_or_transport(
     assert!(read_input(&mut io::Cursor::new(vec![b' '; 1024 * 1024 + 1])).is_err());
 }
 
+#[tokio::test]
+async fn raw_m_approval_and_single_wire_body_share_the_exact_wrapped_document() {
+    let expression = "let Source = #table({\"雪\"}, {{null}}) in Source // final comment";
+    let input = serde_json::to_vec(&serde_json::json!({"mExpression":expression,"arrowVersion":2}))
+        .unwrap();
+    let expected = format!("section Section1;\nshared #\"Orders\" =\n{expression}\n;\n");
+    let prepared = PreparedExecution::new(&command("json"), Some(&input)).unwrap();
+    assert!(
+        prepared
+            .approval_question()
+            .contains(&serde_json::to_string(&expected).unwrap())
+    );
+    let wire = Wire::new(vec![native_result()]);
+    let credential = Credential::default();
+    let selection = selection();
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        &wire,
+        OperationLimits::default(),
+        std::future::pending(),
+    );
+    let approved = prepared.approve(&mut Approval(true)).await.unwrap();
+    approved.execute(&mut session).await.unwrap();
+    let requests = wire.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].1).unwrap();
+    assert_eq!(body["customMashupDocument"], expected);
+    assert_eq!(body["queryName"], "Orders");
+    assert!(body.get("mExpression").is_none());
+    assert!(body.get("arrowVersion").is_none());
+}
+
+#[test]
+fn m_wrapping_preserves_full_documents_and_enforces_final_serialized_budget() {
+    let full = "section MySection;\nshared Orders = 1;";
+    let input = serde_json::to_vec(&serde_json::json!({"customMashupDocument":full})).unwrap();
+    let prepared = PreparedExecution::new(&command("json"), Some(&input)).unwrap();
+    let question = prepared.approval_question();
+    assert!(question.contains(&serde_json::to_string(full).unwrap()));
+    assert!(!question.contains("section Section1"));
+    let expression = format!(
+        "\"{}\"",
+        "x".repeat(fabric_cli::execute::MAX_INPUT_BYTES - 64)
+    );
+    let input = serde_json::to_vec(&serde_json::json!({"mExpression":expression})).unwrap();
+    assert!(input.len() <= fabric_cli::execute::MAX_INPUT_BYTES);
+    assert!(PreparedExecution::new(&command("json"), Some(&input)).is_err());
+    let mut constrained = command("json");
+    constrained.max_bytes = 8;
+    let wrapped = br#"{"mExpression":"1"}"#;
+    // The result budget is independent of request wrapping; approval still sees M.
+    assert!(PreparedExecution::new(&constrained, Some(wrapped)).is_ok());
+}
 #[tokio::test]
 async fn approved_native_200_preserves_types_and_serializes_all_three_real_formats() {
     for (name, format) in [
@@ -468,7 +527,10 @@ async fn actual_202_state_and_result_preserve_operation_handle_without_resubmiss
     let original_uncertainty = result.evidence.mutation_may_have_occurred;
     assert_debug_omits(&result.evidence, &[OPERATION]);
     assert_eq!(result.evidence.operation_id.as_deref(), Some(OPERATION));
-    assert_eq!(result.evidence.mutation_may_have_occurred, original_uncertainty);
+    assert_eq!(
+        result.evidence.mutation_may_have_occurred,
+        original_uncertainty
+    );
     let requests = wire.requests.lock().unwrap();
     assert_eq!(requests.len(), 3);
     assert!(requests[1].0.ends_with(OPERATION));
