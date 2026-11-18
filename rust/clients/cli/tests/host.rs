@@ -1089,6 +1089,36 @@ async fn invalid_global_option_cannot_dispatch_any_command_family() {
 }
 
 #[tokio::test]
+async fn rejected_headers_precede_payload_file_access() {
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, stderr) = run(
+        &[
+            "api",
+            "items",
+            "--headers",
+            r#"{"Authorization":"HEADER-CANARY"}"#,
+            "--payload",
+            "/MISSING-PAYLOAD-CANARY.json",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1, "{stdout}");
+    let envelope: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["result"]["error_code"], "InvalidInput");
+    assert!(
+        envelope["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--headers")
+    );
+    assert!(!stdout.contains("CANARY"));
+    assert!(stderr.is_empty());
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn invalid_methods_explain_lowercase_values_without_disclosure_or_auth_effects() {
     for method in [
         "POST",

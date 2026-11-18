@@ -297,25 +297,3 @@ fn multipart(
         .or_insert_with(|| format!("multipart/form-data; boundary={boundary}"));
     Ok(body)
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn rejected_headers_precede_payload_file_access() {
-        let matches = crate::command()
-            .try_get_matches_from([
-                "api",
-                "items",
-                "--headers",
-                r#"{"Authorization":"HEADER-CANARY"}"#,
-                "--payload",
-                "/MISSING-PAYLOAD-CANARY.json",
-            ])
-            .unwrap();
-        let error = super::prepare(&matches).err().unwrap();
-        let message = format!("{error:?}");
-        assert!(message.contains("--headers"));
-        assert!(!message.contains("CANARY"));
-        assert!(!message.contains("InvalidPath"));
-    }
-}
