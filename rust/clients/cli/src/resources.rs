@@ -84,6 +84,7 @@ pub(crate) fn command(kind: &'static str) -> Command {
                     .long("allow-pairing-by-name")
                     .action(ArgAction::SetTrue)
                     .requires("import-from")
+                    .conflicts_with("payload")
                     .help("Pair imported items without logical IDs by name and type"),
             );
         }
@@ -107,10 +108,19 @@ pub(crate) fn command(kind: &'static str) -> Command {
             "import-from"
         };
         if kind == "item" && (verb == "get" || sourced) {
-            leaf = leaf.arg(Arg::new("format").long("format").requires(file_flag));
+            let mut format = Arg::new("format").long("format").requires(file_flag);
+            if sourced {
+                format = format.conflicts_with("payload");
+            }
+            leaf = leaf.arg(format);
         }
         if kind == "item" && verb == "create" {
-            leaf = leaf.arg(Arg::new("type").long("type").requires("import-from"));
+            leaf = leaf.arg(
+                Arg::new("type")
+                    .long("type")
+                    .requires("import-from")
+                    .conflicts_with("payload"),
+            );
         }
         if verb == "delete" {
             leaf = leaf.arg(Arg::new("force").long("force").action(ArgAction::SetTrue));
@@ -120,7 +130,8 @@ pub(crate) fn command(kind: &'static str) -> Command {
                 Arg::new("force")
                     .long("force")
                     .action(ArgAction::SetTrue)
-                    .requires("import-from"),
+                    .requires("import-from")
+                    .conflicts_with("payload"),
             );
         }
         if matches!(verb, "create" | "update" | "delete") {
@@ -605,7 +616,7 @@ async fn send(
     let response = if request.asynchronous {
         initial
     } else {
-        fabric_cli_api::validate_response_body(&initial.body).map_err(&attach)?;
+        fabric_cli_api::validate_response_body(&initial.body).map_err(attach)?;
         let reconciliation = fabric_sdk_api::complete_observed_with_endpoint(
             client,
             clock,
@@ -655,10 +666,10 @@ async fn send(
         accepted.insert("status_code".into(), Value::from(202));
         accepted.insert("status".into(), Value::String("Accepted".into()));
         accepted.insert("body".into(), body);
-        if let Some(recovery) = recovery.as_ref() {
-            if let Ok(value) = serde_json::to_value(recovery) {
-                accepted.insert("recovery".into(), value);
-            }
+        if let Some(recovery) = recovery.as_ref()
+            && let Ok(value) = serde_json::to_value(recovery)
+        {
+            accepted.insert("recovery".into(), value);
         }
         return Ok((Value::Object(accepted), true));
     }
@@ -697,10 +708,10 @@ fn finish_prepare(
         None
     };
     let query = text("query").map(str::to_owned);
-    if let Some(value) = query.as_deref().filter(|value| !value.is_empty()) {
-        if value.len() > 16 * 1024 || fabric_cli_query::validate(value).is_err() {
-            return Err(invalid("Invalid or oversized JMESPath query"));
-        }
+    if let Some(value) = query.as_deref().filter(|value| !value.is_empty())
+        && (value.len() > 16 * 1024 || fabric_cli_query::validate(value).is_err())
+    {
+        return Err(invalid("Invalid or oversized JMESPath query"));
     }
     let lro = matches!(verb, "get" | "create" | "update" | "delete");
     let asynchronous = lro && args.get_flag("async");
@@ -728,15 +739,14 @@ fn finish_prepare(
     } else {
         None
     };
-    if let Some(value) = &format {
-        if value.is_empty()
+    if let Some(value) = &format
+        && (value.is_empty()
             || value.len() > 64
             || !value
                 .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        {
-            return Err(invalid("Invalid definition --format"));
-        }
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')))
+    {
+        return Err(invalid("Invalid definition --format"));
     }
     let overwrite = verb == "get" && args.get_flag("overwrite");
     let force = matches!(verb, "delete" | "update") && args.get_flag("force");
@@ -826,13 +836,12 @@ fn finish_prepare(
                 }
             }
         }
-        if let Some(name) = body.get("displayName").and_then(Value::as_str) {
-            if name.is_empty()
+        if let Some(name) = body.get("displayName").and_then(Value::as_str)
+            && (name.is_empty()
                 || (kind == "workspace"
-                    && (name.chars().count() > 256 || name == "Admin monitoring"))
-            {
-                return Err(invalid("Invalid resource displayName"));
-            }
+                    && (name.chars().count() > 256 || name == "Admin monitoring")))
+        {
+            return Err(invalid("Invalid resource displayName"));
         }
         if let Some(description) = body.get("description").and_then(Value::as_str) {
             let limit = if kind == "workspace" { 4000 } else { 256 };
@@ -847,14 +856,13 @@ fn finish_prepare(
                 &["folderId"]
             };
             for key in fields {
-                if let Some(value) = body.get(*key) {
-                    if !value.is_null()
-                        && value
-                            .as_str()
-                            .is_none_or(|value| uuid::Uuid::parse_str(value).is_err())
-                    {
-                        return Err(invalid("Resource property must contain a GUID"));
-                    }
+                if let Some(value) = body.get(*key)
+                    && !value.is_null()
+                    && value
+                        .as_str()
+                        .is_none_or(|value| uuid::Uuid::parse_str(value).is_err())
+                {
+                    return Err(invalid("Resource property must contain a GUID"));
                 }
             }
         }

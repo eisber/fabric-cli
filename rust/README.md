@@ -49,7 +49,7 @@ Azure CLI and run Rust login again.
 fab-rs workspace list
 fab-rs workspace get <name-or-guid> [--export-to <dir> [--overwrite]]
 fab-rs workspace create [display-name] [--payload <json-or-@file>]
-fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--allow-pairing-by-name]) [--force]
+fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--allow-pairing-by-name] [--force])
 fab-rs workspace delete <name-or-guid> [--force]
 fab-rs item list --workspace <name-or-guid>
 fab-rs item get <name-or-guid> --workspace <name-or-guid> [--export-to <dir> [--format <f>] [--overwrite]]

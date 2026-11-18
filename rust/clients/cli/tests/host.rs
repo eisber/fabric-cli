@@ -398,6 +398,58 @@ async fn resources_validate_locally_before_credentials_or_http() {
             "--payload",
             r#"{"type":"X","folderId":42}"#,
         ],
+        vec!["workspace", "update", guid, "--payload", "{}", "--force"],
+        vec![
+            "workspace",
+            "update",
+            guid,
+            "--payload",
+            "{}",
+            "--allow-pairing-by-name",
+        ],
+        vec![
+            "item",
+            "update",
+            guid,
+            "--workspace",
+            guid,
+            "--payload",
+            "{}",
+            "--force",
+        ],
+        vec![
+            "item",
+            "update",
+            guid,
+            "--workspace",
+            guid,
+            "--payload",
+            "{}",
+            "--format",
+            "x",
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X"}"#,
+            "--format",
+            "x",
+        ],
+        vec![
+            "item",
+            "create",
+            "one",
+            "--workspace",
+            guid,
+            "--payload",
+            r#"{"type":"X"}"#,
+            "--type",
+            "X",
+        ],
     ];
     for args in cases {
         let host = FakeHost::new(vec![]);
@@ -572,7 +624,7 @@ async fn resource_field_shortcut_does_not_change_single_resources_or_raw_api() {
         }
     }
     for (query, expected) in [
-        ("id", json!("None")),
+        ("id", json!(["None"])),
         ("text.value[].id", json!(["answer"])),
         ("text.value[].{id: id}", json!([{"id":"answer"}])),
     ] {
@@ -745,13 +797,14 @@ async fn resource_resolution_reads_all_pages_and_rejects_duplicate_names() {
     ]);
     let (code, _, _) = run(&["item", "get", item, "--workspace", "ws"], &host).await;
     assert_eq!(code, 0);
-    let requests = host.transport.requests.lock().unwrap();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(
-        requests[1].url.query(),
-        Some("continuationToken=a%2B%2F%3D")
-    );
-    drop(requests);
+    {
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(
+            requests[1].url.query(),
+            Some("continuationToken=a%2B%2F%3D")
+        );
+    }
 
     let host = FakeHost::new(vec![
         response(
@@ -800,13 +853,14 @@ async fn resource_creation_and_patch_keep_native_payloads() {
     .await;
     assert_eq!(code, 0);
     assert_eq!(data(&stdout)["id"], "created");
-    let requests = host.transport.requests.lock().unwrap();
-    assert_eq!(requests[0].method, "POST");
-    let body = fabric_core_json::decode(&requests[0].body).unwrap();
-    assert_eq!(body["displayName"], "new");
-    assert_eq!(body["type"], "FutureType");
-    assert_eq!(body["other"]["$serde_json::private::Number"], "x");
-    drop(requests);
+    {
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(requests[0].method, "POST");
+        let body = fabric_core_json::decode(&requests[0].body).unwrap();
+        assert_eq!(body["displayName"], "new");
+        assert_eq!(body["type"], "FutureType");
+        assert_eq!(body["other"]["$serde_json::private::Number"], "x");
+    }
 
     let host = FakeHost::new(vec![response(200, r#"{"displayName":"new"}"#, &[])]);
     let (code, _, _) = run(
@@ -924,10 +978,7 @@ async fn resource_empty_delete_and_accepted_mutation_are_distinct() {
         202,
         "",
         &[
-            (
-                "location",
-                "https://evil.invalid/operation?secret=synthetic",
-            ),
+            ("location", "http://evil.invalid/operation?secret=synthetic"),
             ("x-ms-operation-id", id),
         ],
     )]);
