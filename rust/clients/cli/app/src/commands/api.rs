@@ -3,7 +3,7 @@
 
 use super::selected;
 use crate::{
-    Host,
+    Host, agent,
     progress::{ConsoleProgress, ProgressUpdate, progress_error},
 };
 use fabric_cli_command_contracts::{CommandError, CommandOutput};
@@ -29,6 +29,8 @@ pub(super) async fn execute(
             fabric_cli_api::prepare(api),
         )
         .await?;
+    let metadata =
+        agent::request_metadata(host, api.get_one::<String>("skill").map(String::as_str))?;
     let started = observer.start(DiagnosticStage::Selection).await?;
     let binding = observer
         .finish(DiagnosticStage::Selection, started, selected(host))
@@ -46,7 +48,8 @@ pub(super) async fn execute(
             host.credential(binding),
         )
         .await?;
-    let mut client = HttpClient::new(credential, host.transport()?, clock.clone());
+    let mut client = HttpClient::new(credential, host.transport()?, clock.clone())
+        .with_request_metadata(metadata);
     if observer.timing.is_some() {
         client = client.with_diagnostics(observer.clone());
     }
@@ -76,7 +79,8 @@ pub(super) async fn execute(
                 .unwrap_or_else(|error| error.into_inner())
                 .recovery
                 .as_ref()
-                .and_then(|value| serde_json::to_value(value).ok());
+                .and_then(|value| serde_json::to_value(value).ok())
+                .map(Box::new);
         }
         error
     };

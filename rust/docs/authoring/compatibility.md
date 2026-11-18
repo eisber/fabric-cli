@@ -94,14 +94,31 @@ authority for implementation evidence.
   `--query` is not a universal security-redaction boundary.
 - JSON inline/file input and non-JSON-file multipart input retain the source
   behavior for non-DELETE methods. `--method delete` rejects any supplied
-  `--input` with structured `InvalidInput` and exit 1, before input loading,
+  `--payload` with structured `InvalidInput` and exit 1, before input loading,
   authentication, or HTTP requests. This CLI-specific restriction intentionally
   replaces the previous acceptance of DELETE inputs, including empty values and
   files containing JSON `null`; it is not a universal HTTP restriction.
-  DELETE without `--input` remains supported.
+  DELETE without `--payload` remains supported.
   Missing input files fail explicitly (a donor safety constraint),
-  rather than silently sending a bodyless request. Headers split at the first
-  `=`; authorization/host/hop-by-hop overrides are forbidden.
+  rather than silently sending a bodyless request. The former `--input` spelling
+  has no compatibility alias.
+- `--headers` is an inline JSON object of string values, not legacy `key=value`
+  pairs. Names are normalized case-insensitively; exact/case-variant duplicates
+  fail instead of retaining the last value. Only Accept, Content-Type, If-Match,
+  If-None-Match, Prefer, and Range are accepted, excluding `x-ms-version`.
+  Managed User-Agent/correlation fields and all other names are forbidden.
+  Header failures precede payload loading and authentication, without values
+  appearing in errors.
+- Shared HTTP execution always adds
+  `fabric-agent-cli/<version> (<command>; <os>; <arch>[; <agent-kind>])` as
+  User-Agent. Agent labels are fixed, omitted on absence or conflicting families.
+  Known inherited session variables contribute a correlation GUID only when
+  exactly one distinct strict hyphenated GUID is available; case-only differences
+  are equivalent. Missing/invalid/conflicting IDs omit `x-ms-client-request-id`.
+  No prefix stripping, filesystem discovery, or synthesized IDs. This is
+  invocation/session correlation, not per-request uniqueness or trusted provenance.
+  Polling/results/retries retain managed metadata, but never original custom
+  headers or mutation bodies. Azure CLI's own HTTP traffic is unchanged.
 - Raw requests bind credentials to the selected audience/origin. Unsafe origins,
   URL credentials/fragments, traversal, redirects, and header injection are
   rejected before credential acquisition. Fabric polling has the narrow

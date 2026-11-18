@@ -10,6 +10,7 @@ macro_rules! executable_text {
     };
 }
 
+mod agent;
 mod commands;
 mod diagnostics;
 mod host;

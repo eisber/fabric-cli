@@ -64,8 +64,8 @@ limits, including unknown/localized diagnostics.
 fab-rs [--verbose] api <endpoint>
   [--method get|post|delete|put|patch]
   [--audience fabric|storage|azure|powerbi]
-  [--input <inline-json-or-file>]
-  [--headers <key=value,...>]
+  [--payload <inline-json-or-file>]
+  [--headers <json-object-of-strings>]
   [--query <jmespath>]
   [--show-headers]
   [--async]
@@ -75,16 +75,40 @@ Quote endpoints and URL-encode query values yourself. For example:
 
 ```sh
 fab-rs api 'workspaces?continuationToken=TOKEN'
-fab-rs api workspaces/.../items --method post --input request.json --async --show-headers
+fab-rs api workspaces/.../items --method post --payload request.json --async --show-headers
 fab-rs api operations/OPERATION_ID --async --show-headers
+fab-rs api workspaces --headers '{"Accept":"application/json","If-None-Match":"*"}'
 fab-rs api workspaces --query 'text.value[].displayName'
 fab-rs api workspaces --query "text.value[?displayName=='rustcli']"
 ```
 
-`--input` cannot be combined with `--method delete`. Any supplied input,
+`--payload` cannot be combined with `--method delete`. Any supplied input,
 including an empty value or a file containing JSON `null`, fails with
 `InvalidInput` (exit 1) before input loading, authentication, or HTTP requests.
-DELETE without `--input` remains supported; other methods are unchanged.
+DELETE without `--payload` remains supported; other methods are unchanged.
+
+`--payload` replaces the former `--input` name; no alias is provided.
+`--headers` accepts only an inline JSON object of string values, not `key=value`
+pairs. Names are case-insensitive; duplicates (including case variants) are
+errors. The only allowed names are `Accept`, `Content-Type`, `If-Match`,
+`If-None-Match`, `Prefer`, and `Range`. Values retain commas, equals signs, and
+whitespace. Authentication, cookies, routing, framing, version, User-Agent, and
+managed correlation fields cannot be overridden. Invalid headers fail locally
+before payload file loading or authentication, without echoing their values.
+
+The shared Rust HTTP executor adds
+`User-Agent: fabric-agent-cli/<version> (<command>; <os>; <arch>; <agent-kind>)`.
+The final component is omitted when no single agent family is recognized;
+direct engine callers default to command `http`. The CLI reads only known
+inherited agent hints, never agent files, sockets, or APIs. If known session
+variables contain exactly one distinct complete GUID, it sends the canonical
+value as `x-ms-client-request-id`, reused across the invocation's requests,
+retries, polling, and results. Invalid IDs are ignored; conflicting valid IDs
+omit correlation. Prefixes are not stripped and IDs are not synthesized.
+These environment hints are forgeable and may be absent, inherited, or stale:
+they are neither authenticated provenance nor universal agent coverage.
+Session correlation and agent kind reveal operational metadata to the target
+service; neither raw hints nor session IDs enter local debug messages.
 
 `--query` evaluates the response object placed inside `result.data`, matching
 Python's raw `api` command: `status_code`, decoded `text`, and optional `headers`.

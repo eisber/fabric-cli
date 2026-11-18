@@ -60,6 +60,38 @@ fn diagnostic_failures_report_fixed_truthful_outcomes_without_provider_errors() 
 }
 
 #[test]
+fn private_error_details_preserve_flat_serialization_without_exposing_outcomes() {
+    use serde_json::{json, to_value};
+
+    let plain = CoreError::new(ErrorKind::Protocol, "Invalid response");
+    assert_eq!(
+        to_value(&plain).unwrap(),
+        json!({"kind": "Protocol", "message": "Invalid response", "recovery": null})
+    );
+    let service = CoreError::service_failure("Backend operation failed", Some("BackendFailure"));
+    let cloned = service.clone();
+    assert_eq!(cloned.service_code(), Some("BackendFailure"));
+    assert_eq!(
+        to_value(&cloned).unwrap(),
+        json!({
+            "kind": "Service",
+            "message": "Backend operation failed",
+            "recovery": null,
+            "service_code": "BackendFailure"
+        })
+    );
+    let diagnostic = CoreError::diagnostic_failure(DiagnosticOutcome::Accepted).clone();
+    assert_eq!(
+        diagnostic.diagnostic_outcome(),
+        Some(DiagnosticOutcome::Accepted)
+    );
+    assert_eq!(
+        to_value(&diagnostic).unwrap(),
+        json!({"kind": "Diagnostic", "message": diagnostic.message, "recovery": null})
+    );
+}
+
+#[test]
 fn service_messages_drop_controls_url_queries_and_excess_length() {
     use fabric_core::{MAX_SERVICE_MESSAGE_CHARS, sanitize_service_message};
     assert_eq!(sanitize_service_message(" \t\n\u{1b}\u{202e} "), None);

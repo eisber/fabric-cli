@@ -9,6 +9,7 @@ use fabric_core::{Clock, HttpTransport, OperationContext};
 use fabric_identity::{AzureCliSession, Binding, BoundCredential, ProcessExecutor};
 use fabric_sdk_http::SystemClock;
 use std::{
+    ffi::OsString,
     io::IsTerminal,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -18,6 +19,10 @@ use std::{
 /// Host-owned effects; fake implementations prove parser and output behavior offline.
 #[async_trait]
 pub trait Host: Send + Sync {
+    /// Read one explicitly named inherited hint; injected hosts default to no hints.
+    fn environment(&self, _name: &str) -> Option<OsString> {
+        None
+    }
     /// Explicit clock used for timestamps, deadlines, and polling.
     fn clock(&self) -> Arc<dyn Clock>;
     /// Read only this Rust CLI's non-secret selection.
@@ -114,6 +119,9 @@ impl Clock for NativeClock {
 
 #[async_trait]
 impl Host for NativeHost {
+    fn environment(&self, name: &str) -> Option<OsString> {
+        std::env::var_os(name)
+    }
     fn clock(&self) -> Arc<dyn Clock> {
         Arc::new(NativeClock {
             diagnostics: self.diagnostics.clone(),

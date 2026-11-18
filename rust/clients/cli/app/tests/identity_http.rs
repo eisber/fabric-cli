@@ -111,8 +111,9 @@ async fn real_http_executor_cancels_the_bound_sdk_process_future() {
     assert!(process.dropped.load(Ordering::SeqCst));
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn real_http_executor_deadline_drops_sdk_work_and_expired_context_starts_nothing() {
+    // SystemClock reads real Instant, so Tokio's paused clock cannot drive it.
     let (client, process) = pending_client();
     let context = OperationContext::new(
         Instant::now(),
