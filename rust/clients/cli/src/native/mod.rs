@@ -87,6 +87,10 @@ impl Clock for NativeClock {
 
 #[async_trait]
 impl Host for NativeHost {
+    fn environment(&self, name: &str) -> Option<std::ffi::OsString> {
+        std::env::var_os(name)
+    }
+
     fn clock(&self) -> Arc<dyn Clock> {
         Arc::new(NativeClock {
             diagnostics: self.diagnostics.clone(),

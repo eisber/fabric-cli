@@ -153,6 +153,8 @@ impl HttpTransport for Transport {
 }
 
 struct FakeHost {
+    environment: std::collections::BTreeMap<String, OsString>,
+    environment_reads: AtomicUsize,
     binding: Mutex<Option<Binding>>,
     hooks: AtomicUsize,
     credential: Arc<Credential>,
@@ -162,6 +164,8 @@ struct FakeHost {
 impl FakeHost {
     fn new(responses: Vec<ApiResponse>) -> Self {
         Self {
+            environment: Default::default(),
+            environment_reads: AtomicUsize::new(0),
             binding: Mutex::new(Some(binding())),
             hooks: AtomicUsize::new(0),
             credential: Arc::new(Credential {
@@ -189,6 +193,10 @@ impl FakeHost {
 }
 #[async_trait]
 impl Host for FakeHost {
+    fn environment(&self, name: &str) -> Option<OsString> {
+        self.environment_reads.fetch_add(1, Ordering::SeqCst);
+        self.environment.get(name).cloned()
+    }
     fn clock(&self) -> Arc<dyn Clock> {
         self.hook();
         self.clock.clone()
@@ -348,7 +356,7 @@ async fn verbose_is_global_without_changing_stdout_or_option_values() {
     }
     for args in [
         vec!["api", "--", "--verbose"],
-        vec!["api", "items", "--query", "'--verbose'"],
+        vec!["api", "items", "--query", "['--verbose']"],
     ] {
         let host = FakeHost::new(vec![response(200, "{}", &[])]);
         let (code, stdout, stderr) = run(&args, &host).await;
@@ -365,6 +373,220 @@ async fn verbose_is_global_without_changing_stdout_or_option_values() {
     assert!(stdout.contains("use post instead of POST"));
     assert!(stderr.is_empty());
     assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn hidden_skill_is_global_without_confusing_command_names_or_metadata_paths() {
+    for (args, skill) in [
+        (vec!["--skill", "api", "api", "items"], "api"),
+        (vec!["api", "--skill", "auth", "items"], "auth"),
+        (vec!["api", "items", "--skill=status"], "status"),
+        (vec!["--skill=--verbose", "api", "items"], "--verbose"),
+        (vec!["api", "items", "--skill", ""], ""),
+        (vec!["api", "items", "--skill", "   "], ""),
+    ] {
+        let host = FakeHost::new(vec![response(200, "{}", &[])]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert!(stderr.is_empty(), "a skill value is not a verbose flag");
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(
+            requests[0]
+                .headers
+                .get(fabric_core::FABRIC_SKILL_HEADER)
+                .map(String::as_str),
+            (!skill.is_empty()).then_some(skill),
+        );
+    }
+    for args in [
+        vec!["--help"],
+        vec!["api", "--help"],
+        vec!["auth", "--help"],
+        vec!["auth", "login", "--help"],
+        vec!["--skill", "api", "--version"],
+        vec!["--skill", "auth"],
+        vec!["auth", "--skill", "api"],
+        vec!["--skill=api", "--verbose", "auth"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        assert!(!stdout.contains("--skill"));
+        assert!(stderr.is_empty());
+        assert_eq!(host.hooks.load(Ordering::SeqCst), 0);
+        assert_eq!(host.environment_reads.load(Ordering::SeqCst), 0);
+    }
+    for args in [
+        vec!["api", "items", "--skill", "SKILL-CANARY\r\nInjected: true"],
+        vec!["api", "items", "--payload", "PAYLOAD-CANARY"],
+        vec!["api", "items", "--headers", "Accept=HEADER-CANARY"],
+    ] {
+        let host = FakeHost::new(vec![]);
+        let (code, stdout, stderr) = run(&args, &host).await;
+        assert_eq!(code, 1, "{stdout}");
+        assert!(!stdout.contains("CANARY"));
+        assert!(!stderr.contains("CANARY"));
+        assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+        assert!(host.transport.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn agent_hints_resolve_fixed_names_and_only_unambiguous_complete_guids() {
+    const ID: &str = "aabbccdd-0000-4000-8000-000000000001";
+    const UPPER: &str = "AABBCCDD-0000-4000-8000-000000000001";
+    const OTHER: &str = "aabbccdd-0000-4000-8000-000000000002";
+    type AgentCase<'a> = (&'a [(&'a str, &'a str)], Option<&'a str>, Option<&'a str>);
+    let cases: &[AgentCase<'_>] = &[
+        (&[], None, None),
+        (&[("COPILOT_CLI", "1")], Some("copilot"), None),
+        (
+            &[("COPILOT_AGENT_SESSION_ID", ID)],
+            Some("copilot"),
+            Some(ID),
+        ),
+        (&[("COPILOT_AGENT_JOB_ID", ID)], Some("copilot"), None),
+        (
+            &[("CODEX_THREAD_ID", ID), ("CODEX_SESSION_ID", UPPER)],
+            Some("codex"),
+            Some(ID),
+        ),
+        (
+            &[("CODEX_THREAD_ID", ID), ("CODEX_SESSION_ID", OTHER)],
+            Some("codex"),
+            None,
+        ),
+        (
+            &[("CODEX_THREAD_ID", ID), ("CLAUDE_CODE_SESSION_ID", ID)],
+            None,
+            Some(ID),
+        ),
+        (
+            &[("CLAUDE_CODE_SESSION_ID", ID), ("CLAUDECODE", "1")],
+            Some("claude-code"),
+            Some(ID),
+        ),
+        (
+            &[("CLAUDE_CODE_CHILD_SESSION", "1")],
+            Some("claude-code"),
+            None,
+        ),
+        (
+            &[("CURSOR_AGENT", "1"), ("CURSOR_SANDBOX", "1")],
+            Some("cursor"),
+            None,
+        ),
+        (&[("GEMINI_SESSION_ID", ID)], Some("gemini-cli"), Some(ID)),
+        (&[("OPENCODE_PID", "123")], Some("opencode"), None),
+        (
+            &[(
+                "AMP_CURRENT_THREAD_ID",
+                "T-aabbccdd-0000-4000-8000-000000000001",
+            )],
+            Some("amp"),
+            None,
+        ),
+        (
+            &[(
+                "KIRO_SESSION_ID",
+                "sess_aabbccdd-0000-4000-8000-000000000001",
+            )],
+            Some("kiro"),
+            None,
+        ),
+        (&[("KIRO_SESSION_ID", ID)], Some("kiro"), Some(ID)),
+        (&[("COPILOT_CLI", "0"), ("GEMINI_CLI", "false")], None, None),
+        (&[("COPILOT_CLI", ""), ("GEMINI_CLI", " ")], None, None),
+        (&[("FAB_AGENT_SESSION_ID", ID)], None, None),
+    ];
+    for &(signals, kind, expected_id) in cases {
+        let mut host = FakeHost::new(vec![response(200, "{}", &[])]);
+        host.environment.extend(
+            signals
+                .iter()
+                .map(|(key, value)| ((*key).into(), (*value).into())),
+        );
+        let (code, stdout, stderr) = run(
+            &["--verbose", "--skill", "SKILL-CANARY", "api", "items"],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        for secret in [ID, UPPER, OTHER, "SKILL-CANARY"] {
+            assert!(!stdout.contains(secret));
+            assert!(!stderr.contains(secret));
+        }
+        let requests = host.transport.requests.lock().unwrap();
+        let headers = &requests[0].headers;
+        assert_eq!(
+            headers
+                .get(fabric_core::CLIENT_REQUEST_ID_HEADER)
+                .map(String::as_str),
+            expected_id
+        );
+        let suffix = kind.map(|kind| format!("; {kind}")).unwrap_or_default();
+        assert_eq!(
+            headers[fabric_core::USER_AGENT_HEADER],
+            format!(
+                "fabric-agent-cli/{} (api; {}; {}{suffix})",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+            )
+        );
+    }
+    for invalid_id in [
+        " aabbccdd-0000-4000-8000-000000000001",
+        "aabbccdd-0000-4000-8000-000000000001 ",
+        "{aabbccdd-0000-4000-8000-000000000001}",
+        "urn:uuid:aabbccdd-0000-4000-8000-000000000001",
+        "aabbccdd000040008000000000000001",
+        "aabbccdd-0000-4000-8000-00000000000z",
+        "1",
+    ] {
+        let mut host = FakeHost::new(vec![response(200, "{}", &[])]);
+        host.environment
+            .insert("CODEX_THREAD_ID".into(), invalid_id.into());
+        assert_eq!(run(&["api", "items"], &host).await.0, 0);
+        assert!(
+            !host.transport.requests.lock().unwrap()[0]
+                .headers
+                .contains_key(fabric_core::CLIENT_REQUEST_ID_HEADER)
+        );
+    }
+}
+
+#[tokio::test]
+async fn cli_metadata_scopes_skill_to_fabric_not_powerbi_with_the_same_token_scope() {
+    for audience in ["fabric", "azure", "storage", "powerbi"] {
+        let mut host = FakeHost::new(vec![response(200, "{}", &[])]);
+        let id = "aabbccdd-0000-4000-8000-000000000001";
+        host.environment.insert("CODEX_THREAD_ID".into(), id.into());
+        let (code, stdout, _) = run(
+            &[
+                "api",
+                "items",
+                "--audience",
+                audience,
+                "--skill",
+                "SKILL-CANARY",
+            ],
+            &host,
+        )
+        .await;
+        assert_eq!(code, 0, "{stdout}");
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(
+            requests[0]
+                .headers
+                .contains_key(fabric_core::FABRIC_SKILL_HEADER),
+            audience == "fabric"
+        );
+        assert_eq!(
+            requests[0].headers[fabric_core::CLIENT_REQUEST_ID_HEADER],
+            id
+        );
+    }
 }
 
 #[tokio::test]
@@ -889,7 +1111,7 @@ async fn invalid_methods_explain_lowercase_values_without_disclosure_or_auth_eff
             args.extend([
                 "--headers",
                 "authorization=HEADER-CANARY",
-                "--input",
+                "--payload",
                 r#"{"token":"BODY-CANARY"}"#,
                 "--query",
                 "QUERY-CANARY",
@@ -1007,7 +1229,7 @@ async fn every_approved_method_and_audience_preserves_endpoint_query_and_header_
                     "--audience",
                     audience,
                     "--headers",
-                    "x-fixture=a=b,cookie=synthetic",
+                    r#"{"If-Match":"a=b,c"}"#,
                     "--async",
                 ],
                 &host,
@@ -1019,7 +1241,7 @@ async fn every_approved_method_and_audience_preserves_endpoint_query_and_header_
             assert_eq!(requests[0].method, method.to_uppercase());
             assert!(requests[0].body.is_empty());
             assert_eq!(requests[0].url.query(), Some("token=a%2Fb%3D%3D&n=2"));
-            assert_eq!(requests[0].headers["x-fixture"], "a=b");
+            assert_eq!(requests[0].headers["if-match"], "a=b,c");
         }
     }
 }
@@ -1030,23 +1252,33 @@ async fn input_and_query_validation_precede_selection_and_credentials() {
         vec!["api", "https://evil.invalid/path"],
         vec!["api", "../unsafe"],
         vec!["api", "workspaces#fragment"],
-        vec!["api", "workspaces", "--headers", "authorization=CANARY"],
-        vec!["api", "workspaces", "--headers", "host=evil.invalid"],
         vec![
             "api",
             "workspaces",
             "--headers",
-            "x-fixture=value\r\nInjected=yes",
+            r#"{"Authorization":"CANARY"}"#,
+        ],
+        vec![
+            "api",
+            "workspaces",
+            "--headers",
+            r#"{"Host":"evil.invalid"}"#,
+        ],
+        vec![
+            "api",
+            "workspaces",
+            "--headers",
+            r#"{"Accept":"value\r\nInjected=CANARY"}"#,
         ],
         vec!["api", "workspaces", "--query", "["],
         vec!["api", "workspaces", "--query", "[?displayName='CANARY']"],
         vec![
             "api",
             "workspaces",
-            "--input",
+            "--payload",
             "/nonexistent-fab-rs-fixture.json",
         ],
-        vec!["api", "workspaces", "--input", "{invalid}"],
+        vec!["api", "workspaces", "--payload", "{invalid}"],
     ] {
         let host = FakeHost::new(vec![]);
         let (code, stdout, _) = run(&args, &host).await;
@@ -1090,7 +1322,7 @@ async fn delete_rejects_all_supplied_inputs_before_loading_identity_or_sending()
                     "workspaces/ENDPOINT-CANARY/items/ITEM-CANARY",
                     "--method",
                     "delete",
-                    "--input",
+                    "--payload",
                     input,
                     "--audience",
                     audience,
@@ -1108,7 +1340,7 @@ async fn delete_rejects_all_supplied_inputs_before_loading_identity_or_sending()
                         "command": "api",
                         "result": {
                             "error_code": "InvalidInput",
-                            "message": "--input cannot be combined with --method delete"
+                            "message": "--payload cannot be combined with --method delete"
                         }
                     })
                 );
@@ -1145,7 +1377,7 @@ async fn invalid_static_query_functions_cannot_reach_auth_or_mutating_http() {
                 "items",
                 "--method",
                 "post",
-                "--input",
+                "--payload",
                 "{}",
                 "--query",
                 query.as_str(),
@@ -1170,7 +1402,14 @@ async fn zero_slice_queries_fail_before_selection_provider_or_mutation() {
         *host.binding.lock().unwrap() = None;
         let (code, stdout, stderr) = run(
             &[
-                "api", "items", "--method", "post", "--input", "{}", "--query", query,
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--payload",
+                "{}",
+                "--query",
+                query,
             ],
             &host,
         )
@@ -1739,10 +1978,10 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
                 "workspaces/workspace/items/item/jobs/execute/instances",
                 "--method",
                 "post",
-                "--input",
+                "--payload",
                 "{}",
                 "--headers",
-                "x-fixture=mutation-only",
+                r#"{"If-Match":"mutation-only"}"#,
                 "--show-headers",
             ];
             if asynchronous {
@@ -1785,7 +2024,7 @@ async fn job_post_polls_status_by_default_and_async_returns_empty_initial_body()
                     assert_eq!(request.method, "GET");
                     assert_eq!(request.url.as_str(), location);
                     assert!(request.body.is_empty());
-                    assert!(!request.headers.contains_key("x-fixture"));
+                    assert!(!request.headers.contains_key("if-match"));
                 }
                 assert_eq!(host.clock.sleeps.load(Ordering::SeqCst), 2);
             }
@@ -1811,7 +2050,7 @@ async fn job_polling_failure_retains_safe_handle_without_replaying_mutation() {
                 "workspaces/workspace/items/item/jobs/execute/instances",
                 "--method",
                 "post",
-                "--input",
+                "--payload",
                 "{}",
             ],
             &host,
@@ -1891,7 +2130,7 @@ async fn job_failure_message_is_json_only_even_with_verbose_logging() {
                 &[],
             ),
         ]);
-        let mut args = vec!["api", "items", "--method", "post", "--input", "{}"];
+        let mut args = vec!["api", "items", "--method", "post", "--payload", "{}"];
         if verbose {
             args.push("--verbose");
         }
@@ -1944,7 +2183,7 @@ async fn job_terminal_query_does_not_disclose_unselected_payload() {
             "workspaces/workspace/items/item/jobs/execute/instances",
             "--method",
             "post",
-            "--input",
+            "--payload",
             "{}",
             "--query",
             "text.values",
@@ -2005,10 +2244,10 @@ async fn accepted_response_conversion_failures_retain_safe_initial_recovery() {
                 "items",
                 "--method",
                 "post",
-                "--input",
+                "--payload",
                 "{}",
                 "--headers",
-                "x-fixture=REQUEST-CANARY",
+                r#"{"If-Match":"REQUEST-CANARY"}"#,
                 "--show-headers",
             ];
             if asynchronous {
@@ -2323,13 +2562,10 @@ async fn bodyless_methods_and_null_files_keep_python_default_or_custom_content_t
             for custom in [false, true] {
                 let mut args = vec!["api", "items", "--method", method];
                 if let Some(input) = input {
-                    args.extend(["--input", input]);
+                    args.extend(["--payload", input]);
                 }
                 if custom {
-                    args.extend([
-                        "--headers",
-                        "Content-Type=text/plain,cOnTeNt-TyPe=application/custom",
-                    ]);
+                    args.extend(["--headers", r#"{"cOnTeNt-TyPe":"application/custom"}"#]);
                 }
                 let host = FakeHost::new(vec![response(200, "{}", &[])]);
                 let (code, output, _) = run(&args, &host).await;
@@ -2343,23 +2579,14 @@ async fn bodyless_methods_and_null_files_keep_python_default_or_custom_content_t
                     "https://api.fabric.microsoft.com/v1/items"
                 );
                 assert_eq!(request.body.as_slice(), b"");
+                assert_eq!(request.headers["authorization"], "Bearer synthetic-token");
                 assert_eq!(
-                    request.headers,
-                    std::collections::BTreeMap::from([
-                        (
-                            "authorization".to_owned(),
-                            "Bearer synthetic-token".to_owned()
-                        ),
-                        (
-                            "content-type".to_owned(),
-                            if custom {
-                                "application/custom"
-                            } else {
-                                "application/json"
-                            }
-                            .to_owned(),
-                        ),
-                    ]),
+                    request.headers["content-type"],
+                    if custom {
+                        "application/custom"
+                    } else {
+                        "application/json"
+                    },
                 );
             }
         }
@@ -2376,7 +2603,7 @@ async fn arbitrary_integer_request_and_response_bytes_match_independent_python_n
     for input in [source, input_file.to_str().unwrap()] {
         let host = FakeHost::new(vec![response(200, source, &[])]);
         let (code, stdout, _) = run(
-            &["api", "items", "--method", "post", "--input", input],
+            &["api", "items", "--method", "post", "--payload", input],
             &host,
         )
         .await;
@@ -2430,7 +2657,7 @@ async fn integer_negative_zero_matches_python_in_actual_api_input_output_and_que
     for input in [source, file.to_str().unwrap()] {
         let host = FakeHost::new(vec![response(200, source, &[])]);
         let (code, stdout, stderr) = run(
-            &["api", "items", "--method", "post", "--input", input],
+            &["api", "items", "--method", "post", "--payload", input],
             &host,
         )
         .await;
@@ -2541,7 +2768,7 @@ async fn reserved_keys_survive_actual_api_input_response_and_projection() {
         for input in [source, file.to_str().unwrap()] {
             let host = FakeHost::new(vec![response(200, source, &[])]);
             let (code, stdout, _) = run(
-                &["api", "items", "--method", "post", "--input", input],
+                &["api", "items", "--method", "post", "--payload", input],
                 &host,
             )
             .await;
@@ -2595,7 +2822,7 @@ async fn reserved_key_number_values_do_not_replace_actual_api_objects() {
     ] {
         let host = FakeHost::new(vec![response(200, source, &[])]);
         let (code, stdout, _) = run(
-            &["api", "items", "--method", "post", "--input", source],
+            &["api", "items", "--method", "post", "--payload", source],
             &host,
         )
         .await;
@@ -2633,7 +2860,14 @@ async fn actual_api_query_literals_preserve_numeric_and_nonnumeric_reserved_key_
         let host = FakeHost::new(vec![response(200, "{}", &[])]);
         let (code, stdout, _) = run(
             &[
-                "api", "items", "--method", "post", "--input", "{}", "--query", query,
+                "api",
+                "items",
+                "--method",
+                "post",
+                "--payload",
+                "{}",
+                "--query",
+                query,
             ],
             &host,
         )
@@ -2649,7 +2883,7 @@ async fn actual_api_query_literals_preserve_numeric_and_nonnumeric_reserved_key_
 #[tokio::test]
 async fn unsupported_float_overflow_is_rejected_without_rounding_or_preauth_effects() {
     let host = FakeHost::new(vec![]);
-    let (code, stdout, _) = run(&["api", "items", "--input", r#"{"value":1e9999}"#], &host).await;
+    let (code, stdout, _) = run(&["api", "items", "--payload", r#"{"value":1e9999}"#], &host).await;
     assert_eq!(code, 1);
     assert!(stdout.contains("InvalidJson"));
     assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
@@ -2675,7 +2909,7 @@ async fn json_file_inline_and_non_json_multipart_use_bounded_real_files() {
         let host = FakeHost::new(vec![response(200, "{}", &[])]);
         assert_eq!(
             run(
-                &["api", "items", "--method", "post", "--input", input],
+                &["api", "items", "--method", "post", "--payload", input],
                 &host
             )
             .await
@@ -2829,7 +3063,7 @@ fn actual_bare_auth_matches_help_without_configuration_environment() {
     let executable_name = executable.file_name().unwrap().to_str().unwrap();
     let help = String::from_utf8(bare.stdout).unwrap();
     assert!(
-        help.contains(&format!("{executable_name} auth <COMMAND>")),
+        help.contains(&format!("{executable_name} auth [OPTIONS] <COMMAND>")),
         "{help}"
     );
     assert!(bare.stderr.is_empty());
@@ -3069,7 +3303,7 @@ mod polling_configuration {
                     "--async",
                     "--polling-config",
                     config,
-                    "--input",
+                    "--payload",
                     "MISSING-INPUT-CANARY",
                 ],
                 &host,
@@ -3122,7 +3356,7 @@ mod polling_configuration {
                     "post",
                     "--audience",
                     audience,
-                    "--input",
+                    "--payload",
                     "{}",
                     "--polling-config",
                     config,

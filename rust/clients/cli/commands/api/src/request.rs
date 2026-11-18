@@ -5,6 +5,7 @@ use super::{args::parse_polling_config, invalid, json_failure};
 use clap::ArgMatches;
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::{ApiRequest, Audience, MAX_REQUEST_BYTES};
+use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
 use std::{collections::BTreeMap, io::Read, path::Path};
 
 /// Prepared API command; all local input validation has completed.
@@ -32,8 +33,8 @@ pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError>
             "--async cannot be combined with --polling-config: async mode returns only the initial response and does not support polling",
         ));
     }
-    if value("method") == Some("delete") && value("input").is_some() {
-        return Err(invalid("--input cannot be combined with --method delete"));
+    if value("method") == Some("delete") && value("payload").is_some() {
+        return Err(invalid("--payload cannot be combined with --method delete"));
     }
     let lro_config = parse_polling_config(value("polling-config"))?;
     let audience = match value("audience") {
@@ -47,7 +48,7 @@ pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError>
             ));
         }
     };
-    // Pinned process_nargs joins query/header tokens then strips boundary quote characters.
+    // Pinned process_nargs strips boundary quote characters on queries.
     let query = value("query").map(|text| text.trim_matches(['"', '\'']).to_owned());
     if let Some(query) = query.as_deref() {
         if query.len() > 16 * 1024 {
@@ -59,7 +60,7 @@ pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError>
         }
     }
     let mut headers = parse_headers(value("headers"))?;
-    let body = load_input(value("input"), &mut headers)?;
+    let body = load_input(value("payload"), &mut headers)?;
     // Python applies this default even when input is absent/null. Multipart
     // preparation already inserted its boundary unless the caller overrode it.
     headers
@@ -82,21 +83,54 @@ pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError>
     })
 }
 
-/// First-`=` header splitting, with last case-insensitive duplicate value retained.
-fn parse_headers(text: Option<&str>) -> Result<BTreeMap<String, String>, CommandError> {
-    let mut headers = BTreeMap::new();
-    if let Some(text) = text {
-        let text = text.trim_matches(['"', '\'']);
-        if text.len() > 64 * 1024 {
-            return Err(invalid("--headers exceeds the 65536-byte limit"));
-        }
-        for pair in text.split(',').filter(|_| !text.is_empty()) {
-            let (key, value) = pair.split_once('=').ok_or_else(|| {
-                invalid("Invalid format for headers. Use key=value pairs separated by commas.")
-            })?;
-            headers.insert(key.trim().to_ascii_lowercase(), value.trim().to_owned());
+/// Parse a bounded JSON string map with a case-insensitive allowlist and no duplicates.
+pub fn parse_headers(text: Option<&str>) -> Result<BTreeMap<String, String>, CommandError> {
+    let Some(text) = text else {
+        return Ok(BTreeMap::new());
+    };
+    if text.len() > 64 * 1024 {
+        return Err(invalid("--headers exceeds the 65536-byte limit"));
+    }
+    // A typed visitor preserves duplicate keys and avoids serde_json's private
+    // arbitrary-precision Value marker interpretation for untrusted object keys.
+    struct Headers(BTreeMap<String, String>);
+    impl<'de> Deserialize<'de> for Headers {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct HeaderVisitor;
+            impl<'de> Visitor<'de> for HeaderVisitor {
+                type Value = Headers;
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("an allowed HTTP header object with string values")
+                }
+                fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Headers, M::Error> {
+                    let mut headers = BTreeMap::new();
+                    while let Some((name, value)) = map.next_entry::<String, String>()? {
+                        let name = name.to_ascii_lowercase();
+                        if ![
+                            "accept",
+                            "content-type",
+                            "if-match",
+                            "if-none-match",
+                            "prefer",
+                            "range",
+                        ]
+                        .contains(&name.as_str())
+                        {
+                            return Err(serde::de::Error::custom("Header is not allowed"));
+                        }
+                        if headers.insert(name, value).is_some() {
+                            return Err(serde::de::Error::custom("Duplicate header"));
+                        }
+                    }
+                    Ok(Headers(headers))
+                }
+            }
+            deserializer.deserialize_map(HeaderVisitor)
         }
     }
+    let Headers(headers) = serde_json::from_str::<Headers>(text).map_err(|_| {
+        invalid("--headers must be a JSON object of string values with no duplicate names; allowed headers: Accept, Content-Type, If-Match, If-None-Match, Prefer, Range")
+    })?;
     fabric_core::validate_headers(&headers)?;
     Ok(headers)
 }
@@ -111,7 +145,7 @@ fn load_input(
     let text = input.trim_matches(['"', '\'']);
     if text.len() > MAX_REQUEST_BYTES {
         return Err(invalid(format!(
-            "--input is {} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit",
+            "--payload is {} bytes, exceeding the {MAX_REQUEST_BYTES}-byte limit",
             text.len()
         )));
     }
@@ -252,4 +286,26 @@ fn multipart(
         .entry("content-type".into())
         .or_insert_with(|| format!("multipart/form-data; boundary={boundary}"));
     Ok(body)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rejected_headers_precede_payload_file_access() {
+        let matches = crate::command()
+            .try_get_matches_from([
+                "api",
+                "items",
+                "--headers",
+                r#"{"Authorization":"HEADER-CANARY"}"#,
+                "--payload",
+                "/MISSING-PAYLOAD-CANARY.json",
+            ])
+            .unwrap();
+        let error = super::prepare(&matches).err().unwrap();
+        let message = format!("{error:?}");
+        assert!(message.contains("--headers"));
+        assert!(!message.contains("CANARY"));
+        assert!(!message.contains("InvalidPath"));
+    }
 }

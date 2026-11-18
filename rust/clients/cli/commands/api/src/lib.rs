@@ -4,13 +4,15 @@
 //! Raw API arguments, validation, execution, and response projection.
 
 mod args;
+mod metadata;
 mod request;
 mod response;
 
 pub use args::{command, parse_failure_message};
+pub use request::parse_headers;
 
 use fabric_cli_command_contracts::{
-    CommandDiagnostics, CommandError, Host, ValidatedInvocation, selected,
+    CommandDiagnostics, CommandError, CommandOutput, Host, ValidatedInvocation, selected,
 };
 use fabric_core::{
     CancellationToken, Clock, CoreError, HttpExecutor, OperationContext, RecoveryInfo,
@@ -43,13 +45,15 @@ pub async fn execute(
     host: &dyn Host,
     cancellation: CancellationToken,
     observer: &Arc<impl ApiReporting + 'static>,
-) -> Result<Value, CommandError> {
+) -> Result<CommandOutput, CommandError> {
     let api = invocation.command("api")?;
     // Validate local inputs before identity, configuration, or transport effects.
     let started = observer.start(DiagnosticStage::Prepare).await?;
     let prepared = observer
         .finish(DiagnosticStage::Prepare, started, request::prepare(api))
         .await?;
+    let metadata =
+        metadata::request_metadata(host, api.get_one::<String>("skill").map(String::as_str))?;
     let started = observer.start(DiagnosticStage::Selection).await?;
     let binding = observer
         .finish(DiagnosticStage::Selection, started, selected(host))
@@ -64,7 +68,8 @@ pub async fn execute(
             host.credential(binding),
         )
         .await?;
-    let mut client = HttpClient::new(credential, host.transport()?, clock.clone());
+    let mut client = HttpClient::new(credential, host.transport()?, clock.clone())
+        .with_request_metadata(metadata);
     if observer.diagnostics_enabled() {
         client = client.with_diagnostics(observer.clone());
     }
@@ -87,7 +92,8 @@ pub async fn execute(
             error.recovery = observer
                 .recovery()
                 .as_ref()
-                .and_then(|value| serde_json::to_value(value).ok());
+                .and_then(|value| serde_json::to_value(value).ok())
+                .map(Box::new);
         }
         error
     };
@@ -125,7 +131,7 @@ pub async fn execute(
             .await
             .map_err(|error| attach_recovery(error.into()))?;
     }
-    Ok(data)
+    Ok(CommandOutput::Api(data))
 }
 
 fn invalid(message: impl Into<String>) -> CommandError {

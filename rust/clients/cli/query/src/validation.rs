@@ -234,34 +234,51 @@ pub(crate) fn validate(ast: &Ast) -> Result<bool, QueryError> {
     Ok(sensitive)
 }
 
-pub(crate) fn adapt_comparisons(ast: &mut Ast) {
+pub(crate) fn adapt_ordering(ast: &mut Ast) {
     match ast {
         Ast::Comparison { lhs, rhs, .. }
         | Ast::Projection { lhs, rhs, .. }
         | Ast::And { lhs, rhs, .. }
         | Ast::Or { lhs, rhs, .. }
         | Ast::Subexpr { lhs, rhs, .. } => {
-            adapt_comparisons(lhs);
-            adapt_comparisons(rhs);
+            adapt_ordering(lhs);
+            adapt_ordering(rhs);
         }
         Ast::Condition {
             predicate, then, ..
         } => {
-            adapt_comparisons(predicate);
-            adapt_comparisons(then);
+            adapt_ordering(predicate);
+            adapt_ordering(then);
         }
-        Ast::Expref { ast, .. } => adapt_comparisons(ast),
+        Ast::Expref { ast, .. } => adapt_ordering(ast),
         Ast::Flatten { node, .. } | Ast::ObjectValues { node, .. } | Ast::Not { node, .. } => {
-            adapt_comparisons(node)
+            adapt_ordering(node)
         }
-        Ast::MultiList { elements, .. } | Ast::Function { args: elements, .. } => {
+        Ast::Function { name, args, .. } => {
+            for arg in args.iter_mut() {
+                adapt_ordering(arg);
+            }
+            if matches!(name.as_str(), "sort_by" | "min_by" | "max_by")
+                && let Some(Ast::Expref { ast: key, offset }) = args.get_mut(1)
+            {
+                // jpx evaluates these keys lazily and compares them internally.
+                // Validate the evaluated value without replacing the comparator.
+                let argument = std::mem::replace(key.as_mut(), Ast::Identity { offset: *offset });
+                **key = Ast::Function {
+                    offset: *offset,
+                    name: crate::functions::ORDER_KEY.to_owned(),
+                    args: vec![argument],
+                };
+            }
+        }
+        Ast::MultiList { elements, .. } => {
             for element in elements {
-                adapt_comparisons(element);
+                adapt_ordering(element);
             }
         }
         Ast::MultiHash { elements, .. } => {
             for pair in elements {
-                adapt_comparisons(&mut pair.value);
+                adapt_ordering(&mut pair.value);
             }
         }
         _ => {}

@@ -83,6 +83,7 @@ impl HttpTransport for Transport {
         _: &OperationContext,
         _: &dyn Clock,
     ) -> Result<ApiResponse, CoreError> {
+        assert!(request.headers.contains_key(USER_AGENT_HEADER));
         assert_eq!(
             request.headers.get("authorization").unwrap(),
             "Bearer synthetic-offline-token"
@@ -115,6 +116,100 @@ fn request(method: &str) -> ApiRequest {
         headers: BTreeMap::new(),
         body: vec![],
     }
+}
+#[tokio::test]
+async fn managed_context_survives_retries_polls_and_results_without_custom_headers() {
+    let credential = Arc::new(Credential {
+        calls: Mutex::new(0),
+    });
+    let transport = Arc::new(Transport {
+        calls: Mutex::new(Vec::new()),
+        replies: Mutex::new(VecDeque::from([
+            reply(200),
+            reply(503),
+            reply(200),
+            reply(200),
+        ])),
+    });
+    let clock = Arc::new(TestClock {
+        start: Instant::now(),
+        elapsed: Mutex::new(Duration::ZERO),
+    });
+    let id = "00000000-0000-4000-8000-000000000001";
+    let metadata = RequestMetadata::new(
+        RequestCommand::Api,
+        Some(AgentKind::Copilot),
+        diagnostics::RequestId::parse(id),
+        Some("SKILL-CANARY"),
+    )
+    .unwrap();
+    let client = HttpClient::new(credential.clone(), transport.clone(), clock.clone())
+        .with_request_metadata(metadata);
+    let ctx = context(clock.as_ref(), 240);
+    let mut initial = request("POST");
+    initial
+        .headers
+        .insert("if-match".into(), "INITIAL-CANARY".into());
+    client
+        .execute(initial, Audience::Fabric, &ctx)
+        .await
+        .unwrap();
+    let mut poll = request("GET");
+    poll.url = "https://service-advertised.example.test/v1/operations/op-1"
+        .parse()
+        .unwrap();
+    client
+        .execute_poll(poll.clone(), Audience::Fabric, &ctx)
+        .await
+        .unwrap();
+    poll.url.set_path("/v1/operations/op-1/result");
+    client
+        .execute_poll(poll, Audience::Fabric, &ctx)
+        .await
+        .unwrap();
+    let sent = transport.calls.lock().unwrap();
+    assert_eq!(sent.len(), 4);
+    assert_eq!(*credential.calls.lock().unwrap(), 4);
+    for (index, request) in sent.iter().enumerate() {
+        assert_eq!(request.headers[CLIENT_REQUEST_ID_HEADER], id);
+        assert_eq!(request.headers[FABRIC_SKILL_HEADER], "SKILL-CANARY");
+        assert!(request.headers[USER_AGENT_HEADER].ends_with("; copilot)"));
+        assert_eq!(request.headers.contains_key("if-match"), index == 0);
+    }
+}
+
+#[tokio::test]
+async fn managed_header_spoofing_is_rejected_before_credentials() {
+    let credential = Arc::new(Credential {
+        calls: Mutex::new(0),
+    });
+    let transport = Arc::new(Transport {
+        calls: Mutex::new(Vec::new()),
+        replies: Mutex::new(VecDeque::new()),
+    });
+    let clock = Arc::new(TestClock {
+        start: Instant::now(),
+        elapsed: Mutex::new(Duration::ZERO),
+    });
+    let client = HttpClient::new(credential.clone(), transport.clone(), clock.clone());
+    for name in [
+        USER_AGENT_HEADER,
+        CLIENT_REQUEST_ID_HEADER,
+        FABRIC_SKILL_HEADER,
+    ] {
+        let mut request = request("GET");
+        request
+            .headers
+            .insert(name.to_uppercase(), "SECRET-CANARY".into());
+        let error = client
+            .execute(request, Audience::Fabric, &context(clock.as_ref(), 240))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert!(!error.message.contains("SECRET-CANARY"));
+    }
+    assert_eq!(*credential.calls.lock().unwrap(), 0);
+    assert!(transport.calls.lock().unwrap().is_empty());
 }
 #[tokio::test]
 async fn every_mutation_sends_once_even_on_uncertain_send_or_throttling() {
@@ -370,8 +465,8 @@ async fn assert_safe_polling_permission(url: &str) {
     assert_eq!(sent[0].url, regional.url);
     assert_eq!(
         sent[0].headers.len(),
-        1,
-        "only newly acquired authorization"
+        2,
+        "only newly acquired authorization and managed User-Agent"
     );
     assert!(sent[0].body.is_empty());
 }

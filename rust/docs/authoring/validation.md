@@ -2,6 +2,23 @@
 
 # Native validation and availability evidence
 
+## Preserve independent Rust builds
+
+For every Rust change, identify the affected Cargo packages and keep each one
+buildable by name from `rust/` with `cargo build --offline --locked -p <package>`.
+Keep dependencies explicit in Cargo manifests. A package build may compile its
+declared dependencies, but it must not rely on first building an unrelated
+workspace package or the Python CLI.
+
+When a change affects compilation or dependencies, validate each directly
+affected package with a targeted build before running the workspace checks.
+Follow the [contributor guide](../../CONTRIBUTING.md#build-an-individual-package)
+for setup and shared-host build lease requirements. Package builds complement
+workspace and native validation; they do not require separate CI jobs or
+published artifacts.
+
+## CI selection and native checks
+
 Automatic PR and `main` push runs of `rust-ci.yml` are filtered to `rust/**`.
 The Python `fab:build` workflow is filtered to `src/**` and `tests/**`.
 Workflow-only or dependency files outside those directories do not trigger

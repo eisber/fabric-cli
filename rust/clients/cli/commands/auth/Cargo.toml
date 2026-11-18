@@ -14,7 +14,6 @@ azure_core.workspace = true
 clap.workspace = true
 fabric-cli-command-contracts.workspace = true
 fabric-core.workspace = true
-serde_json.workspace = true
 
 [lints]
 workspace = true

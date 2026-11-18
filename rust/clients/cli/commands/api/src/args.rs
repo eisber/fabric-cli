@@ -33,14 +33,15 @@ pub fn command() -> Command {
                 .value_parser(["fabric", "storage", "azure", "powerbi"]),
         )
         .arg(
-            Arg::new("input")
-                .long("input")
+            Arg::new("payload")
+                .long("payload")
                 .help("Inline JSON object, JSON file, or multipart file; cannot be used with --method delete"),
         )
         .arg(
             Arg::new("headers")
                 .long("headers")
-                .help("Safe key=value pairs separated by commas"),
+                .value_name("JSON")
+                .help("Inline JSON object of string headers: Accept, Content-Type, If-Match, If-None-Match, Prefer, Range"),
         )
         .arg(
             Arg::new("query").long("query").help(

@@ -4,13 +4,14 @@
 use crate::{Host, console::ConsoleProgress};
 use async_trait::async_trait;
 use fabric_cli_api::ApiReporting;
-use fabric_cli_command_contracts::{CommandDiagnostics, CommandError, ValidatedInvocation};
+use fabric_cli_command_contracts::{
+    CommandDiagnostics, CommandError, CommandOutput, ValidatedInvocation,
+};
 use fabric_core::{
     CancellationToken, Clock, CoreError, OperationKind, RecoveryInfo,
     diagnostics::{DiagnosticEvent, DiagnosticObserver, DiagnosticPhase, DiagnosticStage},
 };
 use fabric_sdk_operations::{PollObserver, PollProgress};
-use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 
 pub(super) async fn execute(
@@ -18,7 +19,7 @@ pub(super) async fn execute(
     host: &dyn Host,
     cancellation: CancellationToken,
     observer: &Arc<ConsoleProgress>,
-) -> Result<Value, CommandError> {
+) -> Result<CommandOutput, CommandError> {
     match invocation.matches().subcommand_name() {
         Some("auth") => {
             fabric_cli_auth::execute(invocation, host, cancellation, observer.as_ref()).await

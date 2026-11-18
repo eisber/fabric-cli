@@ -17,6 +17,7 @@ fabric-core.workspace = true
 fabric-core-json.workspace = true
 fabric-sdk-api.workspace = true
 fabric-sdk-http.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 

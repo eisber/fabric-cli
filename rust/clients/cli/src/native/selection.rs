@@ -19,7 +19,10 @@ static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 fn config_error() -> CommandError {
     CommandError::new(
         "InvalidConfig",
-        "Cannot read or update Rust selection. Repair its permissions/content or run fab-rs auth logout.",
+        format!(
+            "Cannot read or update Rust selection. Repair its permissions/content or run {} auth logout.",
+            crate::EXECUTABLE_NAME
+        ),
     )
 }
 

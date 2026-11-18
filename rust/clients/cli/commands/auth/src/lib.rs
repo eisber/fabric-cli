@@ -6,13 +6,12 @@
 use azure_core::credentials::TokenRequestOptions;
 use clap::{Arg, ArgAction, Command};
 use fabric_cli_command_contracts::{
-    CommandDiagnostics, CommandError, Host, ValidatedInvocation, selected,
+    AuthOutput, CommandDiagnostics, CommandError, CommandOutput, Host, ValidatedInvocation,
+    selected,
 };
 use fabric_core::{
-    Audience, Binding, CancellationToken, OperationContext, bounded_with_clock,
-    diagnostics::DiagnosticStage,
+    Audience, CancellationToken, OperationContext, bounded_with_clock, diagnostics::DiagnosticStage,
 };
-use serde_json::{Value, json};
 use std::time::Duration;
 
 /// Define the auth command and its argument-free actions.
@@ -35,22 +34,13 @@ pub fn command() -> Command {
         )
 }
 
-fn auth_data(binding: &Binding) -> Value {
-    json!({
-        "logged_in": true,
-        "authentication_mode": "Azure CLI",
-        "tenant_id": binding.tenant,
-        "principal_id": binding.principal,
-    })
-}
-
 /// Validate the auth action and execute it with injected effects.
 pub async fn execute(
     invocation: &ValidatedInvocation,
     host: &dyn Host,
     cancellation: CancellationToken,
     observer: &impl CommandDiagnostics,
-) -> Result<Value, CommandError> {
+) -> Result<CommandOutput, CommandError> {
     let auth = invocation.command("auth")?;
     match auth.subcommand_name() {
         Some("logout") => {
@@ -58,7 +48,7 @@ pub async fn execute(
             observer
                 .finish(DiagnosticStage::Selection, started, host.clear_selection())
                 .await?;
-            Ok(json!({"selected": false}))
+            Ok(CommandOutput::Auth(AuthOutput::Logout))
         }
         Some("login") => {
             let started = observer.start(DiagnosticStage::Authentication).await?;
@@ -79,11 +69,10 @@ pub async fn execute(
                     host.save_selection(&binding),
                 )
                 .await?;
-            let mut data = auth_data(&binding);
-            data["selected"] = json!(true);
-            data["mfa_evidence"] = json!("not_checked");
-            data["service_access_verified"] = json!(false);
-            Ok(data)
+            Ok(CommandOutput::Auth(AuthOutput::Login {
+                tenant_id: binding.tenant,
+                principal_id: binding.principal,
+            }))
         }
         Some("status") => {
             let started = observer.start(DiagnosticStage::Selection).await?;
@@ -115,7 +104,10 @@ pub async fn execute(
             observer
                 .finish(DiagnosticStage::Authentication, started, result)
                 .await?;
-            Ok(auth_data(&binding))
+            Ok(CommandOutput::Auth(AuthOutput::Status {
+                tenant_id: binding.tenant,
+                principal_id: binding.principal,
+            }))
         }
         _ => Err(CommandError::new(
             "InvalidInput",

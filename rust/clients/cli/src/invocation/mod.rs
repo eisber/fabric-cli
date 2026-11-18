@@ -91,7 +91,7 @@ pub async fn run(
     let (result, stderr_broken) = console::drive(host, stderr, &observer, events, execution).await;
     match result {
         Ok(data) => {
-            let output = output::success(&output::timestamp(host), name, data);
+            let output = output::success_typed(&output::timestamp(host), name, data);
             if stdout.write_all(output.as_bytes()).is_ok() {
                 0
             } else {

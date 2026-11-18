@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Shared CLI invocation, injected effects, and safe command failures.
+//! Shared CLI invocation, injected effects, typed results, and safe failures.
 #![forbid(unsafe_code)]
 
 mod invocation;
@@ -10,9 +10,42 @@ mod runtime;
 pub use invocation::ValidatedInvocation;
 pub use runtime::{CommandDiagnostics, Host, selected};
 
+/// Name used by the CLI parser and user-facing messages.
+pub const EXECUTABLE_NAME: &str = "fab-rs";
+
 use fabric_core::{CoreError, ErrorKind, JobFailureReason};
 use serde_json::Value;
 use std::fmt;
+
+/// Successful command data before presentation.
+#[derive(Clone, Debug)]
+pub enum CommandOutput {
+    /// Validated authentication metadata or a selection change.
+    Auth(AuthOutput),
+    /// Arbitrary service response or JMESPath projection.
+    Api(Value),
+}
+
+/// Authentication command outcomes, without credentials or tokens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthOutput {
+    /// A validated Azure CLI identity was selected.
+    Login {
+        /// Entra tenant object ID.
+        tenant_id: String,
+        /// Entra principal object ID.
+        principal_id: String,
+    },
+    /// The selected Azure CLI identity was validated.
+    Status {
+        /// Entra tenant object ID.
+        tenant_id: String,
+        /// Entra principal object ID.
+        principal_id: String,
+    },
+    /// The local identity selection was cleared.
+    Logout,
+}
 
 /// Safe presentation failure. Never construct messages from credential/process/HTTP bodies.
 #[derive(Clone, Debug)]
@@ -21,8 +54,8 @@ pub struct CommandError {
     pub code: String,
     /// Safe user-facing explanation.
     pub message: String,
-    /// Known, sanitized accepted-operation evidence.
-    pub recovery: Option<Value>,
+    /// Known, sanitized accepted-operation evidence, boxed to keep failures small.
+    pub recovery: Option<Box<Value>>,
     /// Untrusted service message for final JSON only, never diagnostic output.
     pub failure_reason: Option<JobFailureReason>,
     exit_code: u8,
@@ -92,7 +125,8 @@ impl From<CoreError> for CommandError {
             failure_reason: error.failure_reason,
             recovery: error
                 .recovery
-                .and_then(|value| serde_json::to_value(value).ok()),
+                .and_then(|value| serde_json::to_value(value).ok())
+                .map(Box::new),
             exit_code,
             kind: error.kind,
         }

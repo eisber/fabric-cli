@@ -13,6 +13,11 @@ use std::{sync::Arc, time::Duration};
 /// Host-owned effects; fake implementations prove parser and output behavior offline.
 #[async_trait]
 pub trait Host: Send + Sync {
+    /// Read one explicitly named inherited hint; injected hosts default to no hints.
+    fn environment(&self, _name: &str) -> Option<std::ffi::OsString> {
+        None
+    }
+
     /// Explicit clock used for timestamps, deadlines, and polling.
     fn clock(&self) -> Arc<dyn Clock>;
     /// Read only this Rust CLI's non-secret selection.

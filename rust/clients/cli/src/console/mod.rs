@@ -212,7 +212,8 @@ impl ConsoleProgress {
         error.recovery = state
             .recovery
             .as_ref()
-            .and_then(|value| serde_json::to_value(value).ok());
+            .and_then(|value| serde_json::to_value(value).ok())
+            .map(Box::new);
         error
     }
 }

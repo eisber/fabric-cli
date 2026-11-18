@@ -23,7 +23,7 @@ on the native string-only parser path.
 
 ## Deliberate resource limit
 
-jpx-core **0.3.1** exposes a recursion limit, but its `Expression::search`,
+jpx-core **0.4.0** exposes a recursion limit, but its `Expression::search`,
 `Context`, and `Function` APIs provide no allocation/work budget hook. Identity,
 multiselects, function arguments, projections, and expression references can
 clone data. A response-size limit or final rendered-size check does not bound
@@ -74,11 +74,12 @@ do not enter the jpx interpreter and retain their existing behavior.
 ## Integer precision
 
 Exact arbitrary-width JSON integers remain exact in field/index/container
-projections, scalar formatting, and `to_string`. Numeric operations that would
-fall back to lossy native floating point fail with `Unsupported`; no projection
-coercion or new bigint arithmetic is introduced. Finite float formatting still
-uses Python's binary64 normalization. Oversized integer *query literals* retain
-the existing explicit unsupported boundary.
+projections, scalar formatting, and `to_string`. Existing input guards remain
+in place. `min_by`, `max_by`, and `sort_by` compare evaluated signed or unsigned
+64-bit integer keys exactly, including alongside finite floats. Integer keys
+outside that range fail with `Unsupported` before native comparison. Finite
+float formatting still uses Python's binary64 normalization. Oversized integer
+*query literals* retain the existing explicit unsupported boundary.
 
 ## Offline verification
 
