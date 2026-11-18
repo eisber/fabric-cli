@@ -99,16 +99,33 @@ fn xlsx_existing_destination_fails_before_input_credentials_or_query_dispatch() 
     let path = directory.path().join("existing.xlsx");
     std::fs::write(&path, b"original").unwrap();
     let command = command(&[
-        "--file", "must-not-open", "--format", "xlsx", "--output", path.to_str().unwrap(),
+        "--file",
+        "must-not-open",
+        "--format",
+        "xlsx",
+        "--output",
+        path.to_str().unwrap(),
     ]);
     let wire = Wire::new([]);
     let credential = Arc::new(Credential::default());
-    let client = client(wire.clone(), credential.clone(), Arc::new(Timer::default()), Limits::default());
+    let client = client(
+        wire.clone(),
+        credential.clone(),
+        Arc::new(Timer::default()),
+        Limits::default(),
+    );
     let mut input = Inputs::default();
     let mut output = crate::tabular_export::FileSink::default();
     let result = prepare(
-        &command, bound(), Providers { aihub: Some(&client), kql: None },
-        policy(), &mut input, &mut output,
+        &command,
+        bound(),
+        Providers {
+            aihub: Some(&client),
+            kql: None,
+        },
+        policy(),
+        &mut input,
+        &mut output,
     );
     assert!(matches!(result, Err(QueryHostError::OutputPreflight)));
     assert_eq!(input.reads, 0);

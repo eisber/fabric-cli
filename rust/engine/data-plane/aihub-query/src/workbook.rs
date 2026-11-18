@@ -11,8 +11,7 @@ use serde::Deserialize;
 use std::{collections::BTreeSet, fmt};
 
 /// Workload-native Excel media type; extensions and URIs never select content.
-pub const WORKBOOK_MIME: &str =
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+pub const WORKBOOK_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /// Original workbook bytes, with no ZIP inspection, rewriting or M execution.
 ///
@@ -101,7 +100,9 @@ pub(crate) fn decode(
         return Err(QueryErrorKind::ToolError);
     }
     if let Some(task) = result.field("task")?
-        && task.deserialize::<Option<serde::de::IgnoredAny>>()?.is_some()
+        && task
+            .deserialize::<Option<serde::de::IgnoredAny>>()?
+            .is_some()
     {
         return Err(QueryErrorKind::Protocol);
     }
@@ -173,7 +174,9 @@ fn select(
                     }
                     selected = Some(NativeWorkbook {
                         uri: resource.uri,
-                        mime_type: resource.mime_type.ok_or(QueryErrorKind::InvalidNativeWorkbook)?,
+                        mime_type: resource
+                            .mime_type
+                            .ok_or(QueryErrorKind::InvalidNativeWorkbook)?,
                         bytes,
                     });
                 }

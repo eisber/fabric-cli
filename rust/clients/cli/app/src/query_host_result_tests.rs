@@ -515,7 +515,10 @@ async fn actual_filesink_retains_immutable_query_carrying_workbook_fixture_byte_
     let (observed, wire) = observe(content, Some(("xlsx", &output)), &mut sink, &deadline).await;
     let delivery = finish(observed, &mut sink, &deadline);
     assert!(delivery.error.is_none());
-    assert_eq!(delivery.native_workbook.unwrap().workbook.unwrap().bytes, BYTES);
+    assert_eq!(
+        delivery.native_workbook.unwrap().workbook.unwrap().bytes,
+        BYTES
+    );
     assert_eq!(std::fs::read(&output).unwrap(), BYTES);
     assert_eq!(delivery.receipt.receipt["delivery"]["bytes"], BYTES.len());
     assert_eq!(wire.requests.lock().unwrap().len(), 3);
@@ -536,7 +539,13 @@ async fn actual_root_xlsx_publishes_exact_native_bytes_with_standard_filesink_an
     };
     assert_eq!(options.workbook_output.as_deref(), Some(output.as_path()));
     let content = native_workbook_content();
-    let (observed, wire) = observe(content.clone(), Some(("xlsx", &output)), &mut sink, &deadline).await;
+    let (observed, wire) = observe(
+        content.clone(),
+        Some(("xlsx", &output)),
+        &mut sink,
+        &deadline,
+    )
+    .await;
     let delivery = finish(observed, &mut sink, &deadline);
     assert!(delivery.error.is_none());
     assert!(delivery.converted.is_none());
@@ -545,24 +554,40 @@ async fn actual_root_xlsx_publishes_exact_native_bytes_with_standard_filesink_an
     assert_eq!(std::fs::read(&output).unwrap(), b"\xd0\xcf\x11\xe0");
     let native = delivery.native_workbook.as_ref().unwrap();
     assert_eq!(native.workbook.as_ref().unwrap().bytes, b"\xd0\xcf\x11\xe0");
-    assert_eq!(serde_json::from_str::<Value>(&native.result_json).unwrap(), content);
+    assert_eq!(
+        serde_json::from_str::<Value>(&native.result_json).unwrap(),
+        content
+    );
     let receipt = &delivery.receipt.receipt;
     assert_eq!(receipt["execution"]["status"], "succeeded");
-    assert_eq!(receipt["execution"]["metadata"]["requestedCacheMaxRows"], 100);
-    assert_eq!(receipt["execution"]["metadata"]["rowCompleteness"], "unverified");
+    assert_eq!(
+        receipt["execution"]["metadata"]["requestedCacheMaxRows"],
+        100
+    );
+    assert_eq!(
+        receipt["execution"]["metadata"]["rowCompleteness"],
+        "unverified"
+    );
     assert_eq!(receipt["delivery"]["format"], "xlsx");
     assert_eq!(receipt["delivery"]["bytes"], 4);
     assert_eq!(receipt["delivery"]["connectivity"], "unverified");
     assert!(receipt["delivery"].get("rows").is_none());
     assert!(receipt["delivery"].get("schema").is_none());
     let mut stdout = Vec::new();
-    delivery.write_to_streams(&mut stdout, &mut Vec::new()).unwrap();
-    assert_eq!(serde_json::from_slice::<Value>(&stdout).unwrap()["delivery"]["status"], "succeeded");
+    delivery
+        .write_to_streams(&mut stdout, &mut Vec::new())
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stdout).unwrap()["delivery"]["status"],
+        "succeeded"
+    );
     assert!(!stdout.windows(4).any(|bytes| bytes == b"\xd0\xcf\x11\xe0"));
     assert_eq!(wire.requests.lock().unwrap().len(), 3);
     for message in messages(&wire) {
-        assert_eq!(message["params"]["_meta"]["variants"],
-            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.SqlReadOnlyEnforce");
+        assert_eq!(
+            message["params"]["_meta"]["variants"],
+            "Fabric.Routing.Documents.DataAgent,Fabric.Routing.Documents.SqlReadOnlyEnforce"
+        );
     }
     drop(sink);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
@@ -581,13 +606,25 @@ async fn xlsx_attachment_failures_keep_completed_response_and_cleanup_without_re
         let output = directory.path().join("failed.xlsx");
         let mut sink = FileSink::default();
         let deadline = deadline();
-        let (observed, wire) = observe(content.clone(), Some(("xlsx", &output)), &mut sink, &deadline).await;
+        let (observed, wire) = observe(
+            content.clone(),
+            Some(("xlsx", &output)),
+            &mut sink,
+            &deadline,
+        )
+        .await;
         let delivery = finish(observed, &mut sink, &deadline);
-        assert!(matches!(delivery.error, Some(QueryDeliveryError::Workbook(_))));
+        assert!(matches!(
+            delivery.error,
+            Some(QueryDeliveryError::Workbook(_))
+        ));
         assert_eq!(delivery.receipt.receipt["execution"]["status"], "succeeded");
         assert_eq!(delivery.receipt.receipt["delivery"]["status"], "failed");
         assert_eq!(delivery.receipt.receipt["delivery"]["stage"], "attachment");
-        assert_eq!(serde_json::from_str::<Value>(&delivery.native_workbook.unwrap().result_json).unwrap(), content);
+        assert_eq!(
+            serde_json::from_str::<Value>(&delivery.native_workbook.unwrap().result_json).unwrap(),
+            content
+        );
         assert!(!output.exists());
         assert_eq!(wire.requests.lock().unwrap().len(), 3);
         drop(sink);
@@ -601,13 +638,22 @@ async fn xlsx_late_conflict_retains_original_bytes_and_completed_query_without_c
     let output = directory.path().join("late.xlsx");
     let mut sink = FileSink::default();
     let deadline = deadline();
-    let (observed, wire) = observe(native_workbook_content(), Some(("xlsx", &output)), &mut sink, &deadline).await;
+    let (observed, wire) = observe(
+        native_workbook_content(),
+        Some(("xlsx", &output)),
+        &mut sink,
+        &deadline,
+    )
+    .await;
     std::fs::write(&output, b"other-writer").unwrap();
     let delivery = finish(observed, &mut sink, &deadline);
     assert!(matches!(delivery.error, Some(QueryDeliveryError::File(_))));
     assert_eq!(delivery.receipt.receipt["execution"]["status"], "succeeded");
     assert_eq!(delivery.receipt.receipt["delivery"]["status"], "failed");
-    assert_eq!(delivery.native_workbook.unwrap().workbook.unwrap().bytes, b"\xd0\xcf\x11\xe0");
+    assert_eq!(
+        delivery.native_workbook.unwrap().workbook.unwrap().bytes,
+        b"\xd0\xcf\x11\xe0"
+    );
     assert_eq!(std::fs::read(&output).unwrap(), b"other-writer");
     assert_eq!(wire.requests.lock().unwrap().len(), 3);
     drop(sink);
@@ -621,17 +667,28 @@ async fn xlsx_cancellation_and_output_bound_keep_bytes_without_publishing() {
         let output = directory.path().join("bounded.xlsx");
         let mut sink = FileSink::default();
         let deadline = deadline();
-        let (observed, wire) = observe(native_workbook_content(), Some(("xlsx", &output)), &mut sink, &deadline).await;
+        let (observed, wire) = observe(
+            native_workbook_content(),
+            Some(("xlsx", &output)),
+            &mut sink,
+            &deadline,
+        )
+        .await;
         let canceled = AtomicBool::new(cancel);
         let delivery = observed.finish(
             ConversionLimits::new(8, 100, 32, 1024, 8, 16).unwrap(),
             &ConversionControl::new(Instant::now() + deadline.remaining().unwrap(), &canceled),
             OutputLimits::new(100, if cancel { 1024 } else { 3 }, 8).unwrap(),
-            &deadline, &canceled, &mut sink,
+            &deadline,
+            &canceled,
+            &mut sink,
         );
         assert!(delivery.error.is_some());
         assert_eq!(delivery.receipt.receipt["execution"]["status"], "succeeded");
-        assert_eq!(delivery.native_workbook.unwrap().workbook.unwrap().bytes, b"\xd0\xcf\x11\xe0");
+        assert_eq!(
+            delivery.native_workbook.unwrap().workbook.unwrap().bytes,
+            b"\xd0\xcf\x11\xe0"
+        );
         assert!(!output.exists());
         assert_eq!(wire.requests.lock().unwrap().len(), 3);
         drop(sink);
@@ -645,12 +702,34 @@ async fn xlsx_receipt_failure_keeps_published_native_bytes_and_response() {
     let output = directory.path().join("delivered.xlsx");
     let mut sink = FileSink::default();
     let deadline = deadline();
-    let (observed, wire) = observe(native_workbook_content(), Some(("xlsx", &output)), &mut sink, &deadline).await;
+    let (observed, wire) = observe(
+        native_workbook_content(),
+        Some(("xlsx", &output)),
+        &mut sink,
+        &deadline,
+    )
+    .await;
     let failure = finish(observed, &mut sink, &deadline)
-        .write_to_streams(&mut BrokenWriter, &mut Vec::new()).unwrap_err();
-    assert_eq!(failure.delivery.receipt.receipt["execution"]["status"], "succeeded");
-    assert_eq!(failure.delivery.receipt.receipt["delivery"]["status"], "succeeded");
-    assert_eq!(failure.delivery.native_workbook.unwrap().workbook.unwrap().bytes, b"\xd0\xcf\x11\xe0");
+        .write_to_streams(&mut BrokenWriter, &mut Vec::new())
+        .unwrap_err();
+    assert_eq!(
+        failure.delivery.receipt.receipt["execution"]["status"],
+        "succeeded"
+    );
+    assert_eq!(
+        failure.delivery.receipt.receipt["delivery"]["status"],
+        "succeeded"
+    );
+    assert_eq!(
+        failure
+            .delivery
+            .native_workbook
+            .unwrap()
+            .workbook
+            .unwrap()
+            .bytes,
+        b"\xd0\xcf\x11\xe0"
+    );
     assert_eq!(std::fs::read(&output).unwrap(), b"\xd0\xcf\x11\xe0");
     assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }

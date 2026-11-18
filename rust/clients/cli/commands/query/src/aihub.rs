@@ -3,8 +3,8 @@
 
 use crate::{PreparedInput, ResolvedRoute, Stage};
 use fabric_sdk_aihub_query::{
-    AiHubQueryClient, DataAgentTarget, NativeDeadline, QueryError, QueryOutcome, QueryRequest,
-    NativeWorkbookRequest, NativeWorkbookResponse, QueryStage, TypedJson,
+    AiHubQueryClient, DataAgentTarget, NativeDeadline, NativeWorkbookRequest,
+    NativeWorkbookResponse, QueryError, QueryOutcome, QueryRequest, QueryStage, TypedJson,
 };
 use std::future::Future;
 
@@ -31,7 +31,11 @@ fn target(route: ResolvedRoute) -> Result<DataAgentTarget, AiHubPreparationError
         Stage::Production => QueryStage::Production,
         Stage::Sandbox => QueryStage::Sandbox,
     };
-    Ok(DataAgentTarget::new(&route.agent.item, &route.datasource, stage)?)
+    Ok(DataAgentTarget::new(
+        &route.agent.item,
+        &route.datasource,
+        stage,
+    )?)
 }
 
 /// An unsupported provider or invalid typed DataAgent request before dispatch.

@@ -127,13 +127,7 @@ impl QueryObservation {
             let native = self.result?;
             if let NativeQueryResult::Workbook(result) = native {
                 delivery.native_workbook = Some(result);
-                return publish_workbook(
-                    &mut delivery,
-                    output_limits,
-                    deadline,
-                    canceled,
-                    sink,
-                );
+                return publish_workbook(&mut delivery, output_limits, deadline, canceled, sink);
             }
             check_output_control(deadline, canceled)?;
             validate_declared_native(&native)?;

@@ -144,7 +144,9 @@ pub enum QueryHostError {
     #[error("Query output is unavailable or already exists; no query was dispatched")]
     OutputPreflight,
     /// Direct KQL has no native workbook capability; no fallback is permitted.
-    #[error("Workload-native XLSX requires an explicitly DataAgent-qualified target; native KQL and ID-only targets are unsupported")]
+    #[error(
+        "Workload-native XLSX requires an explicitly DataAgent-qualified target; native KQL and ID-only targets are unsupported"
+    )]
     UnsupportedFormat,
     /// Actual SDK AIHub request preparation failed before execution.
     #[error(transparent)]
@@ -238,7 +240,10 @@ pub fn prepare<'a>(
             PreparedProvider::Workbook(PreparedAiHubWorkbook::new(
                 route,
                 statement,
-                providers.aihub.ok_or(QueryHostError::NotConfigured)?.clone(),
+                providers
+                    .aihub
+                    .ok_or(QueryHostError::NotConfigured)?
+                    .clone(),
                 policy.aihub_max_rows,
             )?)
         }

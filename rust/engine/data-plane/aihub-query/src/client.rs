@@ -3,9 +3,9 @@
 
 use crate::{
     CatalogView, DATA_AGENT_VARIANT, DataAgentTarget, Limits, NativeCatalogResponse,
-    NativeDeadline, QueryError, QueryErrorKind, QueryMode, QueryOutcome, QueryRequest, QueryStage,
-    READ_ONLY_VARIANT, SANDBOX_VARIANT, TEMPLATE_VARIANT, TYPED_RESULTS_VARIANT, TypedJson,
-    NativeWorkbookRequest, NativeWorkbookResponse, catalog, decode, json::RawValue, protocol,
+    NativeDeadline, NativeWorkbookRequest, NativeWorkbookResponse, QueryError, QueryErrorKind,
+    QueryMode, QueryOutcome, QueryRequest, QueryStage, READ_ONLY_VARIANT, SANDBOX_VARIANT,
+    TEMPLATE_VARIANT, TYPED_RESULTS_VARIANT, TypedJson, catalog, decode, json::RawValue, protocol,
     workbook,
 };
 use azure_core::{
@@ -155,9 +155,13 @@ impl AiHubQueryClient {
         deadline: &NativeDeadline,
         canceled: impl Future<Output = ()> + Send,
     ) -> Result<QueryOutcome, QueryError> {
-        self.invoke(request, Representation::TypedJson, deadline, canceled, |raw, version| {
-            decode::decode(raw, self.limits, request.max_rows as usize, version)
-        })
+        self.invoke(
+            request,
+            Representation::TypedJson,
+            deadline,
+            canceled,
+            |raw, version| decode::decode(raw, self.limits, request.max_rows as usize, version),
+        )
         .await
     }
 
@@ -177,9 +181,7 @@ impl AiHubQueryClient {
             Representation::NativeWorkbook,
             deadline,
             canceled,
-            |raw, version| {
-                workbook::decode(raw, self.limits, version, request.inner.max_rows)
-            },
+            |raw, version| workbook::decode(raw, self.limits, version, request.inner.max_rows),
         )
         .await
     }
@@ -212,9 +214,13 @@ impl AiHubQueryClient {
     ) -> Result<NativeCatalogResponse, QueryError> {
         let request = QueryRequest::new(target, view.expression().into(), TypedJson::Required)?
             .with_mode(QueryMode::Template);
-        self.invoke(&request, Representation::TypedJson, deadline, canceled, |raw, version| {
-            catalog::decode(raw, self.limits, version)
-        })
+        self.invoke(
+            &request,
+            Representation::TypedJson,
+            deadline,
+            canceled,
+            |raw, version| catalog::decode(raw, self.limits, version),
+        )
         .await
     }
 
