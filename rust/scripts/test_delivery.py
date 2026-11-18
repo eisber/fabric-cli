@@ -460,7 +460,7 @@ class VerificationTests(unittest.TestCase):
                     package.build(target, output)
             sbom = (output / f"fab-rs-0.1.0-{target}.cdx.json").read_text()
             self.assertNotIn(str(repository), sbom)
-            self.assertEqual(len(json.loads(sbom)["components"]), 12)
+            self.assertEqual(len(json.loads(sbom)["components"]), len(boundaries.MEMBERS))
 
     def test_actual_host_and_compiler_mismatch_fail_closed(self) -> None:
         with patch.object(native_host.platform, "system", return_value="Darwin"):

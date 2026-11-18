@@ -1,86 +1,30 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Narrow donor-adapted raw API parsing, input validation, and response projection.
-#![forbid(unsafe_code)]
-
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use super::{args::parse_polling_config, invalid, json_failure};
+use clap::ArgMatches;
 use fabric_cli_command_contracts::CommandError;
-use fabric_core::{ApiRequest, ApiResponse, Audience, MAX_REQUEST_BYTES};
-use serde_json::{Map, Value};
-use std::{collections::BTreeMap, io::Read, path::Path, time::Duration};
+use fabric_core::{ApiRequest, Audience, MAX_REQUEST_BYTES};
+use std::{collections::BTreeMap, io::Read, path::Path};
 
 /// Prepared API command; all local input validation has completed.
-pub struct PreparedApi {
+pub(super) struct PreparedApi {
     /// Fixed token/origin audience.
-    pub audience: Audience,
+    pub(super) audience: Audience,
     /// Fully validated request, without authorization.
-    pub request: ApiRequest,
+    pub(super) request: ApiRequest,
     /// Optional local response projection.
-    pub query: Option<String>,
+    pub(super) query: Option<String>,
     /// Include service headers only on explicit request.
-    pub show_headers: bool,
+    pub(super) show_headers: bool,
     /// Return the actual initial response, without polling or background work.
-    pub asynchronous: bool,
+    pub(super) asynchronous: bool,
     /// Optional polling interval and overall timeout.
-    pub lro_config: fabric_sdk_api::LroConfig,
-}
-
-/// Long-only approved API parser, with explicit per-command polling configuration.
-pub fn command() -> Command {
-    Command::new("api")
-        .about("Send a raw API request; recognized operations poll by default until completion or local cancellation")
-        .disable_help_flag(true)
-        .arg(Arg::new("help").long("help").action(ArgAction::Help))
-        .arg(Arg::new("endpoint").required(true))
-        .arg(
-            Arg::new("polling-config")
-                .long("polling-config")
-                .value_name("JSON")
-                .help("Optional polling JSON: poll_interval and timeout are positive numbers of seconds; both keys are optional and timeout has no default. Cannot be combined with --async. Backend work may continue after timeout"),
-        )
-        .arg(
-            Arg::new("method")
-                .long("method")
-                .default_value("get")
-                .value_parser(["get", "post", "delete", "put", "patch"]),
-        )
-        .arg(
-            Arg::new("audience")
-                .long("audience")
-                .default_value("fabric")
-                .value_parser(["fabric", "storage", "azure", "powerbi"]),
-        )
-        .arg(
-            Arg::new("input")
-                .long("input")
-                .help("Inline JSON object, JSON file, or multipart file; cannot be used with --method delete"),
-        )
-        .arg(
-            Arg::new("headers")
-                .long("headers")
-                .help("Safe key=value pairs separated by commas"),
-        )
-        .arg(
-            Arg::new("query").long("query").help(
-                "Local JMESPath on the response object: status_code, text, optional headers",
-            ),
-        )
-        .arg(
-            Arg::new("show-headers")
-                .long("show-headers")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("async")
-                .long("async")
-                .action(ArgAction::SetTrue)
-                .help("Send once and return the initial response without polling; cannot be combined with --polling-config"),
-        )
+    pub(super) lro_config: fabric_sdk_api::LroConfig,
 }
 
 /// Validate request bytes, headers, query, and origin before reading auth/config.
-pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
+pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     let value = |name| matches.get_one::<String>(name).map(String::as_str);
     let asynchronous = matches.get_flag("async");
     if asynchronous && value("polling-config").is_some() {
@@ -138,65 +82,8 @@ pub fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
     })
 }
 
-fn parse_polling_config(text: Option<&str>) -> Result<fabric_sdk_api::LroConfig, CommandError> {
-    let Some(text) = text else {
-        return Ok(fabric_sdk_api::LroConfig::default());
-    };
-    if text.len() > 16 * 1024 {
-        return Err(invalid("--polling-config exceeds the 16384-byte limit"));
-    }
-    let json = fabric_core_json::decode(text.as_bytes()).map_err(|_| {
-        invalid(json_failure(
-            "--polling-config is not valid JSON",
-            text.as_bytes(),
-        ))
-    })?;
-    let object = json
-        .as_object()
-        .ok_or_else(|| invalid("Polling configuration must be a JSON object"))?;
-    if object.contains_key("polling_interval") {
-        return Err(invalid(
-            "Unknown polling configuration option 'polling_interval'; use 'poll_interval'",
-        ));
-    }
-    if object
-        .keys()
-        .any(|key| key != "poll_interval" && key != "timeout")
-    {
-        return Err(invalid(
-            "Unknown polling configuration option; supported keys are poll_interval and timeout",
-        ));
-    }
-    let duration = |key: &str| -> Result<Option<Duration>, CommandError> {
-        let Some(value) = object.get(key).filter(|value| !value.is_null()) else {
-            return Ok(None);
-        };
-        let seconds = value
-            .as_f64()
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .ok_or_else(|| {
-                CommandError::new(
-                    "InvalidInput",
-                    format!("Invalid {key}: expected a positive JSON number of seconds"),
-                )
-            })?;
-        Duration::try_from_secs_f64(seconds).map(Some).map_err(|_| {
-            CommandError::new(
-                "InvalidInput",
-                format!("Invalid {key}: duration exceeds supported range"),
-            )
-        })
-    };
-    fabric_sdk_api::LroConfig::new(duration("poll_interval")?, duration("timeout")?)
-        .map_err(Into::into)
-}
-
-fn invalid(message: impl Into<String>) -> CommandError {
-    CommandError::new("InvalidInput", message)
-}
-
 /// First-`=` header splitting, with last case-insensitive duplicate value retained.
-pub fn parse_headers(text: Option<&str>) -> Result<BTreeMap<String, String>, CommandError> {
+fn parse_headers(text: Option<&str>) -> Result<BTreeMap<String, String>, CommandError> {
     let mut headers = BTreeMap::new();
     if let Some(text) = text {
         let text = text.trim_matches(['"', '\'']);
@@ -270,25 +157,6 @@ fn load_input(
         .and_then(|name| name.to_str())
         .ok_or_else(|| invalid("API input file name must be valid UTF-8 for multipart upload"))?;
     multipart(name, &bytes, headers)
-}
-
-/// Describe a JSON failure by position only; content is never echoed.
-fn json_failure(prefix: &str, bytes: &[u8]) -> String {
-    match serde_json::from_slice::<Value>(bytes) {
-        Err(error) if error.is_eof() => format!(
-            "{prefix}: unexpected end of input at line {}, column {}",
-            error.line(),
-            error.column()
-        ),
-        Err(error) if error.is_syntax() => format!(
-            "{prefix}: syntax error at line {}, column {}",
-            error.line(),
-            error.column()
-        ),
-        _ => format!(
-            "{prefix}: nesting exceeds 128 levels or a number is outside the supported range"
-        ),
-    }
 }
 
 fn input_file_error(error: &std::io::Error) -> CommandError {
@@ -384,69 +252,4 @@ fn multipart(
         .entry("content-type".into())
         .or_insert_with(|| format!("multipart/form-data; boundary={boundary}"));
     Ok(body)
-}
-
-/// Validate initial response JSON before reconciliation can replace its body.
-/// Empty bodies use the same whitespace policy as final output.
-pub fn validate_response_body(body: &[u8]) -> Result<(), CommandError> {
-    response_body(body).map(|_| ())
-}
-
-fn response_body(bytes: &[u8]) -> Result<Value, CommandError> {
-    let text = std::str::from_utf8(bytes).map_err(|_| {
-        CommandError::new(
-            "InvalidJson",
-            "Service response is not valid JSON: body is not valid UTF-8",
-        )
-    })?;
-    if text
-        .chars()
-        .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-    {
-        Ok(Value::String(String::new()))
-    } else {
-        fabric_core_json::decode(bytes).map_err(|_| {
-            CommandError::new(
-                "InvalidJson",
-                json_failure("Service response is not valid JSON", bytes),
-            )
-        })
-    }
-}
-
-/// Shape the response, querying the object placed inside `result.data`.
-///
-/// Queries use the HTTP wrapper, matching Python raw API. Body fields require
-/// explicit `text` paths. Empty queries retain the wrapper; empty results never fall back.
-pub fn response_data(
-    response: ApiResponse,
-    show_headers: bool,
-    query: Option<&str>,
-) -> Result<Value, CommandError> {
-    let body = response_body(&response.body)?;
-    let mut payload = Map::new();
-    payload.insert("status_code".into(), Value::from(response.status));
-    if show_headers {
-        payload.insert(
-            "headers".into(),
-            serde_json::to_value(
-                response
-                    .headers
-                    .into_iter()
-                    .filter(|(name, _)| {
-                        !name.eq_ignore_ascii_case("authorization")
-                            && !name.eq_ignore_ascii_case("proxy-authorization")
-                    })
-                    .collect::<std::collections::BTreeMap<_, _>>(),
-            )
-            .map_err(|_| invalid("Invalid response headers"))?,
-        );
-    }
-    payload.insert("text".into(), body);
-    let payload = Value::Object(payload);
-    if let Some(query) = query.filter(|query| !query.is_empty()) {
-        return fabric_cli_query::search(&payload, query)
-            .map_err(|_| invalid("Invalid jmespath query (https://jmespath.org)"));
-    }
-    Ok(payload)
 }

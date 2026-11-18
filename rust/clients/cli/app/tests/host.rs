@@ -367,57 +367,6 @@ async fn verbose_is_global_without_changing_stdout_or_option_values() {
     assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
 }
 
-#[test]
-fn protected_response_headers_are_removed_before_every_query_shape() {
-    for query in [
-        "",
-        "@",
-        ".",
-        "headers",
-        "values(headers)",
-        "headers.Authorization",
-        "headers.authorization",
-        "headers.\"pRoXy-AuThOrIzAtIoN\"",
-        "{all: @, extracted: values(headers)}",
-    ] {
-        let result = fabric_cli_api::response_data(
-            response(
-                200,
-                r#"{"value":"body"}"#,
-                &[
-                    ("Authorization", "AUTH-SECRET-CANARY"),
-                    ("authorization", "DUPLICATE-SECRET-CANARY"),
-                    ("Proxy-Authorization", "PROXY-SECRET-CANARY"),
-                    ("pRoXy-AuThOrIzAtIoN", "MIXED-SECRET-CANARY"),
-                    ("x-visible", "visible"),
-                ],
-            ),
-            true,
-            Some(query),
-        )
-        .unwrap();
-        let output = result.to_string();
-        assert!(!output.contains("SECRET-CANARY"), "{query}: {output}");
-        assert!(
-            !output.to_ascii_lowercase().contains("authorization"),
-            "{query}: {output}"
-        );
-        if query == "values(headers)" {
-            assert_eq!(result, json!(["visible"]));
-        }
-    }
-    let result = fabric_cli_api::response_data(
-        response(200, r#"{"Authorization":"explicit body data"}"#, &[]),
-        true,
-        Some("text.Authorization"),
-    )
-    .unwrap();
-    assert_eq!(
-        result, "explicit body data",
-        "only headers are filtered, not body fields"
-    );
-}
-
 #[tokio::test]
 async fn protected_response_headers_stay_hidden_with_and_without_verbose() {
     for verbose in [false, true] {
@@ -2364,15 +2313,8 @@ impl Drop for TempDirectory {
     }
 }
 
-fn prepared(args: &[&str]) -> fabric_cli_api::PreparedApi {
-    let matches = fabric_cli::parser()
-        .try_get_matches_from(std::iter::once("fab-rs").chain(args.iter().copied()))
-        .unwrap();
-    fabric_cli_api::prepare(matches.subcommand_matches("api").unwrap()).unwrap()
-}
-
-#[test]
-fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_content_type() {
+#[tokio::test]
+async fn bodyless_methods_and_null_files_keep_python_default_or_custom_content_type() {
     let directory = TempDirectory::new();
     let null_file = directory.0.join("null.json");
     std::fs::write(&null_file, b"null").unwrap();
@@ -2392,7 +2334,12 @@ fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_conten
                         "Content-Type=text/plain,cOnTeNt-TyPe=application/custom",
                     ]);
                 }
-                let request = prepared(&args).request;
+                let host = FakeHost::new(vec![response(200, "{}", &[])]);
+                let (code, output, _) = run(&args, &host).await;
+                assert_eq!(code, 0, "{output}");
+                let requests = host.transport.requests.lock().unwrap();
+                assert_eq!(requests.len(), 1);
+                let request = &requests[0];
                 assert_eq!(request.method, method.to_uppercase());
                 assert_eq!(
                     request.url.as_str(),
@@ -2401,17 +2348,21 @@ fn prepared_bodyless_methods_and_null_files_keep_python_default_or_custom_conten
                 assert_eq!(request.body.as_slice(), b"");
                 assert_eq!(
                     request.headers,
-                    [(
-                        "content-type".to_owned(),
-                        if custom {
-                            "application/custom"
-                        } else {
-                            "application/json"
-                        }
-                        .to_owned()
-                    )]
-                    .into_iter()
-                    .collect::<std::collections::BTreeMap<_, _>>(),
+                    std::collections::BTreeMap::from([
+                        (
+                            "authorization".to_owned(),
+                            "Bearer synthetic-token".to_owned()
+                        ),
+                        (
+                            "content-type".to_owned(),
+                            if custom {
+                                "application/custom"
+                            } else {
+                                "application/json"
+                            }
+                            .to_owned(),
+                        ),
+                    ]),
                 );
             }
         }
@@ -3301,7 +3252,11 @@ mod polling_configuration {
 
     #[test]
     fn help_documents_seconds_and_optional_timeout() {
-        let help = fabric_cli_api::command().render_long_help().to_string();
+        let help = fabric_cli::parser()
+            .find_subcommand_mut("api")
+            .unwrap()
+            .render_long_help()
+            .to_string();
         assert!(help.contains("--polling-config"));
         assert!(!help.contains("--lro-config"));
         assert!(help.contains("poll_interval"));

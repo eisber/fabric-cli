@@ -1,6 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+mod args;
+mod request;
+mod response;
+
+pub(crate) use args::command;
+
 use super::selected;
 use crate::{
     Host,
@@ -24,11 +30,7 @@ pub(super) async fn execute(
     // Validate local inputs before identity, configuration, or transport effects.
     let started = observer.start(DiagnosticStage::Prepare).await?;
     let prepared = observer
-        .finish(
-            DiagnosticStage::Prepare,
-            started,
-            fabric_cli_api::prepare(api),
-        )
+        .finish(DiagnosticStage::Prepare, started, request::prepare(api))
         .await?;
     let started = observer.start(DiagnosticStage::Selection).await?;
     let binding = observer
@@ -84,7 +86,7 @@ pub(super) async fn execute(
     let response = if prepared.asynchronous {
         initial
     } else {
-        fabric_cli_api::validate_response_body(&initial.body).map_err(attach_recovery)?;
+        response::validate_response_body(&initial.body).map_err(attach_recovery)?;
         let reconciliation = fabric_sdk_api::complete_observed(
             &client,
             clock.as_ref(),
@@ -104,7 +106,7 @@ pub(super) async fn execute(
     };
     let started = observer.start(DiagnosticStage::Projection).await?;
     let result =
-        fabric_cli_api::response_data(response, prepared.show_headers, prepared.query.as_deref())
+        response::response_data(response, prepared.show_headers, prepared.query.as_deref())
             .map_err(attach_recovery);
     let data = observer
         .finish(DiagnosticStage::Projection, started, result)
@@ -116,4 +118,27 @@ pub(super) async fn execute(
             .map_err(|error| attach_recovery(error.into()))?;
     }
     Ok(data)
+}
+
+fn invalid(message: impl Into<String>) -> CommandError {
+    CommandError::new("InvalidInput", message)
+}
+
+/// Describe a JSON failure by position only; content is never echoed.
+fn json_failure(prefix: &str, bytes: &[u8]) -> String {
+    match serde_json::from_slice::<Value>(bytes) {
+        Err(error) if error.is_eof() => format!(
+            "{prefix}: unexpected end of input at line {}, column {}",
+            error.line(),
+            error.column()
+        ),
+        Err(error) if error.is_syntax() => format!(
+            "{prefix}: syntax error at line {}, column {}",
+            error.line(),
+            error.column()
+        ),
+        _ => format!(
+            "{prefix}: nesting exceeds 128 levels or a number is outside the supported range"
+        ),
+    }
 }

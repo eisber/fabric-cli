@@ -25,7 +25,7 @@ pub fn parser() -> Command {
             .help("Print debug diagnostics logs to console"))
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
         .subcommand(crate::commands::auth::command())
-        .subcommand(fabric_cli_api::command())
+        .subcommand(crate::commands::api_command())
 }
 
 pub(super) fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {

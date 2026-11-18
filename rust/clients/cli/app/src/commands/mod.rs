@@ -4,6 +4,8 @@
 mod api;
 pub(crate) mod auth;
 
+pub(super) use api::command as api_command;
+
 use crate::{Host, progress::ConsoleProgress};
 use fabric_cli_command_contracts::CommandError;
 use fabric_core::CancellationToken;

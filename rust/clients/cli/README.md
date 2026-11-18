@@ -76,16 +76,17 @@ owns the root command and sanitized parse errors; `host.rs` owns the injected
 polling display, and diagnostic observation. Runtime and signal ownership remain
 in `lifecycle.rs`, and selection persistence remains in `selection.rs`.
 
-`app/src/commands/` dispatches to separate `auth` and `api` handlers. The small
-auth command family owns its parser alongside its host-dependent handler; it
-does not warrant a separate crate yet. The existing `fabric-cli-api` package
-owns API arguments, local preparation, and response projection. Its app handler
-only composes those operations with the injected host, HTTP executor, polling,
-and shared progress reporting. This keeps command-specific logic out of the
-root app without making command packages depend on app host or console types.
-Additional command packages should own their arguments and preparation/projection
-as needed; app adapters retain host-specific orchestration. Engine packages
-remain independent of Clap, CLI output, local selection, and native host discovery.
+`app/src/commands/` dispatches to `auth.rs` and `api/`. Each command owns its
+arguments and execution. For `api`, `args.rs` defines flags and parses polling
+options, `request.rs` validates and prepares input, and `response.rs` validates
+and projects response data. `api/mod.rs` connects those steps to the injected
+host, engine HTTP and polling, and shared progress reporting. The helpers do not
+access the host, console, or network; only request preparation reads input files.
+
+The sibling CLI crates still own cross-command concerns: `contracts/` defines
+shared command errors, `output/` formats final JSON envelopes, and `query/`
+evaluates JMESPath on caller-provided JSON. Engine packages remain independent of
+Clap, CLI output, local selection, and native host discovery.
 
 ### Execution ordering
 

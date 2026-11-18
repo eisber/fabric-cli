@@ -350,30 +350,17 @@ dependencies = [
  "azure_identity",
  "chrono",
  "clap",
- "fabric-cli-api",
  "fabric-cli-command-contracts",
  "fabric-cli-output",
  "fabric-cli-query",
  "fabric-core",
+ "fabric-core-json",
  "fabric-identity",
  "fabric-sdk-api",
  "fabric-sdk-http",
  "fabric-sdk-transport",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "fabric-cli-api"
-version = "0.1.0"
-dependencies = [
- "clap",
- "fabric-cli-command-contracts",
- "fabric-cli-query",
- "fabric-core",
- "fabric-core-json",
- "fabric-sdk-api",
- "serde_json",
 ]
 
 [[package]]
