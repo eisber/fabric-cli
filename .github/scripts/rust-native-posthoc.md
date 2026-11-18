@@ -22,6 +22,23 @@ manifest/source blobs before loading any DUT helper.
 The separate `9ff586d8ca537880648df8284f1efc14590d1ba4` source-domain bridge
 is not overlaid, copied, or assumed to be integrated.
 
+The bootstrap API pins were re-audited for published integration merge
+`af846fe7e3ea444051aae3881491078323527d5f`, tree
+`b1044314377c99f5ff5f3b0692598e499658707d`, using retained published commit
+`18cae17579c37cbbd97c50066d686bde78ad64b5` with that exact tree and the
+coordinator's verified merge-to-tree mapping. Only `validate-impact.cjs` changed
+among the ten pinned inputs: its bootstrap blob is now
+`5246494b32ae4fe60da30f69468d0e3982a5ba61`. Its exported `sourceInventory`
+and `sourceDifferences` implementations and their dependencies are unchanged.
+The added load-time digest reads the pinned helper itself; the test-grouping
+changes are not used by this fixed workload. CLI helpers, process supervisors
+and all five core manifest/source blobs are unchanged. The full/affected
+`BRIDGE_BLOBS` pins are not refreshed or qualified by this bootstrap-only audit.
+The original `a4`/`119` omitted-input regression remains bound to its incident
+pins; it is not evidence that the old DUT satisfies the refreshed API pin.
+Static compatibility is neither a fresh provider-head check nor native execution,
+and supplies no publication, retry or resource admission.
+
 Every selected platform must complete all these obligations:
 
 1. Install Rust `1.99.1` with a minimal profile in a new private `RUSTUP_HOME`.
@@ -104,6 +121,23 @@ the actual registered main SHA contains the reviewed implementation and identica
 driver file bytes, then supply that SHA as `driver_sha`. Every stage checks this
 explicit expected pin against the actual event/workflow/checkout SHA. A later
 main revision cannot silently replace the reviewed driver.
+
+GitHub can omit the documented optional `batch_id` and `repair_of` event keys
+when the dispatch request sends empty strings. Only the explicitly selected
+bootstrap mode normalizes those absent keys to empty strings before strict
+validation, without changing the original event. Explicit `null`, `undefined`,
+non-string values, unknown keys, and missing required keys still fail. A batch
+route still requires a nonempty valid `batch_id`, and the normalized value must
+match `REQUESTED_BATCH_ID`. Full/affected inspection retains its strict input
+contract, including rejection of a missing `batch_id`.
+
+Run `44204329446`, attempt 1 (registered driver
+`a4d15a8a961441bb65aa243533b39ee0be0d7e2f`, DUT
+`119394de415cdf9e11c5b319e3728ca9c9ec5e11`), failed the old strict key check
+after GitHub omitted both empty optional keys. This was a driver dispatch
+contract failure before source inspection or native execution, not a DUT
+failure or native pass. Normalizing the event shape does not remove that
+accepted run from history, reset its reservation or dedupe, or authorize a retry.
 
 `repair_of` must be empty. This policy deliberately disables unprovable retries:
 an unrelated new main SHA or run-wide failure is not reviewed root-cause evidence,
