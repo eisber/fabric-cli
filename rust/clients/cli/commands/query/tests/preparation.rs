@@ -302,20 +302,20 @@ fn exact_statement_limit_is_accepted_and_excess_is_rejected() {
         assert_eq!(result.is_ok(), size == max);
         assert_eq!(reader.calls, 1);
     }
+}
 
-    #[test]
-    fn data_agent_without_advertised_engine_does_not_invent_a_provider_selector() {
-        let mut target = target();
-        target.data_agent.as_mut().unwrap().engine = None;
-        target.native_kql.clear();
-        let route = target.resolve(None).unwrap();
-        assert!(matches!(route, ResolvedRoute::AiHub(_)));
-        assert_eq!(route.engine(), None);
-        for engine in ["aihub", "kql", "jmespath", "dataagent"] {
-            assert_eq!(
-                target.resolve(Some(engine)).unwrap_err(),
-                PreparationError::UnsupportedEngine
-            );
-        }
+#[test]
+fn data_agent_without_advertised_engine_does_not_invent_a_provider_selector() {
+    let mut target = target();
+    target.data_agent.as_mut().unwrap().engine = None;
+    target.native_kql.clear();
+    let route = target.resolve(None).unwrap();
+    assert!(matches!(route, ResolvedRoute::AiHub(_)));
+    assert_eq!(route.engine(), None);
+    for engine in ["aihub", "kql", "jmespath", "dataagent"] {
+        assert_eq!(
+            target.resolve(Some(engine)).unwrap_err(),
+            PreparationError::UnsupportedEngine
+        );
     }
 }

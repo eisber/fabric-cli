@@ -229,23 +229,23 @@ fn malformed_null_or_oversized_connection_never_becomes_an_absent_connection() {
             QueryConnectionError::Invalid
         );
     }
+}
 
-    #[test]
-    fn ordinary_rest_or_normalized_mcp_paths_are_rejected_before_credentials() {
-        for path in [
-            "/v1/workspaces",
-            "/v1/workspaces/one/items/two/jobs/instances",
-            "/v1/mcp/fabricaihub/integrations/m365/",
-            "/v1//mcp/fabricaihub/integrations/m365",
-            "/v1/mcp/fabricaihub/integrations/../integrations/m365",
-            "/v1/mcp/fabricaihub/integrations/%6d365",
-            "/v1/fabricaihub/integrations/m365/mcp",
-            "/another/mcp",
-        ] {
-            let mut settings = settings();
-            settings["query_connection"]["endpoint"] =
-                json!(format!("https://api.fabric.microsoft.com{path}"));
-            assert!(QueryConnection::from_settings(Some(&settings), &trusted()).is_err());
-        }
+#[test]
+fn ordinary_rest_or_normalized_mcp_paths_are_rejected_before_credentials() {
+    for path in [
+        "/v1/workspaces",
+        "/v1/workspaces/one/items/two/jobs/instances",
+        "/v1/mcp/fabricaihub/integrations/m365/",
+        "/v1//mcp/fabricaihub/integrations/m365",
+        "/v1/mcp/fabricaihub/integrations/../integrations/m365",
+        "/v1/mcp/fabricaihub/integrations/%6d365",
+        "/v1/fabricaihub/integrations/m365/mcp",
+        "/another/mcp",
+    ] {
+        let mut settings = settings();
+        settings["query_connection"]["endpoint"] =
+            json!(format!("https://api.fabric.microsoft.com{path}"));
+        assert!(QueryConnection::from_settings(Some(&settings), &trusted()).is_err());
     }
 }
