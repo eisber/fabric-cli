@@ -1,0 +1,82 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+name: Rust CI
+
+on:
+  pull_request:
+    paths:
+      - 'rust/**'
+  push:
+    branches: [main]
+    paths:
+      - 'rust/**'
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.paths.outputs.rust }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: paths
+        name: Detect changes under rust/
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
+        shell: python
+        run: |
+          import os, re, subprocess
+          base = os.environ.get("BASE", "")
+          if os.environ["EVENT"] == "workflow_dispatch" or re.fullmatch("0{40}", base):
+              changed = True
+          else:
+              if not re.fullmatch("[0-9a-f]{40}", base):
+                  raise SystemExit("Missing or invalid event base; refusing to skip validation")
+              paths = subprocess.check_output(
+                  ["git", "diff", "--no-renames", "--name-only", "-z", base, "HEAD"], text=True
+              ).split("\0")
+              changed = any(p.startswith("rust/") for p in paths)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"rust={str(changed).lower()}\n")
+
+  native:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/rust-native.yml
+    permissions:
+      contents: read
+
+  validation:
+    name: Rust validation
+    if: ${{ always() }}
+    needs: [changes, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require all selected native jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHANGED: ${{ needs.changes.outputs.rust }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        shell: python
+        run: |
+          import os
+          selected = os.environ["CHANGED"]
+          expected = {"true": "success", "false": "skipped"}.get(selected)
+          if (os.environ["CHANGES_RESULT"] != "success"
+              or expected is None
+              or os.environ["NATIVE_RESULT"] != expected):
+              raise SystemExit("Rust validation failed: required jobs failed, cancelled, or missing")
+          print("Rust validated" if selected == "true" else "No Rust changes; deliberately skipped native jobs")

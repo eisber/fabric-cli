@@ -1,0 +1,6 @@
+kind: added
+body: Add privacy-preserving global --verbose console diagnostics to the Rust CLI and exclude authorization response headers before output queries. File logging is not implemented.
+time: 2026-11-16T16:26:23.277918+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

@@ -1,0 +1,169 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+# Explicit source-reviewed exceptions, not legal approval or an SPDX fallback.
+# Source commits/path_in_vcs come from each checksum-pinned crate's .cargo_vcs_info.json.
+# Each file's public URL is repository + revision + source_path; packaging never fetches it.
+# MIT is explicitly selected where the package offers OR alternatives.
+
+[[package]]
+name = "azure_core"
+version = "1.1.0"
+checksum = "4e41cbd819986ba41904c207d8ffc4106f8f8352a548d773e9554906379bb2fb"
+license = "MIT"
+selected_license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+revision = "9a8a5f7bdb986e4c3ba230ad26b99996aae467d9"
+path_in_vcs = "sdk/core/azure_core"
+files = [
+    { file = "licenses/azure-sdk-LICENSE.txt", source_path = "LICENSE.txt", sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" },
+    { file = "licenses/azure-sdk-NOTICE.txt", source_path = "NOTICE.txt", sha256 = "14130e519a07120e9e5f81d0ef9d3ce8728f7a9cf9ee64d1a608dc306de03a63" },
+]
+
+[[package]]
+name = "azure_core_macros"
+version = "1.0.0"
+checksum = "b9b52dba6a345f3ad2d42ff8d0d63df9d0994cfa29657bf18ffdbf149f78a4f5"
+license = "MIT"
+selected_license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+revision = "c3c92ed4349125e25d176f13faa9ef016b790b3e"
+path_in_vcs = "sdk/core/azure_core_macros"
+files = [
+    { file = "licenses/azure-sdk-LICENSE.txt", source_path = "LICENSE.txt", sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" },
+    { file = "licenses/azure-sdk-NOTICE.txt", source_path = "NOTICE.txt", sha256 = "14130e519a07120e9e5f81d0ef9d3ce8728f7a9cf9ee64d1a608dc306de03a63" },
+]
+
+[[package]]
+name = "azure_identity"
+version = "1.0.0"
+checksum = "32edf96b356ca7c51d7590c4925cc36efc3947a5da4468e8e0b25c56ecbb3de5"
+license = "MIT"
+selected_license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+revision = "c3c92ed4349125e25d176f13faa9ef016b790b3e"
+path_in_vcs = "sdk/identity/azure_identity"
+files = [
+    { file = "licenses/azure-sdk-LICENSE.txt", source_path = "LICENSE.txt", sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" },
+    { file = "licenses/azure-sdk-NOTICE.txt", source_path = "NOTICE.txt", sha256 = "14130e519a07120e9e5f81d0ef9d3ce8728f7a9cf9ee64d1a608dc306de03a63" },
+]
+
+[[package]]
+name = "jni"
+version = "0.22.4"
+checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
+license = "MIT OR Apache-2.0"
+selected_license = "MIT"
+repository = "https://github.com/jni-rs/jni-rs"
+revision = "5ae9458a4ec44c5318f37ddc7569c1d4ae8a69e7"
+path_in_vcs = "crates/jni"
+files = [
+    { file = "licenses/jni-rs-LICENSE-MIT", source_path = "LICENSE-MIT", sha256 = "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960" },
+]
+
+[[package]]
+name = "jni-macros"
+version = "0.22.4"
+checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
+license = "MIT OR Apache-2.0"
+selected_license = "MIT"
+repository = "https://github.com/jni-rs/jni-rs"
+revision = "33045a124105c939d1e2cbdcb5a39e5d868ffa03"
+path_in_vcs = "crates/jni-macros"
+files = [
+    { file = "licenses/jni-rs-LICENSE-MIT", source_path = "LICENSE-MIT", sha256 = "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960" },
+]
+
+[[package]]
+name = "jni-sys-macros"
+version = "0.4.1"
+checksum = "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
+license = "MIT OR Apache-2.0"
+selected_license = "MIT"
+repository = "https://github.com/jni-rs/jni-sys"
+revision = "64d77b7a5f119d7b55b4e2c169a4668067ff59e6"
+path_in_vcs = "jni-sys-macros"
+files = [
+    { file = "licenses/jni-sys-LICENSE-MIT", source_path = "LICENSE-MIT", sha256 = "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1" },
+]
+
+[[package]]
+name = "jpx-core"
+version = "0.4.0"
+checksum = "b0e606ad4dec305bcdee93a0e569fc9edcd2a2c19e86ab8f4f652ed1ec17686b"
+license = "MIT OR Apache-2.0"
+selected_license = "MIT"
+repository = "https://github.com/joshrotenberg/jpx"
+revision = "859bd93df20cc422fd2273e8aef1a570d1bc6c1e"
+path_in_vcs = "crates/jpx-core"
+files = [
+    { file = "licenses/jpx-LICENSE-MIT", source_path = "LICENSE-MIT", sha256 = "25b21d18fe6b3564c726b18f1d03e1f2b3e2f724c855268cb2a7bb388cf5339e" },
+]
+
+[[package]]
+name = "r-efi"
+version = "6.0.0"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+license = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+selected_license = "MIT"
+repository = "https://github.com/r-efi/r-efi"
+revision = "7e1b0322d31d625f81a5656096330934f9cd835d"
+path_in_vcs = ""
+# This crate ships the complete MIT grant and copyright in AUTHORS, not LICENSE.
+# Use those exact shipped bytes, reviewed against this immutable upstream input.
+files = [
+    { file = "AUTHORS", shipped = true, source_path = "AUTHORS", sha256 = "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111" },
+]
+
+[[package]]
+name = "rustls-platform-verifier-android"
+version = "0.2.0"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
+license = "MIT OR Apache-2.0"
+selected_license = "MIT"
+repository = "https://github.com/rustls/rustls-platform-verifier"
+revision = "252e25161a91af476cbea620e29d277592d27ec7"
+path_in_vcs = "android-release-support"
+files = [
+    { file = "licenses/rustls-platform-verifier-LICENSE-MIT", source_path = "LICENSE-MIT", sha256 = "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c" },
+]
+
+[[package]]
+name = "typespec"
+version = "1.1.0"
+checksum = "753a2fe021e407d4fc9ee6f4f0a33403cc306d5c54c4e4ebe1b8cbde0ca052b9"
+license = "MIT"
+selected_license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+revision = "9a8a5f7bdb986e4c3ba230ad26b99996aae467d9"
+path_in_vcs = "sdk/core/typespec"
+files = [
+    { file = "licenses/azure-sdk-LICENSE.txt", source_path = "LICENSE.txt", sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" },
+    { file = "licenses/azure-sdk-NOTICE.txt", source_path = "NOTICE.txt", sha256 = "14130e519a07120e9e5f81d0ef9d3ce8728f7a9cf9ee64d1a608dc306de03a63" },
+]
+
+[[package]]
+name = "typespec_client_core"
+version = "1.1.0"
+checksum = "0373af0f9d4f580b3a1a9d9639cedaabe015ed262b35bfbe13941bfb14fe1ea6"
+license = "MIT"
+selected_license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+revision = "9a8a5f7bdb986e4c3ba230ad26b99996aae467d9"
+path_in_vcs = "sdk/core/typespec_client_core"
+files = [
+    { file = "licenses/azure-sdk-LICENSE.txt", source_path = "LICENSE.txt", sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" },
+    { file = "licenses/azure-sdk-NOTICE.txt", source_path = "NOTICE.txt", sha256 = "14130e519a07120e9e5f81d0ef9d3ce8728f7a9cf9ee64d1a608dc306de03a63" },
+]
+
+[[package]]
+name = "typespec_macros"
+version = "1.0.0"
+checksum = "2c608f4427943f8adb211abc95c87672b1b98847152783507d54e3246e502f60"
+license = "MIT"
+selected_license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+revision = "c3c92ed4349125e25d176f13faa9ef016b790b3e"
+path_in_vcs = "sdk/core/typespec_macros"
+files = [
+    { file = "licenses/azure-sdk-LICENSE.txt", source_path = "LICENSE.txt", sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" },
+    { file = "licenses/azure-sdk-NOTICE.txt", source_path = "NOTICE.txt", sha256 = "14130e519a07120e9e5f81d0ef9d3ce8728f7a9cf9ee64d1a608dc306de03a63" },
+]

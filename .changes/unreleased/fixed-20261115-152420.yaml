@@ -1,0 +1,7 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+kind: fixed
+body: Improve bare fab-rs authentication guidance and Azure CLI binding summaries.
+time: 2026-11-15T15:24:20.057451+02:00
+custom:
+    Author: ayeshurun
+    AuthorLink: https://github.com/ayeshurun

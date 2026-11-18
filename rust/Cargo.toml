@@ -1,0 +1,69 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[workspace]
+members = [
+    "engine/core/contracts",
+    "engine/core/json",
+    "engine/core/auth/provider",
+    "engine/core/http/requests",
+    "engine/core/http/executor",
+    "engine/core/http/transport",
+    "engine/core/lro",
+    "clients/cli/contracts",
+    "clients/cli/commands/api",
+    "clients/cli/commands/auth",
+    "clients/cli/query",
+    "clients/cli",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+fabric-core = { path = "engine/core/contracts" }
+fabric-core-json = { path = "engine/core/json" }
+fabric-identity = { path = "engine/core/auth/provider" }
+fabric-sdk-api = { path = "engine/core/http/requests" }
+fabric-sdk-http = { path = "engine/core/http/executor" }
+fabric-sdk-transport = { path = "engine/core/http/transport", default-features = false }
+fabric-sdk-operations = { path = "engine/core/lro" }
+fabric-cli-command-contracts = { path = "clients/cli/contracts" }
+fabric-cli-api = { path = "clients/cli/commands/api" }
+fabric-cli-auth = { path = "clients/cli/commands/auth" }
+fabric-cli-query = { path = "clients/cli/query" }
+azure_core = { version = "1.1.0", default-features = false }
+azure_identity = { version = "=1.0.0", default-features = false }
+async-trait = "0.1"
+base64 = "0.22.1"
+chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip", "arbitrary_precision", "raw_value"] }
+thiserror = "2.0.21"
+jpx-core = { version = "=0.4.0", default-features = false }
+tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt", "time", "net", "io-util", "sync", "signal", "process", "test-util"] }
+clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
+hyper = { version = "=1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "=0.1.21", default-features = false, features = ["client-legacy", "client-proxy", "http1", "tokio"] }
+hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "ring", "tls12"] }
+http = { version = "=1.5.0", default-features = false, features = ["std"] }
+http-body-util = { version = "=0.1.5", default-features = false }
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-platform-verifier = { version = "=0.7.1", default-features = false }
+async-compression = { version = "=0.4.51", default-features = false, features = ["tokio", "gzip", "zlib"] }
+tokio-util = { version = "=0.7.20", default-features = false, features = ["io", "rt"] }
+process-wrap = { version = "=8.2.1", default-features = false, features = ["tokio1", "process-group", "job-object", "kill-on-drop"] }
+url = "2.5"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+unnameable_test_items = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
