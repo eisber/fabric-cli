@@ -183,7 +183,11 @@ impl HttpTransport for Transport {
             } else {
                 assert_eq!(request.method, "GET");
                 assert!(request.body.is_empty());
-                assert_eq!(request.headers.len(), 1, "fresh authorization only");
+                assert_eq!(
+                    request.headers.len(),
+                    2,
+                    "fresh authorization and managed User-Agent only"
+                );
             }
             if !self.urls.is_empty() {
                 assert_eq!(request.url.as_str(), self.urls[*calls]);
@@ -1180,7 +1184,7 @@ async fn start_is_flushed_before_a_long_retry_after_for_operations_and_jobs() {
                 "items",
                 "--method",
                 "post",
-                "--input",
+                "--payload",
                 "{}",
                 "--show-headers",
             ],
@@ -1404,10 +1408,10 @@ async fn regional_lro_polls_with_live_percentages_and_fetches_its_relative_resul
             "workspaces/workspace/items/item/jobs/execute/instances",
             "--method",
             "post",
-            "--input",
+            "--payload",
             "{}",
             "--headers",
-            "x-secret=MUTATION-CANARY",
+            r#"{"If-Match":"MUTATION-CANARY"}"#,
             "--show-headers",
         ],
         vec![
@@ -1474,7 +1478,7 @@ async fn semantic_model_creation_trusts_advertised_status_and_result_hosts() {
                 "workspaces/workspace/items",
                 "--method",
                 "post",
-                "--input",
+                "--payload",
                 r#"{"displayName":"test","type":"SemanticModel"}"#,
             ],
             vec![
@@ -1527,10 +1531,10 @@ async fn fabric_origin_hints_use_canonical_gets_and_flush_progress_before_comple
             "workspaces/workspace/items/item/jobs/execute/instances",
             "--method",
             "post",
-            "--input",
+            "--payload",
             "{}",
             "--headers",
-            "x-secret=MUTATION-CANARY",
+            r#"{"If-Match":"MUTATION-CANARY"}"#,
             "--show-headers",
         ],
         vec![
@@ -1630,7 +1634,7 @@ async fn msit_job_polls_its_location_and_reports_progress_without_following_home
             "workspaces/workspace/items/item/jobs/execute/instances",
             "--method",
             "post",
-            "--input",
+            "--payload",
             "{}",
             "--show-headers",
         ],

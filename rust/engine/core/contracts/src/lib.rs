@@ -16,6 +16,11 @@ pub use tokio_util::sync::CancellationToken;
 use url::Url;
 
 pub mod diagnostics;
+mod request_metadata;
+pub use request_metadata::{
+    AgentKind, CLIENT_REQUEST_ID_HEADER, FABRIC_SKILL_HEADER, RequestCommand, RequestMetadata,
+    USER_AGENT_HEADER,
+};
 mod operation;
 pub use operation::{
     OperationHandle, OperationKind, ResponseHeadCapture, operation_handle, resolve_operation_url,
@@ -102,6 +107,14 @@ impl fmt::Debug for JobFailureReason {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct ErrorDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    service_code: Option<String>,
+    #[serde(skip)]
+    diagnostic_outcome: Option<diagnostics::DiagnosticOutcome>,
+}
+
 /// Sanitized error message with separately held job failure details for final JSON.
 /// Never wrap raw provider or HTTP diagnostics in its message; service-provided
 /// error text may be included only after [`sanitize_service_message`].
@@ -116,10 +129,9 @@ pub struct CoreError {
     /// Raw job failure message, exposed only in the final structured response.
     #[serde(skip)]
     pub failure_reason: Option<JobFailureReason>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    service_code: Option<String>,
-    #[serde(skip)]
-    diagnostic_outcome: Option<diagnostics::DiagnosticOutcome>,
+    // Keep uncommon metadata off the shared Result error path.
+    #[serde(flatten)]
+    details: Option<Box<ErrorDetails>>,
 }
 impl CoreError {
     /// Construct a safe error.
@@ -129,8 +141,7 @@ impl CoreError {
             message: message.into(),
             recovery: None,
             failure_reason: None,
-            service_code: None,
-            diagnostic_outcome: None,
+            details: None,
         }
     }
 
@@ -147,13 +158,18 @@ impl CoreError {
             DiagnosticOutcome::Terminal(OperationOutcome::Cancelled) => "Diagnostic output failed after the backend operation was cancelled".into(),
         };
         let mut error = Self::new(ErrorKind::Diagnostic, message);
-        error.diagnostic_outcome = Some(outcome);
+        error.details = Some(Box::new(ErrorDetails {
+            service_code: None,
+            diagnostic_outcome: Some(outcome),
+        }));
         error
     }
 
     /// Known remote outcome associated with a local diagnostic failure.
     pub fn diagnostic_outcome(&self) -> Option<diagnostics::DiagnosticOutcome> {
-        self.diagnostic_outcome
+        self.details
+            .as_ref()
+            .and_then(|details| details.diagnostic_outcome)
     }
 
     /// Construct a service failure with a bounded identifier instead of arbitrary response text.
@@ -166,7 +182,10 @@ impl CoreError {
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
             {
-                error.service_code = Some(code.to_owned());
+                error.details = Some(Box::new(ErrorDetails {
+                    service_code: Some(code.to_owned()),
+                    diagnostic_outcome: None,
+                }));
             } else {
                 error
                     .message
@@ -178,7 +197,9 @@ impl CoreError {
 
     /// Validated service error identifier, if one was supplied.
     pub fn service_code(&self) -> Option<&str> {
-        self.service_code.as_deref()
+        self.details
+            .as_ref()
+            .and_then(|details| details.service_code.as_deref())
     }
 }
 
@@ -500,6 +521,9 @@ pub fn validate_headers(headers: &BTreeMap<String, String>) -> Result<(), CoreEr
         "keep-alive",
         "proxy-connection",
         "expect",
+        USER_AGENT_HEADER,
+        CLIENT_REQUEST_ID_HEADER,
+        FABRIC_SKILL_HEADER,
     ];
     let invalid = |message: String| Err(CoreError::new(ErrorKind::InvalidInput, message));
     let mut total = 0usize;

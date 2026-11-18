@@ -14,16 +14,21 @@ fab-rs auth login
 fab-rs auth status
 fab-rs api 'workspaces?continuationToken=ENCODED_VALUE'
 fab-rs api workspaces --method get --query "text.value[?displayName=='rustcli']"
-fab-rs api items --method post --input request.json --async --show-headers
+fab-rs api items --method post --payload request.json --async --show-headers
 fab-rs auth logout
 ```
 
-`api` switches are long-only: `--method`, `--audience`, `--input`, `--headers`,
+`api` switches are long-only: `--method`, `--audience`, `--payload`, `--headers`,
 `--query`, `--show-headers`, `--async`, `--polling-config`. Methods are lowercase
 get/post/delete/put/patch; uppercase `POST` is rejected with an `InvalidInput`
 diagnostic listing supported values and explaining to use `post` instead.
 Invalid methods fail before configuration, authentication, or HTTP effects,
 without echoing request arguments. Audiences are fabric/storage/azure/powerbi.
+`--payload` replaces `--input` without an alias. Custom `--headers` must be an
+inline JSON object of string values, for example
+`--headers '{"Accept":"application/json","If-Match":"*"}'`.
+Only Accept, Content-Type, If-Match, If-None-Match, Prefer, and Range are allowed,
+case-insensitively; duplicate names and all other names fail before authentication.
 There are no aliases, `--params`,
 underscore spellings, or individual timing flags. Quote endpoint query strings
 and URL-encode their values yourself; valid encoded values are not encoded again.
@@ -81,6 +86,12 @@ transport, and clock boundaries, using shared `fabric_core::ApiRequest`/
 consumes the actual initial response; `--async` skips completion, returns that
 response once, and starts no background work. Poll/result GETs do not carry the
 original mutation body or custom request headers.
+The executor independently injects managed User-Agent and optional session
+correlation on every request, including polling/results/retries. Metadata is
+validated before selection/credential construction; known agent environment
+hints are read lazily through the injected host, never by engine libraries.
+See [request identification](../../README.md#run) for the format and the
+privacy/availability limits of best-effort session detection.
 
 Recognized Fabric/Azure/Storage LROs and Fabric job instances poll; Power BI remains
 raw. Fabric operation/job defaults are 2 seconds then 7 seconds regardless of

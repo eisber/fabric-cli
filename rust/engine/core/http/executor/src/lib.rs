@@ -169,6 +169,7 @@ pub async fn sleep_with_budget(
 }
 /// Explicitly composed HTTP executor with injected credentials, transport, and time.
 pub struct HttpClient {
+    metadata: fabric_core::RequestMetadata,
     credential: Arc<dyn TokenCredential>,
     transport: Arc<dyn HttpTransport>,
     clock: Arc<dyn Clock>,
@@ -183,6 +184,7 @@ impl HttpClient {
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
+            metadata: fabric_core::RequestMetadata::default(),
             credential,
             transport,
             clock,
@@ -193,6 +195,11 @@ impl HttpClient {
     /// Enable explicit caller-owned diagnostics. The default constructor is silent.
     pub fn with_diagnostics(mut self, observer: Arc<dyn DiagnosticObserver>) -> Self {
         self.diagnostics = Some(observer);
+        self
+    }
+    /// Use validated invocation metadata for all initial, polling, and result requests.
+    pub fn with_request_metadata(mut self, metadata: fabric_core::RequestMetadata) -> Self {
+        self.metadata = metadata;
         self
     }
     async fn emit(
@@ -322,7 +329,7 @@ impl ExecutionOutcome {
 impl HttpClient {
     async fn execute_inner(
         &self,
-        request: ApiRequest,
+        mut request: ApiRequest,
         audience: Audience,
         context: &OperationContext,
         retry_get: bool,
@@ -354,6 +361,7 @@ impl HttpClient {
                 ),
             ));
         }
+        self.metadata.apply(&mut request.headers, audience)?;
         let safe = retry_get && request.method == "GET";
         let mut delay = Duration::from_secs(1);
         let mut attempt = 0u32;

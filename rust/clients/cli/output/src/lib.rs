@@ -34,7 +34,7 @@ pub fn failure(timestamp: &str, command: &str, error: &CommandError) -> String {
                 "\nThe operation's final status is unknown; it may still be running. Check status_url before retrying.",
             );
         }
-        result.insert("data".into(), Value::Array(vec![recovery]));
+        result.insert("data".into(), Value::Array(vec![*recovery]));
     }
     result.insert("error_code".into(), Value::String(error.code.clone()));
     result.insert("message".into(), Value::String(message));
@@ -73,7 +73,7 @@ mod tests {
                 "status_url": "https://api.fabric.microsoft.com/v1/operations/op-1",
                 "outcome_uncertain": uncertain
             });
-            error.recovery = Some(recovery.clone());
+            error.recovery = Some(Box::new(recovery.clone()));
             let output: Value = serde_json::from_str(&failure("", "api", &error)).unwrap();
             assert_eq!(
                 output["result"]["data"],
@@ -90,7 +90,7 @@ mod tests {
                     "Original failure"
                 }
             );
-            assert_eq!(error.recovery, Some(recovery));
+            assert_eq!(error.recovery.as_deref(), Some(&recovery));
             assert_eq!(output["result"]["error_code"], "Service");
         }
     }

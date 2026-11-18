@@ -4,6 +4,7 @@
 //! Thin injectable parser/host/output composition. Only the executable owns runtime and signals.
 #![forbid(unsafe_code)]
 
+mod agent;
 mod diagnostics;
 pub mod lifecycle;
 mod selection;
@@ -218,7 +219,8 @@ impl ConsoleProgress {
         error.recovery = state
             .recovery
             .as_ref()
-            .and_then(|value| serde_json::to_value(value).ok());
+            .and_then(|value| serde_json::to_value(value).ok())
+            .map(Box::new);
         error
     }
 }
@@ -424,6 +426,10 @@ fn progress_heartbeat<'a>(
 /// Host-owned effects; fake implementations prove parser and output behavior offline.
 #[async_trait]
 pub trait Host: Send + Sync {
+    /// Read one explicitly named inherited hint; injected hosts default to no hints.
+    fn environment(&self, _name: &str) -> Option<OsString> {
+        None
+    }
     /// Explicit clock used for timestamps, deadlines, and polling.
     fn clock(&self) -> Arc<dyn Clock>;
     /// Read only this Rust CLI's non-secret selection.
@@ -520,6 +526,9 @@ impl Clock for NativeClock {
 
 #[async_trait]
 impl Host for NativeHost {
+    fn environment(&self, name: &str) -> Option<OsString> {
+        std::env::var_os(name)
+    }
     fn clock(&self) -> Arc<dyn Clock> {
         Arc::new(NativeClock {
             diagnostics: self.diagnostics.clone(),
@@ -577,6 +586,7 @@ pub fn parser() -> Command {
         .arg(help_arg())
         .arg(Arg::new("verbose").long("verbose").global(true).action(ArgAction::SetTrue)
             .help("Print debug diagnostics logs to console"))
+        .arg(Arg::new("skill").long("skill").global(true).hide(true))
         .arg(Arg::new("version").long("version").action(ArgAction::Version))
         .subcommand(Command::new("auth").about("Bind fab-rs to an existing Azure CLI identity.")
             .after_help("fab-rs does not sign in to or sign out of Azure CLI; run az login separately.")
@@ -588,8 +598,8 @@ pub fn parser() -> Command {
 }
 
 fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
-    let mut command = args.iter().skip(1).filter(|arg| *arg != "--verbose");
-    if command.next().is_some_and(|arg| arg == "auth") && command.next().is_none() {
+    let command = command_tokens(args);
+    if command.is_some_and(|tokens| tokens.len() == 1 && tokens[0] == "auth") {
         return parser()
             .try_get_matches_from(args.iter().cloned().chain([OsString::from("--help")]));
     }
@@ -597,12 +607,9 @@ fn parse_arguments(args: &[OsString]) -> Result<clap::ArgMatches, clap::Error> {
 }
 
 fn command_name(args: &[OsString]) -> &'static str {
-    let mut command = args.iter().skip(1).skip_while(|arg| *arg == "--verbose");
-    let first = command.next().and_then(|arg| arg.to_str());
-    let second = command
-        .skip_while(|arg| *arg == "--verbose")
-        .next()
-        .and_then(|arg| arg.to_str());
+    let tokens = command_tokens(args).unwrap_or_default();
+    let first = tokens.first().and_then(|arg| arg.to_str());
+    let second = tokens.get(1).and_then(|arg| arg.to_str());
     match (first, second) {
         (Some("api"), _) => "api",
         (Some("auth"), Some("login")) => "auth login",
@@ -627,7 +634,42 @@ fn parsed_command_name(matches: &clap::ArgMatches) -> &'static str {
 }
 
 fn welcome_requested(args: &[OsString]) -> bool {
-    args.len() == 1 || (args.len() == 2 && args[1] == "--verbose")
+    command_tokens(args).is_some_and(|tokens| tokens.is_empty())
+        && parser()
+            .subcommand_required(false)
+            .try_get_matches_from(args)
+            .is_ok()
+}
+
+// Inspect only command/global-option positions, never treating a skill value
+// as a command, or an endpoint after "--" as a global flag.
+fn command_tokens(args: &[OsString]) -> Option<Vec<&std::ffi::OsStr>> {
+    let mut args = args.iter().skip(1).map(OsString::as_os_str);
+    let mut tokens = Vec::new();
+    while let Some(arg) = args.next() {
+        if arg == "--verbose" {
+            continue;
+        }
+        if arg == "--skill" {
+            let value = args.next()?;
+            if value.to_str().is_some_and(|value| value.starts_with('-')) {
+                return None;
+            }
+            continue;
+        }
+        if arg
+            .to_str()
+            .is_some_and(|value| value.starts_with("--skill="))
+        {
+            continue;
+        }
+        tokens.push(arg);
+        if arg != "auth" || tokens.len() != 1 {
+            tokens.extend(args);
+            break;
+        }
+    }
+    Some(tokens)
 }
 
 fn timestamp(host: &dyn Host) -> String {
@@ -1035,6 +1077,10 @@ async fn execute(
                     fabric_cli_api::prepare(api),
                 )
                 .await?;
+            let metadata = agent::request_metadata(
+                host,
+                matches.get_one::<String>("skill").map(String::as_str),
+            )?;
             let started = observer.start(DiagnosticStage::Selection).await?;
             let binding = observer
                 .finish(DiagnosticStage::Selection, started, selected(host))
@@ -1052,7 +1098,8 @@ async fn execute(
                     host.credential(binding),
                 )
                 .await?;
-            let mut client = HttpClient::new(credential, host.transport()?, clock.clone());
+            let mut client = HttpClient::new(credential, host.transport()?, clock.clone())
+                .with_request_metadata(metadata);
             if observer.timing.is_some() {
                 client = client.with_diagnostics(observer.clone());
             }
@@ -1085,7 +1132,8 @@ async fn execute(
                         .unwrap_or_else(|error| error.into_inner())
                         .recovery
                         .as_ref()
-                        .and_then(|value| serde_json::to_value(value).ok());
+                        .and_then(|value| serde_json::to_value(value).ok())
+                        .map(Box::new);
                 }
                 error
             };

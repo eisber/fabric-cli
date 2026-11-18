@@ -15,8 +15,8 @@ pub struct CommandError {
     pub code: String,
     /// Safe user-facing explanation.
     pub message: String,
-    /// Known, sanitized accepted-operation evidence.
-    pub recovery: Option<Value>,
+    /// Known, sanitized accepted-operation evidence, boxed to keep failures small.
+    pub recovery: Option<Box<Value>>,
     /// Untrusted service message for final JSON only, never diagnostic output.
     pub failure_reason: Option<JobFailureReason>,
     exit_code: u8,
@@ -86,7 +86,8 @@ impl From<CoreError> for CommandError {
             failure_reason: error.failure_reason,
             recovery: error
                 .recovery
-                .and_then(|value| serde_json::to_value(value).ok()),
+                .and_then(|value| serde_json::to_value(value).ok())
+                .map(Box::new),
             exit_code,
             kind: error.kind,
         }
