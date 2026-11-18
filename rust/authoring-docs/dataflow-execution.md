@@ -38,6 +38,28 @@ document are errors. Input is limited to 1 MiB. Repeated input options do not
 permit multiple stdin reads. Version 2 has service/gateway restrictions; the
 client does not silently retry version 1 if version 2 fails.
 
+For an explicit custom evaluation, put a complete M section document in
+`request.json`, with a shared query matching the final target path segment:
+
+```json
+{
+  "customMashupDocument": "section Section1; shared Orders = #table(type table [OrderId = number, Amount = nullable number], {{1, 12.5}, {2, null}});",
+  "arrowVersion": 1
+}
+```
+
+```powershell
+fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --input request.json --format parquet --output orders.parquet
+```
+
+The document is sent unchanged as a request-scoped override. Execution does not
+save the document, update the Dataflow definition or its connection bindings,
+apply changes, or start a background refresh as a prerequisite. It still uses
+the addressed Dataflow's execution context and service-side source credentials;
+it does not provision missing connections. M evaluation itself can have source
+effects, so an unchanged Dataflow definition is not a read-only guarantee.
+There is no client-side M parser or automatic wrapping of raw expressions.
+
 Execution can consume compute and access external data sources. Before selecting
 or acquiring credentials, the native host validates the target, reads and
 validates input, preflights the output path and requests explicit approval bound
@@ -102,10 +124,14 @@ table. Non-null values in that reserved diagnostic column fail closed without
 guessing an undocumented payload schema. An absent or all-null diagnostic column
 is allowed by the explicit integration policy; the REST documentation does not
 define null payload semantics, so this allowance alone is not service proof of
-application success. Structured metadata evidence is retained
-in the stderr error diagnostic, with unknown classification where appropriate;
-it can contain source-sensitive service information and should be handled
-accordingly. No output format may silently drop additional datasets.
+application success. Connection-aware CLI diagnostics omit raw service messages
+and `PQ Arrow Metadata` values because they can contain source-sensitive data.
+They retain the failure status and reconciliation facts, with unknown
+classification when structured evidence does not establish a cause. SDK and
+embedding callers retain the original evidence through explicit error/result
+fields; it must not be logged indiscriminately. Guidance does not inspect or
+repair connections, change credentials, or retry a query. No output format may
+silently drop additional datasets.
 
 CSV and JSON default to stdout; `--output FILE` selects a new local file.
 `--output -` explicitly selects stdout. Parquet requires a file: binary stdout,

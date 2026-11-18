@@ -112,6 +112,32 @@ claim. Repository baseline: `5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b`.
 API contract checked against Microsoft Learn on 2026-11-05, source revision
 `b4d803a1e7f495553fcb7ef509391016e676d91d`.
 
+### Data Factory MCP comparison
+
+The implementation was also compared with Microsoft's
+[`FabricDataflowService.ExecuteQueryAsync`](https://github.com/microsoft/DataFactory.MCP/blob/171647e617cab34b1ae440f9b68afd4b139e2d29/DataFactory.MCP.Core/Services/FabricDataflowService.cs)
+at DataFactory.MCP revision `171647e617cab34b1ae440f9b68afd4b139e2d29`
+on 2026-11-18. It uses the same native Execute Query endpoint and delegates
+Arrow decoding to a separate reader. We reuse that endpoint/result separation,
+not the MCP server's .NET runtime, authentication or response-summary model.
+
+The public REST contract remains authoritative where the wrapper differs:
+
+| Concern | Rust contract |
+| --- | --- |
+| Request shape | Lower-camel `queryName`; `customMashupDocument` is optional, so an existing named query needs no definition download or rewrite. The MCP request model instead declares `QueryName` and requires a custom document. |
+| Custom M | Pass an explicit document unchanged for this evaluation; no `updateDefinition`, connection mutation or refresh prerequisite. The MCP tool documentation advertises raw-expression auto-wrapping; that convenience is not implemented here. |
+| Response media | Negotiate native Arrow streaming with an explicit version. The wrapper's `application/octet-stream` response property is not evidence that the REST endpoint returns that media type. |
+| Completion and failures | Preserve actual 202 operation handles and retrieve the result without another POST. Consumers inspect `PQ Arrow Metadata`; an HTTP success or parsed summary is not sufficient. |
+| Export fidelity | Decode the original Arrow bytes into the shared typed result. Do not route exports through the MCP reader's summary, which converts null cells to empty strings and formats timestamps to whole seconds. Unsupported or lossy conversion remains an error. |
+
+Dataflow named-query execution stays on the existing root `execute` path, separate
+from the AIHub/KQL root `query` providers. Neither should silently fall back to
+the other after a service failure. See the
+[CLI custom-document example](../../../authoring-docs/dataflow-execution.md#input-and-execution-lifecycle).
+This comparison is source-level evidence, not a new compiled or live Dataflow
+qualification result.
+
 `tests/execute_query.rs` uses synthetic credentials, scripted responses and
 injected asynchronous time/cancellation only. It covers exact method/route/body,
 both Accept versions, pre-credential input rejection, immediate bytes,
