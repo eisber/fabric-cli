@@ -49,7 +49,7 @@ Azure CLI and run Rust login again.
 fab-rs workspace list
 fab-rs workspace get <name-or-guid> [--export-to <dir> [--overwrite]]
 fab-rs workspace create [display-name] [--payload <json-or-@file>]
-fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--force])
+fab-rs workspace update <name-or-guid> (--payload <json-or-@file> | --import-from <dir> [--allow-pairing-by-name]) [--force]
 fab-rs workspace delete <name-or-guid> [--force]
 fab-rs item list --workspace <name-or-guid>
 fab-rs item get <name-or-guid> --workspace <name-or-guid> [--export-to <dir> [--format <f>] [--overwrite]]
@@ -108,18 +108,28 @@ Absolute and relative paths are used as given.
   `.platform` file; a mismatch fails.
 - `item update --import-from <dir>` calls Update Item Definition.
 - `workspace update --import-from <dir>` calls Bulk Import Item Definitions with
-  every file below `<dir>` as `/`-prefixed parts, replacing matching items.
-  It fails if any item reports `operationStatus: Failed`. Bulk import never
-  creates the workspace.
+  every file below `<dir>` as `/`-prefixed parts. Existing items with matching
+  logical IDs can be replaced. `--allow-pairing-by-name` also permits pairing
+  items without logical IDs by name and type; this is disabled by default.
+  Failed, partially successful, missing, or unknown item statuses fail the
+  command; other items might already have changed. Bulk import never creates
+  the workspace.
 
 Export never overwrites an existing file unless `--overwrite` is supplied;
 files are written atomically with mode `0600` and directories with `0700` on
 Unix. A destination filesystem must support hard links for no-overwrite exports.
+`--overwrite` replaces matching files, but exports refuse to write if the
+workspace destination or item folder contains files absent from the export.
+No stale files are deleted; move them elsewhere or use an empty directory.
+Concurrent changes to the destination are not excluded. Cancellation is
+cooperative: an in-flight filesystem operation may finish, and previously saved
+files are not rolled back.
 The selected directory must not itself be a symlink; symlinks and special files
 inside it are rejected. Part paths must be relative, portable, and free of `..`.
-Import skips `cache.abf`, rejects `byPath` `definition.pbir`, and is bounded by
-the request size limit. Import into an existing target (`update --import-from`)
-prompts like delete unless `--force` is supplied. `--format` is forwarded as the
+Import skips `cache.abf` and is bounded by the request size limit. Item import
+rejects `definition.pbir` files with a `byPath` reference; workspace bulk import
+allows them. Import into an existing target (`update --import-from`) prompts
+like delete unless `--force` is supplied. `--format` is forwarded as the
 definition format.
 
 All definition operations follow long-running operations by default.
@@ -146,8 +156,8 @@ pages and fails if the complete unfiltered compact JSON array
 exceeds 32 MiB. Mutations accept `--async` or `--polling-config` with the same
 polling rules as raw API. An unresolved HTTP 202 is instead represented as
 `{"status_code":202,"status":"Accepted","body":...}` with sanitized `recovery`
-when available; it does not claim completion. A bodyless successful HTTP 204
-delete returns `null`. Raw `api` retains its existing wrapper and paging behavior.
+when available; it does not claim completion. A bodyless successful delete
+returns `null`. Raw `api` retains its existing wrapper and paging behavior.
 
 Successful login/status output reports `logged_in`,
 `authentication_mode: "Azure CLI"`, `tenant_id`, and `principal_id`. These are

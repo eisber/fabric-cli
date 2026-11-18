@@ -10,7 +10,7 @@ use crate::{
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use fabric_cli_command_contracts::{CommandDiagnostics, CommandError};
 use fabric_core::{
-    Clock, Endpoint, HttpExecutor, MAX_REQUEST_BYTES, OperationContext,
+    Clock, CoreError, Endpoint, HttpExecutor, MAX_REQUEST_BYTES, OperationContext,
     diagnostics::DiagnosticStage,
 };
 use fabric_resources::Selector;
@@ -76,6 +76,15 @@ pub(crate) fn command(kind: &'static str) -> Command {
                     .long("import-from")
                     .conflicts_with("payload")
                     .help("Import the definition from this local directory"),
+            );
+        }
+        if kind == "workspace" && verb == "update" {
+            leaf = leaf.arg(
+                Arg::new("allow-pairing-by-name")
+                    .long("allow-pairing-by-name")
+                    .action(ArgAction::SetTrue)
+                    .requires("import-from")
+                    .help("Pair imported items without logical IDs by name and type"),
             );
         }
         if verb == "get" {
@@ -325,7 +334,7 @@ pub(crate) async fn execute(
             asynchronous: prepared.asynchronous,
             polling: prepared.polling,
             object: prepared.verb == "get",
-            allow_empty: import,
+            allow_empty: import || prepared.verb == "delete",
         },
     )
     .await?;
@@ -335,27 +344,19 @@ pub(crate) async fn execute(
                 envelope.insert("saved".into(), Value::Bool(false));
             }
         } else {
-            data = save(destination, folder.as_deref(), &data, prepared.overwrite)
-                .map_err(|error| attach_recovery(observer, error))?;
+            data = save(
+                destination.to_path_buf(),
+                folder,
+                data,
+                prepared.overwrite,
+                context,
+                clock.clone(),
+            )
+            .await
+            .map_err(|error| attach_recovery(observer, error))?;
         }
     } else if import && prepared.kind == "workspace" && !accepted {
-        let failed = data
-            .get("importItemDefinitionsDetails")
-            .and_then(Value::as_array)
-            .is_some_and(|details| {
-                details.iter().any(|detail| {
-                    detail
-                        .get("operationStatus")
-                        .and_then(Value::as_str)
-                        .is_some_and(|status| status.eq_ignore_ascii_case("Failed"))
-                })
-            });
-        if failed {
-            return Err(attach_recovery(
-                observer,
-                CommandError::new("Service", "One or more item definitions failed to import"),
-            ));
-        }
+        check_import_result(&data).map_err(|error| attach_recovery(observer, error))?;
     }
     let data = project(data, prepared.query.as_deref(), false, observer)
         .await
@@ -420,12 +421,52 @@ async fn item_folder(
     Ok(folder)
 }
 
-fn save(
+async fn save(
+    destination: PathBuf,
+    folder: Option<String>,
+    data: Value,
+    overwrite: bool,
+    context: &OperationContext,
+    clock: Arc<dyn Clock>,
+) -> Result<Value, CommandError> {
+    // The original request deadline does not bound a completed LRO.
+    let context = OperationContext::with_deadline(None, context.cancellation.child_token());
+    let _cancel_on_drop = context.cancellation.clone().drop_guard();
+    tokio::task::spawn_blocking(move || {
+        save_sync(
+            &destination,
+            folder.as_deref(),
+            &data,
+            overwrite,
+            &context,
+            clock.as_ref(),
+        )
+    })
+    .await
+    .map_err(|_| CommandError::new("FileSystem", "Definition export worker failed"))?
+}
+
+fn save_sync(
     destination: &Path,
     folder: Option<&str>,
     data: &Value,
     overwrite: bool,
+    context: &OperationContext,
+    clock: &dyn Clock,
 ) -> Result<Value, CommandError> {
+    let check = || {
+        context
+            .remaining_at(clock.now())
+            .map(|_| ())
+            .map_err(|error| {
+                let mut error: CommandError = error.into();
+                error
+                    .message
+                    .push_str("; previously saved files are not rolled back");
+                error
+            })
+    };
+    check()?;
     let (files, prefix, root) = match folder {
         Some(folder) => {
             let parts = data
@@ -449,7 +490,7 @@ fn save(
             )
         }
     };
-    let written = definition::write_tree(destination, &prefix, &files, overwrite)?;
+    let written = definition::write_tree(destination, &prefix, &files, overwrite, &check)?;
     let mut result = Map::new();
     result.insert("saved".into(), Value::Bool(true));
     result.insert("path".into(), Value::String(root.display().to_string()));
@@ -458,6 +499,69 @@ fn save(
         Value::Array(written.into_iter().map(Value::String).collect()),
     );
     Ok(Value::Object(result))
+}
+
+fn check_import_result(data: &Value) -> Result<(), CommandError> {
+    let details = data
+        .get("importItemDefinitionsDetails")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            CommandError::new(
+                "Protocol",
+                "Bulk import returned no item results; remote changes may have been applied",
+            )
+        })?;
+    if details.is_empty() {
+        return Err(CommandError::new(
+            "Protocol",
+            "Bulk import returned no item results; remote changes may have been applied",
+        ));
+    }
+    let mut failures = Vec::new();
+    let mut failure_count = 0usize;
+    for detail in details {
+        let status = detail
+            .get("operationStatus")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                CommandError::new(
+                    "Protocol",
+                    "Bulk import returned an item without a status; remote changes may have been applied",
+                )
+            })?;
+        if status.eq_ignore_ascii_case("Succeeded") {
+            continue;
+        }
+        if !status.eq_ignore_ascii_case("Failed")
+            && !status.eq_ignore_ascii_case("SucceededDespiteFailures")
+        {
+            return Err(CommandError::new(
+                "Protocol",
+                "Bulk import returned an unknown item status; remote changes may have been applied",
+            ));
+        }
+        failure_count += 1;
+        if failures.len() < 3 {
+            let name = detail
+                .get("itemDisplayName")
+                .and_then(Value::as_str)
+                .and_then(fabric_core::sanitize_service_message)
+                .map(|name| name.chars().take(80).collect::<String>())
+                .unwrap_or_else(|| "unnamed item".to_owned());
+            failures.push(format!("{name}: {status}"));
+        }
+    }
+    if failure_count != 0 {
+        return Err(CoreError::service_failure(
+            format!(
+                "{failure_count} item definition(s) failed or partially succeeded; remote changes may have been applied: {}",
+                failures.join("; ")
+            ),
+            None,
+        )
+        .into());
+    }
+    Ok(())
 }
 
 struct Request<'a> {
@@ -790,7 +894,7 @@ fn source_body(
     root: &Path,
     format: Option<&str>,
 ) -> Result<Vec<u8>, CommandError> {
-    let mut parts = definition::read_tree(root)?;
+    let mut parts = definition::read_tree(root, kind == "item")?;
     let mut body = Map::new();
     if kind == "workspace" {
         for part in &mut parts {
@@ -799,6 +903,12 @@ fn source_body(
             }
         }
         body.insert("definitionParts".into(), Value::Array(parts));
+        if args.get_flag("allow-pairing-by-name") {
+            body.insert(
+                "options".into(),
+                serde_json::json!({"allowPairingByName": true}),
+            );
+        }
     } else {
         if verb == "create" {
             let Some(Selector::Name(name)) = target else {

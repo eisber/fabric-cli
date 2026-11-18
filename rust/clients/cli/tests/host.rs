@@ -45,10 +45,41 @@ struct TestClock {
     now: Mutex<Instant>,
     sleeps: AtomicUsize,
     diagnostics: Mutex<Vec<&'static str>>,
+    save_gate: Mutex<Option<SaveGate>>,
+}
+
+struct SaveGate {
+    directory: PathBuf,
+    runtime_thread: std::thread::ThreadId,
+    started: tokio::sync::oneshot::Sender<()>,
+    release: std::sync::mpsc::Receiver<()>,
 }
 #[async_trait]
 impl Clock for TestClock {
     fn now(&self) -> Instant {
+        let gate = {
+            let mut gate = self.save_gate.lock().unwrap();
+            if gate.as_ref().is_some_and(|gate| {
+                std::thread::current().id() != gate.runtime_thread
+                    && std::fs::read_dir(&gate.directory).is_ok_and(|mut entries| {
+                        entries.any(|entry| {
+                            entry.ok().is_some_and(|entry| {
+                                entry.file_name().to_string_lossy().ends_with(".tmp")
+                            })
+                        })
+                    })
+            }) {
+                gate.take()
+            } else {
+                None
+            }
+        };
+        if let Some(gate) = gate {
+            gate.started.send(()).unwrap();
+            gate.release
+                .recv_timeout(Duration::from_secs(5))
+                .expect("export cancellation did not release the worker");
+        }
         *self.now.lock().unwrap()
     }
     fn wall_now(&self) -> SystemTime {
@@ -186,6 +217,7 @@ impl FakeHost {
                 now: Mutex::new(Instant::now()),
                 sleeps: AtomicUsize::new(0),
                 diagnostics: Mutex::new(Vec::new()),
+                save_gate: Mutex::new(None),
             }),
             confirmations: Mutex::new(VecDeque::new()),
             confirmation_calls: AtomicUsize::new(0),
@@ -852,15 +884,27 @@ async fn invalid_resource_endpoint_is_rejected_before_credentials_or_http() {
 #[tokio::test]
 async fn resource_empty_delete_and_accepted_mutation_are_distinct() {
     let id = "00000000-0000-0000-0000-000000000001";
-    let host = FakeHost::new(vec![response(204, "", &[])]);
-    let (code, stdout, _) = run(&["workspace", "delete", id, "--force"], &host).await;
-    assert_eq!(code, 0);
-    assert_eq!(data(&stdout), Value::Null);
+    for status in [200, 204] {
+        for args in [
+            vec!["workspace", "delete", id, "--force"],
+            vec!["item", "delete", id, "--workspace", id, "--force"],
+        ] {
+            let host = FakeHost::new(vec![response(status, "", &[])]);
+            let (code, stdout, _) = run(&args, &host).await;
+            assert_eq!(code, 0, "{args:?} {status}: {stdout}");
+            assert_eq!(data(&stdout), Value::Null);
+        }
+    }
 
-    let host = FakeHost::new(vec![response(200, "", &[])]);
-    let (code, stdout, _) = run(&["workspace", "get", id], &host).await;
-    assert_eq!(code, 1);
-    assert!(stdout.contains("Empty resource response"));
+    for args in [
+        vec!["workspace", "get", id],
+        vec!["item", "get", id, "--workspace", id],
+    ] {
+        let host = FakeHost::new(vec![response(200, "", &[])]);
+        let (code, stdout, _) = run(&args, &host).await;
+        assert_eq!(code, 1);
+        assert!(stdout.contains("Empty resource response"));
+    }
 
     let host = FakeHost::new(vec![response(202, "", &[("x-ms-operation-id", id)])]);
     let (code, stdout, _) = run(&["workspace", "delete", id, "--force", "--async"], &host).await;
@@ -893,6 +937,26 @@ async fn resource_empty_delete_and_accepted_mutation_are_distinct() {
     assert_eq!(data(&stdout)["recovery"]["operation_id"], id);
     assert!(!stdout.contains("evil.invalid"));
     assert!(!stdout.contains("synthetic"));
+}
+
+#[tokio::test]
+async fn resource_service_errors_preserve_code_without_leaking_diagnostics() {
+    let body = json!({
+        "errorCode": "Diagnostic",
+        "message": "Missing item https://example.invalid/path?token=SECRET",
+        "requestId": "00000000-0000-0000-0000-000000000001"
+    })
+    .to_string();
+    let host = FakeHost::new(vec![response(404, &body, &[])]);
+    let (code, stdout, stderr) = run(&["--verbose", "workspace", "get", WS], &host).await;
+    assert_eq!(code, 1, "{stdout}");
+    let result = &serde_json::from_str::<Value>(&stdout).unwrap()["result"];
+    assert_eq!(result["error_code"], "Diagnostic");
+    assert!(result["message"].as_str().unwrap().contains("Missing item"));
+    assert!(!stdout.contains("SECRET"));
+    assert!(stderr.contains("Command: failed (service failure)"));
+    assert!(!stderr.contains("Missing item"));
+    assert!(!stderr.contains("SECRET"));
 }
 
 #[tokio::test]
@@ -993,6 +1057,125 @@ async fn item_get_destination_writes_decoded_parts_and_refuses_overwrite() {
     let (code, _, stderr) = run(&overwrite, &host).await;
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+}
+
+#[tokio::test]
+async fn workspace_export_refuses_stale_files_before_overwriting() {
+    let dir = TempDirectory::new();
+    let folder = dir.0.join("nb.Notebook");
+    std::fs::create_dir(&folder).unwrap();
+    let current = folder.join("a.py");
+    let stale = folder.join("old.py");
+    std::fs::write(&current, b"existing").unwrap();
+    std::fs::write(&stale, b"stale").unwrap();
+    let body = json!({"definitionParts":[{
+        "path":"/nb.Notebook/a.py",
+        "payload":"aGVsbG8=",
+        "payloadType":"InlineBase64"
+    }]});
+    let host = FakeHost::new(vec![response(200, &body.to_string(), &[])]);
+    let (code, stdout, _) = run(
+        &[
+            "workspace",
+            "get",
+            WS,
+            "--export-to",
+            dir.0.to_str().unwrap(),
+            "--overwrite",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("stale file"));
+    assert_eq!(std::fs::read(&current).unwrap(), b"existing");
+    assert_eq!(std::fs::read(&stale).unwrap(), b"stale");
+    assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 2);
+}
+
+#[tokio::test]
+async fn item_export_checks_only_the_selected_item_folder() {
+    let dir = TempDirectory::new();
+    let folder = dir.0.join("nb.Notebook");
+    std::fs::create_dir(&folder).unwrap();
+    let stale = folder.join("old.py");
+    std::fs::write(&stale, b"stale").unwrap();
+    let unrelated = dir.0.join("unrelated.txt");
+    std::fs::write(&unrelated, b"unrelated").unwrap();
+    let args = [
+        "item",
+        "get",
+        ITEM,
+        "--workspace",
+        WS,
+        "--export-to",
+        dir.0.to_str().unwrap(),
+    ];
+    let host = FakeHost::new(item_export_replies("a.py"));
+    let (code, stdout, _) = run(&args, &host).await;
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("stale file"));
+    assert!(!folder.join("a.py").exists());
+    assert_eq!(std::fs::read(&stale).unwrap(), b"stale");
+
+    std::fs::remove_file(stale).unwrap();
+    let host = FakeHost::new(item_export_replies("a.py"));
+    let (code, _, stderr) = run(&args, &host).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(std::fs::read(folder.join("a.py")).unwrap(), b"hello");
+    assert_eq!(std::fs::read(unrelated).unwrap(), b"unrelated");
+}
+
+#[tokio::test]
+async fn cancellation_during_export_stops_before_publishing_the_file() {
+    let dir = TempDirectory::new();
+    let folder = dir.0.join("nb.Notebook");
+    std::fs::create_dir(&folder).unwrap();
+    let file = folder.join("a.py");
+    std::fs::write(&file, b"existing").unwrap();
+    let host = FakeHost::new(item_export_replies("a.py"));
+    let (started, reached) = tokio::sync::oneshot::channel();
+    let (release, resumed) = std::sync::mpsc::channel();
+    *host.clock.save_gate.lock().unwrap() = Some(SaveGate {
+        directory: folder.clone(),
+        runtime_thread: std::thread::current().id(),
+        started,
+        release: resumed,
+    });
+    let cancellation = CancellationToken::new();
+    let action_cancellation = cancellation.clone();
+    let invocation = async {
+        let args = [
+            "fab-rs",
+            "item",
+            "get",
+            ITEM,
+            "--workspace",
+            WS,
+            "--export-to",
+            dir.0.to_str().unwrap(),
+            "--overwrite",
+        ]
+        .into_iter()
+        .map(OsString::from);
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let code =
+            fabric_cli::run(args, &host, action_cancellation, &mut stdout, &mut stderr).await;
+        (code, String::from_utf8(stdout).unwrap())
+    };
+    let cancel = async {
+        tokio::time::timeout(Duration::from_secs(3), reached)
+            .await
+            .expect("export blocked the current-thread runtime")
+            .expect("export worker did not reach publication");
+        cancellation.cancel();
+        release.send(()).unwrap();
+    };
+    let ((code, stdout), ()) = tokio::join!(invocation, cancel);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("Cancelled"));
+    assert_eq!(std::fs::read(file).unwrap(), b"existing");
+    assert_eq!(std::fs::read_dir(folder).unwrap().count(), 1);
 }
 
 #[tokio::test]
@@ -1206,31 +1389,129 @@ async fn workspace_update_source_reports_failed_item_imports() {
     let dir = TempDirectory::new();
     std::fs::create_dir(dir.0.join("nb.Notebook")).unwrap();
     std::fs::write(dir.0.join("nb.Notebook").join("a.py"), b"hello").unwrap();
-    let host = FakeHost::new(vec![response(
-        200,
-        r#"{"importItemDefinitionsDetails":[{"operationStatus":"Failed"}]}"#,
-        &[],
-    )]);
-    let (code, _, _) = run(
-        &[
+    let args = [
+        "workspace",
+        "update",
+        WS,
+        "--import-from",
+        dir.0.to_str().unwrap(),
+        "--force",
+    ];
+    for status in ["Failed", "SucceededDespiteFailures"] {
+        let body = json!({"importItemDefinitionsDetails":[{
+            "itemDisplayName":"report \u{1b} https://example.invalid/a?token=SECRET",
+            "operationStatus":status
+        }]});
+        let host = FakeHost::new(vec![response(200, &body.to_string(), &[])]);
+        let (code, stdout, _) = run(&args, &host).await;
+        assert_eq!(code, 1);
+        let result = &serde_json::from_str::<Value>(&stdout).unwrap()["result"];
+        assert_eq!(result["error_code"], "Service");
+        let message = result["message"].as_str().unwrap();
+        assert!(message.contains("report"));
+        assert!(message.contains(status));
+        assert!(message.contains("remote changes may have been applied"));
+        assert!(!message.contains('\u{1b}'));
+        assert!(!message.contains("SECRET"));
+        let requests = host.transport.requests.lock().unwrap();
+        assert_eq!(
+            requests[0].url.path(),
+            format!("/v1/workspaces/{WS}/items/bulkImportDefinitions")
+        );
+        let body = fabric_core_json::decode(&requests[0].body).unwrap();
+        assert_eq!(body["definitionParts"][0]["path"], "/nb.Notebook/a.py");
+        assert!(body.get("options").is_none());
+    }
+    for body in [
+        "",
+        r#"{}"#,
+        r#"{"importItemDefinitionsDetails":[]}"#,
+        r#"{"importItemDefinitionsDetails":[{}]}"#,
+        r#"{"importItemDefinitionsDetails":[{"operationStatus":"Unknown"}]}"#,
+    ] {
+        let host = FakeHost::new(vec![response(200, body, &[])]);
+        let (code, stdout, _) = run(&args, &host).await;
+        assert_eq!(code, 1, "{body}");
+        assert!(stdout.contains("remote changes may have been applied"));
+    }
+}
+
+#[tokio::test]
+async fn workspace_import_accepts_by_path_and_only_pairs_by_name_when_requested() {
+    let dir = TempDirectory::new();
+    let report = dir.0.join("report.Report");
+    std::fs::create_dir(&report).unwrap();
+    std::fs::write(
+        report.join("definition.pbir"),
+        br#"{"datasetReference":{"byPath":{"path":"../model.SemanticModel"}}}"#,
+    )
+    .unwrap();
+    for pairing in [false, true] {
+        let mut args = vec![
             "workspace",
             "update",
             WS,
             "--import-from",
             dir.0.to_str().unwrap(),
             "--force",
+        ];
+        if pairing {
+            args.push("--allow-pairing-by-name");
+        }
+        let host = FakeHost::new(vec![response(
+            200,
+            r#"{"importItemDefinitionsDetails":[{"operationStatus":"Succeeded"}]}"#,
+            &[],
+        )]);
+        let (code, stdout, _) = run(&args, &host).await;
+        assert_eq!(code, 0, "{stdout}");
+        let requests = host.transport.requests.lock().unwrap();
+        let body = fabric_core_json::decode(&requests[0].body).unwrap();
+        assert_eq!(
+            body["definitionParts"][0]["path"],
+            "/report.Report/definition.pbir"
+        );
+        if pairing {
+            assert_eq!(body["options"]["allowPairingByName"], true);
+        } else {
+            assert!(body.get("options").is_none());
+        }
+    }
+    let host = FakeHost::new(vec![]);
+    let (code, stdout, _) = run(
+        &[
+            "item",
+            "update",
+            ITEM,
+            "--workspace",
+            WS,
+            "--import-from",
+            report.to_str().unwrap(),
+            "--force",
         ],
         &host,
     )
     .await;
     assert_eq!(code, 1);
-    let requests = host.transport.requests.lock().unwrap();
-    assert_eq!(
-        requests[0].url.path(),
-        format!("/v1/workspaces/{WS}/items/bulkImportDefinitions")
-    );
-    let body = fabric_core_json::decode(&requests[0].body).unwrap();
-    assert_eq!(body["definitionParts"][0]["path"], "/nb.Notebook/a.py");
+    assert!(stdout.contains("byPath"));
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
+    assert!(host.transport.requests.lock().unwrap().is_empty());
+
+    let host = FakeHost::new(vec![]);
+    let (code, _, _) = run(
+        &[
+            "workspace",
+            "update",
+            WS,
+            "--payload",
+            "{}",
+            "--allow-pairing-by-name",
+        ],
+        &host,
+    )
+    .await;
+    assert_eq!(code, 1);
+    assert_eq!(host.credential.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

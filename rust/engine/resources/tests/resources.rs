@@ -6,10 +6,10 @@
 
 use async_trait::async_trait;
 use fabric_core::{
-    ApiRequest, ApiResponse, Audience, CancellationToken, CoreError, Endpoint, HttpExecutor,
-    MAX_RESPONSE_BYTES, OperationContext,
+    ApiRequest, ApiResponse, Audience, CancellationToken, CoreError, Endpoint, ErrorKind,
+    HttpExecutor, MAX_RESPONSE_BYTES, OperationContext,
 };
-use fabric_resources::{Selector, list, resolve};
+use fabric_resources::{Selector, list, request, resolve};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -62,6 +62,125 @@ fn context() -> OperationContext {
         CancellationToken::new(),
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn http_errors_preserve_only_validated_service_details() {
+    let response = ApiResponse {
+        status: 400,
+        headers: BTreeMap::from([(
+            "x-ms-request-id".into(),
+            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
+        )]),
+        body: json!({
+            "error": {
+                "code": "NestedFailure",
+                "message": "Item\u{1b} unavailable https://example.invalid/path?token=SECRET"
+            },
+            "errorCode": "OuterFailure",
+            "requestId": "00000000-0000-0000-0000-000000000001"
+        })
+        .to_string()
+        .into_bytes(),
+    };
+    let error = request(
+        &fake(vec![response]),
+        &Endpoint::public(Audience::Fabric),
+        &context(),
+        "GET",
+        "workspaces",
+        Vec::new(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Service);
+    assert_eq!(error.service_code(), Some("NestedFailure"));
+    assert!(error.message.contains("HTTP 400"));
+    assert!(error.message.contains("Item unavailable"));
+    assert!(error.message.contains("https://example.invalid/path"));
+    assert!(
+        error
+            .message
+            .contains("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
+    assert!(!error.message.contains('\u{1b}'));
+    assert!(!error.message.contains("SECRET"));
+
+    let response = ApiResponse {
+        status: 404,
+        headers: BTreeMap::new(),
+        body: json!({
+            "errorCode": "NotFound",
+            "message": "No workspace",
+            "requestId": "00000000-0000-0000-0000-000000000001"
+        })
+        .to_string()
+        .into_bytes(),
+    };
+    let error = request(
+        &fake(vec![response]),
+        &Endpoint::public(Audience::Fabric),
+        &context(),
+        "GET",
+        "workspaces",
+        Vec::new(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.service_code(), Some("NotFound"));
+    assert!(error.message.contains("No workspace"));
+    assert!(
+        error
+            .message
+            .contains("00000000-0000-0000-0000-000000000001")
+    );
+}
+
+#[tokio::test]
+async fn http_errors_reject_invalid_identifiers_and_use_header_fallback() {
+    let invalid = ApiResponse {
+        status: 400,
+        headers: BTreeMap::new(),
+        body: json!({
+            "errorCode": "invalid/SECRET",
+            "requestId": "invalid/SECRET",
+            "message": "\u{1b}"
+        })
+        .to_string()
+        .into_bytes(),
+    };
+    let error = request(
+        &fake(vec![invalid]),
+        &Endpoint::public(Audience::Fabric),
+        &context(),
+        "GET",
+        "workspaces",
+        Vec::new(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.service_code(), None);
+    assert!(error.message.contains("invalid service error code omitted"));
+    assert!(!error.message.contains("SECRET"));
+
+    let response = ApiResponse {
+        status: 404,
+        headers: BTreeMap::from([("x-ms-public-api-error-code".into(), "NotFound".into())]),
+        body: b"not JSON".to_vec(),
+    };
+    let error = request(
+        &fake(vec![response]),
+        &Endpoint::public(Audience::Fabric),
+        &context(),
+        "GET",
+        "workspaces",
+        Vec::new(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.service_code(), Some("NotFound"));
+    assert!(error.message.contains("HTTP 404"));
+    assert!(!error.message.contains("not JSON"));
 }
 
 #[tokio::test]

@@ -6,7 +6,7 @@
 
 use fabric_core::{
     ApiResponse, Audience, Clock, CoreError, Endpoint, ErrorKind, HttpExecutor, MAX_RESPONSE_BYTES,
-    OperationContext,
+    OperationContext, diagnostics::RequestId, sanitize_service_message,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -45,6 +45,48 @@ fn invalid(message: &str) -> CoreError {
 
 fn protocol(message: &str) -> CoreError {
     CoreError::new(ErrorKind::Protocol, message)
+}
+
+fn service_failure(response: &ApiResponse) -> CoreError {
+    let json = fabric_core_json::decode(&response.body).ok();
+    let objects = [
+        json.as_ref().and_then(|value| value.get("error")),
+        json.as_ref().and_then(|value| value.get("failureReason")),
+        json.as_ref(),
+    ];
+    let field = |key| {
+        objects
+            .iter()
+            .flatten()
+            .find_map(|value| value.get(key).and_then(Value::as_str))
+    };
+    let code = objects
+        .iter()
+        .flatten()
+        .find_map(|value| {
+            value
+                .get("errorCode")
+                .and_then(Value::as_str)
+                .or_else(|| value.get("code").and_then(Value::as_str))
+        })
+        .or_else(|| response.header("x-ms-public-api-error-code"))
+        .or_else(|| response.header("x-ms-error-code"));
+    let mut message = format!(
+        "Fabric resource request failed with HTTP {}",
+        response.status
+    );
+    if let Some(detail) = field("message").and_then(sanitize_service_message) {
+        message.push_str(": ");
+        message.push_str(&detail);
+    }
+    if let Some(request_id) = ["requestId", "x-ms-request-id"]
+        .into_iter()
+        .find_map(|name| response.header(name).and_then(RequestId::parse))
+        .or_else(|| field("requestId").and_then(RequestId::parse))
+    {
+        message.push_str(&format!(" (request ID: {request_id})"));
+    }
+    CoreError::service_failure(message, code)
 }
 
 fn encode_token(token: &str) -> String {
@@ -98,13 +140,7 @@ pub async fn request(
         .await?;
     fabric_core::validate_response(&response)?;
     if !(200..300).contains(&response.status) {
-        return Err(CoreError::new(
-            ErrorKind::Service,
-            format!(
-                "Fabric resource request failed with HTTP {}",
-                response.status
-            ),
-        ));
+        return Err(service_failure(&response));
     }
     Ok(response)
 }

@@ -227,7 +227,9 @@ pub(crate) fn write_tree(
     prefix: &[&str],
     files: &[LocalFile],
     overwrite: bool,
+    check: &dyn Fn() -> Result<(), CommandError>,
 ) -> Result<Vec<String>, CommandError> {
+    check()?;
     let root_dir =
         open_root(root).map_err(|_| io_error("open directory", &root.display().to_string()))?;
     for segment in prefix {
@@ -235,6 +237,7 @@ pub(crate) fn write_tree(
     }
     let mut plans = Vec::with_capacity(files.len());
     for file in files {
+        check()?;
         let mut segments = prefix.to_vec();
         segments.extend(validate_part_path(&file.path)?);
         if check_components(&root_dir, &segments)? && !overwrite {
@@ -248,8 +251,11 @@ pub(crate) fn write_tree(
         }
         plans.push(segments);
     }
+    let expected = plans.iter().map(|segments| segments.join("/")).collect();
+    check_for_stale_files(&root_dir, prefix, &expected, check)?;
     let mut written = Vec::with_capacity(files.len());
     for (file, segments) in files.iter().zip(&plans) {
+        check()?;
         let mut directory = root_dir
             .open_dir(".")
             .map_err(|_| io_error("open directory", &root.display().to_string()))?;
@@ -282,6 +288,7 @@ pub(crate) fn write_tree(
                 .map_err(|_| io_error("write", &display))?;
             handle.sync_all().map_err(|_| io_error("write", &display))?;
             drop(handle);
+            check()?;
             publish_file(&directory, &temp, name, &display, overwrite)
         })();
         if result.is_err() {
@@ -291,6 +298,78 @@ pub(crate) fn write_tree(
         written.push(display);
     }
     Ok(written)
+}
+
+fn check_for_stale_files(
+    root: &Dir,
+    prefix: &[&str],
+    expected: &HashSet<String>,
+    check: &dyn Fn() -> Result<(), CommandError>,
+) -> Result<(), CommandError> {
+    let mut directory = root
+        .open_dir(".")
+        .map_err(|_| io_error("open directory", "."))?;
+    let mut path = Vec::new();
+    for segment in prefix {
+        check()?;
+        path.push((*segment).to_owned());
+        directory = match directory.open_dir_nofollow(segment) {
+            Ok(directory) => directory,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => {
+                return Err(invalid(format!(
+                    "Destination is not a directory or is a symlink: {:?}",
+                    path.join("/")
+                )));
+            }
+        };
+    }
+    check_directory_files(&directory, &mut path, expected, check)
+}
+
+fn check_directory_files(
+    directory: &Dir,
+    path: &mut Vec<String>,
+    expected: &HashSet<String>,
+    check: &dyn Fn() -> Result<(), CommandError>,
+) -> Result<(), CommandError> {
+    for entry in directory
+        .entries()
+        .map_err(|_| io_error("read directory", &path.join("/")))?
+    {
+        check()?;
+        let entry = entry.map_err(|_| io_error("read directory", &path.join("/")))?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| invalid("Destination file names must be UTF-8"))?;
+        let kind = entry.file_type().map_err(|_| io_error("inspect", &name))?;
+        path.push(name.clone());
+        let relative = path.join("/");
+        if kind.is_symlink() || (!kind.is_file() && !kind.is_dir()) {
+            return Err(invalid(format!(
+                "Destination contains a symlink or special file: {relative:?}"
+            )));
+        }
+        if kind.is_dir() {
+            let child = directory.open_dir_nofollow(&name).map_err(|_| {
+                invalid(format!(
+                    "Destination is not a directory or is a symlink: {relative:?}"
+                ))
+            })?;
+            check_directory_files(&child, path, expected, check)?;
+        } else if !expected.contains(&relative) {
+            return Err(CommandError::new(
+                "AlreadyExists",
+                format!(
+                    "Destination contains a stale file not in the export: {relative:?}; \
+                     use an empty directory or move the file"
+                ),
+            ));
+        }
+        path.pop();
+    }
+    Ok(())
 }
 
 fn publish_file(
@@ -353,8 +432,8 @@ fn open_or_create_directory(parent: &Dir, name: &str, path: &Path) -> Result<Dir
     }
 }
 
-/// Read a definition directory into `InlineBase64` parts with Python CLI parity.
-pub(crate) fn read_tree(root: &Path) -> Result<Vec<Value>, CommandError> {
+/// Read a definition directory into `InlineBase64` parts.
+pub(crate) fn read_tree(root: &Path, reject_by_path: bool) -> Result<Vec<Value>, CommandError> {
     let directory =
         open_root(root).map_err(|_| io_error("open directory", &root.display().to_string()))?;
     let mut parts = Vec::new();
@@ -366,6 +445,7 @@ pub(crate) fn read_tree(root: &Path) -> Result<Vec<Value>, CommandError> {
         &mut parts,
         &mut total,
         &mut seen,
+        reject_by_path,
     )?;
     if parts.is_empty() {
         return Err(invalid("Source directory contains no definition files"));
@@ -379,6 +459,7 @@ fn walk(
     parts: &mut Vec<Value>,
     total: &mut usize,
     seen: &mut HashSet<String>,
+    reject_by_path: bool,
 ) -> Result<(), CommandError> {
     let display = prefix.join("/");
     let mut entries = Vec::new();
@@ -415,7 +496,7 @@ fn walk(
             return Err(invalid(format!("Duplicate definition part path: {path}")));
         }
         let bytes = read_bounded(directory, &name, &path, MAX_REQUEST_BYTES - *total)?;
-        if name == "definition.pbir" {
+        if reject_by_path && name == "definition.pbir" {
             let by_path = fabric_core_json::decode(&bytes)
                 .map_err(|_| invalid(format!("{path} is not valid JSON")))?
                 .get("datasetReference")
@@ -447,7 +528,7 @@ fn walk(
                 prefix.join("/")
             ))
         })?;
-        walk(&child, prefix, parts, total, seen)?;
+        walk(&child, prefix, parts, total, seen, reject_by_path)?;
         prefix.pop();
     }
     Ok(())
@@ -554,6 +635,50 @@ mod tests {
         fs::remove_dir(directory).unwrap();
     }
 
+    #[test]
+    fn cancellation_between_files_preserves_unpublished_targets() {
+        let directory = std::env::temp_dir().join(format!(
+            "fab-rs-cancel-{}-{}",
+            std::process::id(),
+            TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        let first = directory.join("first");
+        let second = directory.join("second");
+        fs::write(&first, b"old first").unwrap();
+        fs::write(&second, b"old second").unwrap();
+        let files = [
+            LocalFile {
+                path: "first".into(),
+                bytes: b"new first".to_vec(),
+            },
+            LocalFile {
+                path: "second".into(),
+                bytes: b"new second".to_vec(),
+            },
+        ];
+        let check = || {
+            if fs::read(&first).unwrap() == b"new first" {
+                Err(CommandError::new("Cancelled", "Export cancelled"))
+            } else {
+                Ok(())
+            }
+        };
+        assert_eq!(
+            write_tree(&directory, &[], &files, true, &check)
+                .unwrap_err()
+                .code,
+            "Cancelled"
+        );
+        assert_eq!(fs::read(&first).unwrap(), b"new first");
+        assert_eq!(fs::read(&second).unwrap(), b"old second");
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn definition_roots_and_intermediate_symlinks_are_rejected() {
@@ -574,12 +699,12 @@ mod tests {
         symlink(&outside, directory.join("root-link")).unwrap();
 
         assert!(require_directory(&directory.join("root-link"), "Source").is_err());
-        assert!(read_tree(&root).is_err());
+        assert!(read_tree(&root, true).is_err());
         let files = [LocalFile {
             path: "link/new".into(),
             bytes: b"content".to_vec(),
         }];
-        assert!(write_tree(&root, &[], &files, false).is_err());
+        assert!(write_tree(&root, &[], &files, false, &|| Ok(())).is_err());
         assert!(!outside.join("new").exists());
         assert_eq!(fs::read(outside.join("secret")).unwrap(), b"secret");
 
