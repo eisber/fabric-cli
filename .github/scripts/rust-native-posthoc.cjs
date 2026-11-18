@@ -119,8 +119,14 @@ function requestContext(env, event, actualDriver, bootstrap = false) {
   for (const key of ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT']) {
     assert.match(env[key] || '', /^[1-9][0-9]{0,19}$/, `Invalid ${key}`);
   }
-  const inputs = event.inputs;
+  let inputs = event.inputs;
   assert.ok(inputs && typeof inputs === 'object' && !Array.isArray(inputs), 'Missing dispatch inputs');
+  if (bootstrap && inputs.mode === 'bootstrap') {
+    inputs = {...inputs};
+    for (const field of ['batch_id', 'repair_of']) {
+      if (!Object.hasOwn(inputs, field)) inputs[field] = '';
+    }
+  }
   assert.deepEqual(Object.keys(inputs).sort(),
     ['base_sha', 'batch_id', 'mode', 'route', 'source_sha',
       ...(bootstrap ? ['driver_sha', 'platforms', 'workload_id', 'repair_of'] : [])].sort(),

@@ -492,6 +492,90 @@ function bootstrapFixture() {
   return {env, ev, context: p.requestContext(env, ev, driver, true)};
 }
 
+for (const omitted of [['batch_id'], ['repair_of'], ['batch_id', 'repair_of']]) {
+  test(`genuine GitHub bootstrap omission equals explicit empty inputs: ${omitted.join(', ')}`, () => {
+    const actualDriver = 'a4d15a8a961441bb65aa243533b39ee0be0d7e2f';
+    const actualSource = '119394de415cdf9e11c5b319e3728ca9c9ec5e11';
+    const actualBase = '61c8221914152e231e5e64f7bd38418f66264999';
+    const {env, ev} = bootstrapFixture();
+    const sealed = {...ev, inputs: {...ev.inputs, driver_sha: actualDriver,
+      source_sha: actualSource, base_sha: actualBase}};
+    const providerInputs = {...sealed.inputs};
+    for (const field of omitted) delete providerInputs[field];
+    Object.freeze(providerInputs);
+    for (const GITHUB_JOB of ['prepare', 'native']) {
+      const actualEnv = {...env, GITHUB_JOB, GITHUB_SHA: actualDriver,
+        GITHUB_WORKFLOW_SHA: actualDriver, REQUESTED_DRIVER_SHA: actualDriver,
+        REQUESTED_SOURCE_SHA: actualSource, REQUESTED_BASE_SHA: actualBase,
+        GITHUB_RUN_ID: '44204329446'};
+      const baseline = p.requestContext(actualEnv, sealed, actualDriver, true);
+      assert.equal(baseline.batch_id, null);
+      assert.equal(baseline.repair_of, null);
+      assert.deepEqual(p.requestContext(actualEnv, {...sealed, inputs: providerInputs},
+        actualDriver, true), baseline);
+    }
+    for (const field of omitted) assert.equal(Object.hasOwn(providerInputs, field), false);
+  });
+}
+
+test('bootstrap omission normalization never replaces explicit malformed optional values', () => {
+  const {env, ev} = bootstrapFixture();
+  for (const field of ['batch_id', 'repair_of']) {
+    for (const value of [undefined, null, false, 0, [], {}, 'unexpected']) {
+      const malformed = {...ev.inputs, [field]: value};
+      delete malformed[field === 'batch_id' ? 'repair_of' : 'batch_id'];
+      const actualEnv = field === 'batch_id' ? {...env, REQUESTED_BATCH_ID: value} : env;
+      assert.throws(() => p.requestContext(actualEnv, {...ev, inputs: malformed}, driver, true));
+    }
+  }
+});
+
+test('bootstrap omitted optionals preserve required keys, exact routes, environment and retry guards', () => {
+  const {env, ev} = bootstrapFixture();
+  const providerInputs = {...ev.inputs};
+  delete providerInputs.batch_id;
+  delete providerInputs.repair_of;
+  const providerEvent = {...ev, inputs: providerInputs};
+  for (const field of Object.keys(providerInputs)) {
+    const incomplete = {...providerInputs};
+    delete incomplete[field];
+    assert.throws(() => p.requestContext(env, {...ev, inputs: incomplete}, driver, true),
+      /Unknown or missing dispatch input/);
+  }
+  for (const inputs of [undefined, null, [], 'bootstrap']) {
+    assert.throws(() => p.requestContext(env, {...ev, inputs}, driver, true), /Missing dispatch inputs/);
+  }
+  for (const change of [{command: 'cargo test'}, {budget: 'unlimited'},
+    {mode: 'full'}, {mode: 'affected'}, {route: 'scheduled'}, {driver_sha: source},
+    {repair_of: '44204329446'}]) {
+    assert.throws(() => p.requestContext(env,
+      {...ev, inputs: {...providerInputs, ...change}}, driver, true));
+  }
+  for (const change of [{REQUESTED_BATCH_ID: undefined}, {REQUESTED_BATCH_ID: 'unexpected'},
+    {REQUESTED_MODE: 'full'}, {GITHUB_RUN_ATTEMPT: '2'}, {REQUESTED_DRIVER_SHA: source}]) {
+    assert.throws(() => p.requestContext({...env, ...change}, providerEvent, driver, true));
+  }
+  assert.throws(() => p.requestContext({...env, REQUESTED_ROUTE: 'batch'},
+    {...ev, inputs: {...providerInputs, route: 'batch'}}, driver, true));
+  assert.throws(() => p.requestContext(env, providerEvent, driver));
+  const batchEnv = {...env, REQUESTED_ROUTE: 'batch', REQUESTED_BATCH_ID: 'merged-17.1'};
+  const batchEvent = {...ev, inputs: {...providerInputs, route: 'batch', batch_id: 'merged-17.1'}};
+  assert.deepEqual(p.requestContext(batchEnv, batchEvent, driver, true),
+    p.requestContext(batchEnv, {...batchEvent, inputs: {...batchEvent.inputs, repair_of: ''}},
+      driver, true));
+});
+
+test('full and affected facade contexts still reject every missing dispatch key', () => {
+  for (const mode of ['full', 'affected']) {
+    for (const field of Object.keys(inputs())) {
+      const incomplete = {...inputs(), mode};
+      delete incomplete[field];
+      assert.throws(() => p.requestContext({...environment(), REQUESTED_MODE: mode},
+        {...event(), inputs: incomplete}, driver), /Unknown or missing dispatch input/);
+    }
+  }
+});
+
 test('fixed bootstrap context is a distinct policy, never affected/full or an input-defined budget', () => {
   const {env, ev, context: c} = bootstrapFixture();
   assert.deepEqual(c.platforms, ['linux', 'macos']);

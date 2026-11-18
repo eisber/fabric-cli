@@ -105,6 +105,23 @@ driver file bytes, then supply that SHA as `driver_sha`. Every stage checks this
 explicit expected pin against the actual event/workflow/checkout SHA. A later
 main revision cannot silently replace the reviewed driver.
 
+GitHub can omit the documented optional `batch_id` and `repair_of` event keys
+when the dispatch request sends empty strings. Only the explicitly selected
+bootstrap mode normalizes those absent keys to empty strings before strict
+validation, without changing the original event. Explicit `null`, `undefined`,
+non-string values, unknown keys, and missing required keys still fail. A batch
+route still requires a nonempty valid `batch_id`, and the normalized value must
+match `REQUESTED_BATCH_ID`. Full/affected inspection retains its strict input
+contract, including rejection of a missing `batch_id`.
+
+Run `44204329446`, attempt 1 (registered driver
+`a4d15a8a961441bb65aa243533b39ee0be0d7e2f`, DUT
+`119394de415cdf9e11c5b319e3728ca9c9ec5e11`), failed the old strict key check
+after GitHub omitted both empty optional keys. This was a driver dispatch
+contract failure before source inspection or native execution, not a DUT
+failure or native pass. Normalizing the event shape does not remove that
+accepted run from history, reset its reservation or dedupe, or authorize a retry.
+
 `repair_of` must be empty. This policy deliberately disables unprovable retries:
 an unrelated new main SHA or run-wide failure is not reviewed root-cause evidence,
 and must not authorize retrying a successful platform. A future retry needs a
