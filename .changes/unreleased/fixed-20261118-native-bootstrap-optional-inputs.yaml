@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: fixed
+body: Fix native bootstrap dispatch validation when GitHub omits empty optional inputs, preserving strict request checks and finite partial-workload guards.
+time: 2026-11-18T07:13:00Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber
