@@ -182,6 +182,55 @@ fn known_numeric_and_index_limits_are_explicit_failures() {
 }
 
 #[test]
+fn computed_order_keys_preserve_integer_precision() {
+    let rows =
+        r#"`[{"id":"larger","n":[9007199254740992,1]},{"id":"smaller","n":[9007199254740992,0]}]`"#;
+    for (expression, expected) in [
+        (format!("min_by({rows}, &sum(n)).id"), json!("smaller")),
+        (
+            format!("max_by(reverse({rows}), &sum(n)).id"),
+            json!("larger"),
+        ),
+        (
+            format!("sort_by({rows}, &sum(n))[].id"),
+            json!(["smaller", "larger"]),
+        ),
+        (format!("sum({rows}[0].n)"), json!("9007199254740993")),
+    ] {
+        assert_eq!(
+            search(&Value::Null, &expression).unwrap(),
+            expected,
+            "{expression}"
+        );
+    }
+}
+
+#[test]
+fn computed_order_keys_compare_mixed_numbers_without_rounding_integers() {
+    let rows = json!([
+        {"id": "integer", "n": [9_007_199_254_740_992_u64, 1]},
+        {"id": "float", "n": [9_007_199_254_740_992_f64]}
+    ]);
+    assert_eq!(
+        search(&rows, "min_by(@, &sum(n)).id").unwrap(),
+        json!("float")
+    );
+}
+
+#[test]
+fn ordering_rejects_out_of_range_keys_without_returning_a_row() {
+    let rows = json!([{"id": "valid", "n": 0}, {"id": "too large", "n": 1.0e30}]);
+    for function in ["min_by", "max_by", "sort_by"] {
+        let expression = format!("{function}(@, &ceil(n))");
+        assert_eq!(
+            search(&rows, &expression).unwrap_err().kind(),
+            QueryErrorKind::Unsupported,
+            "{expression}"
+        );
+    }
+}
+
+#[test]
 fn syntax_preflight_is_offline_and_accepts_wrapper_operations() {
     for expression in ["", ".", "rows[?n > `0`].id", "sort_by(rows, &n)"] {
         validate(expression).unwrap();
@@ -205,6 +254,7 @@ fn syntax_preflight_is_offline_and_accepts_wrapper_operations() {
         ("`[1e400]`", QueryErrorKind::Unsupported),
         ("`18446744073709551617`", QueryErrorKind::Unsupported),
         ("__fab_eq(`1`, `1`)", QueryErrorKind::UnknownFunction),
+        ("__fab_order_key(`1`)", QueryErrorKind::UnknownFunction),
         ("`deprecated unquoted string`", QueryErrorKind::Unsupported),
     ] {
         assert_eq!(validate(expression).unwrap_err().kind(), kind);

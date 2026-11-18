@@ -3,7 +3,7 @@
 
 //! Admission control for the pinned, cloning jpx interpreter.
 //!
-//! jpx 0.3.1 has a recursion cap but no allocation/work budget hook. Before
+//! jpx has a recursion cap but no allocation/work budget hook. Before
 //! invoking it, bound the *expanded* results of every AST node, including
 //! discarded pipe stages and expression-reference invocations. No JSON results
 //! are built here. Unknown values use conservative upper bounds, not guessed
@@ -372,6 +372,9 @@ impl Budget {
                 if name == "map" {
                     mapped
                 } else {
+                    // The internal key validator runs once per evaluated key
+                    // and passes accepted values through by cloning them.
+                    self.charge(mapped.size, array.len, times)?;
                     self.sort_work(array, mapped.child, times)?;
                     if name == "sort_by" {
                         array.opaque()

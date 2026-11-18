@@ -67,7 +67,7 @@ commit. No network access is used during packaging.
 The initial exceptions cover `azure_core` 1.1.0, `azure_core_macros` 1.0.0,
 `azure_identity` 1.0.0, `typespec` 1.1.0, `typespec_client_core` 1.1.0,
 `typespec_macros` 1.0.0, `jni` 0.22.4, `jni-macros` 0.22.4,
-`jni-sys-macros` 0.4.1, `jpx-core` 0.3.1,
+`jni-sys-macros` 0.4.1, `jpx-core` 0.4.0,
 `rustls-platform-verifier-android` 0.2.0, and `r-efi` 6.0.0.
 The first eleven omit recognized shipped legal files; `r-efi` instead ships
 the full MIT grant and copyright notices in `AUTHORS`. Only that exact reviewed
