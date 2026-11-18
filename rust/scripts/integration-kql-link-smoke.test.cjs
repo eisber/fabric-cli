@@ -231,7 +231,9 @@ test('PR55 proof is candidate-only, immutable-pinned, and retains the existing f
     workflow.indexOf('uses: actions/checkout@'));
   assert.match(workflow, /kind: 'estimated-first-workflow-step'/);
   assert.match(workflow, /\{flag: 'wx'\}/);
-  for (const other of workflow.split('\n      - name: Check the ').slice(2)) {
+  const otherCandidates = workflow.split('\n      - name: Check the ').slice(1)
+    .filter(candidate => !candidate.startsWith("PR55 candidate's "));
+  for (const other of otherCandidates) {
     assert.match(other.split('\n      - name:')[0], /timeout-minutes: 10/);
   }
   assert.match(block, /integration-kql-link-smoke\.cjs/);
