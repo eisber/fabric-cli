@@ -1864,6 +1864,47 @@ async fn async_is_one_send_no_sleep_default_passes_actual_initial_to_polling() {
 }
 
 #[tokio::test]
+async fn configured_fabric_origin_is_used_for_initial_status_and_result_requests() {
+    let mut host = FakeHost::new(vec![
+        response(202, "{}", &[("x-ms-operation-id", "synthetic")]),
+        response(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[("location", "/v1/operations/synthetic/result")],
+        ),
+        response(200, r#"{"from":"result"}"#, &[]),
+    ]);
+    host.environment.insert(
+        "FABRIC_API_ENDPOINT".into(),
+        "msitapi.fabric.microsoft.com".into(),
+    );
+    host.environment
+        .insert("AZURE_API_ENDPOINT".into(), "invalid.example.test".into());
+
+    let (code, stdout, _) = run(&["api", "items", "--method", "post"], &host).await;
+    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(data(&stdout)[0]["text"]["from"], "result");
+    let requests = host.transport.requests.lock().unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| (request.method.as_str(), request.url.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("POST", "https://msitapi.fabric.microsoft.com/v1/items"),
+            (
+                "GET",
+                "https://msitapi.fabric.microsoft.com/v1/operations/synthetic",
+            ),
+            (
+                "GET",
+                "https://msitapi.fabric.microsoft.com/v1/operations/synthetic/result",
+            ),
+        ],
+    );
+}
+
+#[tokio::test]
 async fn malformed_initial_json_fails_before_polling_with_safe_recovery() {
     for asynchronous in [false, true] {
         for body in [b"initial".as_slice(), b"\xffBODY-CANARY".as_slice()] {
@@ -2959,6 +3000,48 @@ fn selection_persists_only_binding_handles_malformed_and_logout_is_idempotent() 
     file.clear().unwrap();
     file.clear().unwrap();
     assert!(file.read().unwrap().is_none());
+}
+
+#[test]
+fn endpoint_environment_validation_precedes_identity_selection() {
+    let directory = TempDirectory::new();
+    for (audience, variable, valid) in [
+        (
+            "fabric",
+            "FABRIC_API_ENDPOINT",
+            "msitapi.fabric.microsoft.com",
+        ),
+        (
+            "storage",
+            "ONELAKE_API_ENDPOINT",
+            "onelake.dfs.fabric.microsoft.com",
+        ),
+        ("azure", "AZURE_API_ENDPOINT", "management.azure.com"),
+        ("powerbi", "POWER_BI_API_ENDPOINT", "api.powerbi.com"),
+    ] {
+        let invoke = |hostname: &str| {
+            Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+                .args(["api", "items", "--audience", audience])
+                .env("PATH", "")
+                .env("HOME", &directory.0)
+                .env("APPDATA", &directory.0)
+                .env("XDG_CONFIG_HOME", &directory.0)
+                .env(variable, hostname)
+                .output()
+                .unwrap()
+        };
+        let invalid = invoke("invalid.example.test");
+        let output = String::from_utf8(invalid.stdout).unwrap();
+        assert!(output.contains(variable));
+        assert!(!output.contains("invalid.example.test"));
+        assert!(!output.contains("No Rust identity selected"));
+        let accepted = invoke(valid);
+        assert!(
+            String::from_utf8(accepted.stdout)
+                .unwrap()
+                .contains("No Rust identity selected")
+        );
+    }
 }
 
 #[test]

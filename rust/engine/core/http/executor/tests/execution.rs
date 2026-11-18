@@ -212,6 +212,54 @@ async fn managed_header_spoofing_is_rejected_before_credentials() {
     assert!(transport.calls.lock().unwrap().is_empty());
 }
 #[tokio::test]
+async fn configured_origin_is_checked_before_token_acquisition() {
+    let credential = Arc::new(Credential {
+        calls: Mutex::new(0),
+    });
+    let transport = Arc::new(Transport {
+        calls: Mutex::new(Vec::new()),
+        replies: Mutex::new(VecDeque::from([reply(200)])),
+    });
+    let clock = Arc::new(TestClock {
+        start: Instant::now(),
+        elapsed: Mutex::new(Duration::ZERO),
+    });
+    let endpoint =
+        Endpoint::from_hostname(Audience::Fabric, "msitapi.fabric.microsoft.com").unwrap();
+    let client = HttpClient::new(credential.clone(), transport.clone(), clock.clone())
+        .with_endpoint(endpoint);
+    let ctx = context(clock.as_ref(), 240);
+    assert!(
+        client
+            .execute(request("GET"), Audience::Fabric, &ctx)
+            .await
+            .is_err()
+    );
+    let mut other_audience = request("GET");
+    other_audience.url = "https://management.azure.com/subscriptions"
+        .parse()
+        .unwrap();
+    let error = client
+        .execute(other_audience, Audience::Azure, &ctx)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::InvalidInput);
+    assert_eq!(*credential.calls.lock().unwrap(), 0);
+    assert!(transport.calls.lock().unwrap().is_empty());
+
+    let mut configured = request("GET");
+    configured.url = "https://msitapi.fabric.microsoft.com/v1/items"
+        .parse()
+        .unwrap();
+    client
+        .execute(configured, Audience::Fabric, &ctx)
+        .await
+        .unwrap();
+    assert_eq!(*credential.calls.lock().unwrap(), 1);
+    assert_eq!(transport.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn every_mutation_sends_once_even_on_uncertain_send_or_throttling() {
     for method in ["POST", "PUT", "PATCH", "DELETE"] {
         for result in [

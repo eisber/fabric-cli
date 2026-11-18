@@ -47,10 +47,14 @@ pub async fn execute(
     observer: &Arc<impl ApiReporting + 'static>,
 ) -> Result<CommandOutput, CommandError> {
     let api = invocation.command("api")?;
-    // Validate local inputs before identity, configuration, or transport effects.
+    // Validate local inputs and the endpoint before identity or transport effects.
     let started = observer.start(DiagnosticStage::Prepare).await?;
     let prepared = observer
-        .finish(DiagnosticStage::Prepare, started, request::prepare(api))
+        .finish(
+            DiagnosticStage::Prepare,
+            started,
+            request::prepare(api, host),
+        )
         .await?;
     let metadata =
         metadata::request_metadata(host, api.get_one::<String>("skill").map(String::as_str))?;
@@ -69,7 +73,8 @@ pub async fn execute(
         )
         .await?;
     let mut client = HttpClient::new(credential, host.transport()?, clock.clone())
-        .with_request_metadata(metadata);
+        .with_request_metadata(metadata)
+        .with_endpoint(prepared.endpoint.clone());
     if observer.diagnostics_enabled() {
         client = client.with_diagnostics(observer.clone());
     }
@@ -78,14 +83,17 @@ pub async fn execute(
         cancellation: cancellation.clone(),
     };
     let initial = client
-        .execute(prepared.request, prepared.audience, &context)
+        .execute(prepared.request, prepared.endpoint.audience(), &context)
         .await?;
     // Capture only safe evidence; raw/async must not reject invalid operation handles.
-    let recovery =
-        match fabric_core::operation_handle(prepared.audience, initial.status, &initial.headers) {
-            Ok(handle) => handle.map(|handle| handle.recovery()),
-            Err(error) => error.recovery,
-        };
+    let recovery = match fabric_core::operation_handle_with_endpoint(
+        &prepared.endpoint,
+        initial.status,
+        &initial.headers,
+    ) {
+        Ok(handle) => handle.map(|handle| handle.recovery()),
+        Err(error) => error.recovery,
+    };
     observer.set_recovery(recovery.clone());
     let attach_recovery = |mut error: CommandError| {
         if error.recovery.is_none() {
@@ -101,10 +109,10 @@ pub async fn execute(
         initial
     } else {
         response::validate_response_body(&initial.body).map_err(attach_recovery)?;
-        let reconciliation = fabric_sdk_api::complete_observed(
+        let reconciliation = fabric_sdk_api::complete_observed_with_endpoint(
             &client,
             clock.as_ref(),
-            prepared.audience,
+            &prepared.endpoint,
             initial,
             cancellation,
             prepared.lro_config,

@@ -12,9 +12,9 @@ use fabric_core::diagnostics::{
     DiagnosticOutcome, DiagnosticPhase, HttpStatus, RetryReason,
 };
 use fabric_core::{
-    ApiRequest, ApiResponse, Audience, Clock, CoreError, ErrorKind, HttpExecutor, HttpTransport,
-    MAX_REQUEST_BYTES, OperationContext, ResponseHeadCapture, validate_headers,
-    validate_operation_url, validate_response, validate_url,
+    ApiRequest, ApiResponse, Audience, Clock, CoreError, Endpoint, ErrorKind, HttpExecutor,
+    HttpTransport, MAX_REQUEST_BYTES, OperationContext, ResponseHeadCapture,
+    resolve_operation_url_with_endpoint, validate_headers, validate_response,
 };
 use std::{
     sync::{
@@ -24,7 +24,9 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 mod diagnostics;
-use diagnostics::{safe_request_headers, safe_response_headers, safe_url};
+use diagnostics::{
+    safe_request_headers, safe_response_headers_with_endpoint, safe_url_with_endpoint,
+};
 
 /// Production monotonic time and cancellable Tokio sleep; host owns the runtime.
 pub struct SystemClock;
@@ -174,6 +176,7 @@ pub struct HttpClient {
     transport: Arc<dyn HttpTransport>,
     clock: Arc<dyn Clock>,
     diagnostics: Option<Arc<dyn DiagnosticObserver>>,
+    endpoint: Option<Endpoint>,
     next_request: AtomicU64,
 }
 impl HttpClient {
@@ -189,6 +192,7 @@ impl HttpClient {
             transport,
             clock,
             diagnostics: None,
+            endpoint: None,
             next_request: AtomicU64::new(1),
         }
     }
@@ -200,6 +204,11 @@ impl HttpClient {
     /// Use validated invocation metadata for all initial, polling, and result requests.
     pub fn with_request_metadata(mut self, metadata: fabric_core::RequestMetadata) -> Self {
         self.metadata = metadata;
+        self
+    }
+    /// Bind execution to an explicitly validated endpoint.
+    pub fn with_endpoint(mut self, endpoint: Endpoint) -> Self {
+        self.endpoint = Some(endpoint);
         self
     }
     async fn emit(
@@ -334,6 +343,16 @@ impl HttpClient {
         context: &OperationContext,
         retry_get: bool,
     ) -> Result<ApiResponse, CoreError> {
+        let endpoint = match &self.endpoint {
+            Some(endpoint) if endpoint.audience() == audience => endpoint.clone(),
+            Some(_) => {
+                return Err(CoreError::new(
+                    ErrorKind::InvalidInput,
+                    "Configured endpoint does not match the request audience",
+                ));
+            }
+            None => Endpoint::public(audience),
+        };
         if retry_get {
             if request.method != "GET" || !request.body.is_empty() || !request.headers.is_empty() {
                 return Err(CoreError::new(
@@ -341,9 +360,13 @@ impl HttpClient {
                     "Polling requests must be bodyless GETs without custom headers",
                 ));
             }
-            validate_operation_url(audience, request.url.as_str())?;
+            resolve_operation_url_with_endpoint(
+                &endpoint,
+                request.url.as_str(),
+                endpoint.base_url(),
+            )?;
         } else {
-            validate_url(audience, &request.url)?;
+            endpoint.validate_url(&request.url)?;
         }
         validate_headers(&request.headers)?;
         if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&request.method.as_str()) {
@@ -397,7 +420,7 @@ impl HttpClient {
                 };
                 // Validation above is authoritative; sanitization cannot expand
                 // the set of destinations that execution is allowed to follow.
-                let url = safe_url(audience, request.url.as_str())
+                let url = safe_url_with_endpoint(&endpoint, request.url.as_str())
                     .expect("validated request URL has safe metadata");
                 self.emit(
                     DiagnosticEvent::HttpSend {
@@ -415,7 +438,7 @@ impl HttpClient {
             context
                 .remaining_at(self.clock.now())
                 .map_err(|error| outcome.attach(error))?;
-            let head = ResponseHeadCapture::new(audience);
+            let head = ResponseHeadCapture::with_endpoint(endpoint.clone());
             let start = self.clock.now();
             outcome.sent = true;
             outcome.status = None;
@@ -456,8 +479,8 @@ impl HttpClient {
                         id,
                         status: HttpStatus::new(response.status),
                         duration: self.elapsed(start),
-                        headers: safe_response_headers(
-                            audience,
+                        headers: safe_response_headers_with_endpoint(
+                            &endpoint,
                             &response.headers,
                             request.url.as_str(),
                             self.clock.wall_now(),

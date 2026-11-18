@@ -4,23 +4,32 @@
 //! Parse raw metadata before it can enter any diagnostic event.
 
 use fabric_core::{
-    Audience,
+    Audience, Endpoint,
     diagnostics::{
         ContentEncoding, ContentType, DiagnosticDuration, DiagnosticOrigin, DiagnosticRoute,
         Metadata, RequestId, SafeHeaders, SafeUrl,
     },
-    resolve_operation_url, validate_operation_url,
+    resolve_operation_url_with_endpoint,
 };
 use std::{collections::BTreeMap, time::SystemTime};
 
+#[cfg(test)]
 pub(crate) fn safe_url(audience: Audience, value: &str) -> Option<SafeUrl> {
-    let url = validate_operation_url(audience, value).ok()?;
-    let origin = match (audience, url.host_str()?) {
-        (Audience::Fabric, "api.fabric.microsoft.com") => DiagnosticOrigin::Fabric,
-        (Audience::Storage, "onelake.dfs.fabric.microsoft.com") => DiagnosticOrigin::Storage,
-        (Audience::Azure, "management.azure.com") => DiagnosticOrigin::Azure,
-        (Audience::PowerBi, "api.powerbi.com") => DiagnosticOrigin::PowerBi,
-        _ => DiagnosticOrigin::ServiceAdvertised,
+    safe_url_with_endpoint(&Endpoint::public(audience), value)
+}
+
+pub(crate) fn safe_url_with_endpoint(endpoint: &Endpoint, value: &str) -> Option<SafeUrl> {
+    let audience = endpoint.audience();
+    let url = resolve_operation_url_with_endpoint(endpoint, value, endpoint.base_url()).ok()?;
+    let origin = if url.origin() == endpoint.base_url().origin() {
+        match audience {
+            Audience::Fabric => DiagnosticOrigin::Fabric,
+            Audience::Storage => DiagnosticOrigin::Storage,
+            Audience::Azure => DiagnosticOrigin::Azure,
+            Audience::PowerBi => DiagnosticOrigin::PowerBi,
+        }
+    } else {
+        DiagnosticOrigin::ServiceAdvertised
     };
     Some(SafeUrl::new(origin, route(audience, url.path())))
 }
@@ -138,8 +147,18 @@ pub(crate) fn safe_request_headers(headers: &BTreeMap<String, String>) -> SafeHe
     )
 }
 
+#[cfg(test)]
 pub(crate) fn safe_response_headers(
     audience: Audience,
+    headers: &BTreeMap<String, String>,
+    base: &str,
+    now: SystemTime,
+) -> SafeHeaders {
+    safe_response_headers_with_endpoint(&Endpoint::public(audience), headers, base, now)
+}
+
+pub(crate) fn safe_response_headers_with_endpoint(
+    endpoint: &Endpoint,
     headers: &BTreeMap<String, String>,
     base: &str,
     now: SystemTime,
@@ -157,9 +176,10 @@ pub(crate) fn safe_response_headers(
         field(headers, "requestId", RequestId::parse),
         field(headers, "x-ms-request-id", RequestId::parse),
         field(headers, "location", |value| {
-            let base = validate_operation_url(audience, base).ok()?;
-            let resolved = resolve_operation_url(audience, value, &base).ok()?;
-            safe_url(audience, resolved.as_str())
+            let base =
+                resolve_operation_url_with_endpoint(endpoint, base, endpoint.base_url()).ok()?;
+            let resolved = resolve_operation_url_with_endpoint(endpoint, value, &base).ok()?;
+            safe_url_with_endpoint(endpoint, resolved.as_str())
         }),
     )
 }

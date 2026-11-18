@@ -3,15 +3,15 @@
 
 use super::{args::parse_polling_config, invalid, json_failure};
 use clap::ArgMatches;
-use fabric_cli_command_contracts::CommandError;
-use fabric_core::{ApiRequest, Audience, MAX_REQUEST_BYTES};
+use fabric_cli_command_contracts::{CommandError, Host};
+use fabric_core::{ApiRequest, Audience, Endpoint, MAX_REQUEST_BYTES};
 use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
 use std::{collections::BTreeMap, io::Read, path::Path};
 
 /// Prepared API command; all local input validation has completed.
 pub(super) struct PreparedApi {
-    /// Fixed token/origin audience.
-    pub(super) audience: Audience,
+    /// Validated service origin and token audience.
+    pub(super) endpoint: Endpoint,
     /// Fully validated request, without authorization.
     pub(super) request: ApiRequest,
     /// Optional local response projection.
@@ -24,8 +24,8 @@ pub(super) struct PreparedApi {
     pub(super) lro_config: fabric_sdk_api::LroConfig,
 }
 
-/// Validate request bytes, headers, query, and origin before reading auth/config.
-pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError> {
+/// Validate request bytes, headers, query, and origin before reading identity.
+pub(super) fn prepare(matches: &ArgMatches, host: &dyn Host) -> Result<PreparedApi, CommandError> {
     let value = |name| matches.get_one::<String>(name).map(String::as_str);
     let asynchronous = matches.get_flag("async");
     if asynchronous && value("polling-config").is_some() {
@@ -48,6 +48,16 @@ pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError>
             ));
         }
     };
+    let variable = Endpoint::environment_variable(audience);
+    let endpoint = match host.environment(variable) {
+        Some(value) => Endpoint::from_hostname(
+            audience,
+            value
+                .to_str()
+                .ok_or_else(|| invalid(format!("Invalid hostname in {variable}")))?,
+        )?,
+        None => Endpoint::public(audience),
+    };
     // Pinned process_nargs strips boundary quote characters on queries.
     let query = value("query").map(|text| text.trim_matches(['"', '\'']).to_owned());
     if let Some(query) = query.as_deref() {
@@ -66,15 +76,15 @@ pub(super) fn prepare(matches: &ArgMatches) -> Result<PreparedApi, CommandError>
     headers
         .entry("content-type".into())
         .or_insert_with(|| "application/json".into());
-    let request = fabric_sdk_api::build_request(
-        audience,
+    let request = fabric_sdk_api::build_request_with_endpoint(
+        &endpoint,
         value("method").unwrap_or("get"),
         value("endpoint").unwrap_or_default(),
         headers,
         body,
     )?;
     Ok(PreparedApi {
-        audience,
+        endpoint,
         request,
         query,
         show_headers: matches.get_flag("show-headers"),

@@ -5,7 +5,10 @@
 #![forbid(unsafe_code)]
 use async_trait::async_trait;
 use fabric_core::*;
-use fabric_sdk_operations::{LroConfig, complete, complete_with_config};
+use fabric_sdk_operations::{
+    LroConfig, PollObserver, PollProgress, complete, complete_observed_with_endpoint,
+    complete_with_config,
+};
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::Mutex,
@@ -54,6 +57,13 @@ impl Clock for FakeClock {
 struct Script {
     responses: Mutex<VecDeque<ApiResponse>>,
     calls: Mutex<Vec<ApiRequest>>,
+}
+struct NoopObserver;
+#[async_trait]
+impl PollObserver for NoopObserver {
+    async fn observe(&self, _: PollProgress) -> Result<(), CoreError> {
+        Ok(())
+    }
 }
 struct ExpiringResult<'a> {
     clock: &'a FakeClock,
@@ -162,6 +172,66 @@ async fn fabric_id_and_location_only_handles_poll_actual_initial() {
         assert_eq!(*clock.sleeps.lock().unwrap(), vec![Duration::from_secs(2)]);
     }
 }
+
+#[tokio::test]
+async fn configured_endpoint_entrypoint_keeps_origin_for_poll_and_relative_result() {
+    let endpoint =
+        Endpoint::from_hostname(Audience::Fabric, "msitapi.fabric.microsoft.com").unwrap();
+    let terminal = response(
+        200,
+        r#"{"status":"Succeeded","resourceLocation":"/v1/items/result"}"#,
+        &[],
+    );
+    let result = response(200, r#"{"value":"complete"}"#, &[]);
+    let http = Script::new(vec![terminal, result.clone()]);
+    let completed = complete_observed_with_endpoint(
+        &http,
+        &FakeClock::new(),
+        &endpoint,
+        accepted(),
+        CancellationToken::new(),
+        LroConfig::default(),
+        &NoopObserver,
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed.body, result.body);
+    let calls = http.calls.lock().unwrap();
+    assert_eq!(
+        calls[0].url.as_str(),
+        "https://msitapi.fabric.microsoft.com/v1/operations/op-1"
+    );
+    assert_eq!(
+        calls[1].url.as_str(),
+        "https://msitapi.fabric.microsoft.com/v1/items/result"
+    );
+}
+
+#[tokio::test]
+async fn configured_azure_endpoint_is_used_for_relative_lro_polling() {
+    let endpoint = Endpoint::from_hostname(Audience::Azure, "management.contoso.test").unwrap();
+    let http = Script::new(vec![success()]);
+    complete_observed_with_endpoint(
+        &http,
+        &FakeClock::new(),
+        &endpoint,
+        response(
+            202,
+            "accepted",
+            &[("azure-asyncoperation", "/operations/op-1")],
+        ),
+        CancellationToken::new(),
+        LroConfig::default(),
+        &NoopObserver,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        http.calls.lock().unwrap()[0].url.as_str(),
+        "https://management.contoso.test/operations/op-1"
+    );
+}
+
 #[tokio::test]
 async fn fabric_terminal_status_preserves_ordinary_reserved_marker_objects() {
     for body in [

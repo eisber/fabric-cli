@@ -44,6 +44,30 @@ Authorization and proxy-authorization response headers are excluded before all
 query evaluation, including direct header selection and `values(headers)`.
 Body fields with those names are not removed.
 
+### Endpoint hostnames
+
+The selected `--audience` can use a hostname override:
+
+| Audience | Environment variable | Default hostname |
+| --- | --- | --- |
+| fabric | `FABRIC_API_ENDPOINT` | `api.fabric.microsoft.com` |
+| storage | `ONELAKE_API_ENDPOINT` | `onelake.dfs.fabric.microsoft.com` |
+| powerbi | `POWER_BI_API_ENDPOINT` | `api.powerbi.com` |
+| azure | `AZURE_API_ENDPOINT` | `management.azure.com` |
+
+For example, `FABRIC_API_ENDPOINT=msitapi.fabric.microsoft.com fab-rs api workspaces`.
+Use a hostname, not a URL; as in Python, a suffix starting with `/` is ignored.
+Malformed or noncanonical hostnames are rejected before authentication. The
+variables differ from Python's `FAB_API_ENDPOINT_*` names, and changing a
+hostname does not change the credential scope.
+
+The Python-compatible hostname pattern is not proof of domain ownership:
+`management.<label>.<label>` can match non-Microsoft domains. Fabric also
+accepts service-advertised HTTPS operation hosts for recognized operation
+routes, including regional hosts. Configure only trusted endpoints: a
+malicious endpoint or operation response could direct bearer tokens to an
+unintended host.
+
 ## Verbose diagnostics
 
 `--verbose` is a global, long-only boolean flag, off by default. It adds grouped

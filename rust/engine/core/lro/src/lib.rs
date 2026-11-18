@@ -9,9 +9,10 @@ use fabric_core::diagnostics::{
     PollPurpose, PollingStrategy, RequestId, ResultAction,
 };
 use fabric_core::{
-    ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, ErrorKind,
+    ApiRequest, ApiResponse, Audience, CancellationToken, Clock, CoreError, Endpoint, ErrorKind,
     HttpExecutor, MAX_RESPONSE_BYTES, OperationContext, OperationHandle as Handle,
-    OperationKind as Strategy, operation_handle, resolve_operation_url, validate_response,
+    OperationKind as Strategy, operation_handle_with_endpoint, resolve_operation_url_with_endpoint,
+    validate_response,
 };
 use fabric_sdk_http::{bounded_with_clock, retry_after, sleep_with_budget};
 use serde_json::Value;
@@ -294,10 +295,11 @@ fn get(url: Url) -> ApiRequest {
 async fn fetch(
     executor: &dyn HttpExecutor,
     clock: &dyn Clock,
-    audience: Audience,
+    endpoint: &Endpoint,
     url: Url,
     context: &OperationContext,
 ) -> Result<ApiResponse, CoreError> {
+    let url = resolve_operation_url_with_endpoint(endpoint, url.as_str(), endpoint.base_url())?;
     let now = clock.now();
     context.remaining_at(now)?;
     let deadline = now
@@ -314,7 +316,7 @@ async fn fetch(
     let response = bounded_with_clock(
         clock,
         &request_context,
-        executor.execute_poll(get(url), audience, &request_context),
+        executor.execute_poll(get(url), endpoint.audience(), &request_context),
     )
     .await??;
     context.remaining_at(clock.now())?;
@@ -327,7 +329,7 @@ async fn fetch(
 async fn reconcile(
     executor: &dyn HttpExecutor,
     clock: &dyn Clock,
-    audience: Audience,
+    endpoint: &Endpoint,
     initial: ApiResponse,
     handle: &Handle,
     context: &OperationContext,
@@ -408,7 +410,7 @@ async fn reconcile(
         let remaining_wait = wait.saturating_sub(clock.now().duration_since(before));
         sleep_with_budget(clock, remaining_wait, context).await?;
         bounded_with_clock(clock, context, observer.polling(handle.kind())).await??;
-        let response = fetch(executor, clock, audience, handle.url().clone(), context).await?;
+        let response = fetch(executor, clock, endpoint, handle.url().clone(), context).await?;
         if !(200..300).contains(&response.status) {
             let json = body(&response).ok();
             let message = if json.is_some() {
@@ -557,10 +559,10 @@ async fn reconcile(
                 }
                 let json = body(&response)?;
                 let result_url = if let Some(location) = response.header("location") {
-                    handle.fabric_result_url(location)?
+                    handle.fabric_result_url_with_endpoint(endpoint, location)?
                 } else if let Some(resource) = json.get("resourceLocation").and_then(Value::as_str)
                 {
-                    resolve_operation_url(audience, resource, handle.url())?
+                    resolve_operation_url_with_endpoint(endpoint, resource, handle.url())?
                 } else {
                     diagnostic(
                         observer,
@@ -616,7 +618,7 @@ async fn reconcile(
                     .await?;
                     sleep_with_budget(clock, result_delay, context).await?;
                 }
-                let result_response = fetch(executor, clock, audience, result_url, context).await?;
+                let result_response = fetch(executor, clock, endpoint, result_url, context).await?;
                 if (200..300).contains(&result_response.status) {
                     diagnostic(
                         observer,
@@ -734,8 +736,31 @@ pub async fn complete_observed(
     config: LroConfig,
     observer: &dyn PollObserver,
 ) -> Result<ApiResponse, CoreError> {
+    complete_observed_with_endpoint(
+        executor,
+        clock,
+        &Endpoint::public(audience),
+        initial,
+        cancellation,
+        config,
+        observer,
+    )
+    .await
+}
+
+/// Reconcile with an explicit configured endpoint for discovery, polling and
+/// result URL resolution. Existing entry points continue to use public hosts.
+pub async fn complete_observed_with_endpoint(
+    executor: &dyn HttpExecutor,
+    clock: &dyn Clock,
+    endpoint: &Endpoint,
+    initial: ApiResponse,
+    cancellation: CancellationToken,
+    config: LroConfig,
+    observer: &dyn PollObserver,
+) -> Result<ApiResponse, CoreError> {
     let start = clock.now();
-    let discovered = operation_handle(audience, initial.status, &initial.headers)?;
+    let discovered = operation_handle_with_endpoint(endpoint, initial.status, &initial.headers)?;
     validate_response(&initial).map_err(|error| {
         if let Some(handle) = &discovered {
             handle.attach(error)
@@ -762,7 +787,7 @@ pub async fn complete_observed(
     let result = reconcile(
         executor,
         clock,
-        audience,
+        endpoint,
         initial,
         &handle,
         &context,

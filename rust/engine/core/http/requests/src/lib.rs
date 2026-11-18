@@ -5,10 +5,12 @@
 #![forbid(unsafe_code)]
 pub use fabric_core::validate_url;
 use fabric_core::{
-    ApiRequest, Audience, CoreError, ErrorKind, MAX_REQUEST_BYTES, validate_headers, validate_path,
+    ApiRequest, Audience, CoreError, Endpoint, ErrorKind, MAX_REQUEST_BYTES, validate_headers,
+    validate_path,
 };
 pub use fabric_sdk_operations::{
-    LroConfig, PollObserver, PollProgress, complete, complete_observed, complete_with_config,
+    LroConfig, PollObserver, PollProgress, complete, complete_observed,
+    complete_observed_with_endpoint, complete_with_config,
 };
 use std::collections::BTreeMap;
 use url::Url;
@@ -19,6 +21,17 @@ use url::Url;
 /// Payload is pre-encoded JSON or multipart; there is no ambient file I/O.
 pub fn build_request(
     audience: Audience,
+    method: &str,
+    endpoint: &str,
+    headers: BTreeMap<String, String>,
+    body: Vec<u8>,
+) -> Result<ApiRequest, CoreError> {
+    build_request_with_endpoint(&Endpoint::public(audience), method, endpoint, headers, body)
+}
+
+/// Construct a request against an explicitly validated service endpoint.
+pub fn build_request_with_endpoint(
+    service: &Endpoint,
     method: &str,
     endpoint: &str,
     headers: BTreeMap<String, String>,
@@ -65,12 +78,12 @@ pub fn build_request(
         }
         Url::parse(&format!(
             "{}/{}",
-            audience.base_url(),
+            service.base_url().as_str().trim_end_matches('/'),
             endpoint.trim_start_matches('/')
         ))
     }
     .map_err(|_| CoreError::new(ErrorKind::InvalidInput, "Endpoint is not a valid URL"))?;
-    validate_url(audience, &url)?;
+    service.validate_url(&url)?;
     Ok(ApiRequest {
         method,
         url,

@@ -229,6 +229,118 @@ fn storage_handles_keep_the_storage_origin_and_reject_unsafe_destinations() {
 }
 
 #[test]
+fn configured_endpoints_preserve_origins_and_keep_fabric_advertisement_rules() {
+    let fabric = Endpoint::from_hostname(Audience::Fabric, "msitapi.fabric.microsoft.com").unwrap();
+    let fields = headers(&[("x-ms-operation-id", "configured-op")]);
+    let handle = operation_handle_with_endpoint(&fabric, 202, &fields)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        handle.url().as_str(),
+        "https://msitapi.fabric.microsoft.com/v1/operations/configured-op"
+    );
+    assert_eq!(
+        handle
+            .fabric_result_url_with_endpoint(&fabric, "/v1/operations/configured-op/result")
+            .unwrap()
+            .as_str(),
+        "https://msitapi.fabric.microsoft.com/v1/operations/configured-op/result"
+    );
+
+    let capture = ResponseHeadCapture::with_endpoint(fabric.clone());
+    capture.record(202, &fields).unwrap();
+    assert_eq!(
+        capture.recovery().unwrap().status_url,
+        "https://msitapi.fabric.microsoft.com/v1/operations/configured-op"
+    );
+
+    let error = operation_handle_with_endpoint(
+        &fabric,
+        202,
+        &headers(&[("x-ms-operation-id", "rejected-op"), ("bad header", "x")]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.recovery.unwrap().status_url,
+        "https://msitapi.fabric.microsoft.com/v1/operations/rejected-op"
+    );
+    let error = capture.reject_headers(
+        202,
+        [
+            ("x-ms-operation-id", b"rejected-op".as_slice()),
+            ("bad header", b"x".as_slice()),
+        ],
+        CoreError::new(ErrorKind::Protocol, "Malformed response header"),
+    );
+    assert_eq!(
+        error.recovery.unwrap().status_url,
+        "https://msitapi.fabric.microsoft.com/v1/operations/rejected-op"
+    );
+
+    let custom_resource = "https://msitapi.fabric.microsoft.com/v1/items/item";
+    assert_eq!(
+        resolve_operation_url_with_endpoint(&fabric, custom_resource, fabric.base_url())
+            .unwrap()
+            .as_str(),
+        custom_resource
+    );
+    for url in [
+        "https://api.fabric.microsoft.com/v1/items/item",
+        "https://service-advertised.example.test/v1/items/item",
+    ] {
+        assert!(
+            resolve_operation_url_with_endpoint(&fabric, url, fabric.base_url()).is_err(),
+            "non-selected advertised origins remain limited to operation/job routes"
+        );
+    }
+    resolve_operation_url_with_endpoint(
+        &fabric,
+        "https://service-advertised.example.test/v1/operations/op-1",
+        fabric.base_url(),
+    )
+    .unwrap();
+
+    let azure = Endpoint::from_hostname(Audience::Azure, "management.contoso.test").unwrap();
+    let arm = operation_handle_with_endpoint(
+        &azure,
+        202,
+        &headers(&[("azure-asyncoperation", "/status?secret=CANARY")]),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        arm.url().as_str(),
+        "https://management.contoso.test/status?secret=CANARY"
+    );
+    assert!(
+        operation_handle_with_endpoint(
+            &azure,
+            202,
+            &headers(&[(
+                "azure-asyncoperation",
+                "https://management.azure.com/status"
+            )]),
+        )
+        .is_err(),
+        "the configured ARM host, not the public host, is selected"
+    );
+
+    let storage =
+        Endpoint::from_hostname(Audience::Storage, "custom.dfs.fabric.microsoft.com").unwrap();
+    let lake = operation_handle_with_endpoint(
+        &storage,
+        202,
+        &headers(&[("location", "/operation-status")]),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        lake.url().as_str(),
+        "https://custom.dfs.fabric.microsoft.com/operation-status"
+    );
+}
+
+#[test]
 fn unsafe_head_cannot_expose_an_unvalidated_url_or_erase_known_safe_id() {
     for value in [
         "http://evil.invalid/operation?secret=synthetic",
