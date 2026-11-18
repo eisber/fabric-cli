@@ -41,6 +41,33 @@ function evaluates(expression, name, target, branchRef, succeeded = true, head =
   }, {timeout: 1000});
 }
 
+test('Dataflow candidate fetches locked test dependencies before its unchanged offline proof', () => {
+  const text = workflow('integration-smoke.yml');
+  const block = text.split('      - name: Check the three Dataflow enhancements offline\n')[1]
+    .split('\n      - name:')[0];
+  const assignment = block.match(/report\.plan = (\[[\s\S]*?\n\s*\])\.map\(item =>/);
+  assert.ok(assignment, 'Expected the actual candidate command plan');
+  const plan = vm.runInNewContext(`(${assignment[1]})`, {
+    test: ['test', '--offline', '--locked'], prefixed: () => [],
+  }, {timeout: 1000});
+  assert.equal(plan.length, 11);
+  assert.equal(plan[0].id, 'test-dependencies');
+  assert.deepEqual(Array.from(plan[0].args),
+    ['fetch', '--locked', '--target', 'x86_64-pc-windows-msvc']);
+  assert.equal(plan[1].id, 'sdk');
+  assert.equal(plan.filter(item => item.args[0] === 'fetch').length, 1);
+  assert.equal(plan.filter(item => item.args[0] === 'test').length, 8);
+  for (const item of plan.filter(item => ['test', 'check'].includes(item.args[0]))) {
+    assert.ok(item.args.includes('--offline'), `${item.id} must not fetch while proving results`);
+    assert.ok(item.args.includes('--locked'), `${item.id} must preserve the lockfile`);
+  }
+  assert.match(block, /deadline = started \+ 570000/);
+  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /timeout: Math\.min\(480000, remaining\(\)\)/);
+  assert.match(block, /const result = run\('cargo', item\.args, rust\)/);
+  assert.match(block, /assert\.equal\(result\.status, 0, `Dataflow command failed: \$\{item\.id\}`\)/);
+});
+
 test('real workflow conditions route only trusted integration PR targets and push refs', () => {
   const full = workflow('rust-ci.yml');
   const native = workflow('rust-native-shard.yml');
