@@ -69,6 +69,11 @@ path = "tests/v2_link_dataagent_process.rs"
 required-features = ["headless"]
 
 [[test]]
+name = "v2_link_kql_host"
+path = "tests/v2_link_kql_host.rs"
+required-features = ["v2-link-kql"]
+
+[[test]]
 name = "run_notebook_wire"
 path = "tests/run_notebook_wire.rs"
 required-features = ["native-host", "v2-run"]
@@ -129,6 +134,7 @@ v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []
 v2-deploy = []
+v2-link-kql = []
 v2-discovery = ["dep:fabric-sdk-discovery"]
 runtime-v2 = []
 v2-preview = ["dep:fabric-cli-ontology"]

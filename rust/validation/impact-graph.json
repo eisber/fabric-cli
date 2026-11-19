@@ -780,6 +780,37 @@
       "checks": ["headless", "dependency-graph"]
     },
     {
+      "id": "cli-kql-link",
+      "package": "fabric-cli",
+      "profiles": ["v2-link-kql", "v2-link-kql-headless", "v2-link-kql-refresh-headless"],
+      "inputs": [
+        "rust/clients/cli/app/src/v2_link_dispatch.rs",
+        "rust/clients/cli/app/src/v2_link_kql_host.rs",
+        "rust/clients/cli/app/src/v2_link_kql_main.rs",
+        "rust/clients/cli/app/src/v2_link_kql_main_tests.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/v2_link_kql_host.rs",
+        "rust/authoring-docs/link-v2-contract.md"
+      ],
+      "depends_on": ["mutations", "mutations-link", "sdk-items", "sdk-items-link", "operations", "cli-get", "cli-headless", "output"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:v2_link_kql_host"},
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_host"},
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_process"},
+        {"package": "fabric-cli", "target": "test:dataagent_list"},
+        {"package": "fabric-cli", "target": "test:v2_dataagent_list_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link_wire"},
+        {"package": "fabric-sdk-items", "target": "test:links"},
+        {"package": "fabric-sdk", "target": "test:item_facade"},
+        {"package": "fabric-sdk", "target": "test:kql_metadata"},
+        {"package": "fabric-sdk", "target": "test:dataagents"},
+        {"package": "fabric-sdk", "target": "test:representations"}
+      ],
+      "checks": ["headless", "combined", "dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -3270,6 +3301,27 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-link-kql",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-kql"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-link-kql-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-kql", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "headless"]
+    },
+    {
+      "id": "v2-link-kql-refresh-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-kql", "fabric-cli/headless", "fabric-cli/runtime-v2", "fabric-cli/v2-refresh"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "headless", "combined"]
+    },
     {
       "id": "runtime-v2-native",
       "packages": ["fabric-cli"],

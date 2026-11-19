@@ -8,13 +8,14 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {test} = require('node:test');
-const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
+const {packageArgs, ownFeatures, testGroups, testCommands, coreCommands, commandResult,
   oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment,
   sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter,
   coreReuseKey, runCoreCommands, executionSummary} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
-const {plan: impactPlan} = require('./impact-plan.cjs');
+const {plan: impactPlan, testGroupResolver} = require('./impact-plan.cjs');
+const {discoverManifests, selectionInventory} = require('./impact-contract.cjs');
 const validationRegistry = require('./validation-checks.cjs');
 
 function temporary(t) {
@@ -37,6 +38,128 @@ function plan() {
     }],
   };
 }
+
+test('Cheap manifest discovery includes nested unregistered engine/client leaves, not grouping directories', t => {
+  const root = temporary(t);
+  const manifests = ['rust/engine/new/deeper/Cargo.toml', 'rust/engine/new/other/Cargo.toml',
+    'rust/clients/cli/commands/new/Cargo.toml', 'rust/clients/new-host/Cargo.toml'];
+  for (const manifest of manifests) {
+    const file = path.join(root, manifest);
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    fs.writeFileSync(file, '[package]\nname = "fixture"\n');
+  }
+  assert.deepEqual(discoverManifests(root), manifests.sort());
+});
+
+test('Measured target inventories agree with executor default/feature commands without counting skipped targets', () => {
+  const root = path.resolve(__dirname, '../..', 'test-group-fixture');
+  const resolver = testGroupResolver({root, metadata: {version: 1, workspace_members: ['cli'], packages: [{
+    id: 'cli', name: 'cli', manifest_path: path.join(root, 'rust/cli/Cargo.toml'),
+    features: {default: [], native: []}, dependencies: [],
+    targets: [['lib', 'cli', []], ['example', 'safe_consumer', []], ['test', 'native', ['native']]]
+      .map(([kind, name, features]) => ({kind: [kind], name,
+        src_path: path.join(root, 'rust/cli', `${name}.rs`), 'required-features': features})),
+  }]}});
+  const selected = {...plan(), mode: 'affected', components: [], check_order: [], check_details: [],
+    tests: [
+      {package: 'cli', target: 'all', default_available: true, default_skipped_targets: ['test:native']},
+    ],
+    target_catalog: [
+      {package: 'cli', target: 'lib', test: true, default_available: true, profiles: ['native']},
+      {package: 'cli', target: 'example:safe_consumer', test: false, default_available: true, profiles: ['native']},
+      {package: 'cli', target: 'test:native', test: true, default_available: false, profiles: ['native']},
+    ],
+    profiles: [{id: 'native', packages: ['cli'], features: ['cli/native'], platforms: ['windows'],
+      test_features: {cli: ['cli/native']}, tests: [{package: 'cli', target: 'all'}]}]};
+  const measured = selectionInventory(selected, resolver);
+  assert.deepEqual(measured.default_targets, ['cli/example:safe_consumer', 'cli/lib']);
+  assert.deepEqual(measured.profiles[0].targets, ['cli/example:safe_consumer', 'cli/lib', 'cli/test:native']);
+  for (const platform of ['linux', 'macos', 'windows']) {
+    const actual = coreCommands(selected, platform);
+    const tests = actual.filter(command => command.test && !command.args.includes('--doc'));
+    assert.equal(tests.length, platform === 'windows' ? 2 : 1);
+    assert.ok(tests[0].args.includes('--all-targets'));
+    if (platform === 'windows') assert.ok(tests[1].args.includes('cli/native'));
+    assert.equal(measured.platforms[platform].profiles, platform === 'windows' ? 1 : 0);
+  }
+  selected.tests = [{package: 'cli', target: 'example:safe_consumer', default_available: true}];
+  selected.profiles[0].tests = selected.tests;
+  assert.deepEqual(selectionInventory(selected, resolver).default_targets, ['cli/example:safe_consumer']);
+  assert.deepEqual(selectionInventory(selected, resolver).profiles[0].targets, ['cli/example:safe_consumer']);
+  for (const command of coreCommands(selected, 'windows').filter(command => command.test &&
+    !command.args.includes('--doc'))) {
+    assert.ok(command.args.includes('--example'));
+    assert.ok(command.args.includes('safe_consumer'));
+  }
+});
+
+test('Pure test groups and executor commands share all-default roots while exact selectors stay isolated', () => {
+  const tests = [{package: 'b', target: 'all'}, {package: 'a', target: 'all'},
+    {package: 'a', target: 'lib'}, {package: 'exact', target: 'test:wire'},
+    {package: 'exact', target: 'lib'}];
+  const groups = testGroups(tests);
+  assert.deepEqual(groups, [
+    {packages: ['a', 'b'], targets: ['all'], features: []},
+    {packages: ['exact'], targets: ['lib', 'test:wire'], features: []},
+  ]);
+  assert.deepEqual(testCommands(tests).map(command => command.args), [
+    ['test', '--offline', '--locked', '--package', 'a', '--package', 'b', '--all-targets'],
+    ['test', '--offline', '--locked', '--package', 'exact', '--lib', '--test', 'wire'],
+  ]);
+});
+
+test('External-root reports reject mutated loaded tool, planner and grouping code without emitting evidence', t => {
+  const base = temporary(t);
+  const script = String.raw`
+    const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+    const [toolRoot, root, output, mutated, phase] = process.argv.slice(1);
+    const reporter = require(path.join(toolRoot, 'impact-contract.cjs'));
+    const name = 'leaf', file = 'rust/engine/leaf/src/lib.rs';
+    const metadata = {version: 1, workspace_members: [name], workspace_default_members: [name], packages: [{
+      id: name, name, manifest_path: path.join(root, 'rust/engine/leaf/Cargo.toml'), dependencies: [],
+      features: {default: []}, metadata: {fabric: {layer: 'core'}},
+      targets: [{name, kind: ['lib'], src_path: path.join(root, file)}],
+    }]};
+    const mutate = () => fs.appendFileSync(path.join(toolRoot, mutated), '\n// changed after module load\n');
+    if (phase === 'before') mutate();
+    const run = () => reporter.main(['--root', root, '--output', output], {
+      sourceInventory: () => ({digest: 'unchanged-root-B', files: [{path: file}]}),
+      discoverManifests: () => ['rust/engine/leaf/Cargo.toml'],
+      read: () => JSON.stringify({schema: 1}),
+      exec: (program, args) => {
+        if (program === 'cargo' && args[0] === '--version') {
+          if (phase === 'during') mutate();
+          return 'cargo 1.99.1';
+        }
+        if (program === 'cargo') return JSON.stringify(metadata);
+        if (args[0] === 'status') return '';
+        return (args.includes('HEAD^{tree}') ? 'b' : 'a').repeat(40);
+      },
+    });
+    if (phase === 'control') {
+      const report = run();
+      assert.equal(report.source.inventory_digest, 'unchanged-root-B');
+      assert.ok(report.inputs.loaded_sources.every(source => source.path.startsWith(toolRoot)));
+      assert.ok(fs.existsSync(output));
+    } else {
+      assert.throws(run, /Loaded code changed/);
+      assert.equal(fs.existsSync(output), false);
+    }
+  `;
+  for (const mutated of ['impact-contract.cjs', 'impact-plan.cjs', 'validate-impact.cjs']) {
+    for (const phase of ['control', 'before', 'during']) {
+      const caseRoot = path.join(base, `${mutated}-${phase}`);
+      const toolRoot = path.join(caseRoot, 'tools-A'), root = path.join(caseRoot, 'source-B');
+      fs.mkdirSync(toolRoot, {recursive: true});
+      fs.mkdirSync(root);
+      for (const file of ['impact-contract.cjs', 'impact-plan.cjs', 'validate-impact.cjs', 'validation-process.cjs']) {
+        fs.copyFileSync(path.join(__dirname, file), path.join(toolRoot, file));
+      }
+      execFileSync(process.execPath, ['-e', script, toolRoot, root, path.join(caseRoot, 'report.json'),
+        mutated, phase], {encoding: 'utf8', timeout: 15000});
+    }
+  }
+});
 
 test('source inventory retains the exact digest and identifies tracked, untracked and deleted input changes', t => {
   const root = temporary(t);

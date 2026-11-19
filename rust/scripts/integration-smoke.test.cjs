@@ -10,15 +10,26 @@ const vm = require('node:vm');
 const {spawnSync} = require('node:child_process');
 const {test} = require('node:test');
 const smoke = require('./integration-smoke.cjs');
+const target = require('./integration-target-witness.cjs');
 
 const base = '1'.repeat(40);
 const source = '2'.repeat(40);
 const combined = '3'.repeat(40);
 const ref = `refs/heads/${smoke.BRANCH}`;
 const event = {
+  number: 90,
   repository: {full_name: 'eisber/fabric-cli'}, before: base, after: combined, deleted: false,
-  pull_request: {base: {ref: smoke.BRANCH, sha: base}, head: {sha: source}},
+  pull_request: {number: 90, base: {ref: smoke.BRANCH, sha: base,
+    repo: {full_name: 'eisber/fabric-cli'}}, head: {sha: source}},
 };
+const mergeRef = 'refs/pull/90/merge';
+const runEnv = {GITHUB_EVENT_NAME: 'pull_request', GITHUB_REPOSITORY: 'eisber/fabric-cli',
+  GITHUB_REF: mergeRef, GITHUB_SHA: combined, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1',
+  GITHUB_JOB: 'smoke', GITHUB_SERVER_URL: 'https://github.com', GITHUB_API_URL: 'https://api.github.com'};
+const witness = {schema: 1, kind: 'github-rest-exact-target-ref',
+  ...target.witnessContext(event, runEnv), checkout_base: base, endpoint: target.ENDPOINT,
+  requested_at: '2026-01-01T00:00:00.000Z', provider_date: 'Thu, 01 Jan 2026 00:00:00 GMT',
+  observed_at: '2026-01-01T00:00:00.000Z'};
 const workflow = file => fs.readFileSync(path.resolve(__dirname, '../../.github/workflows', file), 'utf8')
   .replace(/\r\n/g, '\n');
 const result = (stdout = '', stderr = '', status = 0) => ({stdout, stderr, status, signal: null});
@@ -182,17 +193,21 @@ test('PR63 Notebook proof runs only for its owned candidate, never for postpush 
 
 test('PR source pin requires exact checkout and both exact parents, not source-only smoke', () => {
   const pin = () => smoke.sourcePin('pull_request', event, 'refs/pull/90/merge',
-    combined, combined, [base, source], false);
+    combined, combined, [base, source], false, witness, runEnv);
   assert.deepEqual(pin(), {event: 'pull_request', ref: 'refs/pull/90/merge',
-    source, base, checkout: combined, parents: [base, source]});
+    source, base, event_base: base, checkout_base: base, checkout: combined,
+    parents: [base, source], target_witness: witness});
   for (const [expected, actual, parents] of [
     [combined, source, [base, source]], [combined, combined, [source, base]],
     [combined, combined, [base, '4'.repeat(40)]], [combined, combined, [base]],
+    [combined, combined, [base, source, '4'.repeat(40)]],
   ]) {
-    assert.throws(() => smoke.sourcePin('pull_request', event, ref, expected, actual, parents, true));
+    assert.throws(() => smoke.sourcePin('pull_request', event, mergeRef, expected, actual, parents, true,
+      witness, runEnv));
   }
   assert.throws(() => smoke.sourcePin('pull_request',
-    {...event, repository: {full_name: 'other/fork'}}, ref, combined, combined, [base, source], false));
+    {...event, repository: {full_name: 'other/fork'}}, mergeRef, combined, combined, [base, source], false,
+    witness, runEnv));
 });
 
 test('push receipt preserves exact before/after and rejects missing or rewritten ancestry', () => {
@@ -246,6 +261,7 @@ test('exact versions, help shape and sanitized offline error envelopes are manda
 test('executables receive no ambient credentials, tools or profile state', () => {
   const env = smoke.isolatedEnvironment('isolated-home', 'sandbox', {
     SystemRoot: 'windows', WINDIR: 'windows', PATH: 'tools', GH_TOKEN: 'synthetic',
+    GITHUB_TOKEN: 'synthetic', INTEGRATION_TARGET_WITNESS_SHA256: 'synthetic',
     AZURE_CLIENT_SECRET: 'synthetic', FAB_RUST_AUTH_MODE: 'headless', USERPROFILE: 'ambient',
   });
   assert.deepEqual(env, {HOME: 'isolated-home', USERPROFILE: 'isolated-home',
