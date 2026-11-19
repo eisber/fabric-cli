@@ -45,11 +45,12 @@ fn executable_help_is_local_and_discloses_each_enabled_native_owner() {
         let help = String::from_utf8(output.stdout).unwrap();
         assert!(help.contains("KQLDatabase"));
         assert!(help.contains("Report"));
-        assert!(!help.contains("Selected native owner: Notebook"));
+        assert!(help.contains("Notebook"));
         if args[0] == "create" {
             assert!(help.contains("Selected native owner: KQLDatabase"));
             assert!(help.contains("Enabled policies: error and skip."));
             assert!(help.contains("Selected native owner: Report"));
+            assert!(help.contains("Selected native owner: Notebook"));
         }
         #[cfg(feature = "runtime-v2")]
         if args[0] == "--help" {

@@ -700,6 +700,117 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "sdk-notebook-create",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/engine/sdk/src/notebook_create.rs",
+        "rust/engine/sdk/tests/notebook_create.rs"
+      ],
+      "depends_on": ["sdk-items", "operations"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:notebook_create"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-notebook-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/create_notebook.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/src/v2_livy_list_main.rs",
+        "rust/clients/cli/app/tests/create_binding_composition.rs",
+        "rust/clients/cli/app/tests/create_v2.rs",
+        "rust/clients/cli/app/tests/create_v2_process.rs",
+        "rust/authoring-docs/create-v2-contract.md"
+      ],
+      "depends_on": ["cli-create-host", "sdk-notebook-create"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:create_v2"},
+        {"package": "fabric-cli", "target": "test:create_v2_process"},
+        {"package": "fabric-cli", "target": "test:create_binding_composition"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "sdk-items-link",
+      "package": "fabric-sdk-items",
+      "inputs": ["rust/engine/control-plane/resources/items/tests/links.rs"],
+      "depends_on": ["sdk-items"],
+      "tests": [
+        {"package": "fabric-sdk-items", "target": "test:links"}
+      ]
+    },
+    {
+      "id": "mutations-link",
+      "package": "fabric-cli-mutations",
+      "inputs": [
+        "rust/clients/cli/commands/mutations/tests/v2_link.rs",
+        "rust/clients/cli/commands/mutations/tests/v2_link_wire.rs"
+      ],
+      "depends_on": ["mutations", "sdk-items-link"],
+      "tests": [
+        {"package": "fabric-cli-mutations", "target": "test:v2_link"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link_wire"}
+      ]
+    },
+    {
+      "id": "cli-dataagent-link",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_link_dataagent_host.rs",
+        "rust/clients/cli/app/src/v2_link_dataagent_main.rs",
+        "rust/clients/cli/app/src/v2_link_dataagent_main_tests.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/v2_link_dataagent_host.rs",
+        "rust/clients/cli/app/tests/v2_link_dataagent_process.rs",
+        "rust/authoring-docs/link-v2-contract.md"
+      ],
+      "depends_on": ["mutations", "mutations-link", "sdk-items", "sdk-items-link", "operations", "cli-get", "cli-headless", "output"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_host"},
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_process"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link_wire"},
+        {"package": "fabric-sdk-items", "target": "test:links"}
+      ],
+      "checks": ["headless", "dependency-graph"]
+    },
+    {
+      "id": "cli-kql-link",
+      "package": "fabric-cli",
+      "profiles": ["v2-link-kql", "v2-link-kql-headless", "v2-link-kql-refresh-headless"],
+      "inputs": [
+        "rust/clients/cli/app/src/v2_link_dispatch.rs",
+        "rust/clients/cli/app/src/v2_link_kql_host.rs",
+        "rust/clients/cli/app/src/v2_link_kql_main.rs",
+        "rust/clients/cli/app/src/v2_link_kql_main_tests.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/v2_link_kql_host.rs",
+        "rust/authoring-docs/link-v2-contract.md"
+      ],
+      "depends_on": ["mutations", "mutations-link", "sdk-items", "sdk-items-link", "operations", "cli-get", "cli-headless", "output"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:v2_link_kql_host"},
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_host"},
+        {"package": "fabric-cli", "target": "test:v2_link_dataagent_process"},
+        {"package": "fabric-cli", "target": "test:dataagent_list"},
+        {"package": "fabric-cli", "target": "test:v2_dataagent_list_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_link_wire"},
+        {"package": "fabric-sdk-items", "target": "test:links"},
+        {"package": "fabric-sdk", "target": "test:item_facade"},
+        {"package": "fabric-sdk", "target": "test:kql_metadata"},
+        {"package": "fabric-sdk", "target": "test:dataagents"},
+        {"package": "fabric-sdk", "target": "test:representations"}
+      ],
+      "checks": ["headless", "combined", "dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -718,6 +829,7 @@
     {
       "id": "cli-report-create",
       "package": "fabric-cli",
+      "profiles": ["v2-create-headless"],
       "inputs": [
         "rust/clients/cli/app/src/v2_create_report.rs",
         "rust/clients/cli/app/tests/v2_create_report.rs",
@@ -787,13 +899,30 @@
       ]
     },
     {
+      "id": "http-foundation",
+      "package": "fabric-http",
+      "inputs": ["rust/engine/core/http/executor/src/**"],
+      "depends_on": ["core"],
+      "tests": [{"package": "fabric-http", "target": "lib"}],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "http-native-transport",
+      "package": "fabric-http-transport",
+      "inputs": ["rust/engine/core/http/transport/src/**"],
+      "depends_on": ["http-foundation"],
+      "tests": [{"package": "fabric-http-transport", "target": "lib"}],
+      "checks": ["transport", "transport-graphs"]
+    },
+    {
       "id": "http",
       "package": "fabric-sdk-http",
       "inputs": [
-        "rust/engine/core/http/executor/src/**",
+        "rust/engine/sdk/http/src/**",
         "rust/tests/compatibility/http/retry-cases.json"
       ],
       "depends_on": [
+        "http-foundation",
         "core",
         "sdk",
         "sdk-items",
@@ -825,6 +954,10 @@
         {
           "package": "fabric-sdk-http",
           "target": "test:native_stream"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:public_api"
         }
       ],
       "checks": [
@@ -835,9 +968,10 @@
       "id": "transport",
       "package": "fabric-sdk-transport",
       "inputs": [
-        "rust/engine/core/http/transport/src/**"
+        "rust/engine/sdk/transport/src/**"
       ],
       "depends_on": [
+        "http-native-transport",
         "core",
         "http",
         "sdk"
@@ -850,6 +984,10 @@
         {
           "package": "fabric-sdk-transport",
           "target": "example:sdk_consumer"
+        },
+        {
+          "package": "fabric-sdk-transport",
+          "target": "test:http_services"
         },
         {
           "package": "fabric-sdk-transport",
@@ -2937,6 +3075,28 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-dataagent-list",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_dataagent_list_host.rs",
+        "rust/clients/cli/app/src/v2_dataagent_list_main.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/dataagent_list.rs",
+        "rust/clients/cli/app/tests/v2_dataagent_list_binary.rs",
+        "rust/authoring-docs/dataagent-reads.md",
+        ".changes/unreleased/added-20261112-dataagent-datasource-list.yaml"
+      ],
+      "depends_on": ["sdk", "cli-get", "cli-headless", "query", "output", "storage-files"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:dataagents"},
+        {"package": "fabric-sdk", "target": "test:representations"},
+        {"package": "fabric-cli", "target": "test:dataagent_list"},
+        {"package": "fabric-cli", "target": "test:v2_dataagent_list_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph", "headless", "combined"]
+    },
+    {
       "id": "cli-search-v2",
       "package": "fabric-cli",
       "inputs": [
@@ -3016,6 +3176,8 @@
       "coverage": "structural",
       "inputs": [],
       "depends_on": [
+        "http-foundation",
+        "http-native-transport",
         "core",
         "json",
         "context",
@@ -3083,6 +3245,10 @@
         {
           "package": "fabric-cli",
           "target": "test:workspace_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:http_architecture"
         }
       ],
       "checks": [
@@ -3167,6 +3333,27 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-link-kql",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-kql"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-link-kql-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-kql", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "headless"]
+    },
+    {
+      "id": "v2-link-kql-refresh-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-link-kql", "fabric-cli/headless", "fabric-cli/runtime-v2", "fabric-cli/v2-refresh"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph", "headless", "combined"]
+    },
     {
       "id": "runtime-v2-native",
       "packages": ["fabric-cli"],
@@ -3656,9 +3843,11 @@
     {
       "id": "native-transport",
       "packages": [
+        "fabric-http-transport",
         "fabric-sdk-transport"
       ],
       "features": [
+        "fabric-http-transport/hyper-rustls",
         "fabric-sdk-transport/hyper-rustls"
       ],
       "platforms": [

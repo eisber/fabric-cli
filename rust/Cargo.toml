@@ -4,6 +4,9 @@
 [workspace]
 members = [
     "clients/cli/app",
+    "clients/cli/commands/access",
+    "clients/cli/commands/api",
+    "clients/cli/commands/catalog",
     "clients/cli/commands/jobs",
     "clients/cli/commands/local",
     "clients/cli/commands/mutations",
@@ -13,6 +16,7 @@ members = [
     "clients/cli/commands/storage",
     "clients/cli/commands/tables",
     "clients/cli/commands/transfer",
+    "clients/cli/contracts",
     "clients/cli/output",
     "clients/cli/query",
     "clients/cli/repl",
@@ -56,8 +60,13 @@ members = [
     "engine/data-plane/tables",
     "engine/data-plane/tabular",
     "engine/sdk",
+    "engine/sdk/http",
+    "engine/sdk/transport",
 ]
 default-members = [
+    "clients/cli/commands/access",
+    "clients/cli/commands/api",
+    "clients/cli/commands/catalog",
     "clients/cli/update",
     "clients/cli/repl",
     "engine/core/contracts",
@@ -72,6 +81,8 @@ default-members = [
     "engine/data-plane/onelake/http",
     "engine/core/lro",
     "engine/core/http/executor",
+    "engine/sdk/http",
+    "engine/sdk/transport",
     "engine/core/http/transport",
     "engine/control-plane/deployment",
     "clients/cli/app",
@@ -87,6 +98,7 @@ default-members = [
     "engine/control-plane/acl",
     "engine/control-plane/catalog",
     "clients/cli/commands/resources",
+    "clients/cli/contracts",
     "clients/cli/commands/storage",
     "clients/cli/commands/local",
     "clients/cli/commands/transfer",
@@ -166,6 +178,10 @@ fabric-sdk-api = { path = "engine/core/http/requests" }
 fabric-sdk-access = { path = "engine/control-plane/acl" }
 fabric-sdk-catalog = { path = "engine/control-plane/catalog" }
 fabric-cli-resources = { path = "clients/cli/commands/resources" }
+fabric-cli-access = { path = "clients/cli/commands/access" }
+fabric-cli-api = { path = "clients/cli/commands/api" }
+fabric-cli-catalog = { path = "clients/cli/commands/catalog" }
+fabric-cli-command-contracts = { path = "clients/cli/contracts" }
 fabric-cli-storage-files = { path = "clients/cli/commands/storage" }
 fabric-cli-local = { path = "clients/cli/commands/local" }
 fabric-cli-transfer = { path = "clients/cli/commands/transfer" }
@@ -180,12 +196,16 @@ fabric-sdk-folders = { path = "engine/control-plane/resources/folders" }
 fabric-sdk-onelake = { path = "engine/data-plane/onelake/client" }
 fabric-sdk-onelake-http = { path = "engine/data-plane/onelake/http" }
 fabric-sdk-operations = { path = "engine/core/lro" }
-fabric-sdk-http = { path = "engine/core/http/executor" }
-fabric-sdk-transport = { path = "engine/core/http/transport", default-features = false }
+fabric-http = { path = "engine/core/http/executor" }
+fabric-http-transport = { path = "engine/core/http/transport", default-features = false }
+fabric-sdk-http = { path = "engine/sdk/http" }
+fabric-sdk-transport = { path = "engine/sdk/transport", default-features = false }
 fabric-identity-windows = { path = "engine/core/auth/windows" }
 azure_core = { version = "1.1.0", default-features = false }
 azure_identity = { version = "=1.0.0", default-features = false }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
+getrandom = { version = "=0.4.3", default-features = false }
+uuid = { version = "=1.28.0", default-features = false, features = ["std"] }
 ring = { version = "=0.17.14", default-features = false, features = ["alloc"] }
 semver = { version = "=1.0.28", default-features = false, features = ["std"] }
 base64 = "0.22.1"

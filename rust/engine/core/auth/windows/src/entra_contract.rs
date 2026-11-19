@@ -13,7 +13,11 @@ pub enum Interaction {
     Allowed,
 }
 
-/// Public-cloud resources requested separately, in Python login order.
+/// Closed public-cloud audiences, each requested separately.
+///
+/// Login retains Fabric, OneLake and ARM in Python login order. SQL and OCV
+/// feedback audiences require an explicit audience-specific connect or token
+/// request, never an implicit login prerequisite.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TokenAudience {
     /// Fabric REST APIs.
@@ -27,6 +31,10 @@ pub enum TokenAudience {
     /// Private Shared Maps issuer; only explicit experimental processing requests.
     #[cfg(feature = "maps-private")]
     PowerBiMaps,
+    /// Production OCV feedback, using its exact delegated permission scope.
+    Ocv,
+    /// PPE OCV feedback, isolated from the production feedback audience.
+    OcvPpe,
 }
 
 impl TokenAudience {
@@ -39,6 +47,8 @@ impl TokenAudience {
             Self::Sql => "https://database.windows.net/.default",
             #[cfg(feature = "maps-private")]
             Self::PowerBiMaps => "https://analysis.windows.net/powerbi/api/.default",
+            Self::Ocv => "https://petrol.office.microsoft.com/Feedback.ReadWrite",
+            Self::OcvPpe => "https://petrol-int.office.microsoft.com/Feedback.ReadWrite",
         }
     }
 }
@@ -260,6 +270,20 @@ mod tests {
             TokenAudience::Arm.scope(),
             "https://management.azure.com/.default"
         );
+    }
+
+    #[test]
+    fn ocv_audiences_use_distinct_exact_delegated_scopes() {
+        assert_eq!(
+            TokenAudience::Ocv.scope(),
+            "https://petrol.office.microsoft.com/Feedback.ReadWrite"
+        );
+        assert_eq!(
+            TokenAudience::OcvPpe.scope(),
+            "https://petrol-int.office.microsoft.com/Feedback.ReadWrite"
+        );
+        assert_ne!(TokenAudience::Ocv, TokenAudience::OcvPpe);
+        assert_ne!(TokenAudience::Ocv.scope(), TokenAudience::OcvPpe.scope());
     }
 
     #[test]

@@ -187,6 +187,77 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
         assert!(members.contains(&package["id"]));
     }
     validate_packages(packages).unwrap();
+    for name in ["fabric-cli-access", "fabric-cli-api", "fabric-cli-catalog"] {
+        let capability = packages
+            .iter()
+            .find(|package| package["name"] == name)
+            .expect("each implemented command capability must be a real registered package");
+        let dependencies = capability["dependencies"].as_array().unwrap();
+        assert!(
+            dependencies
+                .iter()
+                .any(|dependency| dependency["name"] == "fabric-cli-command-contracts")
+        );
+        assert!(
+            !dependencies.iter().any(|dependency| {
+                matches!(
+                    dependency["name"].as_str(),
+                    Some("fabric-cli-resources" | "fabric-cli" | "fabric-identity")
+                )
+            }),
+            "{name} must not depend back on a facade, app or credential provider"
+        );
+        let source = Path::new(capability["manifest_path"].as_str().unwrap())
+            .parent()
+            .unwrap()
+            .join("src");
+        assert!(
+            source.join("parser.rs").is_file(),
+            "{name} owns its real grammar and typed conversion"
+        );
+    }
+    let contracts = packages
+        .iter()
+        .find(|package| package["name"] == "fabric-cli-command-contracts")
+        .unwrap();
+    assert!(
+        !contracts["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|dependency| {
+                matches!(
+                    dependency["name"].as_str(),
+                    Some(
+                        "fabric-cli-access"
+                            | "fabric-cli-api"
+                            | "fabric-cli-catalog"
+                            | "fabric-cli-resources"
+                            | "fabric-cli"
+                    )
+                )
+            }),
+        "neutral command contracts cannot own or depend on a capability"
+    );
+    let facade = workspace_root().join("clients/cli/commands/resources/src");
+    for moved in [
+        "api.rs",
+        "mutations.rs",
+        "export.rs",
+        "projection.rs",
+        "read_targets.rs",
+        "find.rs",
+        "hidden.rs",
+        "interactive_find.rs",
+        "service.rs",
+        "rendering.rs",
+        "transport.rs",
+    ] {
+        assert!(
+            !facade.join(moved).exists(),
+            "aggregate must not retain capability implementation: {moved}"
+        );
+    }
     let declared: BTreeSet<_> = packages
         .iter()
         .map(|package| std::fs::canonicalize(package["manifest_path"].as_str().unwrap()).unwrap())

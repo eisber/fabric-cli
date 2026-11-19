@@ -9,6 +9,8 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata} = require('./impact-plan.cjs');
+const {dependencyInventory} = require('./impact-plan.cjs');
+const {contractReport, compareReports, main: contractMain} = require('./impact-contract.cjs');
 
 // Pure data fixtures and injected I/O: this suite never runs Git/Cargo, creates
 // a scratch checkout, reads credentials, or uses the host temporary directory.
@@ -75,6 +77,427 @@ const select = (files, change = () => {}) => {
   return plan(input);
 };
 const testKeys = result => result.tests.map(item => `${item.package}/${item.target}`);
+
+function contractFixture() {
+  const input = fixture();
+  input.files = ['rust/engine/control-plane/deployment/src/notebook.rs',
+    'rust/engine/control-plane/deployment/src/spark.rs', 'rust/fixtures/schema/cases.json'];
+  input.manifests = input.metadata.packages.map(pkg => path.relative(ROOT, pkg.manifest_path).split(path.sep).join('/'));
+  for (const pkg of input.metadata.packages) pkg.metadata = {
+    fabric: {layer: pkg.name === 'models' ? 'core' : pkg.name === 'cli' ? 'cli' : 'sdk'},
+  };
+  return input;
+}
+
+test('Capability inventory derives forward/reverse graphs without imposing a fixed package inventory', () => {
+  const input = contractFixture();
+  const extra = pkg('future-service', ['deploy']);
+  input.metadata.packages.push(extra);
+  input.metadata.workspace_members.push(extra.id);
+  input.manifests.push('rust/engine/future-service/Cargo.toml');
+  const inventory = dependencyInventory(input);
+  const deploy = inventory.packages.find(pkg => pkg.name === 'deploy');
+  assert.deepEqual(deploy.forward_dependencies, ['models']);
+  assert.deepEqual(deploy.reverse_consumers, ['adapter', 'cli', 'future-service']);
+  assert.equal(inventory.packages.find(pkg => pkg.name === 'future-service').default_member, false);
+  const report = contractReport(input);
+  const selected = report.scenarios.find(scenario => scenario.id === 'package:deploy').selection;
+  assert.ok(selected.packages.includes('future-service'));
+  assert.ok(selected.default_targets.includes('future-service/lib'));
+});
+
+test('Metadata contract fails early for unregistered and missing package manifests', () => {
+  const input = contractFixture();
+  assert.throws(() => dependencyInventory({...input,
+    manifests: [...input.manifests, 'rust/engine/new/unregistered/Cargo.toml']}), /unregistered or missing crate/);
+  assert.throws(() => dependencyInventory({...input, manifests: input.manifests.slice(1)}),
+    /unregistered or missing crate/);
+  assert.throws(() => dependencyInventory({...input, manifests: ['../Cargo.toml']}), /Noncanonical/);
+  const missingDefaults = clone(input.metadata);
+  delete missingDefaults.workspace_default_members;
+  assert.throws(() => dependencyInventory({...input, metadata: missingDefaults}), /missing workspace_default_members/);
+  missingDefaults.workspace_default_members = ['unknown'];
+  assert.throws(() => dependencyInventory({...input, metadata: missingDefaults}), /Unknown default workspace member/);
+});
+
+test('Neutral foundations exclude transitive service implementations but retain service reverse consumers', () => {
+  const input = contractFixture();
+  input.foundations = ['models'];
+  const report = contractReport(input);
+  assert.deepEqual(report.asserted_foundations, ['models']);
+  assert.ok(report.inventory.packages.find(pkg => pkg.name === 'models').reverse_consumers.includes('deploy'));
+  const models = input.metadata.packages.find(pkg => pkg.name === 'models');
+  models.dependencies.push({name: 'unrelated', path: absolute('rust/engine/unrelated'), kind: 'dev'});
+  const measured = dependencyInventory(input).packages.find(pkg => pkg.name === 'models');
+  assert.deepEqual(measured.entry_kind_closures, {normal: [], build: [], dev: ['unrelated']});
+  assert.throws(() => contractReport(input), /Foundation models requires non-core packages: unrelated/);
+  assert.throws(() => contractReport({...input, foundations: ['absent']}), /Unknown foundation/);
+});
+
+test('Foundation contracts examine indirect optional/platform/build edges, not just normal imports', () => {
+  for (const fields of [{optional: true}, {kind: 'build'}, {target: 'cfg(windows)'}]) {
+    const input = contractFixture();
+    input.metadata.packages.find(pkg => pkg.name === 'unrelated').metadata.fabric.layer = 'core';
+    input.metadata.packages.find(pkg => pkg.name === 'models').dependencies.push({
+      name: 'unrelated', path: absolute('rust/engine/unrelated'), ...fields,
+    });
+    input.metadata.packages.find(pkg => pkg.name === 'unrelated').dependencies.push({
+      name: 'service', path: absolute('rust/engine/service'),
+    });
+    const service = pkg('service');
+    service.metadata = {fabric: {layer: 'sdk'}};
+    input.metadata.packages.push(service);
+    input.metadata.workspace_members.push(service.id);
+    input.manifests.push('rust/engine/service/Cargo.toml');
+    assert.throws(() => contractReport({...input, foundations: ['models']}), /non-core packages: service/);
+  }
+});
+
+function sdkFoundationFixture() {
+  const input = contractFixture();
+  const http = pkg('fabric-http', ['models']), transport = pkg('fabric-http-transport', ['fabric-http']);
+  const locations = {'fabric-http': 'rust/engine/core/http/executor',
+    'fabric-http-transport': 'rust/engine/core/http/transport'};
+  for (const pkg of [http, transport]) {
+    pkg.manifest_path = absolute(`${locations[pkg.name]}/Cargo.toml`);
+    pkg.targets[0].src_path = absolute(`${locations[pkg.name]}/src/lib.rs`);
+    pkg.metadata = {fabric: {layer: 'sdk'}};
+    for (const dependency of pkg.dependencies) if (locations[dependency.name]) {
+      dependency.path = absolute(locations[dependency.name]);
+    }
+    input.metadata.packages.push(pkg);
+    input.metadata.workspace_members.push(pkg.id);
+    input.manifests.push(`${locations[pkg.name]}/Cargo.toml`);
+  }
+  input.foundations = ['fabric-http-transport'];
+  input.sourceCommit = 'a'.repeat(40);
+  input.foundationPolicy = {schema: 1, source_commit: input.sourceCommit, packages: [http, transport].map(pkg =>
+    ({name: pkg.name, manifest: `${locations[pkg.name]}/Cargo.toml`, layer: 'sdk', role: 'neutral-foundation'}))};
+  return input;
+}
+
+test('Explicit source-bound neutral roles permit approved sdk HTTP foundations without changing logical layers', () => {
+  const input = sdkFoundationFixture();
+  const report = contractReport(input);
+  assert.ok(report.foundation_policy.digest);
+  assert.deepEqual(report.foundation_policy.packages, input.foundationPolicy.packages);
+  assert.deepEqual(report.inventory.packages.find(pkg => pkg.name === 'fabric-http-transport')
+    .forward_dependencies, ['fabric-http', 'models']);
+  assert.throws(() => contractReport({...input, foundationPolicy: null}), /requires non-core packages/);
+  assert.throws(() => contractReport({...input, sourceCommit: 'b'.repeat(40)}), /exact source commit/);
+});
+
+test('Neutral roles reject service leaks through normal/dev/build/optional/platform edges and metadata self-labels', () => {
+  for (const fields of [{}, {kind: 'dev'}, {kind: 'build'}, {optional: true}, {target: 'cfg(windows)'}]) {
+    const input = sdkFoundationFixture();
+    const service = input.metadata.packages.find(pkg => pkg.name === 'unrelated');
+    service.metadata.fabric.role = 'neutral-foundation';
+    input.metadata.packages.find(pkg => pkg.name === 'fabric-http').dependencies.push({
+      name: service.name, path: absolute('rust/engine/unrelated'), ...fields,
+    });
+    assert.throws(() => contractReport(input), /requires non-core packages: unrelated/);
+  }
+});
+
+test('Neutral policies bind exact identities, reject wildcards/extra fields/duplicates and cannot hide unused enrollments', () => {
+  for (const mutate of [
+    input => { input.foundationPolicy.packages[0].name = 'fabric-*'; },
+    input => { input.foundationPolicy.packages[0].manifest = 'rust/engine/sdk/Cargo.toml'; },
+    input => { input.foundationPolicy.packages[0].layer = 'core'; },
+    input => { input.foundationPolicy.packages[0].role = 'service'; },
+    input => { input.foundationPolicy.packages[0].allow_services = true; },
+    input => { input.foundationPolicy.packages.push(input.foundationPolicy.packages[0]); },
+    input => { input.foundationPolicy.packages.push({name: 'unrelated', manifest: 'rust/engine/unrelated/Cargo.toml',
+      layer: 'sdk', role: 'neutral-foundation'}); },
+  ]) {
+    const input = sdkFoundationFixture();
+    mutate(input);
+    assert.throws(() => contractReport(input), /identity mismatch|Invalid neutral|Duplicate|unused package/);
+  }
+});
+
+test('Graph measurements retain dependency aliases, feature settings and non-normal declarations', () => {
+  const input = contractFixture();
+  input.metadata.packages.find(pkg => pkg.name === 'deploy').dependencies.push({
+    name: 'models', rename: 'test_models', path: absolute('rust/engine/models'),
+    kind: 'dev', optional: true, target: 'cfg(windows)', uses_default_features: false, features: [],
+  });
+  const report = contractReport(input);
+  const declared = report.inventory.packages.find(pkg => pkg.name === 'deploy').dependencies;
+  assert.ok(declared.some(dep => dep.alias === 'test_models' && dep.kind === 'dev' &&
+    dep.optional && dep.target === 'cfg(windows)' && !dep.default_features));
+  assert.ok(report.inventory.counts.internal_declarations > report.inventory.counts.internal_edges);
+  const repeated = contractReport({...input, metadata: [input.metadata, input.metadata]});
+  assert.deepEqual(repeated.inventory.counts, report.inventory.counts);
+});
+
+test('Contract measurements expand all-target selectors and retain isolated feature/platform obligations', () => {
+  const input = contractFixture();
+  const cli = input.metadata.packages.find(pkg => pkg.name === 'cli');
+  cli.features.native = [];
+  cli.targets.push(target('native', 'test', 'rust/clients/cli/app/tests/native.rs', ['native']));
+  input.graph.profiles.push({id: 'windows-native', packages: ['cli'],
+    features: ['cli/native'], platforms: ['windows']});
+  const report = contractReport(input);
+  const selected = report.scenarios.find(scenario => scenario.id === 'package:cli').selection;
+  assert.deepEqual(selected.default_targets, ['cli/lib', 'cli/test:mount']);
+  assert.deepEqual(selected.profiles[0].targets, ['cli/lib', 'cli/test:mount', 'cli/test:native']);
+  assert.deepEqual(selected.profiles[0].test_features, {cli: ['cli/native']});
+  assert.equal(selected.platforms.linux.profiles, 0);
+  assert.equal(selected.platforms.windows.profiles, 1);
+  assert.equal(selected.platforms.windows.profile_targets, 3);
+  const profile = report.inventory.profiles.find(profile => profile.id === 'windows-native');
+  assert.deepEqual(profile.feature_path_dependencies, []);
+  assert.deepEqual(profile.conservative_compile_dependencies, ['adapter', 'cli', 'deploy', 'models']);
+  assert.equal(report.build_executed, false);
+  assert.equal(report.latency_claim, false);
+  assert.equal(report.native_qualification, false);
+});
+
+test('All-target feature propagation includes test:false examples enabled through another profile root', () => {
+  const input = contractFixture();
+  const models = input.metadata.packages.find(pkg => pkg.name === 'models');
+  models.features.extra = [];
+  const example = target('safe_consumer', 'example', 'rust/engine/models/examples/safe_consumer.rs', ['extra']);
+  example.test = false;
+  models.targets.push(example);
+  const cli = input.metadata.packages.find(pkg => pkg.name === 'cli');
+  cli.features.native = ['models/extra'];
+  cli.dependencies.push({name: 'models', path: absolute('rust/engine/models')});
+  input.graph.profiles.push({id: 'forwarded', packages: ['cli', 'models'],
+    features: ['cli/native'], platforms: ['windows']});
+  const selected = plan({...input, files: ['rust/engine/models/src/lib.rs']});
+  const profile = selected.profiles.find(profile => profile.id === 'forwarded');
+  assert.deepEqual(profile.test_features.models, ['models/extra']);
+  const executable = commands(selected, 'windows').commands.find(command =>
+    command.kind === 'test' && command.profile === 'forwarded' && command.package === 'models');
+  assert.ok(executable.args.includes('--all-targets'));
+  assert.ok(executable.args.includes('models/extra'));
+  const measured = contractReport(input).scenarios.find(item => item.id === 'package:models');
+  assert.ok(measured.selection.profiles.find(profile => profile.id === 'forwarded')
+    .targets.includes('models/example:safe_consumer'));
+});
+
+test('Default inventories use actual all-target command groups, including cross-root default forwarding', () => {
+  const input = contractFixture();
+  const models = input.metadata.packages.find(pkg => pkg.name === 'models');
+  models.features.extra = [];
+  models.targets.push(target('extra', 'test', 'rust/engine/models/tests/extra.rs', ['extra']));
+  const deploy = input.metadata.packages.find(pkg => pkg.name === 'deploy');
+  deploy.features.default = ['models/extra'];
+  input.graph.profiles.push({id: 'extra', packages: ['models'],
+    features: ['models/extra'], platforms: ['linux', 'macos', 'windows']});
+  const before = contractReport(input);
+  const selected = before.scenarios.find(scenario => scenario.id === 'package:models').selection;
+  assert.ok(selected.default_targets.includes('models/test:extra'));
+  assert.ok(!selected.default_skipped_targets.includes('models/test:extra'));
+  const actual = require('./validate-impact.cjs').coreCommands(plan({
+    ...input, files: ['rust/engine/models/src/lib.rs'],
+  }), 'linux').find(command => command.id.startsWith('default:test:'));
+  assert.ok(actual.args.includes('deploy') && actual.args.includes('models'));
+  assert.ok(!actual.args.includes('--features'));
+  deploy.features.default = [];
+  const after = contractReport(input);
+  const comparison = compareReports(before, after).scenarios.find(item => item.id === 'package:models');
+  assert.deepEqual(comparison.membership.default_targets.removed, ['models/test:extra']);
+  assert.equal(comparison.delta.default_targets, -1);
+  assert.equal(comparison.platforms.linux.delta.default_targets, -1);
+  assert.deepEqual(comparison.profile_changes, []);
+
+  deploy.features.default = ['models/extra'];
+  input.graph.components.push({id: 'models-api', package: 'models',
+    inputs: ['rust/engine/models/src/lib.rs'],
+    tests: [{package: 'models', target: 'lib'}, {package: 'models', target: 'test:extra'}]});
+  const exact = contractReport(input).scenarios.find(scenario => scenario.id === 'package:models').selection;
+  assert.ok(!exact.default_targets.includes('models/test:extra'));
+  assert.ok(exact.default_skipped_targets.includes('models/test:extra'));
+  assert.ok(exact.profiles.find(profile => profile.id === 'extra').targets.includes('models/test:extra'));
+  const exactCommands = require('./validate-impact.cjs').coreCommands(plan({
+    ...input, files: ['rust/engine/models/src/lib.rs'],
+  }), 'linux').filter(command => command.id.startsWith('default:test:'));
+  assert.ok(exactCommands.some(command => command.args.includes('--lib') &&
+    command.args.includes('models') && !command.args.includes('deploy')));
+});
+
+test('Component measurements select real external fixture inputs and complete target consumers', () => {
+  const report = contractReport(contractFixture());
+  const notebook = report.scenarios.find(scenario => scenario.id === 'component:notebook');
+  assert.deepEqual(notebook.files, ['rust/engine/control-plane/deployment/src/notebook.rs']);
+  assert.deepEqual(notebook.selection.default_targets, ['adapter/test:publish', 'cli/test:mount', 'deploy/test:notebook']);
+  const input = contractFixture();
+  input.graph.components[0].inputs.push('rust/fixtures/schema/**');
+  const changed = contractReport(input).scenarios.find(scenario => scenario.id === 'component:notebook');
+  assert.ok(changed.files.includes('rust/fixtures/schema/cases.json'));
+  assert.ok(changed.selection.checks.includes('fixture-contract'));
+});
+
+test('Report comparison distinguishes added/removed scenarios and changed inputs from comparable selections', () => {
+  const before = contractReport(contractFixture()), after = clone(before);
+  after.scenarios[0].selection.counts.default_targets--;
+  after.scenarios[1].files.push('rust/engine/adapter/src/added.rs');
+  const removed = after.scenarios.pop();
+  after.scenarios.push({...clone(after.scenarios[0]), id: 'component:new'});
+  const comparison = compareReports(before, after);
+  assert.equal(comparison.scenarios.find(item => item.id === before.scenarios[0].id).delta.default_targets, -1);
+  assert.equal(comparison.scenarios.find(item => item.id === before.scenarios[1].id).comparable_inputs, false);
+  assert.equal(comparison.scenarios.find(item => item.id === removed.id).status, 'removed');
+  assert.equal(comparison.scenarios.find(item => item.id === 'component:new').status, 'added');
+  assert.throws(() => compareReports({}, after), /schema-1/);
+});
+
+test('Fresh graph comparisons expose platform feature losses even when every aggregate count is unchanged', () => {
+  const input = contractFixture();
+  const cli = input.metadata.packages.find(pkg => pkg.name === 'cli');
+  cli.features.native = [];
+  cli.targets.push(target('native', 'test', 'rust/clients/cli/app/tests/native.rs', ['native']));
+  input.graph.profiles.push({id: 'native', packages: ['cli'],
+    features: ['cli/native'], platforms: ['windows']});
+  const before = contractReport(input);
+  input.graph.profiles[0].platforms = ['linux'];
+  const after = contractReport(input);
+  const comparison = compareReports(before, after).scenarios.find(item => item.id === 'package:cli');
+  assert.equal(comparison.comparable_inputs, true);
+  assert.ok(Object.values(comparison.delta).every(value => value === 0));
+  assert.equal(comparison.platforms.windows.delta.profiles, -1);
+  assert.equal(comparison.platforms.windows.delta.profile_targets, -3);
+  assert.equal(comparison.platforms.linux.delta.profile_targets, 3);
+  assert.deepEqual(comparison.profile_changes[0].before.platforms, ['windows']);
+  assert.deepEqual(comparison.profile_changes[0].after.platforms, ['linux']);
+});
+
+test('Fresh equal-count graph comparisons retain changed target identities, not just totals', () => {
+  const input = contractFixture();
+  const before = contractReport(input);
+  input.graph.components[0].tests[0].target = 'test:spark';
+  const after = contractReport(input);
+  const comparison = compareReports(before, after).scenarios.find(item => item.id === 'component:notebook');
+  assert.ok(Object.values(comparison.delta).every(value => value === 0));
+  assert.deepEqual(comparison.membership.default_targets,
+    {added: ['deploy/test:spark'], removed: ['deploy/test:notebook']});
+});
+
+test('Full-only platform contract coverage changes are compared even when every source scenario is unchanged', () => {
+  const input = contractFixture();
+  input.graph.checks.push({id: 'process-supervision', platforms: ['windows', 'linux', 'macos']});
+  const before = contractReport(input);
+  input.graph.checks.at(-1).platforms = ['windows'];
+  const after = contractReport(input);
+  const comparison = compareReports(before, after);
+  assert.deepEqual(before.scenarios, after.scenarios);
+  assert.equal(comparison.full.delta.checks, 0);
+  assert.equal(comparison.full.platforms.windows.delta.checks, 0);
+  assert.equal(comparison.full.platforms.linux.delta.checks, -1);
+  assert.equal(comparison.full.platforms.macos.delta.checks, -1);
+  input.graph.checks.pop();
+  const removed = compareReports(after, contractReport(input));
+  assert.deepEqual(removed.full.membership.checks.removed, ['process-supervision']);
+  assert.equal(removed.full.delta.checks, -1);
+});
+
+test('Contract CLI rejects invalid paths/options before running commands', () => {
+  const hooks = {exec: () => { throw new Error('Must not execute'); }};
+  for (const args of [[], ['--output', 'relative.json'], ['--unknown', 'value'],
+    ['--output'], ['--output', absolute('report.json'), '--output', absolute('other.json')],
+    ['--output', absolute('report.json'), '--assert-foundation', 'models', '--assert-foundation', 'models']]) {
+    assert.throws(() => contractMain(args, hooks), /required|absolute|Unknown|Missing|Duplicate/);
+  }
+  const root = path.resolve(__dirname, '../..');
+  assert.throws(() => contractMain(['--root', root, '--output', path.join(root, 'report.json')], hooks),
+    /outside the checkout/);
+});
+
+function contractCliFixture() {
+  const input = contractFixture(), root = path.resolve(__dirname, '../..');
+  input.metadata = JSON.parse(JSON.stringify(input.metadata).replaceAll(
+    JSON.stringify(ROOT).slice(1, -1), JSON.stringify(root).slice(1, -1)));
+  const output = path.join(root, '..', 'capability-contract-fixture.json');
+  const writes = [], calls = [], head = 'a'.repeat(40), tree = 'b'.repeat(40);
+  const source = {digest: 'c'.repeat(64), files: input.files.map(path => ({path}))};
+  const hooks = {
+    sourceInventory: () => source,
+    discoverManifests: () => input.manifests,
+    read: () => JSON.stringify(input.graph),
+    write: (file, text) => writes.push({file, text}),
+    exec: (program, args) => {
+      calls.push({program, args});
+      if (program === 'cargo') return args[0] === 'metadata' ? JSON.stringify(input.metadata) : 'cargo 1.99.1';
+      if (program === 'git' && args[0] === 'status') return '';
+      if (program === 'git' && args[0] === 'rev-parse') return args.includes('HEAD^{tree}') ? tree : head;
+      throw new Error('Unexpected measurement command');
+    },
+  };
+  return {args: ['--root', root, '--output', output], hooks, writes, calls, head, tree, source};
+}
+
+test('Contract CLI binds actual source/metadata/head without executing builds or validation commands', () => {
+  const fixture = contractCliFixture();
+  const report = contractMain(fixture.args, fixture.hooks);
+  assert.deepEqual(report.source, {head: fixture.head, tree: fixture.tree, dirty: false,
+    inventory_digest: fixture.source.digest});
+  assert.equal(report.inputs.cargo_version, 'cargo 1.99.1');
+  assert.deepEqual(report.inputs.metadata_command.args,
+    ['metadata', '--offline', '--locked', '--no-deps', '--format-version', '1']);
+  assert.equal(report.inputs.graph_digest.length, 64);
+  assert.equal(report.inputs.loaded_sources.length, 3);
+  for (const source of report.inputs.loaded_sources) {
+    assert.equal(source.sha256, crypto.createHash('sha256').update(fs.readFileSync(source.path)).digest('hex'));
+  }
+  assert.equal(report.inputs.tool_digest, report.inputs.loaded_sources[0].sha256);
+  assert.equal(report.inputs.planner_digest, report.inputs.loaded_sources[1].sha256);
+  assert.equal(report.inputs.executor_digest, report.inputs.loaded_sources[2].sha256);
+  assert.equal(fixture.writes.length, 1);
+  assert.ok(fixture.calls.every(call => call.program === 'git' ||
+    (call.program === 'cargo' && ['metadata', '--version'].includes(call.args[0]))));
+  assert.deepEqual(JSON.parse(fixture.writes[0].text), report);
+});
+
+test('Contract CLI refuses source/head mutation and metadata failures without emitting success artifacts', () => {
+  for (const mutation of ['source', 'head', 'metadata']) {
+    const fixture = contractCliFixture();
+    const exec = fixture.hooks.exec;
+    let inventories = 0, heads = 0;
+    fixture.hooks.sourceInventory = () => ({
+      ...fixture.source, digest: mutation === 'source' && inventories++ ? 'changed' : fixture.source.digest,
+    });
+    fixture.hooks.exec = (program, args) => {
+      if (mutation === 'metadata' && args[0] === 'metadata') throw new Error('Cargo metadata unavailable');
+      if (mutation === 'head' && args[0] === 'rev-parse' && args.includes('HEAD') && heads++) {
+        return 'd'.repeat(40);
+      }
+      return exec(program, args);
+    };
+    assert.throws(() => contractMain(fixture.args, fixture.hooks), /Source changed|metadata unavailable/);
+    assert.equal(fixture.writes.length, 0);
+  }
+});
+
+test('Contract CLI retains exact neutral policy data and rejects dirty or externally mutated policy assertions', () => {
+  for (const mutation of [null, 'dirty', 'policy']) {
+    const fixture = contractCliFixture();
+    const root = path.resolve(__dirname, '../..');
+    const policyFile = path.join(root, '..', 'foundation-policy-fixture.json');
+    const policy = {schema: 1, source_commit: fixture.head,
+      packages: [{name: 'models', manifest: 'rust/engine/models/Cargo.toml',
+        layer: 'core', role: 'neutral-foundation'}]};
+    const read = fixture.hooks.read, exec = fixture.hooks.exec;
+    let reads = 0;
+    fixture.hooks.read = file => file !== policyFile ? read(file) : JSON.stringify({
+      ...policy, source_commit: mutation === 'policy' && reads++ ? 'd'.repeat(40) : policy.source_commit,
+    });
+    fixture.hooks.exec = (program, args) => mutation === 'dirty' && args[0] === 'status' ?
+      ' M rust/engine/models/src/lib.rs' : exec(program, args);
+    const run = () => contractMain([...fixture.args, '--foundation-policy', policyFile,
+      '--assert-foundation', 'models'], fixture.hooks);
+    if (mutation) {
+      assert.throws(run, /clean checkout|policy changed/);
+      assert.equal(fixture.writes.length, 0);
+    } else {
+      const report = run();
+      assert.deepEqual(report.foundation_policy.packages, policy.packages);
+      assert.equal(report.inputs.foundation_policy_digest, report.foundation_policy.digest);
+    }
+  }
+});
 
 test('Notebook selects component consumers, not Spark or broad CLI oracles', () => {
   const result = select(['rust/engine/control-plane/deployment/src/notebook.rs']);
@@ -1091,8 +1514,9 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-kql-database-create', 'kql_database_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-eventhouse', 'eventhouse_create', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create', 'create_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
-      'rust/engine/core/http/transport/Cargo.toml'],
+      'rust/engine/sdk/transport/Cargo.toml'],
   ];
   for (const [pkg, feature, target, manifestPath] of cases) {
     const profile = graph.profiles.find(item =>
@@ -1107,6 +1531,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(section.includes(`required-features = ["${feature}"]`));
   }
   for (const [pkg, target] of [
+    ['fabric-sdk', 'notebook_create'],
     ['fabric-sdk', 'notebook_runtime'], ['fabric-sdk', 'notebook_observability'],
     ['fabric-sdk', 'livy_native'], ['fabric-sdk-http', 'native_runtime'],
   ]) {
@@ -1187,6 +1612,20 @@ test('combined Eventhouse and KQL executable tests require both bindings and the
   ]) {
     assert.ok(component.inputs.includes(`rust/clients/cli/app/${file}`), file);
   }
+});
+
+test('native create process contract requires both typed create and explicit headless host', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const manifest = fs.readFileSync(path.join(root, 'rust/clients/cli/app/Cargo.toml'), 'utf8');
+  const section = manifest.split('[[test]]').find(item => item.includes('name = "create_v2_process"'));
+  assert.ok(section.includes('required-features = ["v2-create", "headless"]'));
+  assert.ok(graph.profiles.some(profile => profile.packages.includes('fabric-cli') &&
+    profile.features.includes('fabric-cli/v2-create') &&
+    profile.features.includes('fabric-cli/headless') &&
+    JSON.stringify(profile.platforms) === JSON.stringify(['windows', 'linux', 'macos'])));
+  assert.ok(graph.components.some(component => component.tests.some(item =>
+    item.package === 'fabric-cli' && item.target === 'test:create_v2_process')));
 });
 
 function relocatedCatalogFixture(files) {
@@ -1281,7 +1720,7 @@ test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forward
   assert.ok(graph.components.some(component => component.package === 'fabric-sdk-http' &&
     component.tests.some(test => test.target === 'test:native_stream')));
   const manifest = fs.readFileSync(path.join(root,
-    'rust/engine/core/http/executor/Cargo.toml'), 'utf8');
+    'rust/engine/sdk/http/Cargo.toml'), 'utf8');
   assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
 });
 
@@ -1433,7 +1872,8 @@ test('Production engine query keeps its contract and structural consumers withou
   assert.deepEqual(result.changed_packages, ['fabric-sdk-query']);
   assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-v2', 'fabric-sdk-query']);
   assert.deepEqual(result.components, ['engine-query', 'workspace-architecture']);
-  assert.deepEqual(testKeys(result), ['fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
+  assert.deepEqual(testKeys(result), ['fabric-cli/test:http_architecture',
+    'fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
   assert.deepEqual(result.profiles, []);
   assert.deepEqual(result.checks, ['command-inventory', 'dependency-graph', 'selector-tests']);
   assert.ok(!testKeys(result).some(key => /fabric-deploy|fabric-cli-transfer|\/all$/.test(key)));

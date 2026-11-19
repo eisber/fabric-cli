@@ -31,6 +31,8 @@
 
 mod encoding;
 pub mod input;
+pub mod outcome;
+pub mod presentation;
 pub mod production_unicode;
 pub mod tabular;
 pub mod text;

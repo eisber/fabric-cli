@@ -3,8 +3,7 @@
 
 //! Caller-injected root Update host, with no-clobber preflight before dispatch.
 //!
-//! The standalone head exposes local plans but installs no implicit approval
-//! policy. Embedders supply approval, context, execution and total interruption.
+//! Hosts supply explicit approval, context, execution and total interruption.
 
 pub use fabric_cli_mutations::v2_update::*;
 use fabric_cli_storage_files::{ExactOutputError, ExactOutputFile, ExactOutputReceipt};
@@ -180,20 +179,56 @@ impl PreparedUpdateCommand {
         policy: &mut P,
         interrupted: impl Future<Output = ()> + Send,
     ) -> Result<UpdateDelivery, UpdateCommandError> {
+        self.with_context(context, limits)?
+            .execute_bound(executor, policy, interrupted)
+            .await
+    }
+
+    /// Bind the exact context before an asynchronous host approval interaction.
+    ///
+    /// # Errors
+    /// Rejects plan intent, invalid context and rebinding without dispatch.
+    pub fn with_context(
+        mut self,
+        context: RequestContext,
+        limits: OperationLimits,
+    ) -> Result<Self, UpdateCommandError> {
         if self.command.plan {
             return Err(UpdateCommandError::Invalid(
                 "Plan intent cannot execute".into(),
             ));
         }
-        let update = self
+        self.update = self
             .update
             .with_context(context, limits)
             .map_err(UpdateCommandError::Sdk)?;
-        let approval = update
+        Ok(self)
+    }
+
+    /// Submit the context-bound request after exact caller approval.
+    ///
+    /// The host may inspect [`Self::update`] before calling this method. Its
+    /// policy must authorize that same immutable request, not an earlier plan.
+    ///
+    /// # Errors
+    /// Missing context, plan intent or denied approval sends nothing.
+    pub async fn execute_bound<E: OperationExecutor, P: ApprovalPolicy>(
+        self,
+        executor: E,
+        policy: &mut P,
+        interrupted: impl Future<Output = ()> + Send,
+    ) -> Result<UpdateDelivery, UpdateCommandError> {
+        if self.command.plan {
+            return Err(UpdateCommandError::Invalid(
+                "Plan intent cannot execute".into(),
+            ));
+        }
+        let approval = self
+            .update
             .prepared()
             .authorize(policy)
             .map_err(|_| UpdateCommandError::Approval)?;
-        let report = sdk::execute(&update, &approval, executor, interrupted)
+        let report = sdk::execute(&self.update, &approval, executor, interrupted)
             .await
             .map_err(UpdateCommandError::Sdk)?;
         Ok(UpdateDelivery {
