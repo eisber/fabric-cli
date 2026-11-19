@@ -71,7 +71,7 @@ fn prepared(wire: Arc<Wire>, credential: Arc<Credential>, stage: Stage) -> Prepa
             Arc::new(Timer::default()),
             Limits::default(),
         ),
-        500,
+        1000,
     )
     .unwrap()
 }
@@ -115,7 +115,7 @@ async fn real_sdk_typed_tokens_target_scope_and_opaque_input_are_wired() {
     let arguments = &messages[2]["params"]["arguments"];
     assert_eq!(arguments["artifactId"], format!("{AGENT}/{SOURCE}"));
     assert_eq!(arguments["query"], "opaque synthetic query\n");
-    assert_eq!(arguments["max_rows"], 500);
+    assert_eq!(arguments["max_rows"], 1000);
     assert!(arguments.get("language").is_none());
     assert!(arguments.get("filename").is_none());
 }

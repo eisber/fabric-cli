@@ -3,7 +3,7 @@
 
 # Offline hosted checks for the combined native query, XLSX and Dataflow CLI candidate.
 # Each phase runs a fixed list of locked cargo commands, keeps every log and fails on
-# the first nonzero exit or on any source-tree change.
+# any nonzero exit or on any source-tree change; a failed fetch stops the phase.
 
 param(
     [Parameter(Mandatory)][ValidateSet('sdk', 'hosts', 'binary')][string]$Phase,
@@ -54,9 +54,11 @@ try {
         $exit = $LASTEXITCODE
         $results[$entry.Key] = [ordered]@{ args = $entry.Value; exit = $exit; seconds = ((Get-Date) - $started).TotalSeconds }
         if ($exit -ne 0) {
-            $failed = $entry.Key
+            $failed = $failed ?? $entry.Key
+            Write-Output "::group::$($entry.Key) failed"
             Get-Content $log -Tail 150
-            break
+            Write-Output '::endgroup::'
+            if ($entry.Key -eq 'fetch') { break }
         }
     }
     if (-not $failed -and $Phase -eq 'binary') {

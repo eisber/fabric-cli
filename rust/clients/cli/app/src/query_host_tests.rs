@@ -66,7 +66,7 @@ fn policy() -> QueryPolicy {
         request_id: "query;root-fixture".into(),
         server_timeout: Duration::from_secs(5),
         kql_limits: QueryLimits::new(1024 * 1024, 1024 * 1024, 100, 8, 32, 32).unwrap(),
-        aihub_max_rows: 100,
+        aihub_max_rows: 1000,
     }
 }
 
