@@ -1,14 +1,20 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{EngineBinding, EngineExecutor, QueryCapability, QueryEvidence, QueryResult, result};
+use crate::{
+    EngineBinding, EngineExecutor, QueryCapability, QueryEvidence, QueryResult, policy, result,
+};
 use fabric_core::cancel_with;
 use fabric_sdk::runtime::{
     NativeDeadline, NativeEffect, NativeError, NativeMethod, NativeRequest, NativeResponse,
     NativeStreamLimits,
 };
-use serde_json::json;
-use std::{fmt, future::Future, pin::pin, time::Duration};
+use std::{
+    fmt,
+    future::Future,
+    pin::{Pin, pin},
+    time::Duration,
+};
 
 /// Explicit local budgets, not native scan/cost quotas or CLI defaults.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,32 +147,7 @@ impl KqlQuery {
         binding: &EngineBinding,
         limits: QueryLimits,
     ) -> Result<NativeRequest, QueryError> {
-        let mut options = json!({
-            "query_language": "kql",
-            "request_readonly": true,
-            "request_readonly_hardline": true,
-            "request_callout_disabled": true,
-            "request_remote_entities_disabled": true,
-            "request_external_data_disabled": true,
-            "request_impersonation_disabled": true,
-            "request_sandboxed_execution_disabled": true,
-            "results_progressive_enabled": false
-        });
-        if let Some(timeout) = self.server_timeout {
-            let secs = timeout.as_secs();
-            options["servertimeout"] = json!(format!(
-                "{:02}:{:02}:{:02}.{:03}",
-                secs / 3600,
-                (secs % 3600) / 60,
-                secs % 60,
-                timeout.subsec_millis()
-            ));
-        }
-        let body = json!({
-            "db": binding.database(),
-            "csl": self.text,
-            "properties": { "Options": options }
-        });
+        let body = policy::RequestBody::new(binding.database(), &self.text, self.server_timeout);
         let bytes =
             serde_json::to_vec(&body).map_err(|_| QueryError::new(QueryErrorKind::InvalidInput))?;
         if bytes.len() > limits.max_request_bytes() {
@@ -212,7 +193,7 @@ pub enum QueryErrorKind {
     RequestLimit,
     /// Response bytes or shape exceeded a finite bound.
     ResponseLimit,
-    /// Native adapter is not verified for production read-intent execution.
+    /// Native adapter does not implement the required fixed read-intent policy.
     UnsupportedCapability,
     /// Progressive/unknown response protocol is not implemented.
     UnsupportedResponse,
@@ -291,7 +272,9 @@ impl std::error::Error for QueryError {}
 
 /// Execute exactly one bounded read-intent KQL request on the caller's runtime.
 ///
-/// Only an explicitly offline adapter is admitted in this first release.
+/// Offline executors and structurally qualified Kusto v2 adapters are admitted.
+/// Production execution requires an explicit positive server timeout within the
+/// remaining local budget; no timeout, audience or identity is guessed.
 /// Binding equality precedes dispatch; policy is never inferred from text.
 /// The executor and body enforce the same absolute deadline; cancellation drops
 /// local work only. HTTP EOF and all terminal metadata precede success.
@@ -310,8 +293,15 @@ pub async fn query_kql(
     if binding != executor.binding() {
         return Err(QueryError::new(QueryErrorKind::InvalidBinding));
     }
-    if executor.query_capability() != QueryCapability::ScriptedOffline {
-        return Err(QueryError::new(QueryErrorKind::UnsupportedCapability));
+    let capability = executor.query_capability();
+    match capability {
+        QueryCapability::ScriptedOffline | QueryCapability::ReadOnlyKustoV2 => {}
+        QueryCapability::UnverifiedProduction => {
+            return Err(QueryError::new(QueryErrorKind::UnsupportedCapability));
+        }
+    }
+    if capability == QueryCapability::ReadOnlyKustoV2 && query.server_timeout.is_none() {
+        return Err(QueryError::new(QueryErrorKind::InvalidInput));
     }
     let request = query.request(binding, limits)?;
     let remaining = deadline
@@ -329,7 +319,9 @@ pub async fn query_kql(
         transport: "kusto-http-v2",
         protocol_version: "v2.0",
         read_policy: "request_readonly_hardline",
+        adapter_capability: capability,
         production_verified: false,
+        http_eof: false,
         http_status: None,
         content_type: None,
         client_request_id: query.client_request_id.clone(),
@@ -338,16 +330,21 @@ pub async fn query_kql(
         locally_truncated: false,
     };
     let mut bytes = Vec::new();
+    let mut cancelled = pin!(cancelled);
     let exchange = async {
         let stream_limits = NativeStreamLimits {
             max_fragment_bytes: limits.max_response_bytes().min(64 * 1024),
             max_body_bytes: u64::try_from(limits.max_response_bytes())
                 .map_err(|_| QueryErrorKind::InvalidInput)?,
         };
-        let mut response = executor
-            .open(&request, stream_limits, deadline)
-            .await
-            .map_err(QueryErrorKind::Native)?;
+        let mut response = cancel_with(
+            executor.open(&request, stream_limits, deadline),
+            cancelled.as_mut(),
+        )
+        .await
+        .map_err(|_| QueryErrorKind::Native(NativeError::Cancelled))?
+        .map_err(QueryErrorKind::Native)?;
+        deadline.remaining().map_err(QueryErrorKind::Native)?;
         evidence.http_status = Some(response.status);
         let metadata = NativeResponse {
             status: response.status,
@@ -372,13 +369,20 @@ pub async fn query_kql(
         }
         loop {
             deadline.remaining().map_err(QueryErrorKind::Native)?;
-            let fragment = response
-                .body
-                .read(stream_limits.max_fragment_bytes, deadline)
-                .await
-                .map_err(QueryErrorKind::Native)?;
+            let fragment = cancel_with(
+                response
+                    .body
+                    .read(stream_limits.max_fragment_bytes, deadline),
+                cancelled.as_mut(),
+            )
+            .await
+            .map_err(|_| QueryErrorKind::Native(NativeError::Cancelled))?
+            .map_err(QueryErrorKind::Native)?;
             deadline.remaining().map_err(QueryErrorKind::Native)?;
-            let Some(fragment) = fragment else { break };
+            let Some(fragment) = fragment else {
+                evidence.http_eof = true;
+                break;
+            };
             if fragment.is_empty()
                 || fragment.len() > stream_limits.max_fragment_bytes
                 || bytes
@@ -392,17 +396,10 @@ pub async fn query_kql(
         }
         Ok(())
     };
-    match cancel_with(exchange, pin!(cancelled)).await {
-        Ok(Ok(())) => {}
-        Ok(Err(kind)) => {
+    match exchange.await {
+        Ok(()) => {}
+        Err(kind) => {
             return Err(QueryError::observed(kind, evidence).with_provider_body(bytes));
-        }
-        Err(_) => {
-            return Err(QueryError::observed(
-                QueryErrorKind::Native(NativeError::Cancelled),
-                evidence,
-            )
-            .with_provider_body(bytes));
         }
     }
     if evidence.http_status != Some(200) {
@@ -410,7 +407,21 @@ pub async fn query_kql(
         error.provider_body = Some(bytes);
         return Err(error);
     }
-    result::decode(bytes, limits, evidence, deadline)
+    result::decode(bytes, limits, evidence, deadline, cancelled.as_mut()).await
+}
+
+pub(crate) async fn check_observation(
+    deadline: &NativeDeadline,
+    cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
+) -> Result<(), QueryErrorKind> {
+    deadline.remaining().map_err(QueryErrorKind::Native)?;
+    cancel_with(async {}, cancelled)
+        .await
+        .map_err(|_| QueryErrorKind::Native(NativeError::Cancelled))?;
+    deadline
+        .remaining()
+        .map(|_| ())
+        .map_err(QueryErrorKind::Native)
 }
 
 fn valid_json_media(value: Option<&str>) -> bool {

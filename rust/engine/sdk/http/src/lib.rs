@@ -35,6 +35,7 @@ mod items;
 pub mod native_runtime;
 pub mod native_stream;
 mod operations;
+pub mod scoped_native_stream;
 #[cfg(test)]
 mod tests;
 
