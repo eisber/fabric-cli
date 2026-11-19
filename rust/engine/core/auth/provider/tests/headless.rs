@@ -12,6 +12,7 @@ use azure_core::{
     error::{Error, ErrorKind},
     http::{AsyncRawResponse, HttpClient, Method, Request, StatusCode, headers::Headers},
 };
+use fabric_identity::PUBLIC_KUSTO_SCOPE;
 use fabric_identity::headless::{
     AssertionFile, HeadlessCredential, HeadlessInput, ManagedHost, ServiceIdentity,
 };
@@ -158,6 +159,161 @@ async fn explicit_sql_scope_uses_a_separate_provider_request_without_fabric_fall
     let requests = http.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert!(body(&requests[0]).contains("scope=https%3A%2F%2Fdatabase.windows.net%2F.default"));
+}
+
+#[tokio::test]
+async fn public_kusto_keeps_the_selected_identity_and_never_reuses_a_fabric_token() {
+    let http = FakeHttp::new([
+        token("synthetic-fabric-token", 3600),
+        token("synthetic-kusto-token", 3600),
+        token("synthetic-fabric-token", 3600),
+    ]);
+    let credential = secret(http.clone());
+    for (scope, expected) in [
+        (FABRIC, "synthetic-fabric-token"),
+        (PUBLIC_KUSTO_SCOPE, "synthetic-kusto-token"),
+        (FABRIC, "synthetic-fabric-token"),
+    ] {
+        for _ in 0..2 {
+            assert_eq!(
+                credential
+                    .get_token(&[scope], None)
+                    .await
+                    .unwrap()
+                    .token
+                    .secret(),
+                expected
+            );
+        }
+    }
+    let requests = http.requests.lock().unwrap();
+    // The official provider owns cache retention across audience switches.
+    assert!((2..=3).contains(&requests.len()));
+    for (request, scope) in requests.iter().zip([FABRIC, PUBLIC_KUSTO_SCOPE, FABRIC]) {
+        assert_eq!(
+            request.url().as_str(),
+            format!("https://login.microsoftonline.com/{TENANT}/oauth2/v2.0/token")
+        );
+        assert_eq!(request.method(), Method::Post);
+        let form =
+            azure_core::http::Url::parse(&format!("https://form.invalid/?{}", body(request)))
+                .unwrap();
+        let scopes: Vec<_> = form
+            .query_pairs()
+            .filter(|(key, _)| key == "scope")
+            .collect();
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].1, scope);
+        assert!(
+            form.query_pairs()
+                .any(|(key, value)| key == "client_id" && value == CLIENT)
+        );
+        assert!(
+            form.query_pairs()
+                .any(|(key, value)| { key == "grant_type" && value == "client_credentials" })
+        );
+    }
+}
+
+#[tokio::test]
+async fn public_kusto_rejects_nonliteral_and_mixed_scopes_before_the_official_provider() {
+    let http = FakeHttp::new([]);
+    let credential = secret(http.clone());
+    for scopes in [
+        vec!["https://custom.example/.default"],
+        vec!["https://api.kusto.windows.net.evil.example/.default"],
+        vec!["https://api.kusto.windows.net/"],
+        vec!["https://api.kusto.windows.net/.default/"],
+        vec!["https://api.kusto.windows.net/.default extra"],
+        vec![" https://api.kusto.windows.net/.default"],
+        vec!["https://api.kusto.windows.net/.default "],
+        vec!["https://api.kusto.windows.net/%2Edefault"],
+        vec!["https://api.kusto.windows.net:443/.default"],
+        vec!["https://user@api.kusto.windows.net/.default"],
+        vec!["https://login.microsoftonline.com/.default"],
+        vec!["https://api.kusto.chinacloudapi.cn/.default"],
+        vec!["https://API.KUSTO.WINDOWS.NET/.default"],
+        vec![PUBLIC_KUSTO_SCOPE, PUBLIC_KUSTO_SCOPE],
+        vec![PUBLIC_KUSTO_SCOPE, FABRIC],
+        vec![ARM, PUBLIC_KUSTO_SCOPE],
+    ] {
+        let error = credential.get_token(&scopes, None).await.unwrap_err();
+        assert_eq!(error.to_string(), "unsupported headless credential scope");
+    }
+    assert!(http.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn public_kusto_failures_do_not_return_a_cached_fabric_token_or_retry() {
+    for failure in [
+        response(
+            400,
+            r#"{"error":"interaction_required","error_description":"private-canary"}"#,
+        ),
+        response(
+            400,
+            r#"{"error":"invalid_client","error_description":"private-canary"}"#,
+        ),
+        Err(Error::with_message(ErrorKind::Io, "private-canary")),
+    ] {
+        let http = FakeHttp::new([token("synthetic-fabric-token", 3600), failure]);
+        let credential = secret(http.clone());
+        credential.get_token(&[FABRIC], None).await.unwrap();
+        let error = credential
+            .get_token(&[PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .unwrap_err();
+        assert!(!format!("{error} {error:?}").contains("canary"));
+        assert_eq!(http.requests.lock().unwrap().len(), 2);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_kusto_unpolled_and_deadline_dropped_requests_preserve_cancellation() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Default)]
+    struct PendingHttp(AtomicUsize);
+    #[async_trait]
+    impl HttpClient for PendingHttp {
+        async fn execute_request(&self, _: &Request) -> azure_core::Result<AsyncRawResponse> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                std::future::pending::<()>().await;
+            }
+            token("synthetic-kusto-token", 3600)
+        }
+    }
+
+    let http = Arc::new(PendingHttp::default());
+    let credential = HeadlessCredential::new(
+        HeadlessInput::ClientSecret {
+            identity: identity(),
+            secret: Secret::new("synthetic-secret"),
+        },
+        http.clone(),
+    )
+    .unwrap();
+    drop(credential.get_token(&[PUBLIC_KUSTO_SCOPE], None));
+    assert_eq!(http.0.load(Ordering::SeqCst), 0);
+    assert!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            credential.get_token(&[PUBLIC_KUSTO_SCOPE], None),
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(http.0.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        credential
+            .get_token(&[PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .unwrap()
+            .token
+            .secret(),
+        "synthetic-kusto-token"
+    );
+    assert_eq!(http.0.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -641,51 +797,55 @@ async fn managed_identity_process_child() {
         "app-service" => ManagedHost::app_service("http://127.0.0.1:49152/msi/token").unwrap(),
         _ => panic!("unknown test host"),
     };
-    for client_id in [None, Some(CLIENT.to_owned())] {
-        let expires = azure_core::time::OffsetDateTime::now_utc().unix_timestamp() + 3600;
-        let http = FakeHttp::new([response(
-            200,
-            format!(
-                r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"https://api.fabric.microsoft.com"}}"#
-            ),
-        )]);
-        let credential = HeadlessCredential::new(
-            HeadlessInput::ManagedIdentity {
-                host: host.clone(),
-                client_id: client_id.clone(),
-            },
-            http.clone(),
-        )
-        .unwrap();
-        assert!(http.requests.lock().unwrap().is_empty());
-        let token = credential.get_token(&[FABRIC], None).await.unwrap();
-        assert_eq!(token.token.secret(), "synthetic-managed-token");
-        credential.get_token(&[FABRIC], None).await.unwrap();
-        let requests = http.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        let request = &requests[0];
-        assert_eq!(request.method(), Method::Get);
-        let query = request.url().query_pairs().collect::<Vec<_>>();
-        assert!(
-            query
-                .iter()
-                .any(|(name, value)| name == "resource"
-                    && value == "https://api.fabric.microsoft.com")
-        );
-        assert_eq!(
-            query
-                .iter()
-                .find(|(name, _)| name == "client_id")
-                .map(|(_, value)| value.as_ref()),
-            client_id.as_deref()
-        );
-        let header = request.headers().get_str(&"x-identity-header".into()).ok();
-        if matches!(host, ManagedHost::AppService { .. }) {
-            assert_eq!(request.url().host_str(), Some("127.0.0.1"));
-            assert_eq!(header, Some("synthetic-platform-header"));
-        } else {
-            assert_eq!(request.url().host_str(), Some("169.254.169.254"));
-            assert!(header.is_none());
+    for (scope, resource) in [
+        (FABRIC, "https://api.fabric.microsoft.com"),
+        (PUBLIC_KUSTO_SCOPE, "https://api.kusto.windows.net"),
+    ] {
+        for client_id in [None, Some(CLIENT.to_owned())] {
+            let expires = azure_core::time::OffsetDateTime::now_utc().unix_timestamp() + 3600;
+            let http = FakeHttp::new([response(
+                200,
+                format!(
+                    r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"{resource}"}}"#
+                ),
+            )]);
+            let credential = HeadlessCredential::new(
+                HeadlessInput::ManagedIdentity {
+                    host: host.clone(),
+                    client_id: client_id.clone(),
+                },
+                http.clone(),
+            )
+            .unwrap();
+            assert!(http.requests.lock().unwrap().is_empty());
+            let token = credential.get_token(&[scope], None).await.unwrap();
+            assert_eq!(token.token.secret(), "synthetic-managed-token");
+            credential.get_token(&[scope], None).await.unwrap();
+            let requests = http.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            let request = &requests[0];
+            assert_eq!(request.method(), Method::Get);
+            let query = request.url().query_pairs().collect::<Vec<_>>();
+            assert!(
+                query
+                    .iter()
+                    .any(|(name, value)| name == "resource" && value == resource)
+            );
+            assert_eq!(
+                query
+                    .iter()
+                    .find(|(name, _)| name == "client_id")
+                    .map(|(_, value)| value.as_ref()),
+                client_id.as_deref()
+            );
+            let header = request.headers().get_str(&"x-identity-header".into()).ok();
+            if matches!(host, ManagedHost::AppService { .. }) {
+                assert_eq!(request.url().host_str(), Some("127.0.0.1"));
+                assert_eq!(header, Some("synthetic-platform-header"));
+            } else {
+                assert_eq!(request.url().host_str(), Some("169.254.169.254"));
+                assert!(header.is_none());
+            }
         }
     }
     println!("managed-provider-exercised");

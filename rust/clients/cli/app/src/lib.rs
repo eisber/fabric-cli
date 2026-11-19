@@ -80,6 +80,8 @@ pub mod v2_preview;
 pub mod v2_schema_native;
 #[cfg(feature = "v2-create")]
 pub mod warehouse_create;
+#[cfg(any(all(windows, feature = "windows-broker"), feature = "interactive"))]
+pub mod workload_auth;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;

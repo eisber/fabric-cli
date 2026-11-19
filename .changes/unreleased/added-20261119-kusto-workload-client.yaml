@@ -1,0 +1,6 @@
+kind: added
+body: Select Azure CLI's public application for exact public Kusto requests in the native Windows broker credential composition, preserving the original account, tenant, logout and Fabric application. Incompatible device-code sessions fail before refresh; unattended credentials are unchanged. This credential policy does not enable the unconfigured Kusto CLI query or execute frontends.
+time: 2026-11-19T15:15:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

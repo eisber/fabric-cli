@@ -52,6 +52,40 @@ auth defaults to text. JSON retains its existing auth result/error shape for
 scripts. Both formats keep success on stdout and failures on stderr, without
 printing access tokens or changing timeout/cancellation behavior.
 
+### Kusto workload application
+
+The native credential composition selects Azure CLI's public application
+`04b07795-8ddb-461a-bbee-02f9e1bf7b46` only for the exact singleton scope
+`https://api.kusto.windows.net/.default`. Fabric metadata and Fabric/AIHub calls,
+OneLake, ARM, SQL and feedback retain the selected application. No `az`
+executable, cache discovery, default-client change or provider fallback is used.
+The SDK remains caller-injected; direct SDK and identity-provider consumers do
+not acquire this CLI policy automatically.
+
+Windows broker requests retain the original tenant and validated native account.
+They remain silent; an unavailable app/account, missing consent or tenant policy
+returns an error rather than showing UI or selecting another account. Both the
+original and Kusto application domains reserve the operation, so logout cancels
+and drains pending acquisition and prevents a late token from being returned.
+The selected Fabric session is not overwritten. WAM account identifiers that
+cannot be matched across applications fail explicitly rather than matching only
+by username. Live cross-client WAM acceptance remains unverified.
+
+Device-code refresh tokens cannot be reassigned to another application. An
+already-selected Azure CLI application session can request Kusto; a session for
+another client fails before refresh with sign-in guidance. This change does not
+add automatic device-code sign-in or a second persistent session. Selecting a
+different device-code session remains an explicit login decision. Service
+principals, certificate credentials, workload federation and managed identities
+keep their existing application or identity.
+
+This is credential routing, not registration or permission provisioning.
+Microsoft [documents Azure CLI acquisition for this Kusto resource](https://learn.microsoft.com/en-us/kusto/api/rest/authentication?view=microsoft-fabric#get-an-access-token-for-a-user-principal-using-the-azure-cli);
+that does not establish preauthorization or native broker acceptance in a given
+tenant. Database permissions and authentication-team review remain required.
+The existing Kusto `query`/`execute` CLI frontends still report `NotConfigured`;
+this change does not wire a native execution backend or enable management calls.
+
 With the optional `interactive` device-code feature on macOS, explicitly supply
 `FAB_RUST_PROTECTED_STORE_HELPER` (absolute root-custodied installation path) and
 `FAB_RUST_PROTECTED_STORE_HELPER_SHA256` (independently trusted 64-digit SHA-256).
