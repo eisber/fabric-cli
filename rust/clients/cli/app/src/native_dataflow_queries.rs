@@ -4,7 +4,7 @@
 //! Metadata-only Dataflow discovery over the existing selected native host.
 
 use super::{BatchState, CommandOutcome, failure};
-use fabric_cli::execute::{ListQueriesCommand, QueryTarget};
+use fabric_cli::{execute::QueryTarget, get_dataflow_queries::ListQueriesCommand};
 use fabric_sdk::{
     Client,
     dataflow_queries::{QueryDiscoveryError, QueryInventory, list_queries},
@@ -203,13 +203,14 @@ pub(super) fn render(
             })
         })
         .collect();
-    let mut bytes = serde_json::to_vec(&serde_json::json!({
+    let value = serde_json::json!({
         "queries": queries,
         "queryMetadataPresent": inventory.query_metadata_present,
         "operationId": inventory.operation_id,
         "queryExecuted": false,
-    }))
-    .map_err(|_| failure("output_failed", "Unable to encode query metadata.", 1))?;
+    });
+    let mut bytes = serde_json::to_vec(&value)
+        .map_err(|_| failure("output_failed", "Unable to encode query metadata.", 1))?;
     bytes.push(b'\n');
     if bytes.len() > command.max_bytes {
         return Err(failure(
@@ -217,6 +218,20 @@ pub(super) fn render(
             "Complete query metadata exceeds the byte limit.",
             1,
         ));
+    }
+    if let Some(query) = &command.query {
+        let value = fabric_cli_query::project_value(&value, query)
+            .map_err(|_| failure("invalid_query", "Unable to project the query inventory.", 2))?;
+        bytes = serde_json::to_vec(&value)
+            .map_err(|_| failure("output_failed", "Unable to encode the query projection.", 1))?;
+        bytes.push(b'\n');
+        if bytes.len() > command.max_bytes {
+            return Err(failure(
+                "result_limit",
+                "Complete query projection exceeds the byte limit.",
+                1,
+            ));
+        }
     }
     Ok(bytes)
 }
@@ -229,7 +244,7 @@ mod tests {
     fn command() -> ListQueriesCommand {
         let fabric_cli::parser::Invocation::DataflowQueries(command) =
             fabric_cli::parser::parse_args([
-                "fab-rs", "execute",
+                "fab-rs", "get",
                 "/11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Dataflow",
                 "--list-queries",
             ]).unwrap()
@@ -284,6 +299,29 @@ mod tests {
         );
         command.max_bytes = bytes.len();
         assert_eq!(render(&command, inventory).unwrap(), bytes);
+    }
+
+    #[test]
+    fn get_projection_is_local_and_cannot_hide_an_oversized_inventory() {
+        let inventory = QueryInventory {
+            query_metadata_present: true,
+            operation_id: None,
+            queries: vec![NamedQuery {
+                query_id: "native-id".into(),
+                query_name: "Orders".into(),
+                is_hidden: false,
+                load_enabled: true,
+            }],
+        };
+        let mut command = command();
+        command.query = Some("queries[].queryName".into());
+        let bytes = render(&command, inventory.clone()).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+            serde_json::json!(["Orders"])
+        );
+        command.max_bytes = bytes.len();
+        assert_eq!(render(&command, inventory).unwrap_err().0, "result_limit");
     }
 
     struct CountWrites(std::sync::Arc<std::sync::atomic::AtomicUsize>);

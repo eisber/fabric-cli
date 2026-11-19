@@ -30,6 +30,7 @@ mod folder_reads;
 pub mod get_backend;
 mod get_budget;
 pub mod get_command;
+pub mod get_dataflow_queries;
 pub mod get_metadata;
 mod get_report;
 pub mod get_resolution;
