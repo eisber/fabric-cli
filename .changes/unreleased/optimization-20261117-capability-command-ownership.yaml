@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: optimization
+body: Extract existing Rust v2 raw API, ACL/label and catalog command grammar and execution into focused capability packages while preserving public compatibility reexports and command behavior.
+time: 2026-11-17T11:15:00Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

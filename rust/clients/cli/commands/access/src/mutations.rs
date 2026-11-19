@@ -13,14 +13,7 @@ use std::{
     pin::{Pin, pin},
 };
 
-/// Caller-owned asynchronous confirmation; no library reads a terminal.
-pub trait Confirmation {
-    /// Resolves a source question. Failure/cancellation must not mean consent.
-    fn confirm<'a>(
-        &'a mut self,
-        question: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<bool, CommandError>> + Send + 'a>>;
-}
+use crate::Confirmation;
 
 /// Resolved source resource plus its display name for progress messages.
 #[derive(Clone, Debug)]

@@ -3,7 +3,7 @@
 
 //! Fabric-only native runtime composition over the existing bounded HTTP engine.
 
-use crate::{ExecutionError, ExecutionFuture, HttpExecutor, bound};
+use crate::{ExecutionError, ExecutionFuture, HttpExecutor};
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
@@ -141,7 +141,7 @@ pub(super) fn prepare_request<'a>(
         return Err(NativeError::InvalidInput);
     }
     let headers = request_headers(request)?;
-    bound::validate_request(method, request.url(), &[], &headers)
+    fabric_http::validate_request(method, request.url(), &[], &headers)
         .map_err(|_| NativeError::InvalidInput)?;
     Ok(PreparedRequest {
         method,

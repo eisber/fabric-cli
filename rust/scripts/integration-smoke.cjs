@@ -8,8 +8,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {sourceInventory, sourceDifferences} = require('./validate-impact.cjs');
+const {BRANCH, witnessContext, validateWitness, loadWitness} = require('./integration-target-witness.cjs');
 
-const BRANCH = 'dev/marcozo/fab-cli-v2-integration-20261104';
 const SHA = /^[a-f0-9]{40}$/;
 const PROFILES = [
   {bin: 'fab-cli-v2', features: ['headless']},
@@ -22,7 +22,8 @@ function integrationEvent(name, event, ref) {
     (name === 'push' && ref === `refs/heads/${BRANCH}`);
 }
 
-function sourcePin(name, event, ref, expected, actual, parents, baseIsAncestor) {
+function sourcePin(name, event, ref, expected, actual, parents, baseIsAncestor,
+  witness, env = process.env) {
   assert.ok(integrationEvent(name, event, ref), 'Not an integration PR or push');
   assert.equal(event.repository?.full_name, 'eisber/fabric-cli');
   assert.match(expected, SHA);
@@ -33,7 +34,13 @@ function sourcePin(name, event, ref, expected, actual, parents, baseIsAncestor) 
   assert.match(base, SHA);
   assert.notEqual(base, '0'.repeat(40), 'A newly created branch has no validated base');
   if (name === 'pull_request') {
-    assert.deepEqual(parents, [base, source], 'PR merge must combine exactly the recorded base and source');
+    const context = witnessContext(event, env);
+    assert.equal(ref, context.event_ref);
+    assert.equal(expected, context.checkout);
+    const target = validateWitness(witness === undefined ? loadWitness(env) : witness,
+      context, actual, parents);
+    return {event: name, ref, source, base: target.checkout_base, event_base: base,
+      checkout_base: target.checkout_base, checkout: actual, parents, target_witness: target};
   } else {
     assert.equal(source, expected, 'Push source must equal checkout');
     assert.equal(event.deleted, false);
@@ -162,6 +169,10 @@ function main(output) {
     const parents = git(['show', '-s', '--format=%P', 'HEAD']).split(' ');
     const ancestor = name === 'push'
       ? run('git', ['merge-base', '--is-ancestor', event.before, actual], {cwd: root}).status === 0 : false;
+    report.source_context = {event: name, ref: process.env.GITHUB_REF,
+      event_base: name === 'pull_request' ? event.pull_request.base.sha : event.before,
+      source: name === 'pull_request' ? event.pull_request.head.sha : event.after,
+      expected_checkout: process.env.GITHUB_SHA, checkout: actual, parents};
     report.source = sourcePin(name, event, process.env.GITHUB_REF, process.env.GITHUB_SHA, actual, parents, ancestor);
     assert.equal(git(['status', '--porcelain']), '', 'Checkout must be clean');
     before = sourceInventory(root);

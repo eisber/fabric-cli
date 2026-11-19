@@ -304,6 +304,51 @@ fn delivery_failure_retains_execution_success_without_replay() {
 }
 
 #[test]
+fn shared_presentation_preserves_explicit_empty_schemas_and_receipt_framing() {
+    use fabric_cli_output::{
+        OutputStream,
+        tabular::{TabularColumn, TabularType},
+    };
+
+    let table = TabularTable::new(
+        vec![TabularColumn::new("id", TabularType::String, false)],
+        vec![],
+    )
+    .unwrap();
+    for format in [
+        TabularFormat::Json,
+        TabularFormat::Csv,
+        TabularFormat::Parquet,
+    ] {
+        let request = ExportRequest {
+            format,
+            output: "empty.data".into(),
+        };
+        let calls = Cell::new(0);
+        let mut sink = Sink::default();
+        let delivery = tabular_export::deliver(&request, "query", Some(1), &mut sink, || {
+            calls.set(calls.get() + 1);
+            ready(Ok(TableResult::from_table("query", table.clone())))
+        })
+        .now_or_never()
+        .unwrap();
+        assert_eq!(calls.get(), 1);
+        assert_eq!(sink.publishes, 1);
+        assert_eq!(sink.bytes, encode(&table, format).unwrap());
+        assert_eq!(delivery.receipt["execution"]["status"], "succeeded");
+        assert_eq!(delivery.receipt["delivery"]["rows"], 0);
+        assert_eq!(delivery.receipt["delivery"]["schema"][0]["name"], "id");
+        let plan = delivery.plan().unwrap();
+        let mut expected = serde_json::to_vec(&delivery.receipt).unwrap();
+        expected.push(b'\n');
+        assert_eq!(plan.records[0].payload, expected);
+        assert_eq!(plan.records[0].stream, OutputStream::Stdout);
+        assert_eq!(plan.exit_code, 0);
+        assert_eq!(calls.get(), 1);
+    }
+}
+
+#[test]
 fn scalar_metadata_missing_labels_and_non_object_projection_never_become_fake_rows() {
     for (leaf, data) in [
         (&["ls", "/"][..], Some(json!({"count": 1}))),
