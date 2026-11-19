@@ -36,12 +36,11 @@ jobs:
           persist-credentials: false
       - name: Test smoke and routing contracts without native compilation
         run: >-
-          node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-notebook-smoke.test.cjs
+          node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-notebook-smoke.test.cjs rust/scripts/integration-http-cli57-smoke.test.cjs
           rust/scripts/integration-ocv-smoke.test.cjs
           rust/scripts/integration-update-smoke.test.cjs
           rust/scripts/integration-dataagent-smoke.test.cjs
           rust/scripts/integration-dataagent-link-smoke.test.cjs
-          rust/scripts/integration-http-cli57-smoke.test.cjs
       - name: Build two profiles once and exercise isolated offline entry points
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
