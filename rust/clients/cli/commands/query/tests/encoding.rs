@@ -85,11 +85,9 @@ fn json_retains_schema_duplicates_wide_integer_binary_temporal_and_null() {
         json!(["9007199254740993", "", "AP8=", "1234567890"])
     );
     assert_eq!(value["rows"][1], json!([null, null, null, null]));
-    assert!(
-        value["schema"][3]["type"]
-            .as_str()
-            .unwrap()
-            .contains("Nanosecond")
+    assert_eq!(
+        value["schema"][3]["type"],
+        DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())).to_string()
     );
 }
 

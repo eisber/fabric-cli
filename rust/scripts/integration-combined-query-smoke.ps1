@@ -11,6 +11,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Native Windows tests pass these roots to cmd.exe, where a forward slash starts a switch.
+foreach ($name in 'CARGO_TARGET_DIR', 'FAB_CLI_V2_TEST_ROOT', 'FAB_IDENTITY_TEST_ROOT', 'FAB_UPDATE_TEST_ROOT') {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ($value) { [Environment]::SetEnvironmentVariable($name, [IO.Path]::GetFullPath($value)) }
+}
 $rust = Join-Path $PSScriptRoot '..'
 $phaseReceipts = Join-Path $Receipts $Phase
 New-Item -ItemType Directory -Force -Path $phaseReceipts | Out-Null
