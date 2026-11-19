@@ -54,14 +54,15 @@ silently append a terminator to an unverified/truncated response.
 ### Application metadata is not success
 
 Dataflow PQ Arrow Metadata semantics are not guessed from undocumented names
-or JSON substrings. Any nonempty schema, field, or IPC message custom metadata
-fails closed with `TabularError::Metadata` and ordered `MetadataEvidence`.
+or JSON substrings. Any nonempty schema or IPC message custom metadata, and
+unrecognized field metadata, fails closed with `TabularError::Metadata` and
+ordered `MetadataEvidence`.
 Each entry preserves its location, key, and value and is classified `Unknown`.
 Evidence is not logged and may require redaction before display.
 
 This conservative rule also refuses benign-but-unrecognized metadata (for
-example pandas metadata). No metadata allowlist or application-error parser is
-claimed. Dictionary/tensor/other unsupported messages fail rather than being
+example pandas metadata). No application-error parser is claimed.
+Dictionary/tensor/other unsupported messages fail rather than being
 silently skipped. Diagnostics encoded as a second dataset also fail the
 single-dataset policy; they are not discarded as trailing successful data.
 The application adapter remains responsible for verified Dataflow status,
@@ -77,6 +78,36 @@ explicit integration policy, not by an undocumented payload-success parser.
 The generic serializer does not reserve this name for unrelated engines.
 Metadata evidence is retained even when the schema also contains an unsupported
 type; the unsupported-type error must not hide a reported diagnostic.
+
+### Explicit logical query columns
+
+Query adapters constructing a `TabularResult` may attach two bounded field
+metadata keys. `LOGICAL_TYPE_METADATA_KEY` (`fabric.tabular.logical_type`)
+accepts `json` or `guid` only on Utf8/LargeUtf8 fields. Every non-null value
+must be valid JSON text or a dashed hexadecimal GUID, respectively. JSON
+validation borrows its original text without rounding numeric tokens; GUID
+case and all original bytes are preserved. JSON literal `null` is text, distinct
+from an absent Arrow value. No text is automatically interpreted as either type.
+
+`NATIVE_TYPE_METADATA_KEY` (`fabric.tabular.native_type`) retains the source
+engine type on any supported field. Its value must be nonempty, trimmed,
+control-free and at most 256 UTF-8 bytes. It is descriptive, not an instruction
+to cast the column or a marker of query completion. Other keys and schema-level
+metadata still fail closed, and all metadata consumes the existing byte budget.
+
+JSON output includes these field entries in a deterministic `metadata` object
+only when present, with `json-text` or `guid-string` encoding for logical text.
+Parquet retains the entries in its embedded Arrow schema, including empty
+datasets and all-null logical columns; preservation does not depend on sampling
+non-null values. JSON text is not
+silently converted into a native nested Parquet type. CSV retains the original
+quoted text but has no embedded schema; callers must retain schema information
+separately. Existing unannotated JSON output is unchanged.
+
+This constructor-level query contract does not relax native IPC admission:
+`decode_arrow_stream` still rejects all nonempty IPC field metadata before
+materializing the stream. Query adapters must establish their own execution
+and completeness evidence; metadata never establishes application success.
 
 ## Supported types
 

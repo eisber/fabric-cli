@@ -1271,6 +1271,7 @@ dependencies = [
  "fabric-cli-ontology",
  "fabric-cli-output",
  "fabric-cli-query",
+ "fabric-cli-query-commands",
  "fabric-cli-repl",
  "fabric-cli-resources",
  "fabric-cli-semantic-model",
@@ -1282,6 +1283,7 @@ dependencies = [
  "fabric-docs-search",
  "fabric-identity",
  "fabric-sdk",
+ "fabric-sdk-aihub-query",
  "fabric-sdk-api",
  "fabric-sdk-catalog",
  "fabric-sdk-dataflow",
@@ -1292,6 +1294,8 @@ dependencies = [
  "fabric-sdk-onelake",
  "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
+ "fabric-sdk-query",
+ "fabric-sdk-query-tabular",
  "fabric-sdk-relevance",
  "fabric-sdk-search",
  "fabric-sdk-tables",
@@ -1474,6 +1478,27 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "fabric-cli-query-commands"
+version = "0.1.0"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "azure_core",
+ "bytes",
+ "fabric-sdk",
+ "fabric-sdk-aihub-query",
+ "fabric-sdk-http",
+ "fabric-sdk-query",
+ "fabric-sdk-tabular",
+ "futures-util",
+ "parquet",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1780,6 +1805,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-aihub-query"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "base64 0.22.1",
+ "chrono",
+ "fabric-sdk",
+ "fabric-sdk-http",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "fabric-sdk-api"
 version = "0.1.0"
 dependencies = [
@@ -2030,6 +2072,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-query-tabular"
+version = "0.1.0"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "azure_core",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "fabric-sdk-aihub-query",
+ "fabric-sdk-query",
+ "fabric-sdk-tabular",
+ "fabric-v2-contracts",
+ "parquet",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "fabric-sdk-relevance"
 version = "0.1.0"
 dependencies = [
@@ -2123,6 +2186,7 @@ dependencies = [
  "bytes",
  "flatbuffers",
  "parquet",
+ "serde",
  "serde_json",
  "thiserror",
 ]
