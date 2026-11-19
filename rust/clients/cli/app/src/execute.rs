@@ -139,8 +139,17 @@ pub fn command() -> Command {
 }
 
 const VALUE_OPTIONS: &[&str] = &[
-    "--text", "--file", "--parameters", "--engine", "--format", "--output", "-o", "--timeout",
-    "--limit", "--max-bytes",
+    "--text",
+    "--file",
+    "--parameters",
+    "--engine",
+    "--format",
+    "--output",
+    "-o",
+    "--timeout",
+    "--limit",
+    "--max-bytes",
+    "--output_format",
 ];
 
 /// Whether `query` arguments (after the root) address a Dataflow target.

@@ -25,7 +25,14 @@ fn invoke(args: &[&str]) -> Output {
 fn malformed_dataflow_query_has_no_data_or_identity_diagnostic() {
     for args in [
         vec!["query", "/sensitive-target.Dataflow"],
-        vec!["query", TARGET, "--text", "sensitive-query", "--file", "m.pq"],
+        vec![
+            "query",
+            TARGET,
+            "--text",
+            "sensitive-query",
+            "--file",
+            "m.pq",
+        ],
         vec!["query", TARGET, "--force"],
         vec!["query", TARGET, "--wait"],
         vec!["query", TARGET, "--parameters", "-", "--parameters", "-"],
