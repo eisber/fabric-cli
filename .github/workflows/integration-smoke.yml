@@ -105,7 +105,7 @@ jobs:
           fs.mkdirSync(artifacts, {recursive: false});
           const started = Date.now(), deadline = started + 570000;
           const source = '81685ace547574fc29a7564cb04e20b34c935d59';
-          const base = 'af846fe7e3ea444051aae3881491078323527d5f';
+          const base = '8de383d5e717f352ee1815d1e643690dfc489836';
           const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
           const prefixed = (file, prefix = '') => registeredTests(file).map(name => `${prefix}${name}`);
           const report = {
@@ -155,6 +155,7 @@ jobs:
             const actual = git(['rev-parse', 'HEAD']);
             report.source = sourcePin('pull_request', event, process.env.GITHUB_REF, process.env.GITHUB_SHA,
               actual, git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
+            assert.equal(report.source.checkout_base, base, 'Witnessed target moved; rebind before admission');
             git(['merge-base', '--is-ancestor', source, event.pull_request.head.sha]);
             assert.equal(git(['status', '--porcelain']), '');
             report.tree = git(['rev-parse', 'HEAD^{tree}']);

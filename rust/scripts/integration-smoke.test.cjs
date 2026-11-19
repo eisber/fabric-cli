@@ -76,6 +76,7 @@ test('Dataflow candidate fetches locked test dependencies before its unchanged o
   assert.match(block, /timeout-minutes: 10/);
   assert.match(block, /timeout: Math\.min\(480000, remaining\(\)\)/);
   assert.match(block, /const result = run\('cargo', item\.args, rust\)/);
+  assert.match(block, /assert\.equal\(report\.source\.checkout_base, base,/);
   assert.match(block, /assert\.equal\(result\.status, 0, `Dataflow command failed: \$\{item\.id\}`\)/);
 });
 
