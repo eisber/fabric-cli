@@ -1512,6 +1512,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create-semantic-model', 'semantic_model_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'warehouse_create_wire', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-kql-database-create', 'kql_database_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-eventhouse', 'eventhouse_create', 'rust/clients/cli/app/Cargo.toml'],
@@ -1539,6 +1540,22 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
   }
+});
+
+test('blank SemanticModel root dispatch selects its HTTP and headless executable contracts', () => {
+  const graph = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const component = graph.components.find(item => item.id === 'cli-semantic-model-create');
+  for (const file of ['src/v2_main.rs', 'src/v2_create_main.rs', 'src/v2_livy_list_main.rs',
+    'tests/create_binding_composition.rs']) {
+    assert.ok(component.inputs.includes(`rust/clients/cli/app/${file}`), file);
+  }
+  assert.ok(component.tests.some(item => item.target === 'test:semantic_model_create'));
+  assert.ok(component.tests.some(item => item.target === 'test:semantic_model_create_entry'));
+  const profile = graph.profiles.find(item => item.id === 'v2-create-semantic-model');
+  const native = graph.profiles.find(item => item.id === 'v2-create-semantic-model-headless');
+  assert.deepEqual(profile.features, ['fabric-cli/v2-create-semantic-model']);
+  assert.deepEqual(native.features, ['fabric-cli/v2-create-semantic-model', 'fabric-cli/headless']);
+  assert.deepEqual(native.platforms, ['windows', 'linux', 'macos']);
 });
 
 test('Warehouse create executable tests require the real headless feature composition on all hosts', () => {

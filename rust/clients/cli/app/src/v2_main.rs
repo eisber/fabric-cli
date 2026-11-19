@@ -208,6 +208,9 @@ const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  
 #[cfg(feature = "v2-create-eventhouse")]
 const EVENTHOUSE_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Eventhouse [OPTIONS]\nMetadata-only Eventhouse creation requires immediate terminal approval. Run create --help.\nThe provider may create a same-name default KQL database and incur capacity or storage consumption; the client issues no child POST.";
 
+#[cfg(feature = "v2-create-semantic-model")]
+const SEMANTIC_MODEL_CREATE_HELP: &str = "Opt-in native blank SemanticModel creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.SemanticModel [OPTIONS]\nThe pinned five-part blank template is unchanged; optional JSON accepts matching displayName and string description only.\nOnly error/skip policies; explicit terminal approval. No arbitrary definition, source, connection, import, refresh or run.";
+
 #[cfg(feature = "v2-link-kql")]
 const KQL_LINK_HELP: &str = "KQL links: artifact kql-database link <typed-shortcut-destination> --input FILE|- [--wait]\nRoot link selects the explicit DataAgent or KQLDatabase owner. Run artifact kql-database link --help.\nExplicit controlling-terminal approval is required; query acceleration may incur costs.";
 
@@ -282,6 +285,9 @@ fn run() -> Result<(), Failure> {
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-create")]
         writeln!(io::stdout().lock(), "\n{WAREHOUSE_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create-semantic-model")]
+        writeln!(io::stdout().lock(), "\n{SEMANTIC_MODEL_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-kql-database-create")]
         writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")

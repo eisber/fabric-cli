@@ -223,3 +223,9 @@ Warehouse schema alongside Notebook and Report, with KQLDatabase and Eventhouse
 remaining separately enabled. Combined executable tests also cover Warehouse
 collation input, cross-owner schema rejection, unsupported-policy admission
 before input I/O and every enabled help disclosure, including the Livy root.
+
+The optional [blank SemanticModel binding](semantic-model-create.md) also uses
+these unchanged shared producers. Exact parsed owner selection and create/root
+help register it additively alongside Notebook, Report, Warehouse and enabled
+KQLDatabase/Eventhouse bindings, including the Livy root. Its metadata-only
+input cannot select another owner's schema or change embedded template bytes.

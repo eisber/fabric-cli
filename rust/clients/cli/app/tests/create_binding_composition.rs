@@ -47,6 +47,8 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             "KQLDatabase",
             "Eventhouse",
             "Warehouse",
+            #[cfg(feature = "v2-create-semantic-model")]
+            "SemanticModel",
         ] {
             assert!(text.contains(owner), "{text}");
             if args[0] == "create" {
@@ -59,6 +61,8 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             assert!(text.contains("capacity or storage consumption"));
             #[cfg(feature = "runtime-v2")]
             assert!(text.contains("Livy"));
+            #[cfg(feature = "v2-create-semantic-model")]
+            assert!(text.contains("pinned five-part blank template"));
         }
     }
 }
@@ -68,6 +72,12 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("input.json");
     for (owner, bytes, exit, code) in [
+        #[cfg(feature = "v2-create-semantic-model")]
+        ("SemanticModel", EVENTHOUSE, 1, "ApprovalRequired"),
+        #[cfg(feature = "v2-create-semantic-model")]
+        ("SemanticModel", KQL, 2, "CreatePolicyRejected"),
+        #[cfg(feature = "v2-create-semantic-model")]
+        ("SemanticModel", WAREHOUSE, 2, "CreatePolicyRejected"),
         ("Eventhouse", EVENTHOUSE, 1, "ApprovalRequired"),
         ("KQLDatabase", KQL, 1, "ApprovalRequired"),
         ("Notebook", EVENTHOUSE, 1, "ApprovalRequired"),
@@ -108,6 +118,10 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         format!("{ROOT}.KQLDatabase/src/definition"),
         format!("{ROOT}.Warehouse/src/definition"),
         format!("{ROOT}.warehouse"),
+        #[cfg(feature = "v2-create-semantic-model")]
+        format!("{ROOT}.SemanticModel/src/definition"),
+        #[cfg(feature = "v2-create-semantic-model")]
+        format!("{ROOT}.semanticmodel"),
     ] {
         error(
             &run(&["create", &destination, "--input", "nonexistent.json"]),
@@ -121,6 +135,8 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         "Report",
         "Notebook",
         "Warehouse",
+        #[cfg(feature = "v2-create-semantic-model")]
+        "SemanticModel",
     ] {
         error(
             &run(&[

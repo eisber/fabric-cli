@@ -24,6 +24,16 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "semantic_model_create"
+path = "tests/semantic_model_create.rs"
+required-features = ["v2-create-semantic-model"]
+
+[[test]]
+name = "semantic_model_create_entry"
+path = "tests/semantic_model_create_entry.rs"
+required-features = ["headless", "v2-create-semantic-model"]
+
+[[test]]
 name = "warehouse_create_wire"
 path = "tests/warehouse_create_wire.rs"
 required-features = ["v2-create"]
@@ -147,6 +157,7 @@ semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
 v2-create = []
+v2-create-semantic-model = ["v2-create"]
 v2-kql-database-create = ["v2-create"]
 v2-create-eventhouse = ["v2-create"]
 v2-run = []

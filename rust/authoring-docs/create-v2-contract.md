@@ -19,6 +19,11 @@ The [Report binding](report-native-reads.md#definition-create-schema-adapter)
 documents this branch's bounded opt-in native mount; default and v1 behavior
 remain separate.
 
+The optional [blank SemanticModel binding](semantic-model-create.md) adds only
+the existing pinned five-part definition with outer name/description metadata.
+Its `v2-create-semantic-model` feature registers alongside the current create
+bindings; it does not replace them or expose arbitrary model definitions.
+
 ## Opt-in native Notebook mount
 
 Build `fabric-cli` with `headless,v2-create` to enable the existing root grammar:
