@@ -118,6 +118,13 @@ not passed to isolated tests; production defaults and target requirements remain
 unchanged. Both planner command descriptors and the validation executor consume
 this same metadata-derived selection.
 
+For `--all-targets` selections, required-feature propagation also includes
+examples and binaries marked `test = false`: explicit Cargo target flags
+override their default test selection. A feature enabled through another
+profile root must reach the isolated package test command too. This preserves
+the selected composition, rather than counting a feature-gated example that
+the actual command would skip.
+
 ## Conservative boundaries
 
 Unclassified package inputs select the package and its transitive Cargo
@@ -152,6 +159,184 @@ To add a narrow component:
 
 Do not weaken compatibility fixtures, immutable source pins or required contract
 inventory to achieve a smaller plan.
+
+## Independent capability graph contract
+
+Use the metadata-only inspection command to record a reproducible dependency and
+selection inventory before and after a capability refactor:
+
+```powershell
+node rust\scripts\impact-contract.cjs --output C:\validation\before.json
+# After integrating explicitly released commits in the normal integration lane:
+node rust\scripts\impact-contract.cjs --baseline C:\validation\before.json --output C:\validation\after.json
+```
+
+Both output paths must be new, absolute paths outside the checkout. The command
+does not overwrite evidence. `--cargo <absolute-executable>` selects an existing
+Cargo executable when it is not on `PATH`; it does not install a toolchain or
+modify Cargo configuration. Use the repository-pinned toolchain. The command
+only executes Git reads, `cargo --version`, and
+`cargo metadata --offline --locked --no-deps --format-version 1`. It does not
+compile, run Rust tests, dispatch CI, or acquire a build slot.
+
+The report reuses the planner's metadata model and selection algorithm, rather
+than maintaining a second package list. It records:
+
+- Every workspace package and default member, direct dependency declarations
+  (including renamed, development, build, optional and platform-specific edges),
+  and conservative transitive forward dependencies and reverse consumers.
+  `entry_kind_closures` separates normal/build/dev entry edges, then follows
+  their conservative transitive dependency union. Profile inventories separately
+  expose feature-path dependencies and conservative compile dependencies. These
+  are not feature-resolved `cargo tree` output; the foundation assertion checks
+  the complete union, including service dependencies reachable only through tests.
+- Recursively discovered engine/client manifests, rejecting unregistered or
+  missing crates before a heavy build. This supplements, not replaces, the
+  existing Rust architecture contract.
+- A hypothetical source-change selection for every package, preferring its
+  library root, then binary root, then another supported Cargo target. Each
+  component with matching source-inventory files also gets a scenario containing
+  all of those declared implementation, fixture and external-contract inputs.
+- Actual expanded Cargo test-target inventories, isolated feature compositions,
+  checks, and native-platform applicability. `all` is expanded through the
+  planner's metadata model using the executor's shared pure test grouping.
+  All default `--all-targets` packages share one Cargo invocation, so one
+  selected package's default features can enable a required-feature target in
+  another selected package. Exact-target packages and profile test packages
+  retain their actual separate invocation roots/features, not the combined
+  compile profile's feature union. Targets unavailable to those invocations
+  are not counted as available targets; unavailable profiles are not counted
+  as executed obligations.
+  Explicit selectors and `--all-targets` include targets marked `test = false`,
+  including examples, just as the validator's generated Cargo commands do.
+- The exact HEAD/tree, dirty status, source-inventory digest, metadata/graph/tool
+  digests and Cargo version. Source or HEAD mutation during collection fails.
+  `loaded_sources` records raw SHA-256 digests captured when the reporter,
+  planner, and executor/grouping module loaded. These files are checked before
+  collection and again before emission, independently of `--root`; a tool
+  outside the inspected checkout cannot silently change and have its new bytes
+  attributed to old loaded code. `tool_digest`, `planner_digest` and
+  `executor_digest` are those load-bound raw digests, not late hashes.
+
+Counts describe selected targets, not executed tests, compilation units, elapsed
+time, or successful native qualification. Package probes and component scenarios
+are explicitly hypothetical selections, not validation of the actual PR diff.
+Use `impact-plan.cjs --base <commit>` and the existing validator for that diff;
+nonempty/non-all-skipped execution and source-integrity checks still apply.
+Forward/reverse closures conservatively include optional and platform edges;
+they are not Cargo's feature-resolved graph for one particular host.
+
+Baseline comparisons retain added/removed scenarios, full before/after graph
+counts, aggregate and per-platform selection-count deltas, target/check
+membership changes, and changed profile features, targets and applicability.
+The same comparison applies to `full` and every source scenario: a full-only
+contract's Linux/macOS coverage loss remains visible even when no source
+scenario selects that contract. Missing full selections fail comparison.
+Equal aggregate counts do not hide a platform losing a feature composition or
+one complete test target being replaced by another. `comparable_inputs: false` identifies
+scenarios whose source paths changed; do not present those as an identical-input
+benchmark. A smaller count alone is not a speedup or permission to drop checks.
+Unknown/shared inputs, uncovered reverse consumers, source oracles and native
+full qualification retain their existing conservative behavior.
+
+For a neutral foundation, add one or more
+`--assert-foundation <actual-package-name>` selectors. By default, each named
+package and **all** its transitive workspace dependencies must declare the
+`core` layer. Development, build, optional and platform dependencies count too.
+Service implementations may remain reverse consumers; a generic engine must
+not acquire them as forward dependencies.
+
+Logical layers are not neutral/service classifications. The approved neutral
+HTTP engine and transport retain `layer = "sdk"` despite physical core grouping.
+For these packages, supply a separately reviewed, explicit
+`--foundation-policy <absolute-json-file>` rather than relabeling crates or
+allowing every SDK package. For example, after the integration owner releases
+the actual combined commit, create an outside-checkout policy whose
+`source_commit` is that exact full HEAD:
+
+```json
+{
+  "schema": 1,
+  "source_commit": "<actual full 40-hex released source commit>",
+  "packages": [
+    {
+      "name": "fabric-http",
+      "manifest": "rust/engine/core/http/executor/Cargo.toml",
+      "layer": "sdk",
+      "role": "neutral-foundation"
+    },
+    {
+      "name": "fabric-http-transport",
+      "manifest": "rust/engine/core/http/transport/Cargo.toml",
+      "layer": "sdk",
+      "role": "neutral-foundation"
+    }
+  ]
+}
+```
+
+The policy requires a clean exact-source checkout and exact metadata
+name/manifest/layer matches; it rejects stale identities, wildcards, duplicate
+or unused enrollments, unknown fields, and mid-run changes. The complete policy
+and its digest are retained in the report. An SDK layer, physical core path or
+package metadata self-label alone cannot enroll a package. Any newly added
+non-core dependency must itself have an explicit reviewed policy entry or the
+assertion fails, including service/facade dependencies used only by tests.
+There is no fixed package count. Reviewers must assess the policy's role claims
+and actual implementation; a source pin/digest is traceability, not automatic
+proof that a caller's classification was independently approved. Do not enroll
+the service-specific compatibility adapters as neutral foundations.
+
+### Pinned PR95-inspired baseline
+
+The [original PR95 comment](https://github.com/eisber/fabric-cli/pull/95#discussion_r4584506436)
+asks to "make sure that we can build individual elements asap." This contract
+measures the current capability graph without adopting that PR's fixed package
+boundaries or its separate implementation.
+
+The clean integration checkpoint
+`61c8221914152e231e5e64f7bd38418f66264999`
+(tree `fa28f064e9b6cb9eb165267c948c9dfc36688f82`) supplied actual Cargo 1.99.1
+metadata and source inventory before this tooling change. The new reporter was
+then applied to those retained inputs, not to a synthesized manifest list.
+There were 53 packages, 51 default members, 510 direct dependency declarations,
+215 internal declarations representing 212 distinct internal edges, and
+423 raw Cargo targets. The planner catalog had 422 supported targets (the raw
+inventory also includes the custom build target), 92 components, 50 feature
+profiles and 30 checks. These are measurements, not fixed growth limits.
+
+| Library-root probe | Forward dependencies | Reverse consumers | Selected packages | Default test targets | Profiles | Checks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `fabric-sdk-http` | 23 | 14 | 40 | 147 | 50 | 24 |
+| `fabric-sdk-transport` | 24 | 2 | 28 | 51 | 49 | 17 |
+| `fabric-cli-resources` | 29 | 2 | 38 | 25 | 45 | 17 |
+| `fabric-cli-output` | 1 | 11 | 44 | 123 | 47 | 24 |
+
+This tooling-focused change leaves those graph and selection counts unchanged.
+Its tightly coupled all-target required-feature forwarding correction also
+leaves every actual pinned profile's package test features unchanged; a
+synthetic cross-root example proves the previously missing edge case.
+The subsequent grouped-default reporting correction leaves these actual
+pinned counts unchanged too; a synthetic default-forwarding/removal regression
+demonstrates the previously undercounted case without altering a real feature
+or contract declaration. Historical reports made by earlier tooling retain
+their original code identity; regenerate both sides with the corrected
+reporter for comparable evidence.
+The neutral HTTP, command-adapter and output refactors are separate dependent
+changes, not included or claimed merged here. After the integration owner
+releases their immutable combined source, rerun the report with the retained
+baseline. For the agreed neutral HTTP package names, additionally run:
+
+```powershell
+node rust\scripts\impact-contract.cjs --baseline C:\validation\before.json --foundation-policy C:\validation\neutral-foundations.json --assert-foundation fabric-http --assert-foundation fabric-http-transport --output C:\validation\integrated.json
+```
+
+Those neutral packages do not yet exist at the baseline: a policy attempting to
+enroll them fails the exact-metadata-identity check; a selector without a policy
+fails with an unknown-package diagnostic. Report actual released
+source, changed inputs and observed deltas; do not substitute a synthetic graph
+or selection counts for combined-source or timed execution evidence. Timed
+compile/test execution still needs its own current bounded build-slot grant.
 
 ## CI and evidence
 
