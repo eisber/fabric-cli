@@ -72,7 +72,29 @@ fn root_and_create_help_describe_the_actual_bounded_mount() {
             help.contains("SparkJobDefinition"),
             cfg!(feature = "v2-create-sparkjobdefinition")
         );
+        assert_eq!(
+            help.contains("Environment"),
+            cfg!(feature = "v2-create-environment")
+        );
     }
+}
+
+#[cfg(not(feature = "v2-create-environment"))]
+#[test]
+fn disabled_environment_binding_rejects_before_input_io_or_identity() {
+    failure(
+        &process(
+            &[
+                "create",
+                "/11111111-1111-1111-1111-111111111111.Workspace/Example.Environment",
+                "--input",
+                "nonexistent.json",
+            ],
+            None,
+        ),
+        "InvalidInput",
+        2,
+    );
 }
 
 #[cfg(not(feature = "v2-create-sparkjobdefinition"))]

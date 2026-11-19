@@ -383,6 +383,11 @@ requires separately authorized resource scope and evidence.
 
 ### Outcomes and integration
 
+The opt-in [Environment metadata binding](environment-create.md) mounts through
+the shared host alongside the other enabled owners. Its strict root-only metadata
+schema and `error`/exact-existing `skip` policies do not authorize definitions,
+publish, settings, libraries, compute, sessions or execution.
+
 - Check that requested policy, selected action, completion, and effects remain
   separate for every policy branch.
 - Preserve operation IDs separately from resource IDs after acceptance.

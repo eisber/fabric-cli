@@ -7,6 +7,7 @@ use crate::Client;
 pub use fabric_sdk_items::create;
 pub use fabric_sdk_items::delete;
 pub use fabric_sdk_items::ml_models;
+pub use fabric_sdk_items::mutations::ItemMutations;
 pub use fabric_sdk_items::update;
 pub use fabric_sdk_items::{
     Item, ItemClient, ItemCollection, ItemError, ItemErrorKind, ItemExecutionError, ItemExecutor,

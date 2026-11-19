@@ -29,6 +29,8 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
                 &fabric_cli::v2_create_report::ReportCreateBinding,
                 &fabric_cli::create_notebook::NotebookBinding,
                 &fabric_cli::warehouse_create::WarehouseCreateBinding,
+                #[cfg(feature = "v2-create-environment")]
+                &fabric_cli::environment_create::EnvironmentCreate,
                 #[cfg(feature = "v2-copyjob-create")]
                 &fabric_cli::copyjob_create::CopyJobCreateBinding,
                 #[cfg(feature = "v2-create-semantic-model")]
@@ -164,6 +166,8 @@ fn selected_binding(destination: &OsStr) -> Result<&'static dyn CreateBinding, C
         "Report" => Ok(&fabric_cli::v2_create_report::ReportCreateBinding),
         "Notebook" => Ok(&fabric_cli::create_notebook::NotebookBinding),
         "Warehouse" => Ok(&fabric_cli::warehouse_create::WarehouseCreateBinding),
+        #[cfg(feature = "v2-create-environment")]
+        "Environment" => Ok(&fabric_cli::environment_create::EnvironmentCreate),
         #[cfg(feature = "v2-copyjob-create")]
         "CopyJob" => Ok(&fabric_cli::copyjob_create::CopyJobCreateBinding),
         #[cfg(feature = "v2-create-semantic-model")]

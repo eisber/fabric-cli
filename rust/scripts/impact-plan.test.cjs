@@ -1512,6 +1512,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create-environment', 'environment_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-sparkjobdefinition', 'spark_job_definition_create',
       'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-copyjob-create', 'copyjob_create', 'rust/clients/cli/app/Cargo.toml'],
@@ -1542,6 +1543,77 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
   ]) {
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
+  }
+});
+
+test('Environment create composition profile retains all owners and runtime help coverage', () => {
+  const graph = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const profile = graph.profiles.find(item => item.id === 'v2-create-environment-composed');
+  assert.ok(profile, 'Missing composed Environment profile');
+  assert.deepEqual(profile.packages, ['fabric-cli']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  for (const feature of [
+    'v2-create-environment', 'v2-create-sparkjobdefinition', 'v2-create-eventhouse',
+    'v2-kql-database-create', 'v2-copyjob-create', 'v2-create-semantic-model', 'headless', 'runtime-v2',
+  ]) {
+    assert.ok(profile.features.includes(`fabric-cli/${feature}`), feature);
+  }
+  const component = graph.components.find(item => item.id === 'cli-environment-create');
+  for (const file of [
+    'src/environment_create.rs', 'tests/environment_create.rs',
+    'tests/create_v2_process.rs',
+    'src/v2_main.rs', 'src/v2_create_main.rs', 'src/v2_livy_list_main.rs',
+    'tests/create_binding_composition.rs',
+  ]) {
+    assert.ok(component.inputs.includes(`rust/clients/cli/app/${file}`), file);
+  }
+  assert.ok(component.tests.some(item => item.target === 'test:create_binding_composition'));
+  assert.ok(component.tests.some(item => item.target === 'test:environment_create'));
+  assert.ok(component.tests.some(item => item.target === 'test:create_v2_process'));
+  assert.ok(component.tests.some(item => item.target === 'bin:fab-cli-v2'));
+});
+
+test('Environment scope selects complete feature-gated native targets without unrelated suites', () => {
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const ids = new Set(['cli-environment-create', 'cli-create-host']);
+  const components = catalog.components.filter(item => ids.has(item.id)).map(item => ({
+    ...item, depends_on: item.depends_on.filter(id => ids.has(id)), checks: [],
+  }));
+  const cli = pkg('fabric-cli', [], [
+    target('environment_create', 'test', 'rust/clients/cli/app/tests/environment_create.rs',
+      ['v2-create-environment']),
+    target('create_host', 'test', 'rust/clients/cli/app/tests/create_host.rs', ['v2-create']),
+    target('create_binding_composition', 'test', 'rust/clients/cli/app/tests/create_binding_composition.rs',
+      ['v2-create-eventhouse', 'v2-kql-database-create', 'headless']),
+    target('create_v2_process', 'test', 'rust/clients/cli/app/tests/create_v2_process.rs',
+      ['v2-create', 'headless']),
+    target('fab-cli-v2', 'bin', 'rust/clients/cli/app/src/v2_main.rs', ['headless']),
+    target('unrelated_read', 'test', 'rust/clients/cli/app/tests/unrelated_read.rs'),
+  ], {default: [], 'v2-create': [], 'v2-create-environment': ['v2-create'],
+    'v2-create-sparkjobdefinition': ['v2-create'], 'v2-copyjob-create': ['v2-create'],
+    'v2-create-eventhouse': ['v2-create'], 'v2-kql-database-create': ['v2-create'],
+    'v2-create-semantic-model': ['v2-create'], headless: [], 'runtime-v2': []});
+  cli.manifest_path = absolute('rust/clients/cli/app/Cargo.toml');
+  cli.targets[0].src_path = absolute('rust/clients/cli/app/src/lib.rs');
+  const graph = {schema: 1, components,
+    profiles: catalog.profiles.filter(item => item.id.startsWith('v2-create-environment'))
+      .map(item => ({...item, checks: []})), checks: []};
+  for (const file of [
+    'src/environment_create.rs', 'src/create_command.rs', 'src/v2_main.rs',
+    'src/v2_create_main.rs', 'src/v2_livy_list_main.rs', 'tests/create_binding_composition.rs',
+  ]) {
+    const result = plan({root: ROOT, metadata: metadata([cli]), graph,
+      files: [`rust/clients/cli/app/${file}`]});
+    assert.equal(result.mode, 'affected', file);
+    assert.ok(testKeys(result).includes('fabric-cli/test:environment_create'), file);
+    assert.ok(!testKeys(result).includes('fabric-cli/test:unrelated_read'), file);
+    const composed = result.profiles.find(item => item.id === 'v2-create-environment-composed');
+    assert.ok(composed, file);
+    for (const name of ['environment_create', 'create_binding_composition', 'create_v2_process']) {
+      assert.ok(composed.tests.some(item => item.target === `test:${name}`), `${file}/${name}`);
+    }
+    assert.ok(composed.test_features['fabric-cli'].includes('fabric-cli/v2-create-environment'));
+    assert.ok(composed.test_features['fabric-cli'].includes('fabric-cli/runtime-v2'));
   }
 });
 

@@ -244,3 +244,13 @@ Exact parsed CopyJob owner selection, root/create help and Livy root help compos
 with all enabled bindings. The combined executable suite retains cross-owner
 schema refusals, rejects nonmetadata targets and unsupported policies before
 input I/O, and verifies that metadata creation is not runnable-job provisioning.
+
+The optional [Environment binding](environment-create.md) uses
+`v2-create-environment` with the current shared create, item-policy and LRO APIs.
+It registers root-level, definition-free metadata creation additively, including
+the runtime/Livy root help. The Environment composed impact profile enables every
+current create owner plus `headless` and `runtime-v2`; the executable suite checks
+Environment schema isolation, unsupported-policy admission before input I/O and
+the absence of publish, settings, library, compute, session or execution scope.
+Feature-aware help and disabled-owner refusal tests retain both enabled and
+disabled contracts rather than assuming a single exclusive create owner.

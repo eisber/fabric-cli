@@ -100,6 +100,8 @@ async fn execute(args: Vec<OsString>, root_help: bool, deadline: Instant) -> Res
         let text = format!("{text}\n\n{}", super::COPYJOB_CREATE_HELP);
         #[cfg(feature = "v2-create-sparkjobdefinition")]
         let text = format!("{text}\n\n{}", super::SPARK_JOB_DEFINITION_CREATE_HELP);
+        #[cfg(feature = "v2-create-environment")]
+        let text = format!("{text}\n\n{}", super::ENVIRONMENT_CREATE_HELP);
         #[cfg(feature = "v2-kql-database-create")]
         let text = format!("{text}\n\n{}", super::KQL_CREATE_HELP);
         #[cfg(feature = "v2-create-eventhouse")]

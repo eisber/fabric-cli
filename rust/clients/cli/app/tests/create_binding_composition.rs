@@ -53,6 +53,8 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             "SemanticModel",
             #[cfg(feature = "v2-create-sparkjobdefinition")]
             "SparkJobDefinition",
+            #[cfg(feature = "v2-create-environment")]
+            "Environment",
         ] {
             assert!(text.contains(owner), "{text}");
             if args[0] == "create" {
@@ -74,6 +76,13 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             assert!(text.contains("pinned five-part blank template"));
             #[cfg(feature = "v2-create-sparkjobdefinition")]
             assert!(text.contains("empty SparkJobDefinition metadata only"));
+            #[cfg(feature = "v2-create-environment")]
+            {
+                assert!(text.contains("root-level Environment metadata only"));
+                assert!(text.contains(
+                    "No definition, publish, settings, libraries, compute, sessions or execution."
+                ));
+            }
         }
     }
 }
@@ -83,6 +92,12 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("input.json");
     for (owner, bytes, exit, code) in [
+        #[cfg(feature = "v2-create-environment")]
+        ("Environment", EVENTHOUSE, 1, "ApprovalRequired"),
+        #[cfg(feature = "v2-create-environment")]
+        ("Environment", KQL, 2, "CreatePolicyRejected"),
+        #[cfg(feature = "v2-create-environment")]
+        ("Environment", WAREHOUSE, 2, "CreatePolicyRejected"),
         #[cfg(feature = "v2-create-sparkjobdefinition")]
         ("SparkJobDefinition", EVENTHOUSE, 1, "ApprovalRequired"),
         #[cfg(feature = "v2-create-sparkjobdefinition")]
@@ -153,6 +168,10 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         format!("{ROOT}.SparkJobDefinition/src/definition"),
         #[cfg(feature = "v2-create-sparkjobdefinition")]
         format!("{ROOT}.sparkjobdefinition"),
+        #[cfg(feature = "v2-create-environment")]
+        format!("{ROOT}.Environment/src/definition"),
+        #[cfg(feature = "v2-create-environment")]
+        format!("{ROOT}.environment"),
     ] {
         error(
             &run(&["create", &destination, "--input", "nonexistent.json"]),
@@ -172,6 +191,8 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         "SemanticModel",
         #[cfg(feature = "v2-create-sparkjobdefinition")]
         "SparkJobDefinition",
+        #[cfg(feature = "v2-create-environment")]
+        "Environment",
     ] {
         error(
             &run(&[
@@ -183,6 +204,76 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
             ]),
             2,
             "CreatePolicyRejected",
+        );
+    }
+}
+
+#[cfg(feature = "v2-create-environment")]
+#[test]
+fn environment_metadata_does_not_authorize_other_surfaces_or_unsupported_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("input.json");
+    for (bytes, code) in [
+        (
+            br#"{"displayName":"Exact","definition":{}}"#.as_slice(),
+            "CreatePolicyRejected",
+        ),
+        (br#"{"displayName":"Other"}"#, "CreatePolicyRejected"),
+        (
+            br#"{"displayName":"Exact","type":"Notebook"}"#,
+            "CreatePolicyRejected",
+        ),
+        (
+            br#"{"displayName":"Exact","folderId":"22222222-2222-2222-2222-222222222222"}"#,
+            "CreatePolicyRejected",
+        ),
+        (
+            br#"{"displayName":"Exact","compute":{}}"#,
+            "CreatePolicyRejected",
+        ),
+        (
+            br#"{"displayName":"Exact","\u0064isplayName":"Exact"}"#,
+            "InvalidInput",
+        ),
+    ] {
+        std::fs::write(&input, bytes).unwrap();
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.Environment"),
+                "--input",
+                input.to_str().unwrap(),
+                "--if-exists",
+                "skip",
+            ]),
+            2,
+            code,
+        );
+    }
+    for policy in ["overwrite", "duplicate"] {
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.Environment"),
+                "--input",
+                "nonexistent.json",
+                "--if-exists",
+                policy,
+            ]),
+            2,
+            "CreatePolicyRejected",
+        );
+    }
+    for policy in ["error", "skip"] {
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.Environment"),
+                "--if-exists",
+                policy,
+            ]),
+            1,
+            "ApprovalRequired",
         );
     }
 }

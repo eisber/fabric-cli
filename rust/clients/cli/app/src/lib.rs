@@ -24,6 +24,8 @@ pub mod deploy;
 pub mod docs_browse;
 #[cfg(feature = "docs-search")]
 pub mod docs_search;
+#[cfg(feature = "v2-create-environment")]
+pub mod environment_create;
 mod errors;
 #[cfg(feature = "v2-create-eventhouse")]
 pub mod eventhouse_create;
