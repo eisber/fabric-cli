@@ -40,7 +40,7 @@ pub(crate) fn claims(args: &[OsString]) -> bool {
     }
     match parse(args) {
         Ok(Invocation::NativeTabular(command)) => matches!(command.operation, Operation::Query(_)),
-        Ok(Invocation::Display(_)) | Err(_) => true,
+        Ok(Invocation::Display(_) | Invocation::Execute(_)) | Err(_) => true,
         _ => false,
     }
 }
@@ -56,6 +56,13 @@ pub(crate) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             write!(io::stdout().lock(), "{text}")
                 .map_err(|_| failed("OutputFailed", "Query help output failed.", 1))?;
             return Ok(0);
+        }
+        Ok(Invocation::Execute(_)) => {
+            return Err(failed(
+                "UnsupportedTarget",
+                "Dataflow query targets are hosted by fab-rs; fab-cli-v2 does not evaluate Dataflow queries.",
+                2,
+            ));
         }
         Err(error)
             if matches!(

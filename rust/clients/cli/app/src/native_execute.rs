@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Root execute on the existing explicitly selected native host.
+//! Dataflow `query` on the existing explicitly selected native host.
 
 #[cfg(test)]
 #[path = "native_execute_tests.rs"]
@@ -12,10 +12,10 @@ mod diagnostics;
 
 use super::{BatchState, CommandOutcome, Failure, NativeCommand, failure, get};
 use fabric_cli::execute::{
-    ExecuteCommand,
+    ExecuteCommand, ExpressionSource,
     host::{
         ApprovedExecution, ExecutionApproval, ExecutionEvidence, ExecutionFailure, FileDestination,
-        PreparationError, PreparedExecution, read_input,
+        PreparationError, PreparedExecution, compose_input, read_input,
     },
 };
 use fabric_cli_output::{OutputStream, RenderPlan, text::TextPlan};
@@ -252,6 +252,31 @@ fn prepare_local(command: &ExecuteCommand) -> Result<PreparedExecution, Failure>
             })?)
         }
     };
+    let expression = match &command.expression {
+        None => None,
+        Some(ExpressionSource::Inline(text)) => Some(text.clone().into_bytes()),
+        Some(ExpressionSource::File(path)) if path == "-" => {
+            Some(read_input(&mut io::stdin().lock()).map_err(|_| {
+                failure(
+                    "invalid_arguments",
+                    "Unable to read the bounded M expression.",
+                    2,
+                )
+            })?)
+        }
+        Some(ExpressionSource::File(path)) => {
+            let mut file = std::fs::File::open(path)
+                .map_err(|_| failure("invalid_arguments", "Unable to open the M file.", 2))?;
+            Some(read_input(&mut file).map_err(|_| {
+                failure(
+                    "invalid_arguments",
+                    "Unable to read the bounded M expression.",
+                    2,
+                )
+            })?)
+        }
+    };
+    let bytes = compose_input(bytes, expression.as_deref()).map_err(preparation_failure)?;
     let prepared =
         PreparedExecution::new(command, bytes.as_deref()).map_err(preparation_failure)?;
     if let Some(path) = &command.output {

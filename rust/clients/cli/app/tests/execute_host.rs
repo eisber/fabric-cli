@@ -14,7 +14,8 @@ use fabric_cli::{
     execute::{
         ExecuteCommand, ResultFormat,
         host::{
-            ExecutionApproval, FileDestination, PreparationError, PreparedExecution, read_input,
+            ExecutionApproval, FileDestination, PreparationError, PreparedExecution, compose_input,
+            read_input,
         },
     },
     parser::{Invocation, parse_args},
@@ -43,9 +44,8 @@ const OPERATION: &str = "33333333-3333-3333-3333-333333333333";
 fn command(format: &str) -> ExecuteCommand {
     let Invocation::Execute(command) = parse_args([
         "fab-rs",
-        "execute",
+        "query",
         TARGET,
-        "--wait",
         "--format",
         format,
         "-o",
@@ -309,6 +309,43 @@ async fn invalid_input_and_denied_approval_never_touch_credentials_or_transport(
     assert_eq!(credential.0.load(Ordering::SeqCst), 0);
     assert!(read_input(&mut io::Cursor::new(Vec::<u8>::new())).is_err());
     assert!(read_input(&mut io::Cursor::new(vec![b' '; 1024 * 1024 + 1])).is_err());
+}
+
+#[test]
+fn raw_m_sources_compose_with_strict_parameters_without_a_second_m_source() {
+    let expression = b"let Source = 1 in Source";
+    assert_eq!(compose_input(None, None).unwrap(), None);
+    assert_eq!(
+        compose_input(Some(b"{\"arrowVersion\":2}".to_vec()), None).unwrap(),
+        Some(b"{\"arrowVersion\":2}".to_vec())
+    );
+    let composed: serde_json::Value =
+        serde_json::from_slice(&compose_input(None, Some(expression)).unwrap().unwrap()).unwrap();
+    assert_eq!(
+        composed,
+        serde_json::json!({"mExpression":"let Source = 1 in Source"})
+    );
+    let composed = compose_input(Some(b"{\"arrowVersion\":2}".to_vec()), Some(expression))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&composed).unwrap(),
+        serde_json::json!({"arrowVersion":2,"mExpression":"let Source = 1 in Source"})
+    );
+    assert!(PreparedExecution::new(&command("json"), Some(&composed)).is_ok());
+    for parameters in [
+        b"{\"mExpression\":\"1\"}".as_slice(),
+        b"{\"customMashupDocument\":\"section Section1; shared Orders = 1;\"}",
+        b"{\"arrowVersion\":1,\"arrowVersion\":2}",
+        b"{\"unknown\":true}",
+        b"[]",
+    ] {
+        assert!(compose_input(Some(parameters.to_vec()), Some(expression)).is_err());
+    }
+    let oversized = vec![b'1'; 1024 * 1024 + 1];
+    for expression in [b"".as_slice(), b"\xff".as_slice(), oversized.as_slice()] {
+        assert!(compose_input(None, Some(expression)).is_err());
+    }
 }
 
 #[tokio::test]

@@ -291,7 +291,8 @@ jobs:
       - name: Check the combined query CLI candidate's SDK crates offline
         if: >-
           github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' &&
+          (github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' ||
+            github.event.pull_request.head.ref == 'dev/marcozo/dataflow-under-query-20261119') &&
           github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
           github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
         timeout-minutes: 10
@@ -308,7 +309,8 @@ jobs:
         if: >-
           !cancelled() &&
           github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' &&
+          (github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' ||
+            github.event.pull_request.head.ref == 'dev/marcozo/dataflow-under-query-20261119') &&
           github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
           github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
         timeout-minutes: 10
@@ -325,7 +327,8 @@ jobs:
         if: >-
           !cancelled() &&
           github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' &&
+          (github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' ||
+            github.event.pull_request.head.ref == 'dev/marcozo/dataflow-under-query-20261119') &&
           github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
           github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
         timeout-minutes: 10

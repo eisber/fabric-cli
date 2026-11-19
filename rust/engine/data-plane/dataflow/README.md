@@ -8,7 +8,7 @@ over the existing caller-injected `OperationSession`. It does not create an
 HTTP/authentication implementation, runtime, scheduler, CLI process, identity
 fallback or ambient workspace resolver.
 
-The owner-approved CLI v2 binding is **root `execute`**, not `run`. Background
+The owner-approved CLI v2 binding is **root `query`** on a Dataflow target, not `run` or `execute`. Background
 Dataflow execute/applyChanges remains a separate `run` operation. This crate does
 not change the Python CLI or claim live service acceptance.
 
@@ -131,8 +131,8 @@ The public REST contract remains authoritative where the wrapper differs:
 | Completion and failures | Preserve actual 202 operation handles and retrieve the result without another POST. Consumers inspect `PQ Arrow Metadata`; an HTTP success or parsed summary is not sufficient. |
 | Export fidelity | Decode the original Arrow bytes into the shared typed result. Do not route exports through the MCP reader's summary, which converts null cells to empty strings and formats timestamps to whole seconds. Unsupported or lossy conversion remains an error. |
 
-Dataflow named-query execution stays on the existing root `execute` path, separate
-from the AIHub/KQL root `query` providers. Neither should silently fall back to
+Dataflow named-query evaluation is selected by a Dataflow target on root `query`, separate
+from the AIHub/KQL `query` providers. Neither should silently fall back to
 the other after a service failure. See the
 [CLI custom-document example](../../../authoring-docs/dataflow-execution.md#input-and-execution-lifecycle).
 Explicit named-query discovery is a separate SDK facade operation,

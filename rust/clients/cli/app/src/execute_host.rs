@@ -53,6 +53,44 @@ pub struct PreparedExecution {
     approval_input: String,
 }
 
+/// Combine a raw M expression with optional JSON parameters into one input document.
+///
+/// Without an expression the parameters are returned unchanged. With one, the
+/// parameters must be a strict input document without its own M source.
+///
+/// # Errors
+/// Rejects non-UTF-8 or oversized expressions and invalid or conflicting parameters.
+pub fn compose_input(
+    parameters: Option<Vec<u8>>,
+    expression: Option<&[u8]>,
+) -> Result<Option<Vec<u8>>, PreparationError> {
+    let invalid = || PreparationError::InvalidInput;
+    let Some(expression) = expression else {
+        return Ok(parameters);
+    };
+    if expression.is_empty() || expression.len() > MAX_INPUT_BYTES {
+        return Err(invalid());
+    }
+    let expression = std::str::from_utf8(expression).map_err(|_| invalid())?;
+    let mut document = serde_json::Map::new();
+    if let Some(bytes) = parameters {
+        let strict: QueryInput = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+        if strict.custom_mashup_document.is_some() || strict.m_expression.is_some() {
+            return Err(invalid());
+        }
+        let serde_json::Value::Object(object) =
+            serde_json::from_slice(&bytes).map_err(|_| invalid())?
+        else {
+            return Err(invalid());
+        };
+        document = object;
+    }
+    document.insert("mExpression".into(), expression.into());
+    serde_json::to_vec(&document)
+        .map(Some)
+        .map_err(|_| invalid())
+}
+
 impl PreparedExecution {
     /// Validate exact caller-provided bytes without reading files or credentials.
     ///

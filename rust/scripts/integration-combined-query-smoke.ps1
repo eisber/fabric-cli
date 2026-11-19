@@ -38,6 +38,8 @@ $plans = @{
         'query-binary'        = $test + $cli + @('--test', 'query_binary')
         'dataflow-with-query' = $test + $cli + @('--test', 'execute_host', '--test', 'execute_arguments', '--test', 'execute_cli_contract')
         'raw-m-lexer'         = $test + $cli + @('--lib', 'execute::m::tests::')
+        'dataflow-native'     = $test + $cli + @('--bin', 'fab-rs', 'native_read::execute::tests::')
+        'parser-probes'       = $test + $cli + @('--test', 'job_arguments', '--test', 'tabular_export', '--test', 'native_tabular')
     }
     binary = [ordered]@{
         'combined-check'  = @('check', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets', '--no-default-features', '--features', 'native-read,v2-query')
@@ -68,10 +70,24 @@ try {
     }
     if (-not $failed -and $Phase -eq 'binary') {
         $fab = Join-Path $env:CARGO_TARGET_DIR 'debug/fab-rs.exe'
-        foreach ($root in 'execute', 'query', 'get') {
-            & $fab $root --help *> (Join-Path $phaseReceipts "help-$root.txt")
-            $results["help-$root"] = [ordered]@{ exit = $LASTEXITCODE }
-            if ($LASTEXITCODE -ne 0) { $failed = "help-$root"; break }
+        $helps = [ordered]@{
+            'query'          = @('query', '--help')
+            'dataflow-query' = @('query', '/11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Dataflow/queries/Orders', '--help')
+            'get'            = @('get', '--help')
+        }
+        foreach ($help in $helps.GetEnumerator()) {
+            $receipt = Join-Path $phaseReceipts "help-$($help.Key).txt"
+            & $fab @($help.Value) *> $receipt
+            $results["help-$($help.Key)"] = [ordered]@{ exit = $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) { $failed = "help-$($help.Key)"; break }
+        }
+        if (-not $failed -and -not (Select-String -Path (Join-Path $phaseReceipts 'help-dataflow-query.txt') -Pattern '--parameters' -Quiet)) {
+            $failed = 'help-dataflow-query-grammar'
+        }
+        if (-not $failed) {
+            & $fab execute --help *> (Join-Path $phaseReceipts 'help-execute.txt')
+            $results['execute-root-absent'] = [ordered]@{ exit = $LASTEXITCODE }
+            if ($LASTEXITCODE -eq 0) { $failed = 'execute-root-still-registered' }
         }
     }
     $after = @(git status --porcelain=v1 --untracked-files=all)

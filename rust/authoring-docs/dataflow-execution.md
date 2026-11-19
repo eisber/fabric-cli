@@ -2,30 +2,37 @@
 
 # Native Dataflow query execution (v2 preview)
 
-This additive `fab-rs` command binds an explicitly addressed Dataflow named
-Power Query to the public Execute Query API. It does not change Python `fab`,
+The `fab-rs query` root binds an explicitly addressed Dataflow named Power
+Query to the public Execute Query API. A Dataflow target selects this grammar;
+other targets keep the native DAX/KQL/SQL query grammar, with no fallback
+between them. The former `fab-rs execute <Dataflow query>` spelling was
+removed before release; `execute` is reserved for statements with intended
+side effects. It does not change Python `fab`,
 v1 metadata `get -q`/JMESPath projection, or item `job` commands. The source
 baseline is `5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b`; Execute Query is an
 owner-approved addition, not a claim of existing Python command parity.
 
 ```powershell
-fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format json --output orders.json
-fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format csv --input request.json --output orders.csv
-fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format parquet --output orders.parquet --timeout 5m
+fab-rs query "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --format json --output orders.json
+fab-rs query "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --text 'let Source = #table({"n"}, {{1}}) in Source' --format csv
+fab-rs query "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --file orders.pq --format parquet --output orders.parquet --timeout 5m
+fab-rs query "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --parameters request.json --format csv --output orders.csv
 ```
 
 Replace both IDs with explicit UUIDs. The named query is a single path segment;
 names containing `/`, backslashes, percent escapes, control characters, or the
 traversal segments `.` and `..` are not accepted in this first slice. Workspace
 and item name discovery, context-relative paths and cross-engine text-language
-guessing are not implemented. There is no `--text` requirement: the request
-names a Power Query, not SQL. SQL, KQL, DAX, and GraphQL execution engines are
-not implemented in the source baseline and are not fabricated here. Their future
-adapters can use the engine-neutral `fabric-sdk-tabular` component.
+guessing are not implemented. Without `--text` or `--file` the saved named
+Power Query is evaluated; the text is M, never SQL. DAX, KQL and SQL text uses
+the same `query` root against DataAgent and KQL targets; it is never routed to a
+Dataflow.
 
 ## Input and execution lifecycle
 
-`--input FILE` or `--input -` accepts one bounded UTF-8 JSON object:
+`--text M` evaluates one inline M expression, and `--file FILE` or `--file -`
+reads it from a UTF-8 file or stdin; both are the `mExpression` described below.
+`--parameters FILE` or `--parameters -` accepts one bounded UTF-8 JSON object:
 
 ```json
 {"customMashupDocument":"section Section1; shared Orders = ...;","arrowVersion":1}
@@ -35,7 +42,9 @@ Input is optional. Omitted input and `{}` use Arrow version 1 without a custom
 Mashup document. `arrowVersion` accepts only numeric `1` or `2`. Unknown or
 duplicate fields, null values, empty/invalid input and an invalid custom
 document are errors. Input is limited to 1 MiB. Repeated input options do not
-permit multiple stdin reads. Version 2 has service/gateway restrictions; the
+permit multiple stdin reads, and `--file -` cannot be combined with
+`--parameters -`. With `--text` or `--file`, parameters may set only
+`arrowVersion`; a second M source is rejected. Version 2 has service/gateway restrictions; the
 client does not silently retry version 1 if version 2 fails.
 
 For an explicit custom evaluation, put a complete M section document in
@@ -49,7 +58,7 @@ For an explicit custom evaluation, put a complete M section document in
 ```
 
 ```powershell
-fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --input request.json --format parquet --output orders.parquet
+fab-rs query "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --parameters request.json --format parquet --output orders.parquet
 ```
 
 The document is sent unchanged as a request-scoped override. Execution does not
@@ -58,7 +67,8 @@ apply changes, or start a background refresh as a prerequisite. It still uses
 the addressed Dataflow's execution context and service-side source credentials;
 it does not provision missing connections. M evaluation itself can have source
 effects, so an unchanged Dataflow definition is not a read-only guarantee.
-For a single expression instead of a complete document, use `mExpression`:
+For a single expression instead of a complete document, use `--text`, `--file`
+or `mExpression`:
 
 ```json
 {
@@ -120,7 +130,7 @@ bounds each complete definition response and complete JSON output (default and
 ceiling 16 MiB); metadata is additionally limited to 1 MiB and 4,096 entries.
 The existing observer permits at most 100 status/result requests and a maximum
 60-second advertised polling delay. Results are never clipped.
-Discovery rejects execution-only `--wait`, `--input`, `--format`, `--output` and
+Discovery rejects evaluation-only `--wait`, `--input`, `--format`, `--output` and
 `--limit`, rather than silently ignoring them. Redirect stdout for a file;
 attached Windows console output is refused before credentials to preserve exact
 Unicode.
@@ -129,7 +139,7 @@ Unicode.
 retrieval; it cannot change acquisition or hide an exceeded source bound.
 Without `--list-queries`, ordinary `get` metadata and its projection remain
 unchanged. Discovery-specific `--timeout` and `--max-bytes` require the flag.
-The evaluation-only `execute` command rejects `--list-queries`; no alias remains.
+Dataflow `query` evaluation rejects `--list-queries`; no alias remains.
 Cancellation or an interrupted write can leave partial output, so the
 host stops rather than continuing another batch command.
 Error delivery also uses an owned stderr handle within the remaining deadline
@@ -166,7 +176,8 @@ The host submits exactly one
 operation engine and requests native Arrow media, independent of output format.
 An immediate 200 response and an actual generic 202 operation/state/result path
 are supported. Accepted is not completed, and no scheduler handle is invented.
-`--wait` is required in this slice.
+The query always waits for its result within `--timeout`; there is no
+`--wait` flag or asynchronous handle.
 
 The service's 90-second query evaluation window is distinct from the total
 client budget. `--timeout` defaults to `5m`, accepts positive integer `ms`, `s`,
@@ -214,11 +225,11 @@ silently drop additional datasets.
 CSV and JSON default to stdout; `--output FILE` selects a new local file.
 `--output -` explicitly selects stdout. Parquet requires a file: binary stdout,
 including terminals, is refused in this first slice. The `--format` result
-contract is separate from v1 `--output_format`; the latter is rejected for root
-execute. Excel output is deferred.
+contract is separate from v1 `--output_format`; the latter is rejected for
+Dataflow queries. Excel output is deferred.
 
-Attached **Windows console** stdout is an explicit platform limit: root execute
-fails with `UnsupportedCapability` before approval, credentials or remote
+Attached **Windows console** stdout is an explicit platform limit: a Dataflow
+query fails with `UnsupportedCapability` before approval, credentials or remote
 submission unless `--output FILE` is supplied. Alternatively, redirect stdout
 to a file or pipe. The bounded owned-handle writer preserves exact UTF-8 CSV/JSON
 bytes in redirected streams but does not implement Windows' Unicode console

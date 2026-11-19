@@ -89,13 +89,13 @@ reading input files or stdin, initializing configuration, or acquiring identity.
 This is not a claim that SQL, KQL, DAX, or published-function service execution
 has been implemented.
 
-The integrated executable's existing `execute` root retains its
+The integrated executable routes `query` on a Dataflow target to its
 [native Dataflow query contract](dataflow-execution.md), including its real
-provider, required `--wait`, named-query path and native Arrow result handling.
-It is not replaced by the generic text-based frontend. Generic
-`execute --text/--file` forms are available only to embedding frontends through
-`fabric_cli::native_tabular::command` and `parse_args`; the shipped executable
-rejects those incompatible forms as invalid arguments. Dataflow output continues
+provider, named-query path, optional raw M and native Arrow result handling.
+It is not replaced by the generic text-based frontend. The executable does not
+register an `execute` root; generic `execute --text/--file` forms are
+available only to embedding frontends through
+`fabric_cli::native_tabular::command` and `parse_args`. Dataflow output continues
 to use the separately documented [SDK tabular result contract](tabular-results.md).
 
 `fabric_cli::tabular_export` exposes reusable `arguments`, `request`,
@@ -128,7 +128,7 @@ The two examples above are configured-host invocation forms, not executable
 service examples for the unconfigured preview binary. An embedding frontend
 using `native_tabular::parse_args` can additionally parse
 `execute <database-path> --file statement.sql --format json --output result.json`.
-That generic form must not be passed to the executable's Dataflow `execute` root.
+The shipped executable rejects that generic form as an unknown root.
 Caller-owned query and execute require exactly one of
 `--text` or `--file`. Optional `--parameters FILE` selects native parameters.
 `--file -` or `--parameters -` selects one provider-owned stdin reader; both

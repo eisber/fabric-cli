@@ -36,7 +36,7 @@ and search fails explicitly. See [embedded documentation search](../../../author
 for corpus preparation, offline attribution, query limits, and benchmarks.
 
 The offline legacy read probes accept only read invocations. Job and Dataflow
-`execute` invocations remain explicit errors in those probes; their dedicated
+`query` invocations remain explicit errors in those probes; their dedicated
 command tests cover execution separately.
 
 In a `native-read` build, `fab-rs auth login` uses the saved selection or opens
@@ -624,14 +624,17 @@ A single `native-read,v2-query` (Windows) or `headless,v2-query` build combines
 three separate roots without shadowing or fallback between them:
 
 ```text
-fab-rs query   PATH --text TEXT|--file FILE [--engine ENGINE] [--format json|csv|parquet|xlsx --output FILE]
-fab-rs execute /WS.Workspace/DF.Dataflow/queries/NAME --wait [--input FILE|-] [--timeout DURATION]
-               [--format json|csv|parquet] [--output FILE] [--limit ROWS] [--max-bytes BYTES]
-fab-rs get     /WS.Workspace/DF.Dataflow --list-queries [--timeout DURATION] [--max-bytes BYTES] [-q JMESPATH]
+fab-rs query PATH --text TEXT|--file FILE [--engine ENGINE] [--format json|csv|parquet|xlsx --output FILE]
+fab-rs query /WS.Workspace/DF.Dataflow/queries/NAME [--text M|--file FILE|-] [--parameters FILE|-]
+             [--format json|csv|parquet] [--output FILE] [--timeout DURATION] [--limit ROWS] [--max-bytes BYTES]
+fab-rs get   /WS.Workspace/DF.Dataflow --list-queries [--timeout DURATION] [--max-bytes BYTES] [-q JMESPATH]
 ```
 
-`query` covers DataAgent/AIHub (DAX, SQL, KQL datasources) and artifact-native
-KQL. `execute` is Dataflow-only. Dataflow query discovery is a read under `get`.
+`query` covers DataAgent/AIHub (DAX, SQL, KQL datasources), artifact-native
+KQL and Dataflow Power Query. A path segment ending in `.Dataflow` selects the
+Dataflow grammar; every other target keeps the DAX/KQL/SQL grammar. There is no
+`execute` root in the executable; it is reserved for statements with intended
+side effects. Dataflow query discovery is a read under `get`.
 
 The additive Rust feature `v2-query` registers `query_host` over the existing
 root query grammar, with explicit file representations:
@@ -716,12 +719,15 @@ qualification requirements.
 
 ## Native Dataflow query execution
 
-The additive v2 `execute` root binds an explicit
+`query` on an explicit
 `/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>` target
-with required `--wait`. `--format json|csv|parquet` uses the shared native Arrow
-tabular result component; Parquet requires a new file destination. Optional
-`--input FILE|-` supplies strict JSON for `customMashupDocument` and
-`arrowVersion` (1 or 2), not SQL text.
+evaluates that Power Query and always waits within `--timeout`.
+`--format json|csv|parquet` uses the shared native Arrow tabular result
+component; Parquet requires a new file destination. `--text M` or
+`--file FILE|-` evaluates a raw M expression under the query name. Optional
+`--parameters FILE|-` supplies strict JSON for `customMashupDocument` or
+`mExpression` and `arrowVersion` (1 or 2), not SQL text. `fab-cli-v2 query`
+rejects Dataflow targets as unsupported.
 
 The host requires target/input-bound approval before credentials, performs
 no-clobber output preflight, and preserves real operation evidence on local

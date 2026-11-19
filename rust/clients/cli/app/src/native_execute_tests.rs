@@ -148,9 +148,8 @@ async fn invoke_with_output(
 ) -> get::Delivery {
     let mut arguments = vec![
         "fab-rs".to_owned(),
-        "execute".into(),
+        "query".into(),
         TARGET.into(),
-        "--wait".into(),
         "--format".into(),
         format.into(),
     ];
@@ -163,7 +162,7 @@ async fn invoke_with_output(
     let fabric_cli::parser::Invocation::Execute(command) =
         fabric_cli::parser::parse_args(arguments).unwrap()
     else {
-        panic!("root execute")
+        panic!("Dataflow query")
     };
     let approved = PreparedExecution::new(&command, None)
         .unwrap()
@@ -704,7 +703,7 @@ async fn bounded_stdout_requires_a_successful_flush_without_replaying_the_query(
 fn windows_console_policy_requires_a_file_or_redirect_before_host_effects() {
     for format in ["json", "csv"] {
         for output in [None, Some("-"), Some("unicode-result.data")] {
-            let mut args = vec!["fab-rs", "execute", TARGET, "--wait", "--format", format];
+            let mut args = vec!["fab-rs", "query", TARGET, "--format", format];
             if let Some(output) = output {
                 args.extend(["--output", output]);
             }
