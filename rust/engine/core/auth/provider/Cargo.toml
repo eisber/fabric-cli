@@ -15,6 +15,7 @@ layer = "identity"
 
 [features]
 default = []
+maps-private = ["fabric-identity-windows?/maps-private"]
 interactive = ["dep:azure_core", "dep:async-trait", "dep:tokio", "dep:serde", "dep:serde_json", "dep:thiserror", "dep:base64", "dep:keyring", "dep:ring", "dep:secret-service", "dep:security-framework", "dep:zbus"]
 windows-broker = ["dep:fabric-identity-windows", "dep:azure_core", "dep:async-trait", "dep:tokio"]
 headless = ["dep:azure_identity", "dep:azure_core", "dep:async-trait", "dep:tokio", "dep:serde_json", "dep:thiserror", "dep:rustix"]

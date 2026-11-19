@@ -20,6 +20,7 @@ pub mod kql_databases;
 pub mod livy;
 #[cfg(feature = "livy-arrow")]
 pub mod livy_arrow;
+pub mod maps;
 pub mod metadata;
 pub mod models;
 pub mod notebook_create;

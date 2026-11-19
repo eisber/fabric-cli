@@ -298,7 +298,7 @@ impl NativeCredential {
         }
     }
 
-    fn is_broker(&self) -> bool {
+    pub(crate) fn is_broker(&self) -> bool {
         matches!(self, Self::Broker { .. })
     }
 
@@ -366,7 +366,7 @@ impl NativeCredential {
         }
     }
 
-    async fn connect(
+    pub(crate) async fn connect(
         self,
         http: std::sync::Arc<dyn azure_core::http::HttpClient>,
     ) -> Result<std::sync::Arc<dyn azure_core::credentials::TokenCredential>, Failure> {

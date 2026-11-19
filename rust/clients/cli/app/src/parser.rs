@@ -69,6 +69,9 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// Opt-in Maps processing under the item command group.
+    #[cfg(feature = "maps")]
+    Maps(Box<crate::maps::MapsCommand>),
     /// OCV feedback preview or explicitly authorized submission.
     Feedback(crate::feedback::FeedbackCommand),
     /// Native serving operations on an exact owning MLModel item.
@@ -147,6 +150,13 @@ pub fn command() -> Command {
                 .global(true)
                 .value_parser(["json", "text"]),
         );
+    #[cfg(feature = "maps")]
+    let command = command.subcommand(
+        Command::new("item")
+            .about("Item-specific operations")
+            .arg_required_else_help(true)
+            .subcommand(crate::maps::maps_command()),
+    );
     #[cfg(any(feature = "windows-broker", feature = "interactive"))]
     let command = auth::register(command);
     #[cfg(feature = "self-update")]
@@ -245,6 +255,12 @@ where
 {
     let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let root = root_argument(&args);
+    #[cfg(feature = "maps")]
+    if let Some(index) = root
+        && args[index] == "item"
+    {
+        crate::maps::validate_arguments(&args[index + 1..], 301)?;
+    }
     if root.and_then(|index| args[index].to_str()) == Some("delete") {
         args = delete::normalize(&args, root.expect("selected delete root"));
     }
@@ -258,8 +274,11 @@ where
         }
     }
     let mut parser = command();
-    if root.and_then(|index| args[index].to_str()) == Some("execute") {
-        // V1's inherited last-value-wins policy must not discard v2 selectors.
+    if matches!(
+        root.and_then(|index| args[index].to_str()),
+        Some("execute" | "item")
+    ) {
+        // Explicit selectors must not inherit v1's last-value-wins policy.
         parser = parser.args_override_self(false);
     }
     if batch::has_root_option(&args) {
@@ -333,6 +352,17 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    #[cfg(feature = "maps")]
+    if name == "item" {
+        let maps = values
+            .subcommand_matches("maps")
+            .ok_or_else(invalid_arguments)?;
+        let mut command = crate::maps::from_matches(maps)?;
+        if let Some(format) = matches.get_one::<String>("output_format") {
+            command.output_format.clone_from(format);
+        }
+        return Ok(Invocation::Maps(Box::new(command)));
+    }
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
     }
@@ -439,6 +469,12 @@ where
         force: !list && values.get_flag("force"),
         output_format: matches.get_one::<String>("output_format").cloned(),
     })))
+}
+
+/// Whether argv selects the feature-owned item namespace, without accessing state.
+#[cfg(feature = "maps")]
+pub fn is_maps_invocation(args: &[OsString]) -> bool {
+    root_argument(args).is_some_and(|index| args[index] == "item")
 }
 
 fn root_argument(args: &[OsString]) -> Option<usize> {

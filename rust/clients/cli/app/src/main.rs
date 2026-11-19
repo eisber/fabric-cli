@@ -19,6 +19,8 @@ mod interactive;
 #[cfg(feature = "interactive")]
 mod interactive_binding;
 mod local_host;
+#[cfg(feature = "maps")]
+mod maps_main;
 #[cfg(feature = "native-host")]
 mod native_read;
 #[cfg(feature = "repl")]
@@ -99,6 +101,28 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(&arguments);
+    #[cfg(feature = "maps")]
+    if fabric_cli::parser::is_maps_invocation(&arguments) {
+        match &invocation {
+            Ok(Invocation::Maps(command)) => {
+                return maps_main::run(command).map(ExitCode::from);
+            }
+            Ok(Invocation::Display(text)) => {
+                write!(io::stdout().lock(), "{text}")?;
+                return Ok(ExitCode::SUCCESS);
+            }
+            Err(error) => {
+                return write_error(
+                    CommandError {
+                        code: "invalid_arguments",
+                        message: invalid_arguments_message(error),
+                    },
+                    2,
+                );
+            }
+            _ => {}
+        }
+    }
     if let Ok(Invocation::Feedback(command)) = &invocation {
         return feedback_host::run(command).map(exit_status);
     }
@@ -163,6 +187,10 @@ fn dispatch(
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        #[cfg(feature = "maps")]
+        Ok(Invocation::Maps(command)) => {
+            return maps_main::run(&command).map(CommandOutcome::Returned);
+        }
         Ok(Invocation::Feedback(command)) => return feedback_host::run(&command),
         Ok(Invocation::NativeTabular(command)) => {
             #[cfg(feature = "v2-run")]

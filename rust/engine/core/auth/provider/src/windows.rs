@@ -963,6 +963,8 @@ impl TokenCredential for WindowsCredential {
             ["https://storage.azure.com/.default"] => TokenAudience::OneLake,
             ["https://management.azure.com/.default"] => TokenAudience::Arm,
             ["https://database.windows.net/.default"] => TokenAudience::Sql,
+            #[cfg(feature = "maps-private")]
+            ["https://analysis.windows.net/powerbi/api/.default"] => TokenAudience::PowerBiMaps,
             ["https://petrol.office.microsoft.com/Feedback.ReadWrite"] => TokenAudience::Ocv,
             ["https://petrol-int.office.microsoft.com/Feedback.ReadWrite"] => TokenAudience::OcvPpe,
             _ => {
@@ -1288,6 +1290,39 @@ mod tests {
         assert_eq!(call.interaction, Interaction::Silent);
         call.succeed("native-id", true);
         assert!(token.await.is_ok());
+        broker.idle();
+    }
+
+    #[cfg(feature = "maps-private")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn private_maps_scope_uses_only_the_existing_silent_application_account() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        assert_eq!(credential.metadata().len(), 1);
+        let token =
+            credential.get_token(&["https://analysis.windows.net/powerbi/api/.default"], None);
+        tokio::pin!(token);
+        pending(token.as_mut());
+        let call = broker.acquisition();
+        assert_eq!(call.audiences, vec![TokenAudience::PowerBiMaps]);
+        assert_eq!(call.binding.as_deref(), Some("native-id"));
+        assert_eq!(call.interaction, Interaction::Silent);
+        call.succeed("native-id", true);
+        assert!(token.await.is_ok());
+        broker.idle();
+    }
+
+    #[cfg(not(feature = "maps-private"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn private_maps_scope_is_disabled_without_the_explicit_feature() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        assert!(
+            credential
+                .get_token(&["https://analysis.windows.net/powerbi/api/.default"], None)
+                .await
+                .is_err()
+        );
         broker.idle();
     }
 
