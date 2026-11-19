@@ -306,7 +306,7 @@ where
         root.and_then(|index| args[index].to_str()),
         Some("ls" | "dir" | "get" | "job" | "table")
     ) {
-        source_read_arguments(&parser, &args)?
+        source_read_arguments(&parser, &args, !discovery)?
     } else {
         args.clone()
     };
@@ -546,6 +546,7 @@ fn invalid_arguments() -> clap::Error {
 fn source_read_arguments(
     parser: &Command,
     args: &[OsString],
+    allow_long_abbreviations: bool,
 ) -> Result<Vec<OsString>, clap::Error> {
     let Some(start) = root_argument(args).filter(|index| {
         matches!(
@@ -605,7 +606,7 @@ fn source_read_arguments(
             {
                 exact
             } else {
-                if !schema.is_infer_long_args_set() {
+                if !allow_long_abbreviations {
                     return Ok(args.to_vec());
                 }
                 let mut candidates = schema

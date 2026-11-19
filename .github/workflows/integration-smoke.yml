@@ -170,6 +170,7 @@ jobs:
               'rust/clients/cli/app/src/execute_m.rs',
               'rust/clients/cli/app/src/execute_host.rs',
               'rust/clients/cli/app/src/execute.rs',
+              'rust/clients/cli/app/src/get_dataflow_queries.rs',
               'rust/clients/cli/app/src/native_dataflow_queries.rs',
               'rust/clients/cli/app/src/native_read.rs',
               'rust/clients/cli/app/src/main.rs',
