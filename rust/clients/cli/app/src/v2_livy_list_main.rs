@@ -96,6 +96,8 @@ async fn execute(args: Vec<OsString>, root_help: bool, deadline: Instant) -> Res
         let text = format!("{text}\n\n{}", super::WAREHOUSE_CREATE_HELP);
         #[cfg(feature = "v2-create-semantic-model")]
         let text = format!("{text}\n\n{}", super::SEMANTIC_MODEL_CREATE_HELP);
+        #[cfg(feature = "v2-copyjob-create")]
+        let text = format!("{text}\n\n{}", super::COPYJOB_CREATE_HELP);
         #[cfg(feature = "v2-kql-database-create")]
         let text = format!("{text}\n\n{}", super::KQL_CREATE_HELP);
         #[cfg(feature = "v2-create-eventhouse")]

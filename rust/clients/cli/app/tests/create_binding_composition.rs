@@ -47,6 +47,8 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             "KQLDatabase",
             "Eventhouse",
             "Warehouse",
+            #[cfg(feature = "v2-copyjob-create")]
+            "CopyJob",
             #[cfg(feature = "v2-create-semantic-model")]
             "SemanticModel",
         ] {
@@ -59,6 +61,11 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             assert!(text.contains("Metadata-only Eventhouse"));
             assert!(text.contains("same-name default KQL database"));
             assert!(text.contains("capacity or storage consumption"));
+            #[cfg(feature = "v2-copyjob-create")]
+            {
+                assert!(text.contains("empty CopyJob metadata only"));
+                assert!(text.contains("not a configured runnable job"));
+            }
             #[cfg(feature = "runtime-v2")]
             assert!(text.contains("Livy"));
             #[cfg(feature = "v2-create-semantic-model")]
@@ -72,6 +79,12 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("input.json");
     for (owner, bytes, exit, code) in [
+        #[cfg(feature = "v2-copyjob-create")]
+        ("CopyJob", EVENTHOUSE, 1, "ApprovalRequired"),
+        #[cfg(feature = "v2-copyjob-create")]
+        ("CopyJob", KQL, 2, "CreatePolicyRejected"),
+        #[cfg(feature = "v2-copyjob-create")]
+        ("CopyJob", WAREHOUSE, 2, "CreatePolicyRejected"),
         #[cfg(feature = "v2-create-semantic-model")]
         ("SemanticModel", EVENTHOUSE, 1, "ApprovalRequired"),
         #[cfg(feature = "v2-create-semantic-model")]
@@ -118,6 +131,10 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         format!("{ROOT}.KQLDatabase/src/definition"),
         format!("{ROOT}.Warehouse/src/definition"),
         format!("{ROOT}.warehouse"),
+        #[cfg(feature = "v2-copyjob-create")]
+        format!("{ROOT}.CopyJob/src/definition"),
+        #[cfg(feature = "v2-copyjob-create")]
+        format!("{ROOT}.copyjob"),
         #[cfg(feature = "v2-create-semantic-model")]
         format!("{ROOT}.SemanticModel/src/definition"),
         #[cfg(feature = "v2-create-semantic-model")]
@@ -135,6 +152,8 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         "Report",
         "Notebook",
         "Warehouse",
+        #[cfg(feature = "v2-copyjob-create")]
+        "CopyJob",
         #[cfg(feature = "v2-create-semantic-model")]
         "SemanticModel",
     ] {
@@ -148,6 +167,65 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
             ]),
             2,
             "CreatePolicyRejected",
+        );
+    }
+}
+
+#[cfg(feature = "v2-copyjob-create")]
+#[test]
+fn copyjob_metadata_never_selects_another_owner_or_authorizes_unsupported_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("input.json");
+    for (owner, bytes, code) in [
+        (
+            "CopyJob",
+            br#"{"displayName":"Exact","definition":{}}"#.as_slice(),
+            "CreatePolicyRejected",
+        ),
+        (
+            "CopyJob",
+            br#"{"displayName":"Exact","displayName":"Exact"}"#,
+            "InvalidInput",
+        ),
+        (
+            "CopyJob",
+            br#"{"displayName":"Other"}"#,
+            "CreatePolicyRejected",
+        ),
+        ("Report", EVENTHOUSE, "CreatePolicyRejected"),
+        ("KQLDatabase", EVENTHOUSE, "CreatePolicyRejected"),
+    ] {
+        std::fs::write(&input, bytes).unwrap();
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.{owner}"),
+                "--input",
+                input.to_str().unwrap(),
+            ]),
+            2,
+            code,
+        );
+    }
+    for policy in ["overwrite", "duplicate"] {
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.CopyJob"),
+                "--input",
+                "nonexistent.json",
+                "--if-exists",
+                policy,
+            ]),
+            2,
+            "CreatePolicyRejected",
+        );
+    }
+    for policy in ["error", "skip"] {
+        error(
+            &run(&["create", &format!("{ROOT}.CopyJob"), "--if-exists", policy]),
+            1,
+            "ApprovalRequired",
         );
     }
 }

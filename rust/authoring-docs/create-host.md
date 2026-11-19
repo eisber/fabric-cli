@@ -194,9 +194,11 @@ The exact parsed metadata target selects the enabled binding before input I/O.
 Combined root help retains every enabled disclosure, including anticipated
 provider-created KQL children and capacity/storage consumption. This is
 provisional candidate evidence, not full Eventhouse or platform qualification.
-The original Eventhouse and KQL executable suites retain their exact source
-and run in their respective feature sets: each intentionally rejects the other
-disabled owner. A separate combined executable suite enables both and checks
+The Eventhouse and KQL executable suites retain their disabled-owner refusal
+cases in their respective isolated feature sets. Those cases are conditional
+when the other owner is enabled; lowercase, unsupported-owner and nonmetadata
+refusals remain unconditional. Rejecting a valid enabled owner before input I/O
+would contradict additive dispatch. A separate combined executable suite enables both and checks
 typed schema selection, cross-owner input rejection, local approval fencing
 and help without changing those original expectations.
 
@@ -229,3 +231,10 @@ these unchanged shared producers. Exact parsed owner selection and create/root
 help register it additively alongside Notebook, Report, Warehouse and enabled
 KQLDatabase/Eventhouse bindings, including the Livy root. Its metadata-only
 input cannot select another owner's schema or change embedded template bytes.
+
+The optional [CopyJob binding](copyjob-create.md) adds metadata-only empty-item
+creation through `v2-copyjob-create`, without changing these shared producers.
+Exact parsed CopyJob owner selection, root/create help and Livy root help compose
+with all enabled bindings. The combined executable suite retains cross-owner
+schema refusals, rejects nonmetadata targets and unsupported policies before
+input I/O, and verifies that metadata creation is not runnable-job provisioning.

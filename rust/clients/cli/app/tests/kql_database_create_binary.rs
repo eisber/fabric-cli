@@ -65,9 +65,16 @@ fn executable_policy_and_wrong_owner_reject_without_consuming_blocked_stdin() {
         vec!["create", TARGET, "--input", "-", "--force"],
         vec!["create", TARGET, "--input", "-", "--if-exists", "overwrite"],
         vec!["create", TARGET, "--input", "-", "--if-exists", "duplicate"],
+        #[cfg(not(feature = "v2-create-eventhouse"))]
         vec![
             "create",
             "/11111111-1111-1111-1111-111111111111.Workspace/Database_1.Eventhouse",
+            "--input",
+            "-",
+        ],
+        vec![
+            "create",
+            "/11111111-1111-1111-1111-111111111111.Workspace/Database_1.Lakehouse",
             "--input",
             "-",
         ],

@@ -24,6 +24,11 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "copyjob_create"
+path = "tests/copyjob_create.rs"
+required-features = ["v2-copyjob-create"]
+
+[[test]]
 name = "semantic_model_create"
 path = "tests/semantic_model_create.rs"
 required-features = ["v2-create-semantic-model"]
@@ -157,6 +162,7 @@ semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
 v2-create = []
+v2-copyjob-create = ["v2-create"]
 v2-create-semantic-model = ["v2-create"]
 v2-kql-database-create = ["v2-create"]
 v2-create-eventhouse = ["v2-create"]

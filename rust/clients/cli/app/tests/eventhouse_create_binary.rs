@@ -166,7 +166,10 @@ fn actual_policy_and_target_rejection_precede_input_io_and_authentication() {
     }
     for path in [
         "/ambient.Workspace/Exact.Eventhouse",
+        #[cfg(not(feature = "v2-kql-database-create"))]
         "/11111111-1111-1111-1111-111111111111.Workspace/Exact.KQLDatabase",
+        "/11111111-1111-1111-1111-111111111111.Workspace/Exact.kqldatabase",
+        "/11111111-1111-1111-1111-111111111111.Workspace/Exact.Lakehouse",
         "/11111111-1111-1111-1111-111111111111.Workspace/Exact.Eventhouse/Files/input",
     ] {
         error(

@@ -736,6 +736,39 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "copyjob-create",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/engine/sdk/src/copyjobs/create.rs",
+        "rust/engine/sdk/tests/copyjob_create.rs",
+        "rust/authoring-docs/copyjob-create.md"
+      ],
+      "depends_on": ["sdk"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:copyjob_create"}
+      ],
+      "checks": ["sdk-graph"]
+    },
+    {
+      "id": "cli-copyjob-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/copyjob_create.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/src/v2_livy_list_main.rs",
+        "rust/clients/cli/app/tests/copyjob_create.rs",
+        "rust/clients/cli/app/tests/create_binding_composition.rs"
+      ],
+      "depends_on": ["copyjob-create", "cli-create-host"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:copyjob_create"},
+        {"package": "fabric-cli", "target": "test:create_binding_composition"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-semantic-model-create",
       "package": "fabric-cli",
       "inputs": [
@@ -3582,6 +3615,33 @@
       "id": "v2-create-semantic-model-headless",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-create-semantic-model", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-copyjob-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-copyjob-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-copyjob-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-copyjob-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-copyjob-create-composed",
+      "packages": ["fabric-cli"],
+      "features": [
+        "fabric-cli/v2-copyjob-create",
+        "fabric-cli/v2-create-eventhouse",
+        "fabric-cli/v2-kql-database-create",
+        "fabric-cli/v2-create-semantic-model",
+        "fabric-cli/headless"
+      ],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["dependency-graph"]
     },

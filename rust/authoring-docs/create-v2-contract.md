@@ -24,6 +24,11 @@ the existing pinned five-part definition with outer name/description metadata.
 Its `v2-create-semantic-model` feature registers alongside the current create
 bindings; it does not replace them or expose arbitrary model definitions.
 
+The optional [CopyJob binding](copyjob-create.md), enabled by
+`v2-copyjob-create`, adds metadata-only creation of an empty item, not a
+configured runnable job. It uses the same parser, host, policy, immediate
+approval and HTTP/LRO producers alongside the other enabled owners.
+
 ## Opt-in native Notebook mount
 
 Build `fabric-cli` with `headless,v2-create` to enable the existing root grammar:

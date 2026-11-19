@@ -1512,6 +1512,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-copyjob-create', 'copyjob_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-semantic-model', 'semantic_model_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'warehouse_create_wire', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-kql-database-create', 'kql_database_create', 'rust/clients/cli/app/Cargo.toml'],
@@ -1539,6 +1540,61 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
   ]) {
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
+  }
+});
+
+test('CopyJob create catalog covers SDK, shared host and isolated/headless executable consumers', () => {
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const ids = new Set(['copyjob-create', 'cli-copyjob-create', 'cli-create-host']);
+  const components = catalog.components.filter(item => ids.has(item.id)).map(item => ({
+    ...item, depends_on: item.depends_on.filter(id => ids.has(id)), checks: [],
+  }));
+  const sdk = pkg('fabric-sdk', [], [
+    target('copyjob_create', 'test', 'rust/engine/sdk/tests/copyjob_create.rs'),
+  ]);
+  sdk.manifest_path = absolute('rust/engine/sdk/Cargo.toml');
+  sdk.targets[0].src_path = absolute('rust/engine/sdk/src/lib.rs');
+  const cli = pkg('fabric-cli', ['fabric-sdk'], [
+    target('copyjob_create', 'test', 'rust/clients/cli/app/tests/copyjob_create.rs', ['v2-copyjob-create']),
+    target('create_host', 'test', 'rust/clients/cli/app/tests/create_host.rs', ['v2-create']),
+    target('create_binding_composition', 'test', 'rust/clients/cli/app/tests/create_binding_composition.rs',
+      ['v2-create-eventhouse', 'v2-kql-database-create', 'headless']),
+    target('fab-cli-v2', 'bin', 'rust/clients/cli/app/src/v2_main.rs', ['headless']),
+  ], {default: [], 'v2-create': [], 'v2-copyjob-create': ['v2-create'],
+    'v2-create-eventhouse': ['v2-create'], 'v2-kql-database-create': ['v2-create'],
+    'v2-create-semantic-model': ['v2-create'], headless: []});
+  cli.manifest_path = absolute('rust/clients/cli/app/Cargo.toml');
+  cli.targets[0].src_path = absolute('rust/clients/cli/app/src/lib.rs');
+  cli.dependencies[0].path = absolute('rust/engine/sdk');
+  const graph = {schema: 1, components,
+    profiles: catalog.profiles.filter(item => item.id.startsWith('v2-copyjob-create'))
+      .map(item => ({...item, checks: []})), checks: []};
+  const inspect = file => plan({root: ROOT, metadata: metadata([sdk, cli]), graph, files: [file]});
+  for (const file of [
+    'rust/engine/sdk/src/copyjobs/create.rs',
+    'rust/authoring-docs/copyjob-create.md',
+  ]) {
+    const result = inspect(file);
+    assert.ok(testKeys(result).includes('fabric-sdk/test:copyjob_create'));
+    assert.ok(testKeys(result).includes('fabric-cli/test:copyjob_create'));
+    for (const id of ['v2-copyjob-create', 'v2-copyjob-create-headless', 'v2-copyjob-create-composed']) {
+      assert.ok(result.profiles.some(item => item.id === id));
+    }
+  }
+  const leaf = inspect('rust/clients/cli/app/src/copyjob_create.rs');
+  assert.ok(testKeys(leaf).includes('fabric-cli/test:copyjob_create'));
+  assert.ok(!testKeys(leaf).includes('fabric-sdk/test:copyjob_create'));
+  assert.ok(!leaf.profiles.some(item => /notebook|refresh|run/.test(item.id)));
+  const shared = inspect('rust/clients/cli/app/src/create_command.rs');
+  assert.ok(testKeys(shared).includes('fabric-cli/test:create_host'));
+  assert.ok(testKeys(shared).includes('fabric-cli/test:copyjob_create'));
+  for (const file of [
+    'src/v2_main.rs', 'src/v2_create_main.rs', 'src/v2_livy_list_main.rs',
+    'tests/create_binding_composition.rs',
+  ]) {
+    const result = inspect(`rust/clients/cli/app/${file}`);
+    assert.ok(testKeys(result).includes('fabric-cli/test:copyjob_create'), file);
+    assert.ok(testKeys(result).includes('fabric-cli/test:create_binding_composition'), file);
   }
 });
 
