@@ -6,6 +6,60 @@
 SDK consumers continue to inject `Arc<dyn TokenCredential>` directly. The
 default feature set is empty and performs no credential discovery.
 
+## Explicit public Kusto resource
+
+`fabric_identity::PUBLIC_KUSTO_SCOPE` is exactly
+`https://api.kusto.windows.net/.default`. Request that one literal scope through
+the existing selected credential's `TokenCredential::get_token` API. Do not
+derive a scope from a cluster hostname, replace it with a Fabric or ARM scope,
+or combine it with another resource. Custom authorities, sovereign-cloud
+resources, encoded variants, suffixes and surrounding whitespace are not accepted.
+See Microsoft's [Kusto HTTPS authentication reference](https://learn.microsoft.com/en-us/kusto/api/rest/authentication?view=microsoft-fabric)
+for the public Kusto resource and separate service authorization requirements.
+
+The existing headless, device-code and Windows broker adapters retain the
+selected public-cloud tenant and client. Device-code renewal also checks the
+selected account and session generation before returning cached tokens. Windows
+refresh pins the same validated native account and requests one closed
+`windows_broker::TokenAudience::Kusto`, always with `Interaction::Silent`.
+`WindowsCredential::connect_for_audience` can also select this one audience
+silently; `connect` remains Fabric-only. Resource scopes remain part of the
+existing cache routing: a Fabric token cannot satisfy a Kusto request.
+No new credential provider, persistent token format, identity discovery,
+default-account fallback or plaintext token storage is introduced. SDK service
+clients still receive a caller-injected credential and do not depend on these
+identity implementations.
+
+For both supported managed hosts, the existing metadata HTTP guard also accepts
+the exact resource `https://api.kusto.windows.net` produced by the official
+credential for this scope. The metadata endpoint, API version, selected
+system-assigned or client-ID binding and App Service platform-header checks are
+unchanged. Isolated child-process fixtures cover VM and App Service with both
+identity selectors using fake HTTP; they never contact a live metadata endpoint.
+
+The added Windows `TokenAudience::Kusto` variant is an additive resource API, but
+callers exhaustively matching that enum must handle the new variant. It changes
+no native interop, authority validation, account selection or token-cache format.
+
+For headless credentials, supply the existing explicit `HeadlessInput`; no login
+command is needed. Managed identity accepts the literal public Kusto resource on
+the explicitly selected VM or App Service host, with either the system-assigned
+or selected client identity. A connected device-code credential uses its existing refresh
+grant and protected session store. `get_token` never initiates device
+authorization, opens a browser or requests interactive consent. Existing
+explicit login and status still acquire only Fabric, OneLake and ARM in order.
+The new resource request neither adds consent to that sequence nor supplies a
+new consent flow. If existing authorization is insufficient, the adapter returns
+its existing explicit failure; the caller must resolve authorization through an
+approved, user-invoked authentication process rather than retrying with another
+identity, resource or provider.
+
+This is **Azure public-cloud resource support**, not proof of token claims,
+permissions, successful live Kusto queries or production/GA authentication.
+Fabric CLI/authentication-team review is a separate required premerge gate;
+offline fixtures or an independent agent review do not satisfy that human review.
+No live sign-in, token acquisition or consent is required for the offline tests.
+
 The optional device-code session's macOS protected-store isolation, explicit
 helper trust, legacy Keychain identity, finite protocol and offline validation
 selectors are described in [isolated macOS protected storage](protected-store-macos.md).
@@ -28,7 +82,7 @@ Construction does not create a runtime, acquire a token or contact a provider.
 | `Certificate` | `ClientAssertionCredential` | Separate `certificate-store-windows` feature; explicit non-exporting signer, public-cloud tenant/client and immutable certificate fingerprint |
 
 Use the caller's Tokio runtime for token acquisition. The wrapper accepts exactly
-one Fabric, OneLake, ARM or native SQL public-cloud `.default` scope. It rejects unknown,
+one Fabric, OneLake, ARM, native SQL or public Kusto `.default` scope. It rejects unknown,
 empty and combined scopes before any provider or file work. OAuth requests are
 pinned to the selected tenant at `login.microsoftonline.com`; ambient authority
 overrides are not used. Endpoint bindings for Fabric daily/MSIT service traffic

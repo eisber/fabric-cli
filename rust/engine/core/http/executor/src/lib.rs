@@ -12,25 +12,22 @@ use azure_core::{
     credentials::AccessToken,
     http::{HttpClient, Method, Request, Url},
 };
-use fabric_sdk::{
-    EndpointBinding, ServiceOrigin,
-    notebooks::{NotebookExecutionError, NotebookExecutor, NotebookRequest, NotebookResponse},
-    workspaces::{WorkspaceExecutionError, WorkspaceExecutor, WorkspaceRequest, WorkspaceResponse},
+pub use fabric_core::http::{
+    HttpExecution, HttpExecutionError as ExecutionError, HttpFuture as ExecutionFuture,
+    HttpRequest, HttpResponse, ResponseProgress,
 };
+use fabric_core::{EndpointBinding, ServiceOrigin};
 use futures_util::StreamExt;
 use std::{
     collections::BTreeMap,
     fmt,
     future::{Future, poll_fn},
     num::NonZeroUsize,
-    pin::{Pin, pin},
+    pin::pin,
     sync::Arc,
     task::Poll,
     time::Duration,
 };
-
-/// A caller-runtime future; dropping it must release local timer/request resources.
-pub type ExecutionFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Asynchronous time supplied by the consumer's runtime, never a blocking sleep.
 pub trait ExecutionTimer: Send + Sync {
@@ -56,52 +53,15 @@ impl Default for ExecutionOptions {
     }
 }
 
-/// Sanitized executor failures, without URLs, bodies, tokens, or provider text.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExecutionError {
-    /// A zero deadline or unsupported request configuration was supplied.
-    InvalidInput,
-    /// The caller's HTTP client or response stream failed.
-    Transport,
-    /// The overall HTTP deadline elapsed.
-    TimedOut,
-    /// The decoded response stream exceeded the operation's byte bound.
-    ResponseLimit,
-    /// A read exhausted its finite retry budget.
-    RetriesExhausted,
-    /// A retry interval was invalid or exceeded the caller's bound.
-    RetryDelay,
-}
-
-impl fmt::Display for ExecutionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::InvalidInput => "invalid HTTP execution configuration",
-            Self::Transport => "HTTP transport or response streaming failed",
-            Self::TimedOut => "HTTP execution deadline elapsed",
-            Self::ResponseLimit => "HTTP response exceeded its byte bound",
-            Self::RetriesExhausted => "HTTP read retry budget exhausted",
-            Self::RetryDelay => "HTTP retry interval is invalid or exceeds its bound",
-        })
-    }
-}
-
-impl std::error::Error for ExecutionError {}
-
 mod bound;
-mod capacities;
 pub use bound::PublicOrigin;
+pub use bound::validate_request;
 mod evidence;
-mod folders;
-mod items;
-pub mod native_runtime;
-pub mod native_stream;
-mod operations;
 pub use evidence::{ExecutionEvidence, ExecutionTrace};
 #[cfg(test)]
 mod tests;
 
-/// One reusable client implementing both existing SDK executor interfaces.
+/// Service-neutral bounded execution over a caller-owned HTTP client and timer.
 ///
 /// Only GETs are retried. POSTs execute once, including on 429 or a lost response.
 /// Read status/backoff behavior follows Python's HTTPS adapter and outer 429
@@ -114,17 +74,6 @@ pub struct HttpExecutor {
     options: ExecutionOptions,
     endpoint: EndpointBinding,
     trace: Option<ExecutionTrace>,
-}
-
-/// Optional bounded response progress, including headers before body suspension.
-///
-/// Implementations must not log raw provider data. A partial response is not a
-/// complete empty body; callers retain this evidence independently of the future.
-pub trait ResponseProgress: Send + Sync {
-    /// Retain the actual bounded prefix or complete response.
-    fn record(&self, response: &WorkspaceResponse, complete: bool) -> Result<(), ExecutionError>;
-    /// Mark actual decoded-body overflow without manufacturing a complete body.
-    fn body_omitted(&self, response: &WorkspaceResponse) -> Result<(), ExecutionError>;
 }
 
 impl HttpExecutor {
@@ -216,7 +165,7 @@ impl HttpExecutor {
         token: &AccessToken,
         body: &[u8],
         limit: NonZeroUsize,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         self.execute(method, url, token, body, limit).await
     }
 
@@ -250,7 +199,7 @@ impl HttpExecutor {
         body: &[u8],
         headers: &[(String, String)],
         limit: NonZeroUsize,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         self.execute_bound_with_progress(origin, method, url, token, body, headers, limit, None)
             .await
     }
@@ -276,7 +225,7 @@ impl HttpExecutor {
         headers: &[(String, String)],
         limit: NonZeroUsize,
         progress: Option<&dyn ResponseProgress>,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         let public = EndpointBinding::public(origin);
         let endpoint = if self.endpoint.origin() == origin {
             &self.endpoint
@@ -317,7 +266,7 @@ impl HttpExecutor {
         token: &AccessToken,
         body: &[u8],
         limit: NonZeroUsize,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         if self.endpoint.origin() != ServiceOrigin::Fabric {
             return Err(ExecutionError::InvalidInput);
         }
@@ -325,15 +274,24 @@ impl HttpExecutor {
             .validate_url(url)
             .map_err(|_| ExecutionError::InvalidInput)?;
         Self::validate_token(token)?;
-        self.execute_request(Self::authenticated_request(method, url, token, body), limit)
+        self.execute_prepared(Self::authenticated_request(method, url, token, body), limit)
             .await
     }
 
-    async fn execute_request(
+    /// Execute an already prepared, authenticated request with the shared policy.
+    ///
+    /// Service adapters using an origin outside [`PublicOrigin`] must validate
+    /// their fixed endpoint, token and request bounds before calling this method.
+    /// This lower-level seam does not choose an audience or validate an origin.
+    /// Prefer [`Self::execute_bound`] for the standard service origins.
+    ///
+    /// # Errors
+    /// Returns transport, streaming, deadline, recorder and read-retry failures.
+    pub async fn execute_prepared(
         &self,
         request: Request,
         limit: NonZeroUsize,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         self.execute_request_with_progress(request, limit, None)
             .await
     }
@@ -343,7 +301,7 @@ impl HttpExecutor {
         request: Request,
         limit: NonZeroUsize,
         progress: Option<&dyn ResponseProgress>,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         let result = self
             .before_deadline(async {
                 // Python's outer 429 loop has four iterations. Its HTTPS adapter
@@ -365,14 +323,22 @@ impl HttpExecutor {
         result
     }
 
-    fn validate_token(token: &AccessToken) -> Result<(), ExecutionError> {
+    /// Validate an opaque caller token without inspecting claims or acquiring it.
+    ///
+    /// # Errors
+    /// Rejects empty tokens and control characters before transport access.
+    pub fn validate_token(token: &AccessToken) -> Result<(), ExecutionError> {
         if token.token.secret().is_empty() || token.token.secret().chars().any(char::is_control) {
             return Err(ExecutionError::InvalidInput);
         }
         Ok(())
     }
 
-    fn authenticated_request(
+    /// Prepare JSON request bytes with a caller-owned, already validated token.
+    ///
+    /// The caller must validate endpoint, token, body and additional headers.
+    /// This helper neither sends the request nor acquires credentials.
+    pub fn authenticated_request(
         method: Method,
         url: &Url,
         token: &AccessToken,
@@ -390,7 +356,7 @@ impl HttpExecutor {
         request: &Request,
         limit: NonZeroUsize,
         progress: Option<&dyn ResponseProgress>,
-    ) -> Result<WorkspaceResponse, ExecutionError> {
+    ) -> Result<HttpResponse, ExecutionError> {
         for retry in 0..=3 {
             if let Some(trace) = &self.trace {
                 trace.start(request.method());
@@ -409,7 +375,7 @@ impl HttpExecutor {
             if let Some(trace) = &self.trace {
                 trace.headers(status.into(), &headers);
             }
-            let mut response = WorkspaceResponse {
+            let mut response = HttpResponse {
                 status: status.into(),
                 body: Vec::new(),
                 headers: headers
@@ -534,80 +500,21 @@ async fn yield_once() {
     .await
 }
 
-impl WorkspaceExecutor for HttpExecutor {
-    fn execute<'a>(
+impl HttpExecution for HttpExecutor {
+    fn execute_http<'a>(
         &'a self,
-        request: WorkspaceRequest<'a>,
-    ) -> ExecutionFuture<'a, Result<WorkspaceResponse, WorkspaceExecutionError>> {
-        Box::pin(async move {
-            self.execute(
-                Method::Get,
-                request.url(),
-                request.token(),
-                &[],
-                request.max_response_bytes(),
-            )
-            .await
-            .map_err(workspace_error)
-        })
-    }
-}
-
-impl NotebookExecutor for HttpExecutor {
-    fn execute<'a>(
-        &'a self,
-        request: NotebookRequest<'a>,
-    ) -> ExecutionFuture<'a, Result<NotebookResponse, NotebookExecutionError>> {
-        Box::pin(async move {
-            let method = match request.method() {
-                "GET" => Method::Get,
-                "POST" => Method::Post,
-                _ => return Err(NotebookExecutionError::Failed),
-            };
-            self.execute(
-                method,
-                request.url(),
-                request.token(),
-                request.body(),
-                request.max_response_bytes(),
-            )
-            .await
-            .map(|response| NotebookResponse {
-                status: response.status,
-                body: response.body,
-                headers: response.headers,
-            })
-            .map_err(notebook_error)
-        })
-    }
-
-    fn wait(&self, delay: Duration) -> ExecutionFuture<'_, Result<(), NotebookExecutionError>> {
-        Box::pin(async move {
-            self.before_deadline(self.wait_bounded(delay))
-                .await
-                .map_err(notebook_error)
-        })
-    }
-}
-
-fn workspace_error(error: ExecutionError) -> WorkspaceExecutionError {
-    match error {
-        ExecutionError::TimedOut => WorkspaceExecutionError::TimedOut,
-        ExecutionError::ResponseLimit => WorkspaceExecutionError::ResponseLimit,
-        ExecutionError::RetriesExhausted => WorkspaceExecutionError::RetriesExhausted,
-        ExecutionError::InvalidInput | ExecutionError::Transport | ExecutionError::RetryDelay => {
-            WorkspaceExecutionError::Failed
-        }
-    }
-}
-
-fn notebook_error(error: ExecutionError) -> NotebookExecutionError {
-    match error {
-        ExecutionError::TimedOut => NotebookExecutionError::TimedOut,
-        ExecutionError::ResponseLimit => NotebookExecutionError::ResponseLimit,
-        ExecutionError::RetriesExhausted => NotebookExecutionError::RetriesExhausted,
-        ExecutionError::InvalidInput | ExecutionError::Transport | ExecutionError::RetryDelay => {
-            NotebookExecutionError::Failed
-        }
+        request: HttpRequest<'a>,
+        progress: Option<&'a dyn ResponseProgress>,
+    ) -> ExecutionFuture<'a, Result<HttpResponse, ExecutionError>> {
+        Box::pin(self.execute_bound_with_progress(
+            request.origin,
+            request.method,
+            request.url,
+            request.token,
+            request.body,
+            request.headers,
+            request.max_response_bytes,
+            progress,
+        ))
     }
 }

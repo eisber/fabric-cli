@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add an explicit-stage, single-page DataAgent datasource list to the experimental Rust v2 head, shared by root and data-agent facade commands.
+time: 2026-11-12T00:00:00.0000000+01:00
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber

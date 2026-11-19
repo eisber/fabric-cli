@@ -15,6 +15,7 @@
 mod encode;
 mod error;
 mod ipc;
+mod metadata;
 mod result;
 
 pub use encode::{ResultFormat, encode, encode_to_writer};
@@ -22,4 +23,5 @@ pub use error::{
     LimitKind, MetadataClassification, MetadataEvidence, MetadataLocation, TabularError,
 };
 pub use ipc::decode_arrow_stream;
+pub use metadata::{LOGICAL_TYPE_METADATA_KEY, NATIVE_TYPE_METADATA_KEY};
 pub use result::{OutputLimits, TabularResult};

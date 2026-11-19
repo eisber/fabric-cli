@@ -1,0 +1,160 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+use crate::{QueryErrorKind, json::RawValue};
+use serde::Deserialize;
+use std::collections::BTreeMap;
+
+pub(crate) use crate::json::parse;
+
+pub(crate) const VERSION: &str = "2025-06-18";
+
+#[derive(Deserialize)]
+struct Envelope {
+    jsonrpc: String,
+    id: Option<u64>,
+    result: Option<Box<RawValue>>,
+    error: Option<RpcError>,
+    method: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RpcError {
+    code: i64,
+}
+
+fn envelope(text: &str, id: u64) -> Result<Option<Box<RawValue>>, QueryErrorKind> {
+    let response: Envelope = parse(text)?;
+    if response.jsonrpc != "2.0" {
+        return Err(QueryErrorKind::Protocol);
+    }
+    if response.id.is_none() {
+        if response.result.is_some() || response.error.is_some() {
+            return Err(QueryErrorKind::Protocol);
+        }
+        return match response.method.as_deref() {
+            Some("notifications/progress" | "notifications/message") => Ok(None),
+            Some("notifications/cancelled") => Err(QueryErrorKind::Canceled),
+            _ => Err(QueryErrorKind::Protocol),
+        };
+    }
+    if response.id != Some(id)
+        || response.method.is_some()
+        || response.result.is_some() == response.error.is_some()
+    {
+        return Err(QueryErrorKind::Protocol);
+    }
+    if let Some(error) = response.error {
+        return Err(QueryErrorKind::Rpc(error.code));
+    }
+    Ok(response.result)
+}
+
+pub(crate) fn response(body: &[u8], media: &str, id: u64) -> Result<Box<RawValue>, QueryErrorKind> {
+    let text = std::str::from_utf8(body).map_err(|_| QueryErrorKind::Protocol)?;
+    match media.split(';').next().map(str::trim) {
+        Some("application/json") => envelope(text, id)?.ok_or(QueryErrorKind::Protocol),
+        _ => Err(QueryErrorKind::Protocol),
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SseDecoder {
+    scanned: usize,
+    line_start: usize,
+    frame_start: usize,
+    events: usize,
+}
+
+impl SseDecoder {
+    pub(crate) fn consume(
+        &mut self,
+        body: &[u8],
+        id: u64,
+    ) -> Result<Option<Box<RawValue>>, QueryErrorKind> {
+        let mut answer = None;
+        while self.scanned < body.len() {
+            let index = self.scanned;
+            self.scanned += 1;
+            if body[index] != b'\n' {
+                continue;
+            }
+            let line = &body[self.line_start..index];
+            if line.is_empty() || line == b"\r" {
+                let frame = std::str::from_utf8(&body[self.frame_start..self.line_start])
+                    .map_err(|_| QueryErrorKind::Protocol)?;
+                let mut data = Vec::new();
+                for line in frame.lines() {
+                    if line.starts_with(':') || line.is_empty() {
+                        continue;
+                    }
+                    let (key, value) = line.split_once(':').unwrap_or((line, ""));
+                    let value = value.strip_prefix(' ').unwrap_or(value);
+                    match key {
+                        "data" => data.push(value),
+                        "event" if value == "message" || value.is_empty() => {}
+                        "id" | "retry" => {} // Never used to reconnect or replay.
+                        _ => return Err(QueryErrorKind::Protocol),
+                    }
+                }
+                self.frame_start = index + 1;
+                if !data.is_empty() {
+                    self.events += 1;
+                    if self.events > 256 {
+                        return Err(QueryErrorKind::Limit);
+                    }
+                    if let Some(result) = envelope(&data.join("\n"), id)?
+                        && answer.replace(result).is_some()
+                    {
+                        return Err(QueryErrorKind::Protocol);
+                    }
+                }
+            }
+            self.line_start = index + 1;
+        }
+        Ok(answer)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Initialize {
+    protocol_version: String,
+    capabilities: Capabilities,
+    server_info: ServerInfo,
+}
+
+#[derive(Deserialize)]
+struct Capabilities {
+    tools: Option<Box<RawValue>>,
+}
+
+#[derive(Deserialize)]
+struct ServerInfo {
+    name: String,
+    version: String,
+}
+
+pub(crate) fn negotiate(raw: &RawValue) -> Result<String, QueryErrorKind> {
+    let init: Initialize = parse(raw.get())?;
+    if !matches!(init.protocol_version.as_str(), VERSION | "2025-03-26")
+        || init.capabilities.tools.is_none()
+        || init.server_info.name.is_empty()
+        || init.server_info.name.len() > 256
+        || init.server_info.version.is_empty()
+        || init.server_info.version.len() > 256
+    {
+        return Err(QueryErrorKind::Protocol);
+    }
+    let tools: BTreeMap<String, Box<RawValue>> = parse(
+        init.capabilities
+            .tools
+            .as_ref()
+            .ok_or(QueryErrorKind::Protocol)?
+            .get(),
+    )?;
+    if tools.len() > 32 {
+        return Err(QueryErrorKind::Limit);
+    }
+    Ok(init.protocol_version)
+}

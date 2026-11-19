@@ -37,6 +37,11 @@ The opt-in [`v2-cancel` slice](authoring-docs/v2-cancel.md) requests cancellatio
 existing Notebook scheduler run using an explicit ID-based path. Its acceptance
 receipt does not claim terminal cancellation or rollback.
 
+The opt-in [native Warehouse create slice](authoring-docs/warehouse-create-v2.md)
+adds only `fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Warehouse`
+with `headless,v2-create`. It uses finite collation JSON and the shared create
+host; it does not add SQL, definition or child-resource provisioning.
+
 The owner-selected [nonrecursive delete preview](authoring-docs/nonrecursive-delete.md)
 adds exact Notebook deletion with explicit permanent intent and host approval.
 Its typed operation metadata propagates through SDK results and CLI receipts.
@@ -60,6 +65,12 @@ The opt-in [workspace v2 read slice](authoring-docs/workspace-v2-reads.md) uses 
 `fab-cli-workspace` preview. It preserves both the six-leaf local `fab-cli`
 executable and the native GET `fab-cli-v2` entry point; no preview overwrites
 another's Cargo output or selects a provider implicitly.
+
+The opt-in [ReadWrite KQLDatabase create slice](authoring-docs/kql-database-create.md)
+mounts the selected CREATE grammar in `fab-cli-v2` with
+`v2-kql-database-create,headless`. It requires strict native JSON and an explicit
+existing Eventhouse GUID; it never creates a parent, Shortcut, connection or
+query/ingestion workload. Default and v1 creation behavior is unchanged.
 
 The source roots separate reusable functionality from CLI-specific interaction.
 Paths below are relative to this directory; each package leaf retains its own
@@ -127,7 +138,7 @@ responsibilities and unchanged dependency-layer rules.
 | --- | --- |
 | [Fabric SDK](engine/sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
 | [Artifact-first tables](authoring-docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
-| [HTTP execution](engine/core/http/executor/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
+| [HTTP execution](engine/core/http/executor/README.md) | Neutral bounded execution and progress; [SDK service adapters](engine/sdk/http/README.md) preserve existing imports |
 | [Native transport](engine/core/http/transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](engine/control-plane/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](clients/cli/app/README.md) | Argument parsing, command sessions and native host composition |

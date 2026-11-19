@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: optimization
+body: Select affected Rust capability tests and feature compositions, shard native validation, and bound cached builds with explicit execution evidence and timeouts.
+time: 2026-11-12T18:36:25Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber

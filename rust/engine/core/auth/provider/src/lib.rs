@@ -35,6 +35,12 @@ pub use fabric_identity_windows as windows_broker;
 use fabric_core::{CredentialSelection, IdentityError, TokenCredential};
 use std::sync::Arc;
 
+/// Exact Azure public-cloud Kusto scope for an explicitly selected credential.
+///
+/// Request this scope alone. It is not derived from a cluster hostname and does
+/// not authorize interaction, change identity selection, or prove service access.
+pub const PUBLIC_KUSTO_SCOPE: &str = "https://api.kusto.windows.net/.default";
+
 /// Rejects interactive credential creation until a supported backend is selected.
 ///
 /// This function does not inspect the environment, prompt, or persist anything.

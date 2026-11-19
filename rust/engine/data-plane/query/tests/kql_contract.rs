@@ -195,6 +195,82 @@ impl EngineExecutor for Script {
 }
 
 #[tokio::test]
+async fn cancellation_is_checked_between_immediately_ready_fragments() {
+    let binding = binding("db", SCOPE);
+    let script = Script::new(binding.clone(), &frames());
+    let first = script.fragments.lock().unwrap().as_ref().unwrap()[0]
+        .as_ref()
+        .unwrap()
+        .clone();
+    let observation = Arc::clone(&script.observation);
+    let cancelled = std::future::poll_fn(move |_| {
+        if observation.lock().unwrap().reads > 0 {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    });
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limits(100),
+        &deadline(),
+        cancelled,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::Native(NativeError::Cancelled));
+    assert_eq!(error.provider_body.unwrap(), first);
+    assert!(!error.evidence.as_ref().unwrap().http_eof);
+    assert!(!error.evidence.unwrap().completed);
+    assert_eq!(script.observation.lock().unwrap().reads, 1);
+    assert_eq!(script.observation.lock().unwrap().drops, 1);
+}
+
+#[tokio::test]
+async fn cancellation_during_native_validation_retains_only_forensic_partial_data() {
+    let binding = binding("db", SCOPE);
+    let value = frames();
+    let script = Script::new(binding.clone(), &value);
+    let reads_at_eof = script.fragments.lock().unwrap().as_ref().unwrap().len() + 1;
+    let observation = Arc::clone(&script.observation);
+    let mut validation_checks = 0;
+    let cancelled = std::future::poll_fn(move |_| {
+        if observation.lock().unwrap().reads == reads_at_eof {
+            validation_checks += 1;
+        }
+        if validation_checks >= 5 {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    });
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limits(100),
+        &deadline(),
+        cancelled,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::Native(NativeError::Cancelled));
+    let partial = error.partial.unwrap();
+    assert!(partial.evidence.http_eof);
+    assert!(!partial.evidence.completed);
+    assert_eq!(partial.datasets.len(), 1);
+    assert_eq!(partial.datasets[0].rows.len(), 1);
+    assert_eq!(
+        serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+        value
+    );
+    assert_eq!(script.observation.lock().unwrap().drops, 1);
+    assert_eq!(script.observation.lock().unwrap().requests.len(), 1);
+}
+
+#[tokio::test]
 async fn exact_single_post_preserves_all_primary_tables_types_order_and_evidence() {
     let binding = binding("exact-db", SCOPE);
     let script = Script::new(binding.clone(), &frames());

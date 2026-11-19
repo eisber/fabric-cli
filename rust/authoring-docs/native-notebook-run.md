@@ -127,6 +127,21 @@ shared scheduler policy and provider Retry-After minimum. A generic-operation
 Location is retained as an operation, never relabeled a run; waiting for its
 conversion to a scheduler run is explicitly unsupported.
 
+Notebook acceptance can return a scheduler Location on an HTTPS
+`*.analysis.windows.net` cluster host. The SDK validates the exact selected
+workspace/item scheduler path and reconstructs its monitor on the caller's
+original Fabric endpoint. It never follows the cluster host or sends credentials
+there. The same rule retains the handle if body streaming is interrupted.
+Other handle constructors and generic-operation links keep their strict origin
+checks; unrelated hosts, queries, fragments and normalized paths remain errors.
+
+If a receipt reports HTTP 202 together with a local error, do not repeat the run:
+the notebook may already have executed. Inspect the existing notebook's job
+instances through the selected endpoint. Scheduler acceptance does not validate
+notebook contents; for example, an empty notebook can be accepted and immediately
+fail with the service's `InvalidRequest` error. Do not retry that non-retriable
+content failure or change the notebook without separate authorization.
+
 Timeout and interruption stop local observation only. Unknown native states,
 failed/cancelled/deduplicated jobs and local failures have nonzero exits.
 Scheduler `Completed` is reported as `completed`, with

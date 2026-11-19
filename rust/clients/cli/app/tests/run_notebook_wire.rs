@@ -110,6 +110,12 @@ fn accepted(location: String) -> (StatusCode, Headers, Vec<u8>) {
 fn location() -> String {
     format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items/{ITEM}/jobs/instances/{RUN}")
 }
+fn cluster_location() -> String {
+    location().replace(
+        "api.fabric.microsoft.com",
+        "df-msit-scus-redirect.analysis.windows.net",
+    )
+}
 fn status(state: &str) -> (StatusCode, Headers, Vec<u8>) {
     let mut headers = Headers::new();
     headers.insert("retry-after", "0");
@@ -251,6 +257,47 @@ async fn root_submits_exact_native_body_once_and_retains_scoped_acceptance() {
         serde_json::from_slice::<Value>(body).unwrap(),
         serde_json::from_slice::<Value>(input).unwrap()
     );
+}
+
+#[tokio::test]
+async fn cluster_job_acceptance_retains_handle_and_observes_only_the_selected_endpoint() {
+    for wait in [false, true] {
+        let prepared =
+            PreparedNotebook::new(&command(if wait { &["--wait"] } else { &[] }), None).unwrap();
+        let mut replies = vec![accepted(cluster_location())];
+        if wait {
+            replies.push(status("Completed"));
+        }
+        let (client, wire, _) = client(replies);
+        let result = prepared
+            .dispatch(&client, Arc::new(Clock(Instant::now())), pending())
+            .await;
+        assert_eq!(result.exit_code(), 0, "{}", result.value());
+        assert_eq!(result.value()["meta"]["handle"]["id"], RUN);
+        assert_eq!(result.value()["meta"]["handle"]["url"], location());
+        assert_eq!(
+            result.value()["status"],
+            if wait { "completed" } else { "accepted" }
+        );
+        assert_eq!(result.value()["meta"]["applicationSuccessVerified"], false);
+        let requests = wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), if wait { 2 } else { 1 });
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method() == Method::Post)
+                .count(),
+            1
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| { request.url().host_str() == Some("api.fabric.microsoft.com") })
+        );
+        if wait {
+            assert_eq!(requests[1].url().as_str(), location());
+        }
+    }
 }
 
 #[tokio::test]
@@ -447,7 +494,7 @@ impl HttpClient for StreamWire {
         if matches!(self.mode, StreamMode::NoHeaders) {
             return pending().await;
         }
-        let (_, headers, _) = accepted(location());
+        let (_, headers, _) = accepted(cluster_location());
         let suspended = self.suspended.clone();
         let mode = self.mode;
         let mut first = true;

@@ -121,4 +121,16 @@ approval/submission correction. Root selection, complete paging, malformed scope
 duplicate roots and result-placement regressions remain registered requirements:
 their source presence does not establish passing native or platform checks.
 
+The local integration update adopts checkpoint
+`651ecd931bb6d1a610f0968e7768b348775baf66` without replacing its newer shared create,
+item-policy or LRO implementations. Environment dispatch and help compose with
+Notebook, Report, Warehouse, SemanticModel, CopyJob, SparkJobDefinition and
+optional KQLDatabase/Eventhouse owners. The `v2-create-environment-composed`
+impact profile selects all these owners with `headless` and `runtime-v2`, so
+metadata-selected executable checks compile the actual owner assertions and
+Livy-root help. Feature-aware enabled help and disabled-owner refusals are
+additive, not historical exclusive-owner claims. Local validation receipts state
+the commands actually run; profile registration is not full workspace, oracle,
+native-platform or live-service qualification.
+
 [create]: https://learn.microsoft.com/en-us/rest/api/fabric/environment/items/create-environment

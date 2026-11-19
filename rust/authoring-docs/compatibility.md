@@ -10,6 +10,14 @@ The [complete command inventory and crate ownership](command-parity.md) tracks
 all 52 registered Python leaves, six groups, aliases, modes and current gaps.
 SDK endpoints and passing read fixtures alone do not establish command parity.
 
+The owner-authorized `fab-rs feedback` command (alias `report`) is an additive
+OCV integration, not part of that Python parity denominator. It previews offline
+by default and requires explicit `--send` plus environment selection for a real
+submission. Windows `native-read` builds provide its silent broker/HTTPS host;
+other builds retain preview and fail explicitly on send. See the [feedback
+contract and PPE commands](../clients/cli/app/README.md#ocv-feedback-preview-and-submission).
+The separate `fab-cli` manual report host remains unchanged.
+
 ## Bootstrap CLI contract
 
 The recovered central composition additionally mounts the released local,
@@ -237,7 +245,7 @@ Notebook operation/result retrieval. Seven source-pinned Python HTTPS retry
 traces are checked independently by
 [`tests/compatibility/http/reference.py`](../tests/compatibility/http/README.md).
 This is a bounded SDK execution slice, not CLI parity. The adapter's
-[compatibility limits](../engine/core/http/executor/README.md) explicitly retain
+[compatibility limits](../engine/sdk/http/README.md) explicitly retain
 the no-mutation-replay exception and enumerate unported HTTP behavior.
 
 The separately selected [native transport](../engine/core/http/transport/README.md)

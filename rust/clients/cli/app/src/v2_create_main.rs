@@ -9,24 +9,48 @@ use fabric_cli::create_command::{
     CreateExecution, CreateTransportEvidence, PreparedCreateCommand, command_for_binding,
     v2_create,
 };
+use fabric_cli::get_target::{GetRepresentation, GetTarget};
 use fabric_sdk::{Client, EndpointBinding, ServiceOrigin};
 use fabric_sdk_http::ExecutionTrace;
 use serde_json::json;
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     future::Future,
     io::{self, IsTerminal, Write},
     pin::Pin,
     time::{Duration, Instant},
 };
 
-pub(super) fn run(args: Vec<OsString>, binding: &'static dyn CreateBinding) -> Result<u8, Failure> {
+pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
     let command = match v2_create::parse_args(args) {
         Ok(command) => command,
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
-            command_for_binding(binding)
-                .write_long_help(&mut io::stdout().lock())
-                .and_then(|()| io::stdout().flush())
+            let bindings: &[&dyn CreateBinding] = &[
+                &fabric_cli::v2_create_report::ReportCreateBinding,
+                &fabric_cli::create_notebook::NotebookBinding,
+                &fabric_cli::warehouse_create::WarehouseCreateBinding,
+                #[cfg(feature = "v2-create-environment")]
+                &fabric_cli::environment_create::EnvironmentCreate,
+                #[cfg(feature = "v2-copyjob-create")]
+                &fabric_cli::copyjob_create::CopyJobCreateBinding,
+                #[cfg(feature = "v2-create-semantic-model")]
+                &fabric_cli::semantic_model_create::BlankSemanticModelBinding,
+                #[cfg(feature = "v2-kql-database-create")]
+                &fabric_cli::kql_database_create::KqlReadWriteCreate,
+                #[cfg(feature = "v2-create-eventhouse")]
+                &fabric_cli::eventhouse_create::EventhouseCreate,
+                #[cfg(feature = "v2-create-sparkjobdefinition")]
+                &fabric_cli::spark_job_definition_create::EmptySparkJobDefinition,
+            ];
+            let mut stdout = io::stdout().lock();
+            for binding in bindings {
+                command_for_binding(*binding)
+                    .write_long_help(&mut stdout)
+                    .and_then(|()| writeln!(stdout))
+                    .map_err(|_| failed("OutputFailed", "Create help delivery failed.", 1))?;
+            }
+            stdout
+                .flush()
                 .map_err(|_| failed("OutputFailed", "Create help delivery failed.", 1))?;
             return Ok(0);
         }
@@ -41,6 +65,7 @@ pub(super) fn run(args: Vec<OsString>, binding: &'static dyn CreateBinding) -> R
     let deadline = Instant::now()
         .checked_add(command.timeout)
         .ok_or_else(|| failed("InvalidArguments", "Invalid create deadline.", 2))?;
+    let binding = selected_binding(&command.destination).map_err(command_failure)?;
     let cwd = std::env::current_dir().map_err(|_| {
         failed(
             "InvalidWorkingDirectory",
@@ -125,6 +150,38 @@ pub(super) fn run(args: Vec<OsString>, binding: &'static dyn CreateBinding) -> R
         .deliver(&mut io::stdout().lock())
         .map_err(command_failure)?;
     Ok(exit)
+}
+
+fn selected_binding(destination: &OsStr) -> Result<&'static dyn CreateBinding, CreateCommandError> {
+    let GetTarget::Item {
+        item_type: Some(owner),
+        representation: GetRepresentation::Metadata,
+        ..
+    } = GetTarget::parse(destination.to_str().ok_or(CreateCommandError::Invalid)?)
+        .map_err(|_| CreateCommandError::Invalid)?
+    else {
+        return Err(CreateCommandError::Invalid);
+    };
+    match owner.as_str() {
+        "Report" => Ok(&fabric_cli::v2_create_report::ReportCreateBinding),
+        "Notebook" => Ok(&fabric_cli::create_notebook::NotebookBinding),
+        "Warehouse" => Ok(&fabric_cli::warehouse_create::WarehouseCreateBinding),
+        #[cfg(feature = "v2-create-environment")]
+        "Environment" => Ok(&fabric_cli::environment_create::EnvironmentCreate),
+        #[cfg(feature = "v2-copyjob-create")]
+        "CopyJob" => Ok(&fabric_cli::copyjob_create::CopyJobCreateBinding),
+        #[cfg(feature = "v2-create-semantic-model")]
+        "SemanticModel" => Ok(&fabric_cli::semantic_model_create::BlankSemanticModelBinding),
+        #[cfg(feature = "v2-kql-database-create")]
+        "KQLDatabase" => Ok(&fabric_cli::kql_database_create::KqlReadWriteCreate),
+        #[cfg(feature = "v2-create-eventhouse")]
+        "Eventhouse" => Ok(&fabric_cli::eventhouse_create::EventhouseCreate),
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        "SparkJobDefinition" => {
+            Ok(&fabric_cli::spark_job_definition_create::EmptySparkJobDefinition)
+        }
+        _ => Err(CreateCommandError::Invalid),
+    }
 }
 
 fn command_failure(error: CreateCommandError) -> Failure {

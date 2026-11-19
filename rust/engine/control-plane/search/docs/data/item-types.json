@@ -1,0 +1,48 @@
+{
+  "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "3ae7afc73169ac57b874d5aee09217bb35a4f8fc",
+  "policy": "Reviewed exact-article classifications only. No path-prefix, prose-mention, navigation-card, or code-example inference. Unmapped articles remain unclassified. Values use existing Fabric API item-type spellings.",
+  "articles": {
+    "docs/data-engineering/lakehouse-overview.md": {
+      "item_types": ["Lakehouse"],
+      "evidence": "Article title: What is a lakehouse?"
+    },
+    "docs/data-engineering/how-to-use-notebook.md": {
+      "item_types": ["Notebook"],
+      "evidence": "Article heading: How to use Microsoft Fabric notebooks; introduction explicitly calls the notebook a primary code item."
+    },
+    "docs/data-engineering/spark-job-definition.md": {
+      "item_types": ["SparkJobDefinition"],
+      "evidence": "Article title: Apache Spark job definition; introduction explicitly identifies the Fabric code item."
+    },
+    "docs/data-warehouse/data-warehousing.md": {
+      "item_types": ["Warehouse"],
+      "evidence": "Article title and heading: What Is Fabric Data Warehouse?"
+    },
+    "docs/real-time-intelligence/eventhouse.md": {
+      "item_types": ["Eventhouse"],
+      "evidence": "Article title: Eventhouse overview; introduction defines Eventhouse as the database container."
+    },
+    "docs/real-time-intelligence/create-database.md": {
+      "item_types": ["KQLDatabase"],
+      "evidence": "Article title and heading: Create a KQL database."
+    },
+    "docs/data-factory/pipeline-overview.md": {
+      "item_types": ["DataPipeline"],
+      "evidence": "Article title: Pipeline Overview; introduction defines pipelines in Microsoft Fabric Data Factory."
+    },
+    "docs/data-factory/dataflows-gen2-overview.md": {
+      "item_types": ["Dataflow"],
+      "evidence": "Article heading: What is Dataflow Gen2?; introduction explicitly identifies Dataflow Gen2 items."
+    },
+    "docs/real-time-intelligence/real-time-dashboards-overview.md": {
+      "item_types": ["KQLDashboard"],
+      "evidence": "Article title and heading: What is Real-Time Dashboard?; KQLDashboard is the existing Fabric API item type for Real-Time Dashboard."
+    },
+    "docs/real-time-intelligence/event-streams/overview.md": {
+      "item_types": ["Eventstream"],
+      "evidence": "Article title: Microsoft Fabric Eventstreams Overview; introduction describes creating an eventstream."
+    }
+  }
+}

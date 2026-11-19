@@ -6,8 +6,9 @@
 use crate::parser::Invocation;
 use clap::{Arg, Command};
 use fabric_cli_output::{
-    OutputStream, RenderPlan,
-    tabular::{TabularError, TabularFormat, TabularLimits, TabularTable, encode},
+    OutputStream,
+    presentation::{PresentationSource, render},
+    tabular::{TabularError, TabularFormat, TabularLimits, TabularTable},
     text::TextPlan,
 };
 use serde_json::{Value, json};
@@ -209,16 +210,12 @@ impl ExportDelivery {
 
     /// Encode the operation receipt without replaying execution or file delivery.
     pub fn plan(&self) -> io::Result<TextPlan> {
-        let mut payload = serde_json::to_vec(&self.receipt).map_err(io::Error::other)?;
-        payload.push(b'\n');
-        Ok(TextPlan {
-            records: vec![RenderPlan {
-                stream: OutputStream::Stdout,
-                exit_code: self.exit_code,
-                payload,
-            }],
-            exit_code: self.exit_code,
-        })
+        render(
+            PresentationSource::Json(&self.receipt),
+            OutputStream::Stdout,
+            self.exit_code,
+        )
+        .map_err(io::Error::other)
     }
 
     /// Write once; on failure this borrowed object retains execution/file evidence.
@@ -240,6 +237,22 @@ pub trait ExportSink {
     fn preflight(&mut self, request: &ExportRequest) -> io::Result<()>;
     /// Publish only complete encoded bytes, atomically and without replacement.
     fn publish(&mut self, request: &ExportRequest, bytes: &[u8]) -> io::Result<()>;
+    /// Preflight opaque native bytes using the same atomic no-clobber policy.
+    ///
+    /// Table-only embedders reject this capability explicitly by default.
+    fn preflight_bytes(&mut self, _output: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "This sink does not support native byte artifacts",
+        ))
+    }
+    /// Publish unchanged native bytes to the previously preflighted destination.
+    fn publish_bytes(&mut self, _output: &Path, _bytes: &[u8]) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "This sink does not support native byte artifacts",
+        ))
+    }
 }
 
 fn checked_destination(path: &Path) -> io::Result<PathBuf> {
@@ -395,8 +408,12 @@ where
             "This empty result has no declared schema; an arbitrary projection or dynamic native adapter must supply its real columns",
         ));
     }
-    let bytes = match encode(&table, request.format) {
-        Ok(bytes) => bytes,
+    let plan = match render(
+        PresentationSource::Tabular(&table, request.format),
+        OutputStream::Stdout,
+        0,
+    ) {
+        Ok(plan) => plan,
         Err(_) => {
             return evidence(failed(
                 &result.source,
@@ -407,7 +424,8 @@ where
             ));
         }
     };
-    if sink.publish(request, &bytes).is_err() {
+    let bytes = &plan.records[0].payload;
+    if sink.publish(request, bytes).is_err() {
         return evidence(failed(
             &result.source,
             "succeeded",
