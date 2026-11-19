@@ -926,8 +926,7 @@ impl WindowsCredential {
         client: &str,
         audience: TokenAudience,
     ) -> Result<AccessToken, BrokerError> {
-        let options =
-            EntraOptions::new(self.options.tenant(), client, self.options.account())?;
+        let options = EntraOptions::new(self.options.tenant(), client, self.options.account())?;
         self.coordinator
             .refresh_for_client(self, options, audience)
             .await
@@ -3119,16 +3118,13 @@ mod tests {
         async fn dropped_request_cancels_both_reservations_until_native_teardown() {
             let (owner, broker) = setup();
             let credential = connect(&owner, &broker, selected(), "native-id").await;
-            let mut token =
-                Box::pin(credential.get_token_for_client(CLIENT, TokenAudience::Kusto));
+            let mut token = Box::pin(credential.get_token_for_client(CLIENT, TokenAudience::Kusto));
             pending(token.as_mut());
             let call = broker.acquisition();
             drop(token);
             assert!(call.control.cancelled.load(Ordering::Acquire));
             assert_eq!(
-                owner
-                    .begin(&selected(), Acquisition::Connect, None)
-                    .err(),
+                owner.begin(&selected(), Acquisition::Connect, None).err(),
                 Some(BrokerError::OperationInProgress)
             );
             assert_eq!(

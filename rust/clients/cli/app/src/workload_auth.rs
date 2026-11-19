@@ -63,9 +63,7 @@ impl TokenCredential for BrokerKustoCredential {
 /// native account and tenant, and participates in the original logout lifecycle.
 /// Other audiences, including Fabric/AIHub, keep the selected application.
 #[cfg(all(windows, feature = "windows-broker"))]
-pub fn broker(
-    selected: Arc<fabric_identity::WindowsCredential>,
-) -> Arc<dyn TokenCredential> {
+pub fn broker(selected: Arc<fabric_identity::WindowsCredential>) -> Arc<dyn TokenCredential> {
     Arc::new(WorkloadCredential {
         kusto: Arc::new(BrokerKustoCredential(Arc::clone(&selected))),
         selected,
@@ -147,7 +145,10 @@ mod tests {
                 .unwrap()
                 .push(scopes.iter().map(|scope| (*scope).into()).collect());
             if self.fail {
-                return Err(Error::with_message(ErrorKind::Credential, "fixture failure"));
+                return Err(Error::with_message(
+                    ErrorKind::Credential,
+                    "fixture failure",
+                ));
             }
             Ok(AccessToken::new(
                 "offline-fixture",
@@ -164,14 +165,20 @@ mod tests {
             selected: selected.clone(),
             kusto: kusto.clone(),
         };
-        credential.get_token(&[PUBLIC_KUSTO_SCOPE], None).await.unwrap();
+        credential
+            .get_token(&[PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .unwrap();
         for scopes in [
             vec!["https://api.fabric.microsoft.com/.default"],
             vec!["https://storage.azure.com/.default"],
             vec!["https://management.azure.com/.default"],
             vec!["https://database.windows.net/.default"],
             vec!["https://petrol.office.microsoft.com/Feedback.ReadWrite"],
-            vec![PUBLIC_KUSTO_SCOPE, "https://api.fabric.microsoft.com/.default"],
+            vec![
+                PUBLIC_KUSTO_SCOPE,
+                "https://api.fabric.microsoft.com/.default",
+            ],
             vec!["https://cluster.kusto.windows.net/.default"],
             vec![" https://api.kusto.windows.net/.default"],
             vec![],
@@ -193,7 +200,12 @@ mod tests {
             selected: selected.clone(),
             kusto: kusto.clone(),
         };
-        assert!(credential.get_token(&[PUBLIC_KUSTO_SCOPE], None).await.is_err());
+        assert!(
+            credential
+                .get_token(&[PUBLIC_KUSTO_SCOPE], None)
+                .await
+                .is_err()
+        );
         assert!(selected.calls.lock().unwrap().is_empty());
         assert_eq!(kusto.calls.lock().unwrap().len(), 1);
     }
@@ -208,8 +220,15 @@ mod tests {
                 client_matches: false,
             }),
         };
-        let error = credential.get_token(&[PUBLIC_KUSTO_SCOPE], None).await.unwrap_err();
-        assert!(error.to_string().contains("no refresh or automatic sign-in"));
+        let error = credential
+            .get_token(&[PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("no refresh or automatic sign-in")
+        );
         assert!(selected.calls.lock().unwrap().is_empty());
         credential
             .get_token(&["https://api.fabric.microsoft.com/.default"], None)
@@ -225,7 +244,13 @@ mod tests {
             selected: selected.clone(),
             client_matches: true,
         };
-        credential.get_token(&[PUBLIC_KUSTO_SCOPE], None).await.unwrap();
-        assert_eq!(*selected.calls.lock().unwrap(), vec![vec![PUBLIC_KUSTO_SCOPE]]);
+        credential
+            .get_token(&[PUBLIC_KUSTO_SCOPE], None)
+            .await
+            .unwrap();
+        assert_eq!(
+            *selected.calls.lock().unwrap(),
+            vec![vec![PUBLIC_KUSTO_SCOPE]]
+        );
     }
 }

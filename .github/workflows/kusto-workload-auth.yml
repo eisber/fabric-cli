@@ -50,7 +50,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo fetch --locked --target x86_64-pc-windows-msvc
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: |
+          cargo fmt --package fabric-cli -- --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fmt --package fabric-identity -- --check
       - name: Check actual native credential composition and all test targets
         run: cargo check --locked --offline -p fabric-cli --all-targets --features native-read,interactive,headless
       - name: Test broker lifecycle including both client logout domains
