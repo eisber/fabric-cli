@@ -3,7 +3,9 @@
 //! Offline evidence-only diagnostic contracts; no service or credential probes.
 #![deny(unnameable_test_items)]
 
-use fabric_sdk_dataflow::diagnostics::{Diagnostic, DiagnosticBasis, DiagnosticCondition, ServiceCode};
+use fabric_sdk_dataflow::diagnostics::{
+    Diagnostic, DiagnosticBasis, DiagnosticCondition, ServiceCode,
+};
 use fabric_sdk_operations::{OperationError, OperationErrorKind};
 use serde_json::{Value, json};
 
@@ -205,7 +207,11 @@ fn typed_execution_credential_failure_is_not_data_source_authentication() {
     );
     assert_eq!(diagnostic.basis(), DiagnosticBasis::ExecutionCredential);
     assert_eq!(diagnostic.service_code(), None);
-    assert!(diagnostic.summary().contains("separate from the data source"));
+    assert!(
+        diagnostic
+            .summary()
+            .contains("separate from the data source")
+    );
 }
 
 #[test]

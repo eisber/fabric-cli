@@ -5,7 +5,9 @@
 
 use super::*;
 use fabric_sdk_operations::OperationError;
-use fabric_sdk_tabular::{MetadataClassification, MetadataEvidence, MetadataLocation, TabularError};
+use fabric_sdk_tabular::{
+    MetadataClassification, MetadataEvidence, MetadataLocation, TabularError,
+};
 use serde_json::{Value, json};
 
 const PRIVATE: &str = "synthetic-secret-connection-string";
@@ -43,8 +45,16 @@ async fn native_service_diagnostics_are_structured_redacted_and_never_replay_in_
             "gateway_source_access",
             PRIVATE,
         ),
-        ("DataflowExecuteQueryError", "query_execution_failed", PRIVATE),
-        ("UnknownCode", "unknown", "GatewayNotReachable: use Arrow V1"),
+        (
+            "DataflowExecuteQueryError",
+            "query_execution_failed",
+            PRIVATE,
+        ),
+        (
+            "UnknownCode",
+            "unknown",
+            "GatewayNotReachable: use Arrow V1",
+        ),
         ("UnverifiedArrow2GatewayError", "unknown", PRIVATE),
     ] {
         for format in ["json", "csv", "parquet"] {
@@ -75,7 +85,12 @@ async fn native_service_diagnostics_are_structured_redacted_and_never_replay_in_
                 panic!("execution delivery");
             };
             assert_eq!(
-                inner.evidence.as_ref().unwrap().raw_service_error.as_deref(),
+                inner
+                    .evidence
+                    .as_ref()
+                    .unwrap()
+                    .raw_service_error
+                    .as_deref(),
                 Some(&body)
             );
             let payload = assert_safe_failure(delivery, expected, false);
@@ -114,7 +129,10 @@ async fn native_forbidden_without_a_documented_code_is_not_a_source_credential_d
     );
     assert_eq!(payload["error"]["code"], "Forbidden");
     assert_eq!(payload["operation"]["httpStatus"], 403);
-    assert_eq!(payload["guidance"]["classification"]["basis"], "unclassified");
+    assert_eq!(
+        payload["guidance"]["classification"]["basis"],
+        "unclassified"
+    );
     assert_eq!(wire.requests.lock().unwrap().len(), 1);
 }
 

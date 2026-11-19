@@ -318,10 +318,7 @@ fn native_unknown_metadata_evidence_is_retained_on_stderr_not_data_stdout() {
         diagnostic["metadataEvidence"][0]["classification"],
         "Unknown"
     );
-    assert_eq!(
-        diagnostic["metadataEvidence"][0]["value"],
-        "<redacted>"
-    );
+    assert_eq!(diagnostic["metadataEvidence"][0]["value"], "<redacted>");
     let fabric_sdk_tabular::TabularError::Metadata { evidence } = &error else {
         panic!("original metadata evidence");
     };
@@ -889,7 +886,12 @@ async fn native_http_authorization_errors_retain_status_effects_and_operation_wi
                 Some(serde_json::from_slice::<serde_json::Value>(&body).unwrap())
             };
             assert_eq!(
-                delivery.evidence.as_ref().unwrap().raw_service_error.as_deref(),
+                delivery
+                    .evidence
+                    .as_ref()
+                    .unwrap()
+                    .raw_service_error
+                    .as_deref(),
                 original_service_error.as_ref()
             );
             let mut stdout = Vec::new();

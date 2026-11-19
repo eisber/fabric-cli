@@ -79,7 +79,9 @@ impl ServiceCode {
         match value {
             "DataflowExecuteQueryError" => Some(Self::DataflowExecuteQueryError),
             "GatewayNotReachable" => Some(Self::GatewayNotReachable),
-            "DM_GWPipeline_Gateway_DataSourceAccessError" => Some(Self::GatewayDataSourceAccessError),
+            "DM_GWPipeline_Gateway_DataSourceAccessError" => {
+                Some(Self::GatewayDataSourceAccessError)
+            }
             _ => None,
         }
     }
@@ -220,7 +222,9 @@ impl Diagnostic {
             condition: match code {
                 ServiceCode::DataflowExecuteQueryError => DiagnosticCondition::QueryExecutionFailed,
                 ServiceCode::GatewayNotReachable => DiagnosticCondition::GatewayUnavailable,
-                ServiceCode::GatewayDataSourceAccessError => DiagnosticCondition::GatewaySourceAccess,
+                ServiceCode::GatewayDataSourceAccessError => {
+                    DiagnosticCondition::GatewaySourceAccess
+                }
             },
             basis: DiagnosticBasis::DocumentedServiceCode,
             service_code: Some(code),
@@ -241,7 +245,9 @@ fn structured_code(error: &FabricServiceError) -> Option<ServiceCode> {
         let detail = detail.as_object()?;
         // Only the documented immediate ErrorResponseDetails shape is read.
         if detail.contains_key("moreDetails")
-            || detail.get("message").is_some_and(|value| !value.is_string())
+            || detail
+                .get("message")
+                .is_some_and(|value| !value.is_string())
             || !valid_context(detail.get("parameters"), detail.get("relatedResource"))
         {
             return None;
