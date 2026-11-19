@@ -42,7 +42,9 @@ callers exhaustively matching that enum must handle the new variant. It changes
 no native interop, authority validation, account selection or token-cache format.
 
 For headless credentials, supply the existing explicit `HeadlessInput`; no login
-command is needed. A connected device-code credential uses its existing refresh
+command is needed. Managed identity accepts the literal public Kusto resource on
+the explicitly selected VM or App Service host, with either the system-assigned
+or selected client identity. A connected device-code credential uses its existing refresh
 grant and protected session store. `get_token` never initiates device
 authorization, opens a browser or requests interactive consent. Existing
 explicit login and status still acquire only Fabric, OneLake and ARM in order.
