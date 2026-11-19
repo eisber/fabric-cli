@@ -1261,6 +1261,9 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "fabric-cli-access",
+ "fabric-cli-api",
+ "fabric-cli-catalog",
  "fabric-cli-context",
  "fabric-cli-jobs",
  "fabric-cli-local",
@@ -1296,6 +1299,7 @@ dependencies = [
  "fabric-sdk-transport",
  "fabric-sdk-workspaces",
  "futures-util",
+ "getrandom 0.4.3",
  "parquet",
  "ring",
  "rustix",
@@ -1304,6 +1308,63 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "fabric-cli-access"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "fabric-cli-query",
+ "fabric-sdk-access",
+ "fabric-sdk-api",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-api"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-query",
+ "fabric-sdk-api",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-catalog"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-output",
+ "fabric-cli-query",
+ "fabric-sdk-api",
+ "fabric-sdk-catalog",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-command-contracts"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-output",
+ "fabric-sdk-api",
+ "fabric-sdk-http",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1430,16 +1491,18 @@ dependencies = [
  "async-trait",
  "azure_core",
  "clap",
+ "fabric-cli-access",
+ "fabric-cli-api",
+ "fabric-cli-catalog",
+ "fabric-cli-command-contracts",
  "fabric-cli-context",
  "fabric-cli-output",
- "fabric-cli-query",
  "fabric-sdk-access",
  "fabric-sdk-api",
  "fabric-sdk-catalog",
  "fabric-sdk-http",
  "fabric-sdk-operations",
  "serde_json",
- "thiserror",
  "tokio",
 ]
 
@@ -1593,6 +1656,45 @@ dependencies = [
  "tempfile",
  "thiserror",
  "yaml-rust2",
+]
+
+[[package]]
+name = "fabric-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "futures-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-http-transport"
+version = "0.1.0"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "azure_core",
+ "fabric-http",
+ "flate2",
+ "futures-util",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-timeout",
+ "hyper-util",
+ "rcgen",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tower-service",
 ]
 
 [[package]]
@@ -1795,6 +1897,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-http",
  "fabric-sdk",
  "fabric-sdk-folders",
  "fabric-sdk-items",
@@ -1914,10 +2017,13 @@ dependencies = [
 name = "fabric-sdk-query"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "azure_core",
  "fabric-core",
  "fabric-sdk",
+ "fabric-sdk-http",
  "fabric-v2-contracts",
+ "futures-util",
  "serde",
  "serde_json",
  "tokio",
@@ -2025,30 +2131,21 @@ dependencies = [
 name = "fabric-sdk-transport"
 version = "0.1.0"
 dependencies = [
- "async-compression",
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-http",
+ "fabric-http-transport",
  "fabric-sdk",
  "fabric-sdk-http",
  "flate2",
  "futures-util",
- "http",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-timeout",
- "hyper-util",
  "rcgen",
  "rustls",
- "rustls-native-certs",
- "rustls-platform-verifier",
  "serde_json",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
- "tokio-util",
- "tower-service",
 ]
 
 [[package]]

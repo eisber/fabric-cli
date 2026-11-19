@@ -10,15 +10,26 @@ const vm = require('node:vm');
 const {spawnSync} = require('node:child_process');
 const {test} = require('node:test');
 const smoke = require('./integration-smoke.cjs');
+const target = require('./integration-target-witness.cjs');
 
 const base = '1'.repeat(40);
 const source = '2'.repeat(40);
 const combined = '3'.repeat(40);
 const ref = `refs/heads/${smoke.BRANCH}`;
 const event = {
+  number: 90,
   repository: {full_name: 'eisber/fabric-cli'}, before: base, after: combined, deleted: false,
-  pull_request: {base: {ref: smoke.BRANCH, sha: base}, head: {sha: source}},
+  pull_request: {number: 90, base: {ref: smoke.BRANCH, sha: base,
+    repo: {full_name: 'eisber/fabric-cli'}}, head: {sha: source}},
 };
+const mergeRef = 'refs/pull/90/merge';
+const runEnv = {GITHUB_EVENT_NAME: 'pull_request', GITHUB_REPOSITORY: 'eisber/fabric-cli',
+  GITHUB_REF: mergeRef, GITHUB_SHA: combined, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1',
+  GITHUB_JOB: 'smoke', GITHUB_SERVER_URL: 'https://github.com', GITHUB_API_URL: 'https://api.github.com'};
+const witness = {schema: 1, kind: 'github-rest-exact-target-ref',
+  ...target.witnessContext(event, runEnv), checkout_base: base, endpoint: target.ENDPOINT,
+  requested_at: '2026-01-01T00:00:00.000Z', provider_date: 'Thu, 01 Jan 2026 00:00:00 GMT',
+  observed_at: '2026-01-01T00:00:00.000Z'};
 const workflow = file => fs.readFileSync(path.resolve(__dirname, '../../.github/workflows', file), 'utf8')
   .replace(/\r\n/g, '\n');
 const result = (stdout = '', stderr = '', status = 0) => ({stdout, stderr, status, signal: null});
@@ -40,6 +51,34 @@ function evaluates(expression, name, target, branchRef, succeeded = true, head =
     always: () => true, success: () => succeeded,
   }, {timeout: 1000});
 }
+
+test('Dataflow candidate fetches locked test dependencies before its unchanged offline proof', () => {
+  const text = workflow('integration-smoke.yml');
+  const block = text.split('      - name: Check the three Dataflow enhancements offline\n')[1]
+    .split('\n      - name:')[0];
+  const assignment = block.match(/report\.plan = (\[[\s\S]*?\n\s*\])\.map\(item =>/);
+  assert.ok(assignment, 'Expected the actual candidate command plan');
+  const plan = vm.runInNewContext(`(${assignment[1]})`, {
+    test: ['test', '--offline', '--locked'], prefixed: () => [],
+  }, {timeout: 1000});
+  assert.equal(plan.length, 11);
+  assert.equal(plan[0].id, 'test-dependencies');
+  assert.deepEqual(Array.from(plan[0].args),
+    ['fetch', '--locked', '--target', 'x86_64-pc-windows-msvc']);
+  assert.equal(plan[1].id, 'sdk');
+  assert.equal(plan.filter(item => item.args[0] === 'fetch').length, 1);
+  assert.equal(plan.filter(item => item.args[0] === 'test').length, 8);
+  for (const item of plan.filter(item => ['test', 'check'].includes(item.args[0]))) {
+    assert.ok(item.args.includes('--offline'), `${item.id} must not fetch while proving results`);
+    assert.ok(item.args.includes('--locked'), `${item.id} must preserve the lockfile`);
+  }
+  assert.match(block, /deadline = started \+ 570000/);
+  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /timeout: Math\.min\(480000, remaining\(\)\)/);
+  assert.match(block, /const result = run\('cargo', item\.args, rust\)/);
+  assert.match(block, /assert\.equal\(report\.source\.checkout_base, base,/);
+  assert.match(block, /assert\.equal\(result\.status, 0, `Dataflow command failed: \$\{item\.id\}`\)/);
+});
 
 test('real workflow conditions route only trusted integration PR targets and push refs', () => {
   const full = workflow('rust-ci.yml');
@@ -140,19 +179,63 @@ test('bounded Report, KQL and Eventhouse conflict checks remain independent cand
   }
 });
 
+test('PR54 schema proof is candidate-only and never broadens the generic or postpush profile', () => {
+  const schema = require('./integration-schema-smoke.cjs');
+  const block = workflow('integration-smoke.yml').split("      - name: Check the PR54 candidate's ")[1]
+    .split('\n      - name:')[0];
+  const expression = block.match(/\n        if: >-\n((?:          .+\n)+)/)[1]
+    .trim().replace(/\s*\n\s*/g, ' ');
+  for (const [event, head, expected] of [
+    ['pull_request', schema.CANDIDATE, true], ['push', schema.CANDIDATE, false],
+    ['pull_request', `${schema.CANDIDATE}-lookalike`, false],
+    ['pull_request', 'unrelated', false], ['schedule', schema.CANDIDATE, false],
+  ]) {
+    assert.equal(evaluates(expression, event, smoke.BRANCH, ref, true, head), expected);
+  }
+  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /CARGO_TARGET_DIR: \$\{\{ runner.temp \}\}\/integration-smoke-target/);
+  assert.ok(block.includes('node rust/scripts/integration-schema-smoke.cjs'));
+  assert.ok(!block.includes('continue-on-error'));
+});
+
+test('PR63 Notebook proof runs only for its owned candidate, never for postpush or another entry', () => {
+  const notebook = require('./integration-notebook-smoke.cjs');
+  const text = workflow('integration-smoke.yml');
+  const block = text.split("      - name: Check the PR63 candidate's ")[1]
+    .split('\n      - name:')[0];
+  const expression = block.match(/\n        if: >-\n((?:          .+\n)+)/)[1]
+    .trim().replace(/\s*\n\s*/g, ' ');
+  for (const [event, head, expected] of [
+    ['pull_request', notebook.CANDIDATE, true], ['push', notebook.CANDIDATE, false],
+    ['pull_request', `${notebook.CANDIDATE}-lookalike`, false],
+    ['pull_request', 'unrelated', false], ['schedule', notebook.CANDIDATE, false],
+  ]) {
+    assert.equal(evaluates(expression, event, smoke.BRANCH, ref, true, head), expected);
+  }
+  assert.match(block, /timeout-minutes: 10/);
+  assert.match(block, /CARGO_TARGET_DIR: \$\{\{ runner.temp \}\}\/integration-smoke-target/);
+  assert.ok(block.includes('node rust/scripts/integration-notebook-smoke.cjs'));
+  assert.ok(!block.includes('continue-on-error'));
+  assert.ok(text.includes('node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-notebook-smoke.test.cjs'));
+});
+
 test('PR source pin requires exact checkout and both exact parents, not source-only smoke', () => {
   const pin = () => smoke.sourcePin('pull_request', event, 'refs/pull/90/merge',
-    combined, combined, [base, source], false);
+    combined, combined, [base, source], false, witness, runEnv);
   assert.deepEqual(pin(), {event: 'pull_request', ref: 'refs/pull/90/merge',
-    source, base, checkout: combined, parents: [base, source]});
+    source, base, event_base: base, checkout_base: base, checkout: combined,
+    parents: [base, source], target_witness: witness});
   for (const [expected, actual, parents] of [
     [combined, source, [base, source]], [combined, combined, [source, base]],
     [combined, combined, [base, '4'.repeat(40)]], [combined, combined, [base]],
+    [combined, combined, [base, source, '4'.repeat(40)]],
   ]) {
-    assert.throws(() => smoke.sourcePin('pull_request', event, ref, expected, actual, parents, true));
+    assert.throws(() => smoke.sourcePin('pull_request', event, mergeRef, expected, actual, parents, true,
+      witness, runEnv));
   }
   assert.throws(() => smoke.sourcePin('pull_request',
-    {...event, repository: {full_name: 'other/fork'}}, ref, combined, combined, [base, source], false));
+    {...event, repository: {full_name: 'other/fork'}}, mergeRef, combined, combined, [base, source], false,
+    witness, runEnv));
 });
 
 test('push receipt preserves exact before/after and rejects missing or rewritten ancestry', () => {
@@ -206,6 +289,7 @@ test('exact versions, help shape and sanitized offline error envelopes are manda
 test('executables receive no ambient credentials, tools or profile state', () => {
   const env = smoke.isolatedEnvironment('isolated-home', 'sandbox', {
     SystemRoot: 'windows', WINDIR: 'windows', PATH: 'tools', GH_TOKEN: 'synthetic',
+    GITHUB_TOKEN: 'synthetic', INTEGRATION_TARGET_WITNESS_SHA256: 'synthetic',
     AZURE_CLIENT_SECRET: 'synthetic', FAB_RUST_AUTH_MODE: 'headless', USERPROFILE: 'ambient',
   });
   assert.deepEqual(env, {HOME: 'isolated-home', USERPROFILE: 'isolated-home',

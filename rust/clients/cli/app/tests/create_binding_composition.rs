@@ -40,7 +40,7 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         let text = String::from_utf8(output.stdout).unwrap();
-        for owner in ["Report", "KQLDatabase", "Eventhouse"] {
+        for owner in ["Report", "Notebook", "KQLDatabase", "Eventhouse"] {
             assert!(text.contains(owner), "{text}");
             if args[0] == "create" {
                 assert!(text.contains(&format!("Selected native owner: {owner}.")));
@@ -53,7 +53,6 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             #[cfg(feature = "runtime-v2")]
             assert!(text.contains("Livy"));
         }
-        assert!(!text.contains("Selected native owner: Notebook"));
     }
 }
 
@@ -64,10 +63,12 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
     for (owner, bytes, exit, code) in [
         ("Eventhouse", EVENTHOUSE, 1, "ApprovalRequired"),
         ("KQLDatabase", KQL, 1, "ApprovalRequired"),
+        ("Notebook", EVENTHOUSE, 1, "ApprovalRequired"),
         ("Eventhouse", KQL, 2, "CreatePolicyRejected"),
         ("KQLDatabase", EVENTHOUSE, 2, "CreatePolicyRejected"),
         ("Report", EVENTHOUSE, 2, "CreatePolicyRejected"),
         ("Report", KQL, 2, "CreatePolicyRejected"),
+        ("Notebook", KQL, 2, "CreatePolicyRejected"),
     ] {
         std::fs::write(&input, bytes).unwrap();
         error(
@@ -87,7 +88,8 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
 fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
     for destination in [
         format!("{ROOT}.eventhouse"),
-        format!("{ROOT}.Notebook"),
+        format!("{ROOT}.Lakehouse"),
+        format!("{ROOT}.Notebook/src/definition"),
         format!("{ROOT}.Eventhouse/src/definition"),
         format!("{ROOT}.KQLDatabase/src/definition"),
     ] {
@@ -97,7 +99,7 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
             "InvalidInput",
         );
     }
-    for owner in ["Eventhouse", "KQLDatabase", "Report"] {
+    for owner in ["Eventhouse", "KQLDatabase", "Report", "Notebook"] {
         error(
             &run(&[
                 "create",

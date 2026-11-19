@@ -11,6 +11,7 @@
 pub mod capacities;
 pub mod copyjobs;
 pub mod dataagents;
+pub mod dataflow_queries;
 pub mod documents;
 pub mod environment_publish;
 pub mod exists;
@@ -22,6 +23,7 @@ pub mod livy;
 pub mod livy_arrow;
 pub mod metadata;
 pub mod models;
+pub mod notebook_create;
 pub mod notebook_observability;
 pub mod notebook_runtime;
 pub mod notebooks;

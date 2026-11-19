@@ -8,6 +8,8 @@
 //! Successful bytes still require Arrow decoding and inspection of the service's
 //! `PQ Arrow Metadata` failure column before reporting tabular success.
 
+pub mod diagnostics;
+
 use fabric_sdk_operations::{
     FabricOperation, OperationAccept, OperationError, OperationErrorKind, OperationExecutor,
     OperationResponse, OperationSession,

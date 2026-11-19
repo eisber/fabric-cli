@@ -35,6 +35,7 @@ pub fn observe(input: &Value) -> Option<Value> {
         Ok(Invocation::Display(_)) => json!({"display": true}),
         Ok(
             Invocation::NativeTabular(_)
+            | Invocation::Feedback(_)
             | Invocation::MlEndpoint(_)
             | Invocation::Tabular(_)
             | Invocation::Batch(_)
@@ -42,6 +43,7 @@ pub fn observe(input: &Value) -> Option<Value> {
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_)
             | Invocation::Execute(_)
+            | Invocation::DataflowQueries(_)
             | Invocation::Local(_)
             | Invocation::Access(_)
             | Invocation::Resource(_)

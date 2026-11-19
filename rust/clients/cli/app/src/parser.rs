@@ -75,6 +75,8 @@ pub enum Invocation {
     /// Local stored-document retrieval or source-backed item documentation browsing.
     #[cfg(feature = "docs-search")]
     DocsBrowse(crate::docs_browse::DocsBrowseCommand),
+    /// OCV feedback preview or explicitly authorized submission.
+    Feedback(crate::feedback::FeedbackCommand),
     /// Native serving operations on an exact owning MLModel item.
     MlEndpoint(crate::ml_endpoint::EndpointCommand),
     /// Real run/query/execute frontend with an explicitly injected backend boundary.
@@ -88,6 +90,8 @@ pub enum Invocation {
     Cancel(CancelCommand),
     /// Explicit v2 named Dataflow query execution, separate from item jobs.
     Execute(crate::execute::ExecuteCommand),
+    /// Explicit read-only Dataflow query metadata discovery.
+    DataflowQueries(crate::get_dataflow_queries::ListQueriesCommand),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
@@ -167,11 +171,14 @@ pub fn command() -> Command {
     let command = command.after_help("Native remote commands support explicit FAB_RUST_AUTH_MODE: client-secret, client-assertion, workload-identity, azure-pipelines, managed-identity-vm, managed-identity-app-service, certificate-store-windows, certificate-store-pkcs11, certificate-store-macos, or device-code when compiled in. Select FAB_RUST_TENANT and the documented provider inputs; no mode is chosen from secret presence. Headless credentials are acquired lazily without auth login, UI, developer tools, raw access-token input or plaintext cache. FAB_RUST_MANAGED_IDENTITY must explicitly select system or client. Windows broker authentication is opt-in with native-read; broker credentials reuse auth login selection silently and never show sign-in UI. Default builds have no production authentication or HTTP transport. FAB_RUST_CONTEXT selects session context; local/config and remote families share the platform user configuration directory, overridden by FAB_RUST_CONFIG_ROOT. See the native host documentation for exact environment bindings, endpoint restrictions and experimental support limits.");
     #[cfg(all(feature = "interactive", not(feature = "headless")))]
     let command = command.after_help("Device-code authentication is opt-in: auth login --method device-code requires explicit public-cloud tenant and client GUIDs for first login. Native remote commands renew the saved session with FAB_RUST_AUTH_MODE=device-code; status and refresh never prompt. Refresh credentials stay in an OS protected store; macOS requires an explicitly pinned installed protected-store helper. Windows broker authentication is opt-in; Windows retains broker as its default method and fails explicitly if it is unavailable. Explicit method/provider configuration wins over platform defaults. No developer-tool fallback, raw access-token input or plaintext credential cache is available. Local and remote commands share the platform configuration directory, overridden by FAB_RUST_CONFIG_ROOT.");
-    let command = fabric_cli_resources::frontdoor::register(command)
-        .subcommands(fabric_cli_local::root_commands())
-        .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
-        .subcommands(fabric_cli_transfer::transfer_subcommands());
+    let command = fabric_cli_api::parser::register(fabric_cli_catalog::parser::register(
+        fabric_cli_access::parser::register(command),
+    ))
+    .subcommands(fabric_cli_local::root_commands())
+    .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
+    .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
+        .subcommand(crate::feedback::command())
         .subcommand(crate::execute::command())
         .subcommands(artifact_commands())
         .subcommand(fabric_cli_tables::command())
@@ -200,7 +207,7 @@ pub fn command() -> Command {
                 .after_help("Examples:\n  fab-rs ls 'marc*'\n  fab-rs ls 'Demo.Workspace/marc*'\n  fab-rs ls 'Demo.Workspace' --long -q '[].id'\n  fab-rs ls / -q \"[?name=='Demo.Workspace'].id\"\nA single trailing '*' filters children in one exact parent. Quote the path to prevent shell expansion. Only nonempty prefixes in the final segment are supported; other patterns and mutation wildcards are not supported.\nTo inspect the workspace itself, use: fab-rs get 'Demo.Workspace' -q id\nA bare field such as 'id' queries the whole listing array, not each item. Workspace item IDs are available only with --long."),
         )
         .subcommand(
-            Command::new("get")
+            crate::get_dataflow_queries::register(Command::new("get")
                 .about("Get item properties (bounded generic metadata)")
                 .args_override_self(true)
                 .infer_long_args(true)
@@ -218,7 +225,7 @@ pub fn command() -> Command {
                         .short('f')
                         .long("force")
                         .action(ArgAction::SetTrue),
-                ),
+                )),
         );
     // Run extends feature-owned artifact groups, so compose it after their registration.
     crate::tabular_export::register(crate::native_tabular::register(command))
@@ -288,7 +295,16 @@ where
         }
     }
     let mut parser = command();
-    if root.and_then(|index| args[index].to_str()) == Some("execute") {
+    let discovery = root.and_then(|index| args[index].to_str()) == Some("get")
+        && args[root.expect("selected get root") + 1..]
+            .iter()
+            .any(|arg| arg == "--list-queries");
+    if discovery {
+        parser = parser.mut_subcommand("get", |command| {
+            command.args_override_self(false).infer_long_args(false)
+        });
+    }
+    if discovery || root.and_then(|index| args[index].to_str()) == Some("execute") {
         // V1's inherited last-value-wins policy must not discard v2 selectors.
         parser = parser.args_override_self(false);
     }
@@ -332,7 +348,7 @@ where
         root.and_then(|index| args[index].to_str()),
         Some("ls" | "dir" | "get" | "job" | "table")
     ) {
-        source_read_arguments(&parser, &args)?
+        source_read_arguments(&parser, &args, !discovery)?
     } else {
         args.clone()
     };
@@ -381,6 +397,12 @@ where
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
     }
+    if name == "feedback" {
+        if matches.contains_id("batch_commands") {
+            return Err(invalid_arguments());
+        }
+        return crate::feedback::from_matches(values).map(Invocation::Feedback);
+    }
     #[cfg(feature = "v2-run")]
     if name == "artifact"
         && let Some(notebook) = values.subcommand_matches("notebook")
@@ -391,6 +413,7 @@ where
         return crate::native_tabular::from_matches("run", leaf).map(Invocation::NativeTabular);
     }
     let export = crate::tabular_export::request(&matches);
+    let has_export = export.is_some();
     let wrap = |mut invocation: Invocation| {
         if let Some(request) = export {
             if let Invocation::Access(command) = &mut invocation
@@ -442,6 +465,12 @@ where
             return Err(invalid_arguments());
         }
         return crate::execute::from_matches(values).map(Invocation::Execute);
+    }
+    if name == "get" && values.get_flag("list_queries") {
+        if !discovery || matches.contains_id("output_format") || has_export {
+            return Err(invalid_arguments());
+        }
+        return crate::get_dataflow_queries::from_matches(values).map(Invocation::DataflowQueries);
     }
     if !matches!(name, "ls" | "get") {
         return family_invocation(&matches).map(wrap);
@@ -526,10 +555,20 @@ fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Err
     {
         return Ok(Invocation::Local(command));
     }
-    if let Some(command) = fabric_cli_resources::frontdoor::AccessCommand::from_matches(matches)
-        .map_err(|_| invalid_arguments())?
+    if let Some(command) =
+        fabric_cli_access::parser::from_matches(matches).map_err(|_| invalid_arguments())?
     {
-        return Ok(Invocation::Access(command));
+        return Ok(Invocation::Access(command.into()));
+    }
+    if let Some(command) =
+        fabric_cli_catalog::parser::from_matches(matches).map_err(|_| invalid_arguments())?
+    {
+        return Ok(Invocation::Access(command.into()));
+    }
+    if let Some(command) =
+        fabric_cli_api::parser::from_matches(matches).map_err(|_| invalid_arguments())?
+    {
+        return Ok(Invocation::Access(command.into()));
     }
     match matches.subcommand_name() {
         Some("deploy") => fabric_cli_transfer::command_from_matches(matches)
@@ -557,6 +596,7 @@ fn invalid_arguments() -> clap::Error {
 fn source_read_arguments(
     parser: &Command,
     args: &[OsString],
+    allow_long_abbreviations: bool,
 ) -> Result<Vec<OsString>, clap::Error> {
     let Some(start) = root_argument(args).filter(|index| {
         matches!(
@@ -616,6 +656,9 @@ fn source_read_arguments(
             {
                 exact
             } else {
+                if !allow_long_abbreviations {
+                    return Ok(args.to_vec());
+                }
                 let mut candidates = schema
                     .get_arguments()
                     .filter(|arg| arg.get_long().is_some_and(|long| long.starts_with(name)));

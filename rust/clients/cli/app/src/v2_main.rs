@@ -31,12 +31,21 @@ use std::{
 mod headless;
 #[cfg(feature = "v2-create")]
 mod v2_create_main;
+mod v2_dataagent_list_main;
 mod v2_exists_main;
+mod v2_link_dataagent_main;
+#[cfg(feature = "v2-link-kql")]
+mod v2_link_kql_main;
 #[cfg(feature = "runtime-v2")]
 mod v2_livy_list_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
+#[cfg(all(test, any(feature = "v2-link-kql", feature = "v2-refresh")))]
+#[allow(dead_code)]
+#[path = "../../../../tests/compatibility/jobs/support.rs"]
+mod v2_test_support;
+mod v2_update_notebook_host;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {
@@ -110,6 +119,22 @@ fn main() -> std::process::ExitCode {
             &mut io::stderr().lock(),
         ));
     }
+    if fabric_cli::v2_dataagent_list_host::is_list(&args) {
+        return std::process::ExitCode::from(finish(
+            v2_dataagent_list_main::run(args),
+            &mut io::stderr().lock(),
+        ));
+    }
+    if fabric_cli::v2_link_dataagent_host::handles(&args) {
+        return std::process::ExitCode::from(finish(
+            v2_link_dataagent_main::run(args),
+            &mut io::stderr().lock(),
+        ));
+    }
+    #[cfg(feature = "v2-link-kql")]
+    if v2_link_kql_main::handles(&args) {
+        return std::process::ExitCode::from(v2_link_kql_main::run(args));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -146,7 +171,7 @@ fn finish(result: Result<u8, Failure>, stderr: &mut dyn Write) -> u8 {
 
 type Failure = (&'static str, String, Value, u8);
 
-const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
+const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 artifact data-agent list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 link <explicit-data-agent-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 artifact data-agent link <explicit-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 update <path> --input FILE|- --mode patch [--plan]\n\nRun a command with --help for its supported schema.\nUpdate plans are local; Notebook execution requires explicit terminal approval.\nDataAgent links require explicit native identity and interactive effect approval.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
 
 #[cfg(feature = "docs-search")]
 const DOCS_HELP: &str = "Offline exception: fab-cli-v2 search docs --text QUERY, get docs/<article-path>, and item lakehouse docs use only the embedded documentation snapshot and require no identity.";
@@ -154,11 +179,17 @@ const DOCS_HELP: &str = "Offline exception: fab-cli-v2 search docs --text QUERY,
 #[cfg(feature = "v2-create")]
 const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
 
+#[cfg(feature = "v2-create")]
+const NOTEBOOK_CREATE_HELP: &str = "Opt-in native Notebook creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Notebook [OPTIONS]\nPolicies: error and skip. Run create --help. Explicit terminal approval required.";
+
 #[cfg(feature = "v2-kql-database-create")]
 const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<name>.KQLDatabase --input FILE|-\nReadWrite only; creationPayload requires an existing parentEventhouseItemId GUID.\nNo implicit Eventhouse creation, Shortcut, definition, query or ingestion.";
 
 #[cfg(feature = "v2-create-eventhouse")]
 const EVENTHOUSE_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Eventhouse [OPTIONS]\nMetadata-only Eventhouse creation requires immediate terminal approval. Run create --help.\nThe provider may create a same-name default KQL database and incur capacity or storage consumption; the client issues no child POST.";
+
+#[cfg(feature = "v2-link-kql")]
+const KQL_LINK_HELP: &str = "KQL links: artifact kql-database link <typed-shortcut-destination> --input FILE|- [--wait]\nRoot link selects the explicit DataAgent or KQLDatabase owner. Run artifact kql-database link --help.\nExplicit controlling-terminal approval is required; query acceleration may incur costs.";
 
 fn failed(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), Value::Null, exit)
@@ -223,6 +254,9 @@ fn run() -> Result<(), Failure> {
         #[cfg(feature = "v2-create")]
         writeln!(io::stdout().lock(), "\n{CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create")]
+        writeln!(io::stdout().lock(), "\n{NOTEBOOK_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-kql-database-create")]
         writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
@@ -232,6 +266,9 @@ fn run() -> Result<(), Failure> {
         #[cfg(feature = "docs-search")]
         writeln!(io::stdout().lock(), "\n{DOCS_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-link-kql")]
+        writeln!(io::stdout().lock(), "\n{KQL_LINK_HELP}")
+            .map_err(|_| failed("OutputFailed", "Link help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
@@ -514,6 +551,9 @@ fn run_update(args: Vec<std::ffi::OsString>) -> Result<(), Failure> {
             Err(error) => return Err(failed("InvalidArguments", error.to_string(), 2)),
         };
     if !command.plan {
+        if command.target.selection().owner_type == "Notebook" {
+            return v2_update_notebook_host::run(command);
+        }
         return Err(failed(
             "ApprovalHostRequired",
             "Metadata mutation requires a caller-injected approval host; no automatic approval or credential fallback is installed.",
