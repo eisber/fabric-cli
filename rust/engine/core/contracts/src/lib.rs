@@ -18,6 +18,8 @@ use thiserror::Error;
 pub mod endpoint;
 /// Caller-owned monotonic scheduling, absolute deadlines and local cancellation.
 pub mod execution;
+/// Service-neutral bounded HTTP exchanges and partial response evidence.
+pub mod http;
 /// Host-neutral operation metadata, assessed effects and execution evidence.
 pub mod operation;
 /// Runtime-neutral authentication and cancellation for injected execution.

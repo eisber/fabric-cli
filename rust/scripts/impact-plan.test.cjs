@@ -1516,7 +1516,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-cli', 'v2-create-eventhouse', 'eventhouse_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
-      'rust/engine/core/http/transport/Cargo.toml'],
+      'rust/engine/sdk/transport/Cargo.toml'],
   ];
   for (const [pkg, feature, target, manifestPath] of cases) {
     const profile = graph.profiles.find(item =>
@@ -1720,7 +1720,7 @@ test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forward
   assert.ok(graph.components.some(component => component.package === 'fabric-sdk-http' &&
     component.tests.some(test => test.target === 'test:native_stream')));
   const manifest = fs.readFileSync(path.join(root,
-    'rust/engine/core/http/executor/Cargo.toml'), 'utf8');
+    'rust/engine/sdk/http/Cargo.toml'), 'utf8');
   assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
 });
 
@@ -1872,7 +1872,8 @@ test('Production engine query keeps its contract and structural consumers withou
   assert.deepEqual(result.changed_packages, ['fabric-sdk-query']);
   assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-v2', 'fabric-sdk-query']);
   assert.deepEqual(result.components, ['engine-query', 'workspace-architecture']);
-  assert.deepEqual(testKeys(result), ['fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
+  assert.deepEqual(testKeys(result), ['fabric-cli/test:http_architecture',
+    'fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
   assert.deepEqual(result.profiles, []);
   assert.deepEqual(result.checks, ['command-inventory', 'dependency-graph', 'selector-tests']);
   assert.ok(!testKeys(result).some(key => /fabric-deploy|fabric-cli-transfer|\/all$/.test(key)));
