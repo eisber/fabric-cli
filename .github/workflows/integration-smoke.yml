@@ -62,6 +62,13 @@ jobs:
           rust/scripts/integration-dataagent-smoke.test.cjs
           rust/scripts/integration-dataagent-link-smoke.test.cjs
           rust/scripts/integration-kql-link-smoke.test.cjs
+          rust/scripts/integration-schema-smoke.test.cjs
+          rust/scripts/integration-target-witness.test.cjs
+      - name: Independently witness the exact integration target before native work
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node rust/scripts/integration-target-witness.cjs "$env:RUNNER_TEMP/integration-target-witness.json"
       - name: Build two profiles once and exercise isolated offline entry points
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
@@ -480,6 +487,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-smoke-${{ github.sha }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/integration-smoke-receipts
+          path: |
+            ${{ runner.temp }}/integration-smoke-receipts
+            ${{ runner.temp }}/integration-target-witness.json
           if-no-files-found: error
           retention-days: 7

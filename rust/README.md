@@ -127,7 +127,7 @@ responsibilities and unchanged dependency-layer rules.
 | --- | --- |
 | [Fabric SDK](engine/sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
 | [Artifact-first tables](authoring-docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
-| [HTTP execution](engine/core/http/executor/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
+| [HTTP execution](engine/core/http/executor/README.md) | Neutral bounded execution and progress; [SDK service adapters](engine/sdk/http/README.md) preserve existing imports |
 | [Native transport](engine/core/http/transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](engine/control-plane/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](clients/cli/app/README.md) | Argument parsing, command sessions and native host composition |

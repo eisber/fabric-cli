@@ -129,7 +129,7 @@ reconnect, credential refresh or resubmission is claimed.
 ## Declared offline checks and validation handoff
 
 The new integration test file is
-`engine/core/http/transport/tests/notebook_websocket.rs`, with
+`engine/sdk/transport/tests/notebook_websocket.rs`, with
 top-level `#![deny(unnameable_test_items)]`. Its real tungstenite server peers
 use `tokio::io::duplex`; instrumented byte streams observe polls, masking,
 drop and stalls. Malformed-wire tests supply explicit RFC frame bytes, not a

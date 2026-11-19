@@ -127,15 +127,46 @@ deterministic sanitized invalid-input failures, with explicit exit/stream/JSON
 assertions and an isolated environment without credentials or external tools.
 No live identity or service operation is invoked.
 
-The PR checkout is the exact event merge commit, verified to have exactly the
-recorded base and source parents. Push receipts bind the actual commit and the
+The PR checkout is the exact event merge commit, with exactly two ordered
+parents: the independently witnessed target commit, then the exact event source.
+The embedded PR `base.sha` can lag the target used by GitHub's merge checkout;
+it is retained as `event_base`, not substituted for independent target evidence.
+Before any native work, `integration-target-witness.cjs` makes one bounded,
+read-only, cache-disabled GitHub REST request for the exact repository's integration branch ref.
+It validates repository/ref URLs, commit type and SHA, and requires that SHA to
+equal the actual first parent. A moved target fails with `TARGET_DRIFT`; there
+is no retry, ancestor substitution or source-only fallback.
+
+The immutable witness binds repository, target ref, PR merge ref, event base,
+source, checkout, run ID, attempt and job, with its endpoint and observation
+time. Nonzero cache age, a missing/stale provider date, or a request interval over
+30 seconds fails closed (the HTTP request itself has a 15-second deadline).
+The provider date must fall within the request interval, allowing one second for
+HTTP date precision/clock skew. The witness is exclusively created for that attempt and retained with artifacts;
+its SHA-256 travels through the workflow environment, never a credential.
+Every shared `sourcePin` caller verifies the digest and those bindings.
+Missing, changed, wrong-run or wrong-source witnesses fail even when the
+recorded event base matches. Receipts distinguish `event_base` and
+`checkout_base`; the legacy PR `base` field aliases the witnessed `checkout_base`.
+Candidate-only drivers additionally keep both their recorded-base and
+witnessed-base hard pins. Old PR52/KQL and other candidate qualifications are
+not retargeted or made valid by this generic repair.
+The existing `contents: read` workflow token is scoped only to the witness step,
+not persisted in receipts, passed to executable smoke cases, or used to change
+provider state. Acquisition failures retain a sanitized failed witness receipt.
+Provider HTTP status and numeric retry/reset hints are retained without response
+bodies or credentials; the script never retries them automatically.
+This additional provider read can fail or rate-limit; such failures block native
+work rather than accepting stale evidence.
+
+Push receipts still bind the actual commit and the
 previous ref, which must remain an ancestor (multi-commit fast forwards are
 allowed). Receipts retain source/base/checkout, toolchain, lock hash, binary
 hashes, command exits/output logs and timings, plus before/after per-file source
 inventories. Failure and missing evidence never become a pass. Cheap contracts:
 
 ```text
-node --test rust/scripts/integration-smoke.test.cjs
+node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-target-witness.test.cjs
 ```
 
 There is deliberately no cross-run build cache in this narrow bootstrap.

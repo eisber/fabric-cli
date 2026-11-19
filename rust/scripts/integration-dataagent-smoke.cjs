@@ -295,6 +295,7 @@ function main(output, entry = {candidate: CANDIDATE, base: BASE, source: SOURCE,
     const actual = git(['rev-parse', 'HEAD']);
     report.source = sourcePin('pull_request', event, process.env.GITHUB_REF,
       process.env.GITHUB_SHA, actual, git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
+    assert.equal(report.source.checkout_base, entry.base, 'Witnessed integration base moved');
     report.tree = git(['rev-parse', 'HEAD^{tree}']);
     report.candidate_parents = git(['show', '-s', '--format=%P', event.pull_request.head.sha]).split(' ');
     git(['merge-base', '--is-ancestor', entry.source, event.pull_request.head.sha]);

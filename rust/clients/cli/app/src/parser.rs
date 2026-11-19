@@ -161,10 +161,12 @@ pub fn command() -> Command {
     let command = command.after_help("Native remote commands support explicit FAB_RUST_AUTH_MODE: client-secret, client-assertion, workload-identity, azure-pipelines, managed-identity-vm, managed-identity-app-service, certificate-store-windows, certificate-store-pkcs11, certificate-store-macos, or device-code when compiled in. Select FAB_RUST_TENANT and the documented provider inputs; no mode is chosen from secret presence. Headless credentials are acquired lazily without auth login, UI, developer tools, raw access-token input or plaintext cache. FAB_RUST_MANAGED_IDENTITY must explicitly select system or client. Windows broker authentication is opt-in with native-read; broker credentials reuse auth login selection silently and never show sign-in UI. Default builds have no production authentication or HTTP transport. FAB_RUST_CONTEXT selects session context; local/config and remote families share the platform user configuration directory, overridden by FAB_RUST_CONFIG_ROOT. See the native host documentation for exact environment bindings, endpoint restrictions and experimental support limits.");
     #[cfg(all(feature = "interactive", not(feature = "headless")))]
     let command = command.after_help("Device-code authentication is opt-in: auth login --method device-code requires explicit public-cloud tenant and client GUIDs for first login. Native remote commands renew the saved session with FAB_RUST_AUTH_MODE=device-code; status and refresh never prompt. Refresh credentials stay in an OS protected store; macOS requires an explicitly pinned installed protected-store helper. Windows broker authentication is opt-in; Windows retains broker as its default method and fails explicitly if it is unavailable. Explicit method/provider configuration wins over platform defaults. No developer-tool fallback, raw access-token input or plaintext credential cache is available. Local and remote commands share the platform configuration directory, overridden by FAB_RUST_CONFIG_ROOT.");
-    let command = fabric_cli_resources::frontdoor::register(command)
-        .subcommands(fabric_cli_local::root_commands())
-        .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
-        .subcommands(fabric_cli_transfer::transfer_subcommands());
+    let command = fabric_cli_api::parser::register(fabric_cli_catalog::parser::register(
+        fabric_cli_access::parser::register(command),
+    ))
+    .subcommands(fabric_cli_local::root_commands())
+    .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
+    .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
         .subcommand(crate::feedback::command())
         .subcommand(crate::execute::command())
@@ -491,10 +493,20 @@ fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Err
     {
         return Ok(Invocation::Local(command));
     }
-    if let Some(command) = fabric_cli_resources::frontdoor::AccessCommand::from_matches(matches)
-        .map_err(|_| invalid_arguments())?
+    if let Some(command) =
+        fabric_cli_access::parser::from_matches(matches).map_err(|_| invalid_arguments())?
     {
-        return Ok(Invocation::Access(command));
+        return Ok(Invocation::Access(command.into()));
+    }
+    if let Some(command) =
+        fabric_cli_catalog::parser::from_matches(matches).map_err(|_| invalid_arguments())?
+    {
+        return Ok(Invocation::Access(command.into()));
+    }
+    if let Some(command) =
+        fabric_cli_api::parser::from_matches(matches).map_err(|_| invalid_arguments())?
+    {
+        return Ok(Invocation::Access(command.into()));
     }
     match matches.subcommand_name() {
         Some("deploy") => fabric_cli_transfer::command_from_matches(matches)

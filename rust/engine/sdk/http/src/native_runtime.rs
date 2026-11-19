@@ -3,7 +3,7 @@
 
 //! Fabric-only native runtime composition over the existing bounded HTTP engine.
 
-use crate::{ExecutionError, ExecutionFuture, HttpExecutor, bound};
+use crate::{ExecutionError, ExecutionFuture, HttpExecutor};
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
@@ -22,7 +22,7 @@ use std::{
 };
 
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
-const MAX_URL_BYTES: usize = 16 * 1024;
+pub(super) const MAX_URL_BYTES: usize = 16 * 1024;
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_HEADERS: usize = 64;
 const MAX_JSON_DEPTH: usize = 64;
@@ -136,12 +136,18 @@ pub(super) fn prepare_request<'a>(
 ) -> Result<PreparedRequest<'a>, NativeError> {
     validate_binding(context, http)?;
     validate_url(context.endpoint(), request.url())?;
+    prepare_native_request(request)
+}
+
+pub(super) fn prepare_native_request(
+    request: &NativeRequest,
+) -> Result<PreparedRequest<'_>, NativeError> {
     let method = method(request.method());
     if matches!(method, Method::Get | Method::Head) && request.effect() != NativeEffect::Read {
         return Err(NativeError::InvalidInput);
     }
     let headers = request_headers(request)?;
-    bound::validate_request(method, request.url(), &[], &headers)
+    fabric_http::validate_request(method, request.url(), &[], &headers)
         .map_err(|_| NativeError::InvalidInput)?;
     Ok(PreparedRequest {
         method,

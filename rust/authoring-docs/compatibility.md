@@ -245,7 +245,7 @@ Notebook operation/result retrieval. Seven source-pinned Python HTTPS retry
 traces are checked independently by
 [`tests/compatibility/http/reference.py`](../tests/compatibility/http/README.md).
 This is a bounded SDK execution slice, not CLI parity. The adapter's
-[compatibility limits](../engine/core/http/executor/README.md) explicitly retain
+[compatibility limits](../engine/sdk/http/README.md) explicitly retain
 the no-mutation-replay exception and enumerate unported HTTP behavior.
 
 The separately selected [native transport](../engine/core/http/transport/README.md)
