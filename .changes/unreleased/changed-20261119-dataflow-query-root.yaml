@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: changed
+body: Move experimental native Dataflow Power Query evaluation from fab-rs execute to fab-rs query on a Dataflow target, with --text/--file raw M, --parameters JSON and no --wait flag; execute is no longer registered for Dataflow and fab-cli-v2 rejects Dataflow query targets as unsupported.
+time: 2026-11-19T15:57:57Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

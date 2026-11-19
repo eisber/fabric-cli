@@ -88,7 +88,7 @@ pub enum Invocation {
     /// Opt-in, ID-only Notebook run cancellation; never a terminal-state claim.
     #[cfg(feature = "v2-cancel")]
     Cancel(CancelCommand),
-    /// Explicit v2 named Dataflow query execution, separate from item jobs.
+    /// Dataflow Power Query evaluation selected by a Dataflow `query` target.
     Execute(crate::execute::ExecuteCommand),
     /// Explicit read-only Dataflow query metadata discovery.
     DataflowQueries(crate::get_dataflow_queries::ListQueriesCommand),
@@ -179,7 +179,6 @@ pub fn command() -> Command {
     .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
         .subcommand(crate::feedback::command())
-        .subcommand(crate::execute::command())
         .subcommands(artifact_commands())
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
@@ -282,6 +281,30 @@ where
             Err(error) => Err(error),
         };
     }
+    if let Some(start) = root
+        && args[start] == "query"
+        && !args
+            .iter()
+            .take(start)
+            .any(|value| matches!(value.to_str(), Some("--version" | "-v" | "-V")))
+        && crate::execute::selects(&args[start + 1..])
+    {
+        let local = std::iter::once(OsString::from("query"))
+            .chain(args.iter().skip(1).take(start - 1).cloned())
+            .chain(args.iter().skip(start + 1).cloned());
+        return match crate::execute::parse(local) {
+            Ok(command) => Ok(Invocation::Execute(command)),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+                ) =>
+            {
+                Ok(Invocation::Display(error.to_string()))
+            }
+            Err(error) => Err(error),
+        };
+    }
     if root.and_then(|index| args[index].to_str()) == Some("delete") {
         args = delete::normalize(&args, root.expect("selected delete root"));
     }
@@ -304,7 +327,7 @@ where
             command.args_override_self(false).infer_long_args(false)
         });
     }
-    if discovery || root.and_then(|index| args[index].to_str()) == Some("execute") {
+    if discovery {
         // V1's inherited last-value-wins policy must not discard v2 selectors.
         parser = parser.args_override_self(false);
     }
@@ -459,12 +482,6 @@ where
     }
     if name == "delete" {
         return DeleteCommand::from_matches(values).map(Invocation::Delete);
-    }
-    if name == "execute" {
-        if matches.contains_id("output_format") {
-            return Err(invalid_arguments());
-        }
-        return crate::execute::from_matches(values).map(Invocation::Execute);
     }
     if name == "get" && values.get_flag("list_queries") {
         if !discovery || matches.contains_id("output_format") || has_export {

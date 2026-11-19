@@ -2,7 +2,7 @@
 
 # Dataflow execution diagnostics
 
-The existing root `execute` command adds advisory `guidance` to its JSON error
+A Dataflow `query` adds advisory `guidance` to its JSON error
 record on stderr. A diagnostic is still a failure, never a successful receipt or
 partial dataset. JSON, CSV, and Parquet output all use the same failure path;
 unclassified `PQ Arrow Metadata` prevents result publication in every format.
