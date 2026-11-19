@@ -618,6 +618,102 @@ caller's blocking executor. Deferred path selection preserves classification
 order and limits local authority to explicit arguments or trusted local
 configuration documents.
 
+## Native root queries
+
+A single `native-read,v2-query` (Windows) or `headless,v2-query` build combines
+three separate roots without shadowing or fallback between them:
+
+```text
+fab-rs query   PATH --text TEXT|--file FILE [--engine ENGINE] [--format json|csv|parquet|xlsx --output FILE]
+fab-rs execute /WS.Workspace/DF.Dataflow/queries/NAME --wait [--input FILE|-] [--timeout DURATION]
+               [--format json|csv|parquet] [--output FILE] [--limit ROWS] [--max-bytes BYTES]
+fab-rs get     /WS.Workspace/DF.Dataflow --list-queries [--timeout DURATION] [--max-bytes BYTES] [-q JMESPATH]
+```
+
+`query` covers DataAgent/AIHub (DAX, SQL, KQL datasources) and artifact-native
+KQL. `execute` is Dataflow-only. Dataflow query discovery is a read under `get`.
+
+The additive Rust feature `v2-query` registers `query_host` over the existing
+root query grammar, with explicit file representations:
+
+```text
+fab-rs query PATH --text TEXT [--engine ENGINE]
+fab-rs query PATH --file FILE|- [--engine ENGINE]
+fab-rs query PATH --text TEXT --format json|csv|parquet --output NEW_FILE
+fab-rs query /WORKSPACE.Workspace/AGENT.DataAgent --text "SELECT 1 AS SyntheticId" --format xlsx --output native.xlsx
+```
+
+`--parameters` remains recognized but the current native providers reject it
+before input or credential I/O because neither exposes a supported native
+parameter schema. No provider, resultset, or language selector is introduced.
+The host binds the exact parsed path to one authoritative target snapshot.
+Supported DataAgent datasource targets select the typed AIHub route by default;
+an explicitly advertised artifact-native KQL engine remains available.
+Bare artifacts do not become fictitious DataAgents, query text never selects
+an engine, and provider failures never cause fallback or replay.
+
+The query command capability calls the real SDKs and retains native declared
+schemas, every dataset, selected datasource/stage, and execution evidence.
+Rich output uses `fabric-sdk-tabular`, not legacy JSON row-object inference.
+Normal presentation can retain multiple datasets; explicit single-file output
+requires exactly one. File format is explicit and independent of the extension.
+See the [capability matrix and integration status](../commands/query/README.md).
+
+Default builds remain unchanged. `fab-rs` needs an existing supported native
+identity profile as well as `v2-query`; `fab-cli-v2` retains its existing headless
+selection. Both reuse their existing credential, HTTP, runtime and configuration
+factories. Native KQL resolves typed database metadata without AIHub settings.
+DataAgent queries additionally require the documented optional non-secret
+`query_connection`, verified datasource and explicit stage. Its endpoint must
+match the selected trusted service origin, exact supported MCP profile path and
+allowed audience before any query token is acquired. No connection is guessed,
+no login is added, and the feature never writes settings.
+
+The native pipeline consumes the actual SDK results through the strict bridge,
+uses normal rich JSON presentation or standard atomic file delivery, and retains
+execution evidence through output failures without replay. The development
+candidate still requires authorized executable/default/native qualification;
+offline source fixtures are not a live-service support claim.
+
+### Workload-native Excel output
+
+`--format xlsx` is supported only on the configured DataAgent/AIHub query route.
+It requires an explicit new `--output FILE`; binary stdout (`-`) and extension
+inference are not supported. XLSX requires the explicit `.DataAgent` owner
+spelling; ID-only `/workspaces/ID/items/ID` targets cannot establish workbook
+capability without I/O and are rejected before setup. Existing typed formats
+retain their ID-only target support. Direct artifact-native KQL rejects XLSX before
+input, metadata or credential dispatch, without rerouting through AIHub.
+`fab-cli-v2 query` inherits the same parser and output behavior.
+
+Excel selects one workload execution **without** the
+`Fabric.Routing.Documents.DataAgent.TypedQueryResults` token, retaining the
+DataAgent, read-policy and configured-stage tokens. JSON, CSV, Parquet and normal
+no-export output continue to require typed JSON. The workload currently replaces
+XLSX with typed JSON rather than returning both; the CLI never executes a second
+query to obtain another representation or claims snapshot equivalence.
+
+The CLI strictly decodes exactly one embedded Excel blob and atomically saves
+the original bytes, including any sensitivity-label or protection content.
+It never fetches the resource URI, regenerates a workbook, unpacks/repackages
+Excel, executes formulas/M, or needs another runtime. Missing attachments
+(including zero-row service output), malformed base64 and multiple workbooks
+fail explicitly; output failure retains the successful native response and
+never authorizes replay. Delivery success means complete attachment bytes, not
+typed row completeness; native XLSX has no typed result ID or truncation marker.
+
+AIHub can return a cached workbook with baked-in native queries and Power Query
+connections. These use **manual refresh**, not guaranteed refresh-on-open.
+Excel refresh requires the opener's own credentials, permissions, connector
+support and any native-query consent. It re-executes the embedded native query,
+not the DataAgent/template pipeline; the cached `max_rows` cap and service
+read-policy guard are not an Excel refresh policy. Source rows may change.
+Workbooks can be data-only when the service lacks connection metadata; the CLI
+reports connectivity as unverified, does not certify labels or refreshability,
+and does not reject a protected workbook merely because it is not ZIP.
+Interactive desktop refresh and exact source-label propagation remain separate
+qualification requirements.
+
 ## Native Dataflow query execution
 
 The additive v2 `execute` root binds an explicit

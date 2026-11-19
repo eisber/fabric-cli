@@ -47,6 +47,9 @@ pub mod ml_endpoint;
 pub mod native_tabular;
 pub mod parser;
 mod projection;
+/// Opt-in actual typed native query composition over caller-resolved providers.
+#[cfg(feature = "v2-query")]
+pub mod query_host;
 mod reads;
 #[cfg(feature = "v2-refresh")]
 pub mod refresh_command;

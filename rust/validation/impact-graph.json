@@ -3,6 +3,20 @@
   "schema": 1,
   "components": [
     {
+      "id": "cli-query-commands",
+      "package": "fabric-cli-query-commands",
+      "inputs": ["rust/clients/cli/commands/query/**"],
+      "depends_on": ["engine-query", "output"],
+      "tests": [
+        {"package": "fabric-cli-query-commands", "target": "lib"},
+        {"package": "fabric-cli-query-commands", "target": "test:preparation"},
+        {"package": "fabric-cli-query-commands", "target": "test:kql_dispatch"},
+        {"package": "fabric-cli-query-commands", "target": "test:encoding"},
+        {"package": "fabric-cli-query-commands", "target": "test:aihub_dispatch"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "docs-search",
       "package": "fabric-docs-search",
       "inputs": [
@@ -24,6 +38,30 @@
         {"package": "fabric-docs-search", "target": "example:benchmark"},
         {"package": "fabric-docs-search", "target": "example:rich_probe"}
       ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-query-host",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/query_host*.rs",
+        "rust/clients/cli/app/src/native_query.rs",
+        "rust/clients/cli/app/src/query_binary_input.rs",
+        "rust/clients/cli/app/src/v2_query_main.rs",
+        "rust/clients/cli/app/tests/query_binary.rs"
+      ],
+      "depends_on": ["cli-query-commands", "engine-query", "output"],
+      "tests": [
+        {"package": "fabric-cli", "target": "lib"},
+        {"package": "fabric-cli", "target": "bin:fab-rs"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli", "target": "test:query_binary"},
+        {"package": "fabric-cli", "target": "test:native_tabular"},
+        {"package": "fabric-cli", "target": "test:execute_arguments"},
+        {"package": "fabric-cli", "target": "test:execute_host"},
+        {"package": "fabric-cli", "target": "test:execute_cli_contract"}
+      ],
+      "profiles": ["v2-query", "v2-query-headless", "v2-query-native-read"],
       "checks": ["dependency-graph"]
     },
     {
@@ -3419,6 +3457,13 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "v2-query",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-query"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "docs-search-preview",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/docs-search", "fabric-cli/headless"],
@@ -3438,6 +3483,27 @@
       "features": ["fabric-cli/v2-link-kql", "fabric-cli/headless", "fabric-cli/runtime-v2", "fabric-cli/v2-refresh"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["dependency-graph", "headless", "combined"]
+    },
+    {
+      "id": "query-tabular-aihub",
+      "packages": ["fabric-sdk-query-tabular"],
+      "features": ["fabric-sdk-query-tabular/aihub"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-query-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-query", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-query-native-read",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-query", "fabric-cli/native-read"],
+      "platforms": ["windows"],
+      "checks": ["dependency-graph"]
     },
     {
       "id": "runtime-v2-native",

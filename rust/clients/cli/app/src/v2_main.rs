@@ -38,6 +38,8 @@ mod v2_link_dataagent_main;
 mod v2_link_kql_main;
 #[cfg(feature = "runtime-v2")]
 mod v2_livy_list_main;
+#[cfg(feature = "v2-query")]
+mod v2_query_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -58,6 +60,13 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "v2-query")]
+    if v2_query_main::claims(&args) {
+        return std::process::ExitCode::from(finish(
+            v2_query_main::run(args),
+            &mut io::stderr().lock(),
+        ));
+    }
     #[cfg(feature = "docs-search")]
     if args.first().is_some_and(|value| value == "item")
         || args.first().is_some_and(|value| value == "get")
@@ -109,7 +118,12 @@ fn main() -> std::process::ExitCode {
     {
         let root_help = args.as_slice() == [std::ffi::OsStr::new("--help")];
         if root_help || fabric_cli::runtime_v2::livy_list::claims(&args) {
-            return std::process::ExitCode::from(v2_livy_list_main::run(args, root_help));
+            let exit = v2_livy_list_main::run(args, root_help);
+            #[cfg(feature = "v2-query")]
+            if root_help && exit == 0 && writeln!(io::stdout().lock(), "\n{QUERY_HELP}").is_err() {
+                return std::process::ExitCode::from(1);
+            }
+            return std::process::ExitCode::from(exit);
         }
     }
     #[cfg(feature = "v2-create")]
@@ -170,6 +184,9 @@ fn finish(result: Result<u8, Failure>, stderr: &mut dyn Write) -> u8 {
 }
 
 type Failure = (&'static str, String, Value, u8);
+
+#[cfg(feature = "v2-query")]
+const QUERY_HELP: &str = "Opt-in typed native query:\n  fab-cli-v2 query PATH --text TEXT|--file FILE|- [--engine kql]\n  Add --format json|csv|parquet --output NEW_FILE for exactly one resultset.\nUses authoritative KQLDatabase metadata or an explicitly configured real DataAgent datasource/stage.\nAIHub requires a trusted explicit query_connection; missing configuration does not disable native KQL.\nNo provider/resultset/language selectors, inferred endpoints, parameter override, or failure fallback.";
 
 const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 artifact data-agent list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 link <explicit-data-agent-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 artifact data-agent link <explicit-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 update <path> --input FILE|- --mode patch [--plan]\n\nRun a command with --help for its supported schema.\nUpdate plans are local; Notebook execution requires explicit terminal approval.\nDataAgent links require explicit native identity and interactive effect approval.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
 
@@ -253,6 +270,9 @@ fn run() -> Result<(), Failure> {
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "{ROOT_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-query")]
+        writeln!(io::stdout().lock(), "\n{QUERY_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-create")]
         writeln!(io::stdout().lock(), "\n{CREATE_HELP}")
