@@ -51,6 +51,50 @@ fn help_succeeds_on_stdout_only() {
 }
 
 #[test]
+fn capability_owned_grammars_remain_available_in_the_actual_binary() {
+    for args in [
+        vec!["api", "--help"],
+        vec!["find", "--help"],
+        vec!["acl", "ls", "--help"],
+        vec!["acl", "get", "--help"],
+        vec!["acl", "grant", "--help"],
+        vec!["acl", "revoke", "--help"],
+        vec!["label", "list-local", "--help"],
+        vec!["label", "set", "--help"],
+        vec!["label", "del", "--help"],
+    ] {
+        let output = invoke(&args);
+        assert_eq!(output.status.code(), Some(0), "{args:?}");
+        assert!(output.stderr.is_empty(), "{args:?}");
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains("Usage: fab-rs"),
+            "{args:?}"
+        );
+    }
+    for args in [
+        vec!["api", "items", "-X", "GET"],
+        vec!["api", "items", "-A", "inferred"],
+        vec!["find", "needle", "-q"],
+        vec![
+            "acl",
+            "revoke",
+            "Demo.Workspace",
+            "-I",
+            "person",
+            "-R",
+            "Viewer",
+        ],
+    ] {
+        let output = invoke(&args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        assert!(!output.stderr.is_empty(), "{args:?}");
+    }
+}
+
+#[test]
 fn version_has_an_exact_stdout_contract() {
     for flag in ["--version", "-V"] {
         let output = invoke(&[flag]);

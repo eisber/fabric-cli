@@ -4,6 +4,9 @@
 [workspace]
 members = [
     "clients/cli/app",
+    "clients/cli/commands/access",
+    "clients/cli/commands/api",
+    "clients/cli/commands/catalog",
     "clients/cli/commands/jobs",
     "clients/cli/commands/local",
     "clients/cli/commands/mutations",
@@ -13,6 +16,7 @@ members = [
     "clients/cli/commands/storage",
     "clients/cli/commands/tables",
     "clients/cli/commands/transfer",
+    "clients/cli/contracts",
     "clients/cli/output",
     "clients/cli/query",
     "clients/cli/repl",
@@ -58,6 +62,9 @@ members = [
     "engine/sdk",
 ]
 default-members = [
+    "clients/cli/commands/access",
+    "clients/cli/commands/api",
+    "clients/cli/commands/catalog",
     "clients/cli/update",
     "clients/cli/repl",
     "engine/core/contracts",
@@ -87,6 +94,7 @@ default-members = [
     "engine/control-plane/acl",
     "engine/control-plane/catalog",
     "clients/cli/commands/resources",
+    "clients/cli/contracts",
     "clients/cli/commands/storage",
     "clients/cli/commands/local",
     "clients/cli/commands/transfer",
@@ -166,6 +174,10 @@ fabric-sdk-api = { path = "engine/core/http/requests" }
 fabric-sdk-access = { path = "engine/control-plane/acl" }
 fabric-sdk-catalog = { path = "engine/control-plane/catalog" }
 fabric-cli-resources = { path = "clients/cli/commands/resources" }
+fabric-cli-access = { path = "clients/cli/commands/access" }
+fabric-cli-api = { path = "clients/cli/commands/api" }
+fabric-cli-catalog = { path = "clients/cli/commands/catalog" }
+fabric-cli-command-contracts = { path = "clients/cli/contracts" }
 fabric-cli-storage-files = { path = "clients/cli/commands/storage" }
 fabric-cli-local = { path = "clients/cli/commands/local" }
 fabric-cli-transfer = { path = "clients/cli/commands/transfer" }
