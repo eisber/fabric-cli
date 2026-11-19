@@ -101,10 +101,10 @@ single-dispatch statuses and errors, pending/late operations, bounded pulls,
 EOF, disposal, cancellation and uncertainty. Existing Fabric stream and
 buffered native runtime tests remain separate regression obligations.
 
-The package is currently at `engine/core/http/executor`. Physical relocation
-to `engine/sdk/http` is a separate compatibility refactor; this adapter does not
-adopt an unqualified extraction or introduce neutral runtime aliases of its own.
-The existing package identity and compatibility imports remain stable.
+The package lives at `engine/sdk/http`, above the neutral HTTP executor.
+The scoped adapter and its complete contract target stay with the SDK's native
+request and stream contracts; the neutral foundation gains no service dependency.
+The package identity and compatibility imports remain stable.
 
 These are authored fixtures, not a live-service claim. Compilation, test
 execution, optional-feature consumer checks and publication require their
