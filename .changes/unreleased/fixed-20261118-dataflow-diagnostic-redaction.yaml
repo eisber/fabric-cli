@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: fixed
+body: Redact source-sensitive service errors and Power Query metadata from default native Dataflow diagnostics and Debug output while retaining original evidence in explicit SDK error APIs.
+time: 2026-11-18T20:37:15Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

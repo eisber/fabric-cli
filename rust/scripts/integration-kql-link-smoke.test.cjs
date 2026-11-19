@@ -23,6 +23,37 @@ const features = ({args}) => args.includes('--features') ? args[args.indexOf('--
 const output = (names, filtered = 0) => names.map(name => `test ${name} ... ok\n`).join('') +
   `test result: ok. ${names.length} passed; 0 failed; 0 ignored; 0 measured; ${filtered} filtered out\n`;
 
+function assertOtherCandidateTimeouts(workflow) {
+  const candidates = workflow.replace(/\r\n/g, '\n').split('\n      - name: Check the ').slice(1);
+  const pr55 = "PR55 candidate's KQL LINK and current consumers offline";
+  const name = candidate => candidate.split('\n', 1)[0];
+  assert.equal(candidates.filter(candidate => name(candidate) === pr55).length, 1,
+    'Expected exactly one canonical PR55 candidate');
+  for (const candidate of candidates.filter(candidate => name(candidate) !== pr55)) {
+    assert.match(candidate.split('\n      - name:')[0], /^\s+timeout-minutes: 10\s*$/m);
+  }
+}
+
+const HISTORICAL_KQL_FORMAT_JOINS = [
+  [
+    `${' '.repeat(24)}let writer =\n${' '.repeat(28)}owned_output::owned_stream(OutputStream::Stderr, true).unwrap();`,
+    `${' '.repeat(24)}let writer = owned_output::owned_stream(OutputStream::Stderr, true).unwrap();`,
+  ],
+  [
+    `${' '.repeat(8)}let delivery =\n${' '.repeat(12)}host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;`,
+    `${' '.repeat(8)}let delivery = host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;`,
+  ],
+];
+
+function formattedHistoricalKqlExpected(source) {
+  let expected = source.replace(/\r\n/g, '\n');
+  for (const [before, after] of HISTORICAL_KQL_FORMAT_JOINS) {
+    assert.equal(expected.split(before).length - 1, 1, 'Expected exactly one pinned historical formatter join');
+    expected = expected.replace(before, after);
+  }
+  return expected;
+}
+
 // Lexical scope check only; actual Rust compilation/registration remains required.
 function rustCode(source) {
   const code = source.split('');
@@ -168,10 +199,10 @@ test('both KQL host and main test files keep every declaration at module scope a
   }
   assert.deepEqual(moduleTestDeclarations(read(main)), previous.map(test => test.name),
     'No previous test declaration is lost, renamed or reordered');
-  const beforeOwned = rustTestItem(historical.stdout, owned);
+  const beforeOwned = rustTestItem(formattedHistoricalKqlExpected(historical.stdout), owned);
   const afterOwned = rustTestItem(read(main), owned);
   assert.equal(afterOwned.text, beforeOwned.text.replace(/^ {12}/gm, ''),
-    'The entire process-test attribute/body/assertions move by exact deindent only');
+    'Keep the entire process-test body after exact deindent and two guarded historical formatter joins');
   const beforeStalled = rustTestItem(beforeOwned.remaining, stalled);
   const afterStalled = rustTestItem(afterOwned.remaining, stalled);
   const nonblank = text => text.replace(/\r\n/g, '\n').split('\n').filter(line => line.trim()).join('\n');
@@ -179,6 +210,24 @@ test('both KQL host and main test files keep every declaration at module scope a
     'Async attribute/body and both Write fixtures remain intact after extracting the inner test');
   assert.equal(nonblank(afterStalled.remaining), nonblank(beforeStalled.remaining),
     'Every other nonblank main-test line, including outer classification loop and deny lint, is unchanged');
+});
+
+test('historical KQL formatter exception permits only two guarded expected-source joins', () => {
+  const prefix = 'assert!(condition);\nconst LABEL: &str = "unchanged literal";\n';
+  const historical = prefix + HISTORICAL_KQL_FORMAT_JOINS.map(([before]) => before).join('\n');
+  const expected = prefix + HISTORICAL_KQL_FORMAT_JOINS.map(([, after]) => after).join('\n');
+  assert.equal(formattedHistoricalKqlExpected(historical), expected);
+  for (const actual of [
+    expected.replace('assert!(condition);', 'assert!(!condition);'),
+    expected.replace('"unchanged literal"', '"changed literal"'),
+  ]) {
+    assert.throws(() => assert.equal(actual, formattedHistoricalKqlExpected(historical)));
+  }
+  for (const [before] of HISTORICAL_KQL_FORMAT_JOINS) {
+    for (const invalid of [historical.replace(before, ''), `${historical}\n${before}`]) {
+      assert.throws(() => formattedHistoricalKqlExpected(invalid), /exactly one pinned historical/);
+    }
+  }
 });
 
 test('lexical test placement ignores Rust comments and literals but rejects nested blocks regardless of indentation', () => {
@@ -231,9 +280,7 @@ test('PR55 proof is candidate-only, immutable-pinned, and retains the existing f
     workflow.indexOf('uses: actions/checkout@'));
   assert.match(workflow, /kind: 'estimated-first-workflow-step'/);
   assert.match(workflow, /\{flag: 'wx'\}/);
-  for (const other of workflow.split('\n      - name: Check the ').slice(2)) {
-    assert.match(other.split('\n      - name:')[0], /timeout-minutes: 10/);
-  }
+  assertOtherCandidateTimeouts(workflow);
   assert.match(block, /integration-kql-link-smoke\.cjs/);
   assert.ok(!block.includes('continue-on-error'));
   for (const binding of ['FAB_CLI_V2_TEST_ROOT', 'FAB_IDENTITY_TEST_ROOT', 'FAB_UPDATE_TEST_ROOT']) {
@@ -249,6 +296,39 @@ test('PR55 proof is candidate-only, immutable-pinned, and retains the existing f
     assert.ok(runner.includes(guard));
   }
   assert.match(read(kql.ENTRY.driver), /dataagent\.main\(process\.argv\[2\], ENTRY\)/);
+});
+
+test('candidate timeout proof preserves every non-PR55 block in either ordering', () => {
+  const pr55 = ["PR55 candidate's KQL LINK and current consumers offline", 20];
+  const dataflow = ['three Dataflow enhancements offline', 10];
+  const other = ["PR52 candidate's DataAgent LINK and combined paths offline", 10];
+  for (const entries of [[pr55, dataflow, other], [dataflow, other, pr55]]) {
+    const workflow = 'jobs:\n' + entries.map(([name, minutes]) =>
+      `      - name: Check the ${name}\n        timeout-minutes: ${minutes}`).join('\n');
+    assert.doesNotThrow(() => assertOtherCandidateTimeouts(workflow));
+  }
+});
+
+test('candidate timeout proof rejects bad budgets and similar but noncanonical PR55 names', () => {
+  for (const [name, minutes] of [
+    ['three Dataflow enhancements offline', 20],
+    ['another candidate offline', 11],
+    ['three Dataflow enhancements offline', 100],
+    ["PR55 candidate's another entry offline", 20],
+  ]) {
+    const workflow = '\n      - name: Check the PR55 candidate\'s KQL LINK and current consumers offline\n' +
+      '        timeout-minutes: 20\n' +
+      `      - name: Check the ${name}\n        timeout-minutes: ${minutes}\n`;
+    assert.throws(() => assertOtherCandidateTimeouts(workflow));
+  }
+});
+
+test('candidate timeout proof requires exactly one canonical PR55 block', () => {
+  const pr55 = '\n      - name: Check the PR55 candidate\'s KQL LINK and current consumers offline\n' +
+    '        timeout-minutes: 20\n';
+  for (const workflow of ['jobs:\n', pr55 + pr55]) {
+    assert.throws(() => assertOtherCandidateTimeouts(workflow), /exactly one canonical PR55/);
+  }
 });
 
 test('only the exact KQL entry can select the admitted phase and immutable limits', () => {

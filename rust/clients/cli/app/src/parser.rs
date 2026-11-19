@@ -84,6 +84,8 @@ pub enum Invocation {
     Cancel(CancelCommand),
     /// Explicit v2 named Dataflow query execution, separate from item jobs.
     Execute(crate::execute::ExecuteCommand),
+    /// Explicit read-only Dataflow query metadata discovery.
+    DataflowQueries(crate::get_dataflow_queries::ListQueriesCommand),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
@@ -195,7 +197,7 @@ pub fn command() -> Command {
                 .after_help("Examples:\n  fab-rs ls 'marc*'\n  fab-rs ls 'Demo.Workspace/marc*'\n  fab-rs ls 'Demo.Workspace' --long -q '[].id'\n  fab-rs ls / -q \"[?name=='Demo.Workspace'].id\"\nA single trailing '*' filters children in one exact parent. Quote the path to prevent shell expansion. Only nonempty prefixes in the final segment are supported; other patterns and mutation wildcards are not supported.\nTo inspect the workspace itself, use: fab-rs get 'Demo.Workspace' -q id\nA bare field such as 'id' queries the whole listing array, not each item. Workspace item IDs are available only with --long."),
         )
         .subcommand(
-            Command::new("get")
+            crate::get_dataflow_queries::register(Command::new("get")
                 .about("Get item properties (bounded generic metadata)")
                 .args_override_self(true)
                 .infer_long_args(true)
@@ -213,7 +215,7 @@ pub fn command() -> Command {
                         .short('f')
                         .long("force")
                         .action(ArgAction::SetTrue),
-                ),
+                )),
         );
     // Run extends feature-owned artifact groups, so compose it after their registration.
     crate::tabular_export::register(crate::native_tabular::register(command))
@@ -258,7 +260,16 @@ where
         }
     }
     let mut parser = command();
-    if root.and_then(|index| args[index].to_str()) == Some("execute") {
+    let discovery = root.and_then(|index| args[index].to_str()) == Some("get")
+        && args[root.expect("selected get root") + 1..]
+            .iter()
+            .any(|arg| arg == "--list-queries");
+    if discovery {
+        parser = parser.mut_subcommand("get", |command| {
+            command.args_override_self(false).infer_long_args(false)
+        });
+    }
+    if discovery || root.and_then(|index| args[index].to_str()) == Some("execute") {
         // V1's inherited last-value-wins policy must not discard v2 selectors.
         parser = parser.args_override_self(false);
     }
@@ -295,7 +306,7 @@ where
         root.and_then(|index| args[index].to_str()),
         Some("ls" | "dir" | "get" | "job" | "table")
     ) {
-        source_read_arguments(&parser, &args)?
+        source_read_arguments(&parser, &args, !discovery)?
     } else {
         args.clone()
     };
@@ -352,6 +363,7 @@ where
         return crate::native_tabular::from_matches("run", leaf).map(Invocation::NativeTabular);
     }
     let export = crate::tabular_export::request(&matches);
+    let has_export = export.is_some();
     let wrap = |mut invocation: Invocation| {
         if let Some(request) = export {
             if let Invocation::Access(command) = &mut invocation
@@ -403,6 +415,12 @@ where
             return Err(invalid_arguments());
         }
         return crate::execute::from_matches(values).map(Invocation::Execute);
+    }
+    if name == "get" && values.get_flag("list_queries") {
+        if !discovery || matches.contains_id("output_format") || has_export {
+            return Err(invalid_arguments());
+        }
+        return crate::get_dataflow_queries::from_matches(values).map(Invocation::DataflowQueries);
     }
     if !matches!(name, "ls" | "get") {
         return family_invocation(&matches).map(wrap);
@@ -528,6 +546,7 @@ fn invalid_arguments() -> clap::Error {
 fn source_read_arguments(
     parser: &Command,
     args: &[OsString],
+    allow_long_abbreviations: bool,
 ) -> Result<Vec<OsString>, clap::Error> {
     let Some(start) = root_argument(args).filter(|index| {
         matches!(
@@ -587,6 +606,9 @@ fn source_read_arguments(
             {
                 exact
             } else {
+                if !allow_long_abbreviations {
+                    return Ok(args.to_vec());
+                }
                 let mut candidates = schema
                     .get_arguments()
                     .filter(|arg| arg.get_long().is_some_and(|long| long.starts_with(name)));

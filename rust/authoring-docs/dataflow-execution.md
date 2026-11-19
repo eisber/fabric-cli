@@ -38,6 +38,106 @@ document are errors. Input is limited to 1 MiB. Repeated input options do not
 permit multiple stdin reads. Version 2 has service/gateway restrictions; the
 client does not silently retry version 1 if version 2 fails.
 
+For an explicit custom evaluation, put a complete M section document in
+`request.json`, with a shared query matching the final target path segment:
+
+```json
+{
+  "customMashupDocument": "section Section1; shared Orders = #table(type table [OrderId = number, Amount = nullable number], {{1, 12.5}, {2, null}});",
+  "arrowVersion": 1
+}
+```
+
+```powershell
+fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --input request.json --format parquet --output orders.parquet
+```
+
+The document is sent unchanged as a request-scoped override. Execution does not
+save the document, update the Dataflow definition or its connection bindings,
+apply changes, or start a background refresh as a prerequisite. It still uses
+the addressed Dataflow's execution context and service-side source credentials;
+it does not provision missing connections. M evaluation itself can have source
+effects, so an unchanged Dataflow definition is not a read-only guarantee.
+For a single expression instead of a complete document, use `mExpression`:
+
+```json
+{
+  "mExpression": "let Source = #table(type table [OrderId = number], {{1}}) in Source",
+  "arrowVersion": 1
+}
+```
+
+The CLI wraps this exact expression in a section with one shared query named
+after the target's final path segment. It escapes the name as an M quoted
+identifier, and the approval prompt shows the complete final document sent to
+the service. `mExpression` and `customMashupDocument` are mutually exclusive.
+There is no implicit detection or conversion of existing document input.
+An empty/comment-only expression, NUL, unbalanced delimiters, unterminated
+strings/comments, nested block comments, a section document, or an unquoted
+semicolon is rejected before approval or credentials. This conservative lexical
+guard prevents additional section members; it is not an M semantic validator.
+Use `customMashupDocument` for complete documents. The 1 MiB request ceiling
+also includes the generated wrapper, query name and JSON escaping. Neither form
+saves a definition or changes connections.
+
+## Discover existing named queries
+
+Discovery is an explicit, separate operation; normal execution never downloads
+a definition to guess a query name:
+
+```powershell
+fab-rs get "/<workspace-id>.Workspace/<dataflow-id>.Dataflow" --list-queries --timeout 30s > queries.json
+fab-rs get "/<workspace-id>.Workspace/<dataflow-id>.Dataflow" --list-queries -q "queries[].queryName"
+```
+
+This uses the existing native `getDefinition` reader, including its actual
+accepted operation and result when necessary. It reads the public
+[`202502` query metadata format](https://learn.microsoft.com/rest/api/fabric/articles/item-management/definitions/dataflow-definition),
+not Mashup code or connection credentials. It does not evaluate M, request
+execution approval, refresh, call `executeQuery`, update a definition or repair
+connections. Definition-read authorization is still required; an execution
+permission alone does not establish access to a definition.
+
+JSON stdout contains `queries`, `queryMetadataPresent`, the actual `operationId`
+when one was returned, and `queryExecuted: false`. Each query preserves its
+exact `queryId`, `queryName`, `isHidden` and `loadEnabled`; hidden and non-loaded
+entries are not filtered out or claimed to return tables. `executePath` is
+provided only when the name is representable by the execution path grammar.
+Otherwise `addressable` is false and `executePath` is null; names are not
+silently normalized, escaped or omitted.
+
+The optional `queriesMetadata` index may be absent. In that case
+`queryMetadataPresent` is false and `queries` is empty: this is **not proof that
+the Mashup defines no queries**. Discovery does not guess names from M text.
+An explicit empty index is distinguished by `queryMetadataPresent: true`.
+Malformed/duplicate metadata, part aliases, non-inline payloads, unsupported
+versions, failed retrieval and exceeded bounds are nonzero failures, not empty
+successful listings. Connections, complete definitions and M source are never
+included in the projection.
+
+The timeout spans credentials, retrieval/observation and output. `--max-bytes`
+bounds each complete definition response and complete JSON output (default and
+ceiling 16 MiB); metadata is additionally limited to 1 MiB and 4,096 entries.
+The existing observer permits at most 100 status/result requests and a maximum
+60-second advertised polling delay. Results are never clipped.
+Discovery rejects execution-only `--wait`, `--input`, `--format`, `--output` and
+`--limit`, rather than silently ignoring them. Redirect stdout for a file;
+attached Windows console output is refused before credentials to preserve exact
+Unicode.
+
+`get -q` applies JMESPath locally to the inventory after complete bounded
+retrieval; it cannot change acquisition or hide an exceeded source bound.
+Without `--list-queries`, ordinary `get` metadata and its projection remain
+unchanged. Discovery-specific `--timeout` and `--max-bytes` require the flag.
+The evaluation-only `execute` command rejects `--list-queries`; no alias remains.
+Cancellation or an interrupted write can leave partial output, so the
+host stops rather than continuing another batch command.
+Error delivery also uses an owned stderr handle within the remaining deadline
+(at most one second). If the error pipe is blocked or time has expired, delivery
+is unconfirmed; the host returns a stopping failure without a synchronous retry.
+
+## Evaluation approval and lifecycle
+
 Execution can consume compute and access external data sources. Before selecting
 or acquiring credentials, the native host validates the target, reads and
 validates input, preflights the output path and requests explicit approval bound
@@ -102,10 +202,14 @@ table. Non-null values in that reserved diagnostic column fail closed without
 guessing an undocumented payload schema. An absent or all-null diagnostic column
 is allowed by the explicit integration policy; the REST documentation does not
 define null payload semantics, so this allowance alone is not service proof of
-application success. Structured metadata evidence is retained
-in the stderr error diagnostic, with unknown classification where appropriate;
-it can contain source-sensitive service information and should be handled
-accordingly. No output format may silently drop additional datasets.
+application success. Connection-aware CLI diagnostics omit raw service messages
+and `PQ Arrow Metadata` values because they can contain source-sensitive data.
+They retain the failure status and reconciliation facts, with unknown
+classification when structured evidence does not establish a cause. SDK and
+embedding callers retain the original evidence through explicit error/result
+fields; it must not be logged indiscriminately. Guidance does not inspect or
+repair connections, change credentials, or retry a query. No output format may
+silently drop additional datasets.
 
 CSV and JSON default to stdout; `--output FILE` selects a new local file.
 `--output -` explicitly selects stdout. Parquet requires a file: binary stdout,

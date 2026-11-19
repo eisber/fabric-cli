@@ -382,8 +382,7 @@ async fn stalled_stderr_delivery_retains_accepted_handle_with_bounded_return() {
     );
     let prepared = prepared_for_presentation().await;
     let mut approval = CapturedApproval(prepared.target().clone(), prepared.effects());
-    let delivery =
-        host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;
+    let delivery = host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;
     let started = Instant::now();
     let error = deliver(
         delivery,
@@ -413,8 +412,7 @@ fn owned_stderr_worker_cannot_prevent_supervised_process_exit_after_deadline() {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let writer =
-                owned_output::owned_stream(OutputStream::Stderr, true).unwrap();
+            let writer = owned_output::owned_stream(OutputStream::Stderr, true).unwrap();
             let result = owned_output::write_owned(
                 writer,
                 Instant::now() + Duration::from_millis(100),
