@@ -10,6 +10,12 @@ The existing `fabric-cli-mutations::v2_create` parser and
 `fabric-sdk-items::create` planner remain the grammar and policy authorities.
 Default builds and the v1 `create`/`mkdir` alias are unchanged.
 
+The additive `v2-create-sparkjobdefinition` binding mounts
+[empty SparkJobDefinition creation](spark-job-definition-create.md) alongside
+the current Notebook, Report, Warehouse and optional typed owners. It reuses
+this host without changing the shared parser, SDK policy or LRO APIs. Enabling
+this leaf does not make `create --help` exclusive to SparkJobDefinition.
+
 ## Typed binding interface
 
 A native leaf implements `CreateBinding: CreateInputValidator`:

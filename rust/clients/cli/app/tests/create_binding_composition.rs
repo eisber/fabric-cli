@@ -51,6 +51,8 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             "CopyJob",
             #[cfg(feature = "v2-create-semantic-model")]
             "SemanticModel",
+            #[cfg(feature = "v2-create-sparkjobdefinition")]
+            "SparkJobDefinition",
         ] {
             assert!(text.contains(owner), "{text}");
             if args[0] == "create" {
@@ -70,6 +72,8 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
             assert!(text.contains("Livy"));
             #[cfg(feature = "v2-create-semantic-model")]
             assert!(text.contains("pinned five-part blank template"));
+            #[cfg(feature = "v2-create-sparkjobdefinition")]
+            assert!(text.contains("empty SparkJobDefinition metadata only"));
         }
     }
 }
@@ -79,6 +83,12 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("input.json");
     for (owner, bytes, exit, code) in [
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        ("SparkJobDefinition", EVENTHOUSE, 1, "ApprovalRequired"),
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        ("SparkJobDefinition", KQL, 2, "CreatePolicyRejected"),
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        ("SparkJobDefinition", WAREHOUSE, 2, "CreatePolicyRejected"),
         #[cfg(feature = "v2-copyjob-create")]
         ("CopyJob", EVENTHOUSE, 1, "ApprovalRequired"),
         #[cfg(feature = "v2-copyjob-create")]
@@ -139,6 +149,10 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         format!("{ROOT}.SemanticModel/src/definition"),
         #[cfg(feature = "v2-create-semantic-model")]
         format!("{ROOT}.semanticmodel"),
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        format!("{ROOT}.SparkJobDefinition/src/definition"),
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        format!("{ROOT}.sparkjobdefinition"),
     ] {
         error(
             &run(&["create", &destination, "--input", "nonexistent.json"]),
@@ -156,6 +170,8 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         "CopyJob",
         #[cfg(feature = "v2-create-semantic-model")]
         "SemanticModel",
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        "SparkJobDefinition",
     ] {
         error(
             &run(&[
@@ -167,6 +183,61 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
             ]),
             2,
             "CreatePolicyRejected",
+        );
+    }
+}
+
+#[cfg(feature = "v2-create-sparkjobdefinition")]
+#[test]
+fn spark_metadata_does_not_authorize_definitions_or_unsupported_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("input.json");
+    for (bytes, code) in [
+        (br#"{"definition":{}}"#.as_slice(), "CreatePolicyRejected"),
+        (br#"{"displayName":"Other"}"#, "CreatePolicyRejected"),
+        (
+            br#"{"displayName":"Exact","\u0064isplayName":"Exact"}"#,
+            "InvalidInput",
+        ),
+    ] {
+        std::fs::write(&input, bytes).unwrap();
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.SparkJobDefinition"),
+                "--input",
+                input.to_str().unwrap(),
+                "--if-exists",
+                "skip",
+            ]),
+            2,
+            code,
+        );
+    }
+    for policy in ["overwrite", "duplicate"] {
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.SparkJobDefinition"),
+                "--input",
+                "nonexistent.json",
+                "--if-exists",
+                policy,
+            ]),
+            2,
+            "CreatePolicyRejected",
+        );
+    }
+    for policy in ["error", "skip"] {
+        error(
+            &run(&[
+                "create",
+                &format!("{ROOT}.SparkJobDefinition"),
+                "--if-exists",
+                policy,
+            ]),
+            1,
+            "ApprovalRequired",
         );
     }
 }

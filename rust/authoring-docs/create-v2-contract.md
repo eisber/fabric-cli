@@ -116,6 +116,11 @@ Eventhouse mount in `fab-cli-v2` with `headless`; see
 [Eventhouse creation](eventhouse-create.md) and the [shared host](create-host.md).
 This does not establish support for other types or all policies.
 
+The additive `v2-create-sparkjobdefinition` feature selects
+[empty SparkJobDefinition metadata creation](spark-job-definition-create.md)
+through the same current binding dispatcher. Other enabled owners and their
+schema and policy refusals remain installed; this is not an exclusive root.
+
 ## Target grammar
 
 The target grammar is design notation, not a runnable command example:

@@ -37,6 +37,8 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
                 &fabric_cli::kql_database_create::KqlReadWriteCreate,
                 #[cfg(feature = "v2-create-eventhouse")]
                 &fabric_cli::eventhouse_create::EventhouseCreate,
+                #[cfg(feature = "v2-create-sparkjobdefinition")]
+                &fabric_cli::spark_job_definition_create::EmptySparkJobDefinition,
             ];
             let mut stdout = io::stdout().lock();
             for binding in bindings {
@@ -170,6 +172,10 @@ fn selected_binding(destination: &OsStr) -> Result<&'static dyn CreateBinding, C
         "KQLDatabase" => Ok(&fabric_cli::kql_database_create::KqlReadWriteCreate),
         #[cfg(feature = "v2-create-eventhouse")]
         "Eventhouse" => Ok(&fabric_cli::eventhouse_create::EventhouseCreate),
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        "SparkJobDefinition" => {
+            Ok(&fabric_cli::spark_job_definition_create::EmptySparkJobDefinition)
+        }
         _ => Err(CreateCommandError::Invalid),
     }
 }

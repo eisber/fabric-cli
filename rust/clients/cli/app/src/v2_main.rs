@@ -214,6 +214,9 @@ const SEMANTIC_MODEL_CREATE_HELP: &str = "Opt-in native blank SemanticModel crea
 #[cfg(feature = "v2-copyjob-create")]
 const COPYJOB_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.CopyJob [OPTIONS]\nCreates empty CopyJob metadata only; not a configured runnable job. No definition, connections, runs or schedules.\nInput: omit for displayName-only, or strict JSON with matching displayName and optional description (max 256 characters); no other fields.\nRun create --help for input and policy limits; immediate terminal approval is required.";
 
+#[cfg(feature = "v2-create-sparkjobdefinition")]
+const SPARK_JOB_DEFINITION_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.SparkJobDefinition [OPTIONS]\nCreates empty SparkJobDefinition metadata only; not a configured runnable job. No definition, code, runtime configuration, upload or compute.\nOnly error/skip policies; explicit terminal approval. Run create --help for strict metadata input limits.";
+
 #[cfg(feature = "v2-link-kql")]
 const KQL_LINK_HELP: &str = "KQL links: artifact kql-database link <typed-shortcut-destination> --input FILE|- [--wait]\nRoot link selects the explicit DataAgent or KQLDatabase owner. Run artifact kql-database link --help.\nExplicit controlling-terminal approval is required; query acceleration may incur costs.";
 
@@ -294,6 +297,9 @@ fn run() -> Result<(), Failure> {
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-copyjob-create")]
         writeln!(io::stdout().lock(), "\n{COPYJOB_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create-sparkjobdefinition")]
+        writeln!(io::stdout().lock(), "\n{SPARK_JOB_DEFINITION_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-kql-database-create")]
         writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")

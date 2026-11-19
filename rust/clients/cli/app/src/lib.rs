@@ -63,6 +63,8 @@ pub mod search_command;
 #[cfg(feature = "v2-create-semantic-model")]
 pub mod semantic_model_create;
 pub mod session;
+#[cfg(feature = "v2-create-sparkjobdefinition")]
+pub mod spark_job_definition_create;
 #[cfg(feature = "v2-deploy")]
 pub mod stage_deploy;
 #[cfg(feature = "native-host")]

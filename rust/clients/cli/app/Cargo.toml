@@ -24,6 +24,11 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "spark_job_definition_create"
+path = "tests/spark_job_definition_create.rs"
+required-features = ["v2-create-sparkjobdefinition"]
+
+[[test]]
 name = "copyjob_create"
 path = "tests/copyjob_create.rs"
 required-features = ["v2-copyjob-create"]
@@ -162,6 +167,7 @@ semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
 v2-create = []
+v2-create-sparkjobdefinition = ["v2-create"]
 v2-copyjob-create = ["v2-create"]
 v2-create-semantic-model = ["v2-create"]
 v2-kql-database-create = ["v2-create"]

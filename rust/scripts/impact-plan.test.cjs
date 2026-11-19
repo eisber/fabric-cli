@@ -1512,6 +1512,8 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create-sparkjobdefinition', 'spark_job_definition_create',
+      'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-copyjob-create', 'copyjob_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-semantic-model', 'semantic_model_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'warehouse_create_wire', 'rust/clients/cli/app/Cargo.toml'],
@@ -1541,6 +1543,29 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
   }
+});
+
+test('Spark create composition profile retains all owners and runtime help coverage', () => {
+  const graph = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const profile = graph.profiles.find(item => item.id === 'v2-create-sparkjobdefinition-composed');
+  assert.ok(profile, 'Missing composed Spark profile');
+  assert.deepEqual(profile.packages, ['fabric-cli']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  for (const feature of [
+    'v2-create-sparkjobdefinition', 'v2-create-eventhouse', 'v2-kql-database-create',
+    'v2-copyjob-create', 'v2-create-semantic-model', 'headless', 'runtime-v2',
+  ]) {
+    assert.ok(profile.features.includes(`fabric-cli/${feature}`), feature);
+  }
+  const component = graph.components.find(item => item.id === 'cli-spark-job-definition-create');
+  for (const file of [
+    'src/v2_main.rs', 'src/v2_create_main.rs', 'src/v2_livy_list_main.rs',
+    'tests/create_binding_composition.rs',
+  ]) {
+    assert.ok(component.inputs.includes(`rust/clients/cli/app/${file}`), file);
+  }
+  assert.ok(component.tests.some(item => item.target === 'test:create_binding_composition'));
+  assert.ok(component.tests.some(item => item.target === 'test:spark_job_definition_create'));
 });
 
 test('CopyJob create catalog covers SDK, shared host and isolated/headless executable consumers', () => {

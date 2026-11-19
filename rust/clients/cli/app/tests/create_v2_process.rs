@@ -68,7 +68,29 @@ fn root_and_create_help_describe_the_actual_bounded_mount() {
         assert!(help.contains("Report"));
         assert!(help.contains("error and skip"));
         assert!(help.contains("approval"));
+        assert_eq!(
+            help.contains("SparkJobDefinition"),
+            cfg!(feature = "v2-create-sparkjobdefinition")
+        );
     }
+}
+
+#[cfg(not(feature = "v2-create-sparkjobdefinition"))]
+#[test]
+fn disabled_spark_binding_rejects_before_input_io_or_identity() {
+    failure(
+        &process(
+            &[
+                "create",
+                "/11111111-1111-1111-1111-111111111111.Workspace/Example.SparkJobDefinition",
+                "--input",
+                "nonexistent.json",
+            ],
+            None,
+        ),
+        "InvalidInput",
+        2,
+    );
 }
 
 #[test]

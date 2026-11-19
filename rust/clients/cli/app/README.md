@@ -16,6 +16,11 @@ the [experimental v2 get surface](../../../authoring-docs/v2-get.md). The defaul
 remains `fab-rs`. Service credentials and providers are explicitly selected;
 the v2 head does not activate private FabricAIHub APIs.
 
+The optional `v2-create-sparkjobdefinition` feature adds bounded
+[empty SparkJobDefinition creation](../../../authoring-docs/spark-job-definition-create.md)
+to that head through the shared create host. It does not configure or run a
+Spark job, upload scripts, start compute, or change the default v1 executable.
+
 ## Run the application
 
 From `rust/`:
