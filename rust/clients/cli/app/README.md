@@ -614,6 +614,19 @@ configuration documents.
 
 ## Native root queries
 
+A single `native-read,v2-query` (Windows) or `headless,v2-query` build combines
+three separate roots without shadowing or fallback between them:
+
+```text
+fab-rs query   PATH --text TEXT|--file FILE [--engine ENGINE] [--format json|csv|parquet|xlsx --output FILE]
+fab-rs execute /WS.Workspace/DF.Dataflow/queries/NAME --wait [--input FILE|-] [--timeout DURATION]
+               [--format json|csv|parquet] [--output FILE] [--limit ROWS] [--max-bytes BYTES]
+fab-rs get     /WS.Workspace/DF.Dataflow --list-queries [--timeout DURATION] [--max-bytes BYTES] [-q JMESPATH]
+```
+
+`query` covers DataAgent/AIHub (DAX, SQL, KQL datasources) and artifact-native
+KQL. `execute` is Dataflow-only. Dataflow query discovery is a read under `get`.
+
 The additive Rust feature `v2-query` registers `query_host` over the existing
 root query grammar, with explicit file representations:
 

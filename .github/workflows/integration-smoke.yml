@@ -288,6 +288,54 @@ jobs:
           }
           '@ | node
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check the combined query CLI candidate's SDK crates offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' &&
+          github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
+          github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        shell: pwsh
+        run: ./rust/scripts/integration-combined-query-smoke.ps1 -Phase sdk -Receipts "$env:RUNNER_TEMP/integration-smoke-receipts/combined-query-cli"
+      - name: Check the combined query CLI candidate's query and Dataflow hosts offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' &&
+          github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
+          github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        shell: pwsh
+        run: ./rust/scripts/integration-combined-query-smoke.ps1 -Phase hosts -Receipts "$env:RUNNER_TEMP/integration-smoke-receipts/combined-query-cli"
+      - name: Check the combined query CLI candidate's Windows binary surface offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/combined-query-execute-cli-20261119' &&
+          github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
+          github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        shell: pwsh
+        run: ./rust/scripts/integration-combined-query-smoke.ps1 -Phase binary -Receipts "$env:RUNNER_TEMP/integration-smoke-receipts/combined-query-cli"
       - name: Check the PR55 candidate's KQL LINK and current consumers offline
         if: >-
           github.event_name == 'pull_request' &&
