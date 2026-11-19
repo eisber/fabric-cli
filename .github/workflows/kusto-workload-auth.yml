@@ -60,6 +60,10 @@ jobs:
         run: cargo test --locked --offline -p fabric-identity --features windows-broker --lib windows::tests -- --test-threads=1
       - name: Test device-code regressions without live sign-in or storage
         run: cargo test --locked --offline -p fabric-identity --features interactive --lib interactive::tests -- --test-threads=1
+      - name: Test inherited official headless provider resource contracts
+        run: cargo test --locked --offline -p fabric-identity --features headless --test headless -- --test-threads=1
+      - name: Test inherited closed native audience contracts
+        run: cargo test --locked --offline -p fabric-identity-windows --lib entra_contract::tests -- --test-threads=1
       - name: Test exact workload routing and incompatible device-code sessions
         run: cargo test --locked --offline -p fabric-cli --features native-read,interactive,headless --lib workload_auth::tests -- --test-threads=1
       - name: Lint both changed packages and native composition
