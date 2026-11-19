@@ -664,6 +664,46 @@ async fn output_failure_retains_original_execution_and_never_posts_again() {
     }
 }
 
+#[tokio::test]
+async fn accepted_link_uses_pure_shared_presentation_without_losing_native_receipt() {
+    use fabric_cli_output::{OutputStream, outcome::Recovery, presentation::FlushPolicy};
+
+    let (dispatch, wire, _, _) = run(
+        prepared("LakehouseTables", false).await,
+        vec![
+            metadata(AGENT, "DataAgent"),
+            metadata(SOURCE, "Lakehouse"),
+            response(StatusCode::Accepted, Value::Null),
+        ],
+        Some(true),
+    )
+    .await;
+    assert_eq!(dispatch.value["status"], "accepted");
+    let mut expected = serde_json::to_vec(&dispatch.value).unwrap();
+    expected.push(b'\n');
+    let prepared = dispatch.render().unwrap();
+    assert!(prepared.outcome.result.is_ok());
+    assert_eq!(prepared.recovery, Recovery::DoNotReplay);
+    assert_eq!(prepared.plan.records[0].payload, expected);
+    assert_eq!(prepared.plan.exit_code, 0);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+    let failure = prepared
+        .deliver(
+            &mut BrokenWriter {
+                remaining: 5,
+                flush: false,
+            },
+            &mut Vec::new(),
+            FlushPolicy::Stream(OutputStream::Stdout),
+        )
+        .unwrap_err();
+    assert_eq!(failure.stdout_written, 5);
+    assert_eq!(failure.prepared.outcome.value["status"], "accepted");
+    assert!(failure.prepared.outcome.result.is_ok());
+    assert_eq!(failure.prepared.recovery, Recovery::DoNotReplay);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+}
+
 #[test]
 fn malformed_foreign_root_links_are_not_claimed_even_when_requesting_help() {
     for kind in [

@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: changed
+body: Share typed v2 command outcomes and explicit presentation/delivery contracts while preserving local-host and DataAgent output compatibility.
+time: 2026-11-17T11:00:00Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber

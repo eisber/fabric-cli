@@ -6,8 +6,9 @@
 use crate::parser::Invocation;
 use clap::{Arg, Command};
 use fabric_cli_output::{
-    OutputStream, RenderPlan,
-    tabular::{TabularError, TabularFormat, TabularLimits, TabularTable, encode},
+    OutputStream,
+    presentation::{PresentationSource, render},
+    tabular::{TabularError, TabularFormat, TabularLimits, TabularTable},
     text::TextPlan,
 };
 use serde_json::{Value, json};
@@ -209,16 +210,12 @@ impl ExportDelivery {
 
     /// Encode the operation receipt without replaying execution or file delivery.
     pub fn plan(&self) -> io::Result<TextPlan> {
-        let mut payload = serde_json::to_vec(&self.receipt).map_err(io::Error::other)?;
-        payload.push(b'\n');
-        Ok(TextPlan {
-            records: vec![RenderPlan {
-                stream: OutputStream::Stdout,
-                exit_code: self.exit_code,
-                payload,
-            }],
-            exit_code: self.exit_code,
-        })
+        render(
+            PresentationSource::Json(&self.receipt),
+            OutputStream::Stdout,
+            self.exit_code,
+        )
+        .map_err(io::Error::other)
     }
 
     /// Write once; on failure this borrowed object retains execution/file evidence.
@@ -395,8 +392,12 @@ where
             "This empty result has no declared schema; an arbitrary projection or dynamic native adapter must supply its real columns",
         ));
     }
-    let bytes = match encode(&table, request.format) {
-        Ok(bytes) => bytes,
+    let plan = match render(
+        PresentationSource::Tabular(&table, request.format),
+        OutputStream::Stdout,
+        0,
+    ) {
+        Ok(plan) => plan,
         Err(_) => {
             return evidence(failed(
                 &result.source,
@@ -407,7 +408,8 @@ where
             ));
         }
     };
-    if sink.publish(request, &bytes).is_err() {
+    let bytes = &plan.records[0].payload;
+    if sink.publish(request, bytes).is_err() {
         return evidence(failed(
             &result.source,
             "succeeded",
