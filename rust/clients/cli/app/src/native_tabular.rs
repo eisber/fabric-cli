@@ -557,7 +557,7 @@ pub fn command() -> Command {
 /// Parse the caller-owned grammar without files, credentials, I/O or execution.
 ///
 /// Arguments include argv[0]. This parser does not replace the default
-/// executable's Dataflow `execute` grammar or its native provider.
+/// executable's Dataflow `query` grammar or its native provider.
 ///
 /// # Errors
 /// Rejects invalid syntax, conflicting input readers and blank required values.
@@ -622,6 +622,7 @@ fn register_roots(mut root: Command, include_execute: bool, native_run: bool) ->
     let query = text_arguments(
         Command::new("query")
             .about("Query a proven read-only native binding")
+            .after_help("Dataflow targets (/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>) use the Dataflow Power Query grammar instead: optional --text M or --file FILE|-, --parameters FILE|-, --format json|csv|parquet, --output FILE, --timeout, --limit and --max-bytes. Run query <Dataflow query path> --help for details.")
             .arg(path()),
     )
     .arg(Arg::new("engine").long("engine"));

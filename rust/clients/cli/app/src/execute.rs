@@ -1,10 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Explicit v2 Dataflow execution arguments, independent of credentials and I/O.
+//! Dataflow Power Query arguments for the `query` root, independent of credentials and I/O.
+//!
+//! A Dataflow target selects this grammar before the native DAX/KQL/SQL query
+//! grammar; there is no fallback between them.
 
-use clap::{Arg, ArgAction, ArgMatches, Command, error::ErrorKind};
-use std::time::Duration;
+use clap::{Arg, ArgMatches, Command, error::ErrorKind};
+use std::{ffi::OsString, time::Duration};
 
 #[path = "execute_host.rs"]
 pub mod host;
@@ -79,12 +82,32 @@ impl QueryTarget {
     }
 }
 
-/// Parsed root execute command. Construction never accesses ambient state.
+/// Raw Power Query M expression source for one evaluation.
+#[derive(Clone, Eq, PartialEq)]
+pub enum ExpressionSource {
+    /// Exact inline M text.
+    Inline(String),
+    /// A UTF-8 M file, or `-` for the single stdin reader.
+    File(String),
+}
+
+impl std::fmt::Debug for ExpressionSource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Inline(_) => formatter.write_str("Inline(..)"),
+            Self::File(_) => formatter.write_str("File(..)"),
+        }
+    }
+}
+
+/// Parsed Dataflow query command. Construction never accesses ambient state.
 #[derive(Clone, Debug)]
 pub struct ExecuteCommand {
-    /// Explicit native execution target.
+    /// Explicit native evaluation target.
     pub target: QueryTarget,
-    /// Optional JSON input file or a single stdin reader.
+    /// Optional raw M expression evaluated under the target query name.
+    pub expression: Option<ExpressionSource>,
+    /// Optional JSON parameters file or a single stdin reader.
     pub input: Option<String>,
     /// Result serialization.
     pub format: ResultFormat,
@@ -98,20 +121,71 @@ pub struct ExecuteCommand {
     pub max_bytes: usize,
 }
 
-/// Additive root command. Existing v1 command schemas remain unchanged.
+/// Dataflow grammar of the `query` root. Existing v1 command schemas remain unchanged.
 pub fn command() -> Command {
-    Command::new("execute")
+    Command::new("query")
         .args_override_self(false)
-        .about("Execute an explicitly addressed Dataflow Power Query (v2 preview)")
-        .after_help("Evaluation target: /<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>. Requires explicit approval and --wait. Input JSON: optional customMashupDocument OR mExpression, plus arrowVersion (1 or 2). Discover query names separately with get <Dataflow path> --list-queries. No automatic connection changes or query replay. Detailed refresh-log download remains an API gap.")
-        .arg(Arg::new("path").required(true))
-        .arg(Arg::new("input").long("input"))
+        .about("Query a Dataflow Power Query by name or with raw M (v2 preview)")
+        .after_help("Target: /<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>. Without --text/--file the saved query is evaluated; --text M or --file FILE|- evaluates a single M expression under that query name. --parameters FILE|- accepts JSON with optional customMashupDocument OR mExpression, plus arrowVersion (1 or 2). Waits for the result within --timeout. Requires interactive approval because evaluation uses the Dataflow's connections, can consume compute and can access external sources. Discover query names with get <Dataflow path> --list-queries. No automatic connection changes or query replay.")
+        .arg(Arg::new("path").required(true).value_name("PATH"))
+        .arg(Arg::new("text").long("text").value_name("M").conflicts_with("file"))
+        .arg(Arg::new("file").long("file").value_name("FILE"))
+        .arg(Arg::new("input").long("parameters").value_name("FILE"))
         .arg(Arg::new("format").long("format").value_parser(["json", "csv", "parquet"]).default_value("json"))
         .arg(Arg::new("output").long("output").short('o'))
-        .arg(Arg::new("wait").long("wait").action(ArgAction::SetTrue).required(true))
         .arg(Arg::new("timeout").long("timeout").default_value("5m"))
         .arg(Arg::new("max_rows").long("limit").value_parser(clap::value_parser!(usize)).default_value("100000"))
         .arg(Arg::new("max_bytes").long("max-bytes").value_parser(clap::value_parser!(usize)).default_value("16777216"))
+}
+
+const VALUE_OPTIONS: &[&str] = &[
+    "--text", "--file", "--parameters", "--engine", "--format", "--output", "-o", "--timeout",
+    "--limit", "--max-bytes",
+];
+
+/// Whether `query` arguments (after the root) address a Dataflow target.
+///
+/// Only the first positional value is inspected; option values are skipped.
+pub fn selects(args: &[OsString]) -> bool {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let Some(arg) = arg.to_str() else {
+            return false;
+        };
+        if VALUE_OPTIONS.contains(&arg) {
+            args.next();
+        } else if arg == "--" {
+            return args
+                .next()
+                .and_then(|path| path.to_str())
+                .is_some_and(dataflow_path);
+        } else if !arg.starts_with('-') || arg == "-" {
+            return dataflow_path(arg);
+        }
+    }
+    false
+}
+
+fn dataflow_path(path: &str) -> bool {
+    path.split('/').any(|segment| {
+        segment
+            .len()
+            .checked_sub(".Dataflow".len())
+            .and_then(|start| segment.get(start..))
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".Dataflow"))
+    })
+}
+
+/// Parse `query` arguments, starting with the root name, using the Dataflow grammar.
+///
+/// # Errors
+/// Returns help/version displays and invalid-argument errors unchanged.
+pub fn parse<I, T>(args: I) -> Result<ExecuteCommand, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    from_matches(&command().try_get_matches_from(args)?)
 }
 
 /// Convert schema-checked values into an execution contract.
@@ -145,13 +219,30 @@ pub fn from_matches(values: &ArgMatches) -> Result<ExecuteCommand, clap::Error> 
         || values
             .get_one::<String>("input")
             .is_some_and(String::is_empty)
-        || values.contains_id("output_format")
+    {
+        return Err(invalid());
+    }
+    let expression = match (
+        values.get_one::<String>("text"),
+        values.get_one::<String>("file"),
+    ) {
+        (Some(text), None) if !text.trim().is_empty() => {
+            Some(ExpressionSource::Inline(text.clone()))
+        }
+        (None, Some(file)) if !file.is_empty() => Some(ExpressionSource::File(file.clone())),
+        (None, None) => None,
+        _ => return Err(invalid()),
+    };
+    let input = values.get_one::<String>("input").cloned();
+    if input.as_deref() == Some("-")
+        && matches!(&expression, Some(ExpressionSource::File(file)) if file == "-")
     {
         return Err(invalid());
     }
     Ok(ExecuteCommand {
         target,
-        input: values.get_one::<String>("input").cloned(),
+        expression,
+        input,
         format,
         output,
         timeout,
@@ -198,6 +289,6 @@ fn uuid(value: &str) -> bool {
 fn invalid() -> clap::Error {
     clap::Error::raw(
         ErrorKind::InvalidValue,
-        "Invalid execution arguments. Use an ID-qualified Dataflow query path, finite budgets, and an advertised result format.",
+        "Invalid Dataflow query arguments. Use an ID-qualified Dataflow query path, at most one M source, finite budgets, and an advertised result format.",
     )
 }

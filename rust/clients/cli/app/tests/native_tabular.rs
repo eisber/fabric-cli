@@ -467,10 +467,18 @@ fn tabular_export_source(command: &NativeCommand) -> Option<&'static str> {
 }
 
 #[test]
-fn central_frontdoor_preserves_dataflow_execute_and_unique_roots() {
+fn central_frontdoor_routes_dataflow_query_and_keeps_unique_roots() {
     let command = fabric_cli::parser::command();
     command.clone().debug_assert();
-    for name in ["run", "query", "execute", "delete", "get", "table", "job"] {
+    assert_eq!(
+        command
+            .get_subcommands()
+            .filter(|command| command.get_name() == "execute")
+            .count(),
+        0,
+        "the executable reserves execute for statements with side effects"
+    );
+    for name in ["run", "query", "delete", "get", "table", "job"] {
         assert_eq!(
             command
                 .get_subcommands()
@@ -488,10 +496,9 @@ fn central_frontdoor_preserves_dataflow_execute_and_unique_roots() {
     ] {
         let Invocation::Execute(command) = fabric_cli::parser::parse_args([
             "fab-rs",
-            "execute",
+            "query",
             path,
-            "--wait",
-            "--input",
+            "--parameters",
             "-",
             "--format",
             format,
@@ -505,7 +512,7 @@ fn central_frontdoor_preserves_dataflow_execute_and_unique_roots() {
             "4096",
         ])
         .unwrap() else {
-            panic!("Dataflow execute must retain its native SDK host");
+            panic!("Dataflow query must retain its native SDK host");
         };
         assert_eq!(command.target.query, "Orders");
         assert_eq!(command.input.as_deref(), Some("-"));
@@ -515,11 +522,16 @@ fn central_frontdoor_preserves_dataflow_execute_and_unique_roots() {
         assert_eq!(command.max_rows, 12);
         assert_eq!(command.max_bytes, 4096);
     }
-    assert!(
-        fabric_cli::parser::parse_args(["fab-rs", "execute", path, "--wait", "--text", "opaque"])
-            .is_err(),
-        "caller-owned statement flags must not redefine Dataflow input"
-    );
+    for removed in [
+        &["fab-rs", "execute", path][..],
+        &["fab-rs", "query", path, "--wait"][..],
+        &["fab-rs", "query", path, "--engine", "kql"][..],
+    ] {
+        assert!(
+            fabric_cli::parser::parse_args(removed.iter().copied()).is_err(),
+            "{removed:?}"
+        );
+    }
     let command = parsed(ROOTS[2].1, Some("csv"), Path::new("statement.data"));
     assert!(matches!(command.operation, Operation::Execute(_)));
 }
