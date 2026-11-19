@@ -1,15 +1,16 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Native HTTP/TLS transport and WebSocket data paths
+# Neutral native HTTP/TLS transport
 
-`fabric-sdk-transport` supplies `TokioTimer` and an optional Azure-compatible
+`fabric-http-transport` supplies `TokioTimer` and an optional Azure-compatible
 `NativeHttpClient`. It is not a service client, identity provider, retry engine,
 pager or operation poller.
 
 There are no default features. Enable `hyper-rustls` to select the native HTTP
 backend. The SDK facade and focused service crates do not select it implicitly.
 
-The independent `notebook-websocket` feature provides a bounded RFC 6455 JSON
+The compatibility `fabric-sdk-transport` package reexports this transport.
+Its independent `notebook-websocket` feature provides a bounded RFC 6455 JSON
 `NotebookChannel` over an already-upgraded caller-owned Tokio stream. It selects
 only protocol framing, not HTTP connect/upgrade, TLS, credentials or runtime
 discovery. Its owner-bound managed-driver composition and limits are described

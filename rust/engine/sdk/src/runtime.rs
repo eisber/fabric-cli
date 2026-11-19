@@ -13,6 +13,7 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -22,10 +23,17 @@ pub type NativeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// One absolute local budget shared by opening, consuming and resuming a stream.
 ///
 /// Clones retain the original start time. Caller pauses consume the same budget.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NativeDeadline {
-    started: Instant,
-    deadline: fabric_sdk_operations::deadline::MonotonicDeadline,
+    clock: NativeClock,
+    deadline: fabric_core::execution::MonotonicDeadline,
+    observed: Arc<Mutex<Option<Duration>>>,
+}
+
+#[derive(Clone)]
+enum NativeClock {
+    System(Instant),
+    Injected(Arc<dyn fabric_core::execution::ExecutionClock>),
 }
 
 impl NativeDeadline {
@@ -34,13 +42,44 @@ impl NativeDeadline {
     /// # Errors
     /// Rejects zero or excessive durations without starting any operation.
     pub fn new(timeout: Duration) -> Result<Self, NativeError> {
-        let deadline =
-            fabric_sdk_operations::deadline::MonotonicDeadline::new(Duration::ZERO, timeout)
-                .map_err(|_| NativeError::InvalidInput)?;
+        let deadline = fabric_core::execution::MonotonicDeadline::new(Duration::ZERO, timeout)
+            .map_err(|_| NativeError::InvalidInput)?;
         Ok(Self {
-            started: Instant::now(),
+            clock: NativeClock::System(Instant::now()),
             deadline,
+            observed: Arc::default(),
         })
+    }
+
+    /// Begin the same finite budget in a caller-owned scheduling time domain.
+    ///
+    /// All clones, body reads, pauses and nested operations retain this exact
+    /// clock and absolute deadline. Unlike [`Self::new`], this path never samples
+    /// the system clock. Hosts must use this clock for their deadline alarms too.
+    ///
+    /// # Errors
+    /// Rejects zero, excessive or unrepresentable durations before any I/O.
+    pub fn with_clock(
+        timeout: Duration,
+        clock: Arc<dyn fabric_core::execution::ExecutionClock>,
+    ) -> Result<Self, NativeError> {
+        let deadline = fabric_core::execution::MonotonicDeadline::new(clock.now(), timeout)
+            .map_err(|_| NativeError::InvalidInput)?;
+        Ok(Self {
+            clock: NativeClock::Injected(clock),
+            deadline,
+            observed: Arc::default(),
+        })
+    }
+
+    /// Borrow the scheduling clock, when supplied through [`Self::with_clock`].
+    ///
+    /// Legacy [`Self::new`] callers retain their externally supplied alarm.
+    pub fn clock(&self) -> Option<&dyn fabric_core::execution::ExecutionClock> {
+        match &self.clock {
+            NativeClock::System(_) => None,
+            NativeClock::Injected(clock) => Some(clock.as_ref()),
+        }
     }
 
     /// Return the remaining original budget, never a restarted watchdog.
@@ -48,9 +87,34 @@ impl NativeDeadline {
     /// # Errors
     /// Returns [`NativeError::TimedOut`] once the local budget expires.
     pub fn remaining(&self) -> Result<Duration, NativeError> {
-        self.deadline
-            .remaining(self.started.elapsed())
-            .map_err(|_| NativeError::TimedOut)
+        let mut observed = self.observed.lock().map_err(|_| NativeError::TimedOut)?;
+        let now = match &self.clock {
+            NativeClock::System(started) => started.elapsed(),
+            NativeClock::Injected(clock) => clock.now(),
+        };
+        if observed.is_some_and(|previous| now < previous) {
+            // Expiry remains terminal, including for clones of this budget.
+            *observed = Some(Duration::MAX);
+            return Err(NativeError::TimedOut);
+        }
+        let remaining = self
+            .deadline
+            .remaining(now)
+            .map_err(|_| NativeError::TimedOut);
+        *observed = Some(if remaining.is_ok() {
+            now
+        } else {
+            Duration::MAX
+        });
+        remaining
+    }
+}
+
+impl fmt::Debug for NativeDeadline {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NativeDeadline")
+            .finish_non_exhaustive()
     }
 }
 
@@ -573,12 +637,13 @@ mod stream_contract_tests {
         let before = deadline.remaining().unwrap();
         assert!(deadline.clone().remaining().unwrap() <= before);
         let expired = NativeDeadline {
-            started: Instant::now().checked_sub(Duration::from_secs(2)).unwrap(),
+            clock: NativeClock::System(Instant::now().checked_sub(Duration::from_secs(2)).unwrap()),
             deadline: fabric_sdk_operations::deadline::MonotonicDeadline::new(
                 Duration::ZERO,
                 Duration::from_secs(1),
             )
             .unwrap(),
+            observed: Arc::default(),
         };
         assert_eq!(expired.remaining(), Err(NativeError::TimedOut));
     }

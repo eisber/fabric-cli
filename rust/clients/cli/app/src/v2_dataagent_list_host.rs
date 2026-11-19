@@ -9,6 +9,10 @@ use crate::{
     get_target::{GetRepresentation, GetTarget},
 };
 use clap::{Arg, Command, error::ErrorKind};
+use fabric_cli_output::{
+    OutputStream,
+    presentation::{PresentationSource, render},
+};
 use fabric_cli_storage_files::{ExactOutputError, ExactOutputFile};
 use fabric_sdk::{
     Client,
@@ -438,8 +442,13 @@ impl ListHost<'_> {
             envelope["data"] = fabric_cli_query::project_value(&envelope["data"], query)
                 .map_err(ListError::Projection)?;
         }
-        let mut bytes = serde_json::to_vec(&envelope).map_err(|_| ListError::Output)?;
-        bytes.push(b'\n');
+        let mut plan = render(
+            PresentationSource::Json(&envelope),
+            OutputStream::Stdout,
+            u8::from(!complete),
+        )
+        .map_err(|_| ListError::Output)?;
+        let bytes = plan.records.remove(0).payload;
         if bytes.len() > OUTPUT_BYTES {
             return Err(ListError::BudgetExceeded);
         }

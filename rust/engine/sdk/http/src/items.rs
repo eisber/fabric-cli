@@ -13,7 +13,7 @@ impl ItemExecutor for HttpExecutor {
         request: ItemRequest<'a>,
     ) -> ExecutionFuture<'a, Result<ItemResponse, ItemExecutionError>> {
         Box::pin(async move {
-            self.execute(
+            self.execute_fabric(
                 Method::Get,
                 request.url(),
                 request.token(),

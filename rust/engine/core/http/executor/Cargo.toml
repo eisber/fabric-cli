@@ -2,31 +2,21 @@
 # Licensed under the MIT License.
 
 [package]
-name = "fabric-sdk-http"
+name = "fabric-http"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Shared bounded HTTP execution for handwritten Fabric SDK operations"
+description = "Service-neutral bounded HTTP execution over caller-owned clients and timers"
 
 [package.metadata.fabric]
 layer = "sdk"
 
-[features]
-default = []
-livy-arrow = ["fabric-sdk/livy-arrow"]
-
 [dependencies]
 azure_core.workspace = true
-fabric-sdk.workspace = true
-fabric-sdk-items.workspace = true
-fabric-sdk-folders.workspace = true
-fabric-sdk-operations.workspace = true
-fabric-sdk-workspaces.workspace = true
 futures-util.workspace = true
 fabric-core.workspace = true
-serde_json.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
