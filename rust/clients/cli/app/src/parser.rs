@@ -593,6 +593,9 @@ fn source_read_arguments(
             {
                 exact
             } else {
+                if !schema.is_infer_long_args_set() {
+                    return Ok(args.to_vec());
+                }
                 let mut candidates = schema
                     .get_arguments()
                     .filter(|arg| arg.get_long().is_some_and(|long| long.starts_with(name)));

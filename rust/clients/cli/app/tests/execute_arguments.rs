@@ -120,6 +120,10 @@ fn metadata_discovery_is_explicit_and_never_ignores_execution_options() {
         vec!["--limit", "10"],
         vec!["--max-bytes", "16777217"],
         vec!["--timeout", "0s"],
+        vec!["--time", "30s"],
+        vec!["--time=30s"],
+        vec!["--max-b", "1024"],
+        vec!["--que", "queries[].queryName"],
         vec!["--query", "["],
         vec!["--verbose"],
         vec!["--force"],
@@ -160,6 +164,11 @@ fn get_discovery_preserves_metadata_and_local_projection_without_execution() {
         panic!("ordinary metadata GET");
     };
     assert_eq!(metadata.query.as_deref(), Some("id"));
+    let Invocation::Read(abbreviated) = parse_args(["fab-rs", "get", item, "--que", "id"]).unwrap()
+    else {
+        panic!("ordinary metadata GET retains its existing abbreviations");
+    };
+    assert_eq!(abbreviated.query.as_deref(), Some("id"));
     let Invocation::DataflowQueries(discovery) = parse_args([
         "fab-rs",
         "get",
