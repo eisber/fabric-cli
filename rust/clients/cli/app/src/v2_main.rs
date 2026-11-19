@@ -182,6 +182,9 @@ const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /
 #[cfg(feature = "v2-create")]
 const NOTEBOOK_CREATE_HELP: &str = "Opt-in native Notebook creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Notebook [OPTIONS]\nPolicies: error and skip. Run create --help. Explicit terminal approval required.";
 
+#[cfg(feature = "v2-create")]
+const WAREHOUSE_CREATE_HELP: &str = "Opt-in create: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Warehouse [OPTIONS]\nWarehouse JSON: optional displayName (exact target), description (at most 256 characters), creationPayload.collationType (Latin1_General_100_BIN2_UTF8 by default or Latin1_General_100_CI_AS_KS_WS_SC_UTF8).\nOnly native error/skip policies; explicit terminal approval. No SQL, definitions or child provisioning.";
+
 #[cfg(feature = "v2-kql-database-create")]
 const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<name>.KQLDatabase --input FILE|-\nReadWrite only; creationPayload requires an existing parentEventhouseItemId GUID.\nNo implicit Eventhouse creation, Shortcut, definition, query or ingestion.";
 
@@ -256,6 +259,9 @@ fn run() -> Result<(), Failure> {
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-create")]
         writeln!(io::stdout().lock(), "\n{NOTEBOOK_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create")]
+        writeln!(io::stdout().lock(), "\n{WAREHOUSE_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-kql-database-create")]
         writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")

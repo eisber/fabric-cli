@@ -24,6 +24,16 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "warehouse_create_wire"
+path = "tests/warehouse_create_wire.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "warehouse_create_binary"
+path = "tests/warehouse_create_binary.rs"
+required-features = ["v2-create", "headless"]
+
+[[test]]
 name = "kql_database_create"
 path = "tests/kql_database_create.rs"
 required-features = ["v2-kql-database-create"]

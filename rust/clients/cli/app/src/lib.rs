@@ -78,6 +78,8 @@ pub mod v2_preview;
 /// Native TABLE composition for opt-in physical Lakehouse data-schema reads.
 #[cfg(all(feature = "v2-discovery", feature = "native-host"))]
 pub mod v2_schema_native;
+#[cfg(feature = "v2-create")]
+pub mod warehouse_create;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;

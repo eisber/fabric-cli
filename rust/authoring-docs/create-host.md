@@ -216,3 +216,10 @@ combined dispatch assertions, not by looser receipt or approval expectations.
 The 65 Notebook HTTP fixtures and protected acceptance/projection assertions
 are unchanged. This bounded proof does not establish full native-platform,
 live-service or release qualification.
+
+The [Warehouse binding](warehouse-create-v2.md) is another `v2-create` consumer.
+Its integration update preserves these producer APIs and registers the typed
+Warehouse schema alongside Notebook and Report, with KQLDatabase and Eventhouse
+remaining separately enabled. Combined executable tests also cover Warehouse
+collation input, cross-owner schema rejection, unsupported-policy admission
+before input I/O and every enabled help disclosure, including the Livy root.
