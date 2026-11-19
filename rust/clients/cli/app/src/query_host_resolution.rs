@@ -285,9 +285,8 @@ pub async fn resolve_data_agent(
         Stage::Production => MetadataStage::Published,
         Stage::Sandbox => MetadataStage::Staging,
     };
-    let target =
-        DataAgentTarget::new(&owner.artifact.workspace, &owner.artifact.item, "DataAgent")
-            .map_err(|error| QueryResolutionError::DataAgent(Box::new(error)))?;
+    let target = DataAgentTarget::new(&owner.artifact.workspace, &owner.artifact.item, "DataAgent")
+        .map_err(|error| QueryResolutionError::DataAgent(Box::new(error)))?;
     let mut canceled = pin!(canceled);
     let mut continuation: Option<ContinuationToken> = None;
     let mut seen_tokens = BTreeSet::new();
@@ -318,8 +317,7 @@ pub async fn resolve_data_agent(
             .checked_sub(charged)
             .ok_or(QueryResolutionError::IncompleteDatasources)?;
         for datasource in page.page.value {
-            if seen_ids.len() >= 1_000 || !seen_ids.insert(datasource.id().to_ascii_lowercase())
-            {
+            if seen_ids.len() >= 1_000 || !seen_ids.insert(datasource.id().to_ascii_lowercase()) {
                 return Err(QueryResolutionError::IncompleteDatasources);
             }
             if datasource
@@ -362,9 +360,7 @@ pub async fn resolve_data_agent(
     Err(QueryResolutionError::IncompleteDatasources)
 }
 
-fn datasource_artifact(
-    datasource: &DatasourceMetadata,
-) -> Result<Artifact, QueryResolutionError> {
+fn datasource_artifact(datasource: &DatasourceMetadata) -> Result<Artifact, QueryResolutionError> {
     use serde_json::Value;
     let data = datasource.as_value();
     let reference = match (data.get("itemReference"), data.get("lakehouseReference")) {
