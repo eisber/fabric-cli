@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Input and target preparation contracts for the query command capability.
+
 #![deny(unnameable_test_items)]
 
 use azure_core::http::Url;

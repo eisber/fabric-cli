@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Native KQL dispatch contracts for the query command capability.
+
 #![deny(unnameable_test_items)]
 
 use azure_core::http::Url;

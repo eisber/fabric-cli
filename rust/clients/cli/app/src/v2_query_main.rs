@@ -40,7 +40,7 @@ pub(crate) fn claims(args: &[OsString]) -> bool {
     }
     match parse(args) {
         Ok(Invocation::NativeTabular(command)) => matches!(command.operation, Operation::Query(_)),
-        Err(_) => true,
+        Ok(Invocation::Display(_)) | Err(_) => true,
         _ => false,
     }
 }
@@ -51,6 +51,11 @@ pub(crate) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             if matches!(command.operation, Operation::Query(_)) =>
         {
             command
+        }
+        Ok(Invocation::Display(text)) => {
+            write!(io::stdout().lock(), "{text}")
+                .map_err(|_| failed("OutputFailed", "Query help output failed.", 1))?;
+            return Ok(0);
         }
         Err(error)
             if matches!(

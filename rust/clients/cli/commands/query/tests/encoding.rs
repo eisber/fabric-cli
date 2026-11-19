@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Typed result encoding contracts for the query command capability.
+
 #![deny(unnameable_test_items)]
 
 use arrow_array::{

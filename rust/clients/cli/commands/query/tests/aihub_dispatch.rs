@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! AIHub DataAgent dispatch contracts for the query command capability.
+
 #![deny(unnameable_test_items)]
 
 #[path = "../../../../../engine/data-plane/aihub-query/examples/support/mod.rs"]
