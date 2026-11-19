@@ -11,6 +11,7 @@ members = [
     "clients/cli/commands/local",
     "clients/cli/commands/mutations",
     "clients/cli/commands/ontology",
+    "clients/cli/commands/query",
     "clients/cli/commands/resources",
     "clients/cli/commands/semantic-model",
     "clients/cli/commands/storage",
@@ -52,9 +53,11 @@ members = [
     "engine/core/pagination",
     "engine/core/v2-contracts",
     "engine/data-plane/dataflow",
+    "engine/data-plane/aihub-query",
     "engine/data-plane/onelake/client",
     "engine/data-plane/onelake/http",
     "engine/data-plane/query",
+    "engine/data-plane/query-tabular",
     "engine/data-plane/semantic-model/client",
     "engine/data-plane/semantic-model/dotnet",
     "engine/data-plane/tables",
@@ -105,10 +108,12 @@ default-members = [
     "clients/cli/commands/tables",
     "engine/data-plane/tables",
     "clients/cli/commands/ontology",
+    "clients/cli/commands/query",
     "clients/cli/v2",
     "engine/core/v2-contracts",
     "engine/control-plane/dataagents/ontology",
     "engine/data-plane/dataflow",
+    "engine/data-plane/aihub-query",
     "engine/control-plane/ontology/client",
     "engine/control-plane/ontology/workload",
     "engine/control-plane/search/client",
@@ -119,6 +124,7 @@ default-members = [
     "engine/control-plane/sql/definition",
     "engine/data-plane/tabular",
     "engine/data-plane/query",
+    "engine/data-plane/query-tabular",
     "engine/data-plane/semantic-model/client",
     "clients/cli/commands/semantic-model",
 ]
@@ -143,6 +149,8 @@ flatbuffers = { version = "=25.12.19", default-features = false }
 parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
 fabric-sdk-tabular = { path = "engine/data-plane/tabular" }
 fabric-sdk-query = { path = "engine/data-plane/query" }
+fabric-sdk-query-tabular = { path = "engine/data-plane/query-tabular" }
+fabric-sdk-aihub-query = { path = "engine/data-plane/aihub-query" }
 fabric-sdk-dataflow = { path = "engine/data-plane/dataflow" }
 fabric-name-search = { path = "engine/control-plane/search/names" }
 fabric-v2-contracts = { path = "engine/core/v2-contracts" }
@@ -169,6 +177,7 @@ fabric-core-json = { path = "engine/core/json" }
 fabric-identity = { path = "engine/core/auth/provider" }
 fabric-cli-output = { path = "clients/cli/output" }
 fabric-cli-query = { path = "clients/cli/query" }
+fabric-cli-query-commands = { path = "clients/cli/commands/query" }
 fabric-cli-jobs = { path = "clients/cli/commands/jobs" }
 fabric-sdk-jobs = { path = "engine/control-plane/jobs" }
 fabric-sdk-graph = { path = "engine/control-plane/graph" }

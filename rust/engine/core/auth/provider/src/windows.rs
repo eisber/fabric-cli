@@ -842,6 +842,8 @@ fn coordinator() -> &'static Arc<SessionCoordinator> {
 /// Each refresh uses the same selected account silently and accepts opaque or
 /// encrypted access tokens without interpreting JWT claims. Unknown or combined
 /// scopes fail before broker access; no `.default` inference or fallback occurs.
+/// Public Kusto requests likewise accept only [`crate::PUBLIC_KUSTO_SCOPE`] and
+/// preserve the same silent account/tenant/client binding.
 pub struct WindowsCredential {
     options: EntraOptions,
     account_id: String,
@@ -963,6 +965,7 @@ impl TokenCredential for WindowsCredential {
             ["https://storage.azure.com/.default"] => TokenAudience::OneLake,
             ["https://management.azure.com/.default"] => TokenAudience::Arm,
             ["https://database.windows.net/.default"] => TokenAudience::Sql,
+            [crate::PUBLIC_KUSTO_SCOPE] => TokenAudience::Kusto,
             ["https://petrol.office.microsoft.com/Feedback.ReadWrite"] => TokenAudience::Ocv,
             ["https://petrol-int.office.microsoft.com/Feedback.ReadWrite"] => TokenAudience::OcvPpe,
             _ => {
@@ -1008,6 +1011,7 @@ mod tests {
     const FABRIC_SCOPES: &[&str] = &["https://api.fabric.microsoft.com/.default"];
     const ARM_SCOPES: &[&str] = &["https://management.azure.com/.default"];
     const SQL_SCOPES: &[&str] = &["https://database.windows.net/.default"];
+    const KUSTO_SCOPES: &[&str] = &[crate::PUBLIC_KUSTO_SCOPE];
     const OCV_SCOPES: &[&str] = &["https://petrol.office.microsoft.com/Feedback.ReadWrite"];
     const OCV_PPE_SCOPES: &[&str] = &["https://petrol-int.office.microsoft.com/Feedback.ReadWrite"];
 
@@ -1288,6 +1292,217 @@ mod tests {
         assert_eq!(call.interaction, Interaction::Silent);
         call.succeed("native-id", true);
         assert!(token.await.is_ok());
+        broker.idle();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_and_existing_resources_keep_exact_silent_identity_bound_routing() {
+        let (owner, broker) = setup();
+        let selection = options(TENANT, OTHER, "user@example.test");
+        let credential = connect(&owner, &broker, selection.clone(), "native-id").await;
+        for scope in [
+            TokenAudience::Fabric.scope(),
+            crate::PUBLIC_KUSTO_SCOPE,
+            TokenAudience::Fabric.scope(),
+            TokenAudience::OneLake.scope(),
+            TokenAudience::Arm.scope(),
+            TokenAudience::Sql.scope(),
+            TokenAudience::Ocv.scope(),
+            TokenAudience::OcvPpe.scope(),
+        ] {
+            let scopes = [scope];
+            let token = credential.get_token(&scopes, None);
+            tokio::pin!(token);
+            pending(token.as_mut());
+            let call = broker.acquisition();
+            assert_eq!(call.audiences.len(), 1);
+            assert_eq!(call.audiences[0].scope(), scope);
+            assert_eq!(call.options.tenant(), selection.tenant());
+            assert_eq!(call.options.client(), selection.client());
+            assert_eq!(call.options.account(), selection.account());
+            assert_eq!(call.binding.as_deref(), Some("native-id"));
+            assert_eq!(call.interaction, Interaction::Silent);
+            let expected = if scope == crate::PUBLIC_KUSTO_SCOPE {
+                "synthetic-kusto-token"
+            } else {
+                "synthetic-other-resource-token"
+            };
+            call.control.end();
+            call.sender
+                .send(Ok(Session {
+                    account_id: "native-id".into(),
+                    tokens: vec![SessionToken {
+                        audience: call.audiences[0],
+                        expires_on: 2_000_000_000,
+                        secret: expected.into(),
+                    }],
+                }))
+                .unwrap_or_else(|_| panic!("fake acquisition receiver closed"));
+            assert_eq!(token.await.unwrap().token.secret(), expected);
+            broker.idle();
+        }
+        assert_eq!(credential.metadata().len(), 1);
+        assert_eq!(
+            credential.metadata()[0].scope,
+            TokenAudience::Fabric.scope()
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_audience_specific_connect_has_no_fabric_bootstrap_or_interaction() {
+        let (owner, broker) = setup();
+        let future = owner.acquire(
+            selected(),
+            Acquisition::ConnectForAudience(TokenAudience::Kusto),
+            Interaction::Allowed,
+        );
+        tokio::pin!(future);
+        pending(future.as_mut());
+        let call = broker.acquisition();
+        assert_eq!(call.audiences, vec![TokenAudience::Kusto]);
+        assert_eq!(call.interaction, Interaction::Silent);
+        call.succeed("native-id", true);
+        let credential = future.await.unwrap();
+        assert_eq!(credential.metadata().len(), 1);
+        assert_eq!(credential.metadata()[0].scope, crate::PUBLIC_KUSTO_SCOPE);
+        let token = credential.get_token(KUSTO_SCOPES, None);
+        tokio::pin!(token);
+        pending(token.as_mut());
+        let call = broker.acquisition();
+        assert_eq!(call.audiences, vec![TokenAudience::Kusto]);
+        assert_eq!(call.binding.as_deref(), Some("native-id"));
+        assert_eq!(call.interaction, Interaction::Silent);
+        call.succeed("native-id", true);
+        assert!(token.await.is_ok());
+        broker.idle();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_rejects_nonliteral_and_combined_requests_before_broker_work() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        for scopes in [
+            vec![],
+            vec!["https://custom.example/.default"],
+            vec!["https://api.kusto.windows.net.evil.example/.default"],
+            vec!["https://api.kusto.windows.net/"],
+            vec!["https://api.kusto.windows.net/.default/"],
+            vec!["https://api.kusto.windows.net/.default extra"],
+            vec![" https://api.kusto.windows.net/.default"],
+            vec!["https://api.kusto.windows.net/.default "],
+            vec!["https://api.kusto.windows.net/%2Edefault"],
+            vec!["https://api.kusto.windows.net:443/.default"],
+            vec!["https://user@api.kusto.windows.net/.default"],
+            vec!["https://login.microsoftonline.com/.default"],
+            vec!["https://api.kusto.chinacloudapi.cn/.default"],
+            vec!["https://API.KUSTO.WINDOWS.NET/.default"],
+            vec![crate::PUBLIC_KUSTO_SCOPE, crate::PUBLIC_KUSTO_SCOPE],
+            vec![crate::PUBLIC_KUSTO_SCOPE, TokenAudience::Fabric.scope()],
+            vec![TokenAudience::Arm.scope(), crate::PUBLIC_KUSTO_SCOPE],
+        ] {
+            let error = credential.get_token(&scopes, None).await.unwrap_err();
+            assert_eq!(error.to_string(), "unsupported credential scope");
+            broker.idle();
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_rejects_wrong_broker_account_and_fabric_audience_without_fallback() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        for wrong_account in [false, true] {
+            let token = credential.get_token(KUSTO_SCOPES, None);
+            tokio::pin!(token);
+            pending(token.as_mut());
+            let mut call = broker.acquisition();
+            if !wrong_account {
+                call.audiences = vec![TokenAudience::Fabric];
+            }
+            call.succeed(
+                if wrong_account {
+                    "other-native-id"
+                } else {
+                    "native-id"
+                },
+                true,
+            );
+            assert!(token.await.is_err());
+            broker.idle();
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_preserves_interaction_required_and_provider_failures_without_prompt() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        for failure in [
+            BrokerError::InteractionRequired,
+            BrokerError::Cancelled,
+            BrokerError::ProviderUnavailable,
+            BrokerError::Provider {
+                status: 5,
+                code: 123,
+            },
+        ] {
+            let token = credential.get_token(KUSTO_SCOPES, None);
+            tokio::pin!(token);
+            pending(token.as_mut());
+            let call = broker.acquisition();
+            assert_eq!(call.interaction, Interaction::Silent);
+            assert_eq!(call.binding.as_deref(), Some("native-id"));
+            call.fail(failure);
+            assert_eq!(token.await.unwrap_err().to_string(), failure.to_string());
+            broker.idle();
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn public_kusto_deadline_cancels_the_existing_broker_operation() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        let token = credential.get_token(KUSTO_SCOPES, None);
+        tokio::pin!(token);
+        pending(token.as_mut());
+        let call = broker.acquisition();
+        tokio::time::advance(SILENT_LIMIT).await;
+        assert_eq!(
+            token.await.unwrap_err().to_string(),
+            BrokerError::TimedOut.to_string()
+        );
+        assert!(call.control.cancelled.load(Ordering::Acquire));
+        call.control.end();
+        broker.idle();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_unpolled_and_dropped_refresh_do_not_prompt_or_change_selection() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        drop(credential.get_token(KUSTO_SCOPES, None));
+        broker.idle();
+        let mut token = Box::pin(credential.get_token(KUSTO_SCOPES, None));
+        pending(token.as_mut());
+        let call = broker.acquisition();
+        drop(token);
+        assert_eq!(call.interaction, Interaction::Silent);
+        assert!(call.control.cancelled.load(Ordering::Acquire));
+        call.control.end();
+        broker.idle();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn public_kusto_respects_existing_logout_generation_before_broker_access() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        logout(&owner, &broker, selected()).await;
+        assert_eq!(
+            credential
+                .get_token(KUSTO_SCOPES, None)
+                .await
+                .unwrap_err()
+                .to_string(),
+            BrokerError::SessionInvalidated.to_string()
+        );
         broker.idle();
     }
 

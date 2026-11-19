@@ -131,6 +131,7 @@ v2-create = []
 v2-kql-database-create = ["v2-create"]
 v2-create-eventhouse = ["v2-create"]
 v2-run = []
+v2-query = ["dep:fabric-cli-query-commands", "dep:fabric-sdk-aihub-query", "dep:fabric-sdk-query", "dep:fabric-sdk-query-tabular"]
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []
 v2-deploy = []
@@ -162,6 +163,7 @@ clap.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-cli-query.workspace = true
+fabric-cli-query-commands = { workspace = true, optional = true }
 fabric-cli-jobs.workspace = true
 fabric-cli-local.workspace = true
 fabric-cli-mutations.workspace = true
@@ -186,6 +188,9 @@ fabric-sdk-graph = { workspace = true, optional = true }
 fabric-sdk-operations.workspace = true
 fabric-sdk-tables.workspace = true
 fabric-sdk-dataflow.workspace = true
+fabric-sdk-aihub-query = { workspace = true, optional = true }
+fabric-sdk-query = { workspace = true, optional = true }
+fabric-sdk-query-tabular = { workspace = true, optional = true, features = ["aihub"] }
 fabric-sdk-tabular.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
@@ -238,6 +243,11 @@ required-features = ["runtime-v2", "headless"]
 name = "graph_refresh_v2"
 path = "tests/graph_refresh_v2.rs"
 required-features = ["v2-refresh"]
+
+[[test]]
+name = "query_binary"
+path = "tests/query_binary.rs"
+required-features = ["v2-query", "headless"]
 
 [lints]
 workspace = true

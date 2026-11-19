@@ -1,0 +1,6 @@
+kind: added
+body: Add exact public Kusto resource requests to the existing selected Rust credential adapters, preserving silent renewal, identity and resource binding, secure storage, and default login audiences. Authentication-team review and live service acceptance remain separate requirements.
+time: 2026-11-17T15:15:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

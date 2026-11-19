@@ -57,6 +57,8 @@ pub struct QueryCommand {
     pub parameters: Option<String>,
     /// Exact advertised engine ID; no language or engine is inferred.
     pub engine: Option<String>,
+    /// Explicit workload-native workbook destination; not a tabular codec.
+    pub workbook_output: Option<std::path::PathBuf>,
 }
 
 /// Pinned execute-r6 frontend options, with provider-owned approval and execution.
@@ -121,6 +123,12 @@ impl NativeCommand {
                 validate_text(&query.text, query.parameters.as_deref())?;
                 if !valid_file(query.engine.as_deref()) {
                     return Err("An advertised engine ID must be nonblank");
+                }
+                if query.workbook_output.is_some()
+                    && (self.export.is_some()
+                        || query.workbook_output.as_deref() == Some(std::path::Path::new("-")))
+                {
+                    return Err("Native workbook output requires one explicit file destination");
                 }
             }
             Operation::Execute(execute) => {
@@ -426,6 +434,14 @@ pub async fn dispatch(
     if let Err(message) = command.validate() {
         return rejected(command, "invalid_arguments", message, Value::Null);
     }
+    if matches!(&command.operation, Operation::Query(query) if query.workbook_output.is_some()) {
+        return rejected(
+            command,
+            "unsupported_format",
+            "Workload-native XLSX requires the DataAgent query host, not a tabular backend.",
+            Value::Null,
+        );
+    }
     let Some(request) = &command.export else {
         return rejected(
             command,
@@ -624,10 +640,15 @@ fn register_roots(mut root: Command, include_execute: bool, native_run: bool) ->
             root = root.subcommand(command);
             continue;
         }
-        root = root.subcommand(
-            tabular_export::arguments(command, Some("output_format"))
-                .expect("native tabular roots do not have input/output flag collisions"),
-        );
+        let query = command.get_name() == "query";
+        let mut command = tabular_export::arguments(command, Some("output_format"))
+            .expect("native tabular roots do not have input/output flag collisions");
+        if query {
+            command = command.mut_arg("tabular_format", |format| {
+                format.value_parser(["csv", "json", "parquet", "xlsx"])
+            });
+        }
+        root = root.subcommand(command);
     }
     root
 }
@@ -675,6 +696,9 @@ pub(crate) fn from_matches(name: &str, values: &ArgMatches) -> Result<NativeComm
             text: text().ok_or_else(invalid)?,
             parameters: string("parameters"),
             engine: string("engine"),
+            workbook_output: (string("tabular_format").as_deref() == Some("xlsx"))
+                .then(|| string("tabular_output").map(Into::into))
+                .flatten(),
         }),
         "execute" => Operation::Execute(ExecuteCommand {
             text: text().ok_or_else(invalid)?,
