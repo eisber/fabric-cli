@@ -78,6 +78,7 @@ function main(output) {
     const actual = git(['rev-parse', 'HEAD']);
     report.source = sourcePin('pull_request', event, process.env.GITHUB_REF,
       process.env.GITHUB_SHA, actual, git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
+    assert.equal(report.source.checkout_base, BASE, 'Witnessed integration base moved');
     git(['merge-base', '--is-ancestor', SOURCE, event.pull_request.head.sha]);
     assert.equal(git(['status', '--porcelain']), '');
     before = sourceInventory(root);

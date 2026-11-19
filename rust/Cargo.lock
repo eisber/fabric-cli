@@ -1123,6 +1123,9 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "fabric-cli-access",
+ "fabric-cli-api",
+ "fabric-cli-catalog",
  "fabric-cli-context",
  "fabric-cli-jobs",
  "fabric-cli-local",
@@ -1167,6 +1170,62 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "fabric-cli-access"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "fabric-cli-query",
+ "fabric-sdk-access",
+ "fabric-sdk-api",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-api"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-query",
+ "fabric-sdk-api",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-catalog"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-output",
+ "fabric-cli-query",
+ "fabric-sdk-api",
+ "fabric-sdk-catalog",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-command-contracts"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-output",
+ "fabric-sdk-api",
+ "fabric-sdk-http",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1293,16 +1352,18 @@ dependencies = [
  "async-trait",
  "azure_core",
  "clap",
+ "fabric-cli-access",
+ "fabric-cli-api",
+ "fabric-cli-catalog",
+ "fabric-cli-command-contracts",
  "fabric-cli-context",
  "fabric-cli-output",
- "fabric-cli-query",
  "fabric-sdk-access",
  "fabric-sdk-api",
  "fabric-sdk-catalog",
  "fabric-sdk-http",
  "fabric-sdk-operations",
  "serde_json",
- "thiserror",
  "tokio",
 ]
 

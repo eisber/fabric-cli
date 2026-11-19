@@ -16,6 +16,8 @@ use thiserror::Error;
 
 /// Explicit service origins and validated endpoint bindings.
 pub mod endpoint;
+/// Caller-owned monotonic scheduling, absolute deadlines and local cancellation.
+pub mod execution;
 /// Service-neutral bounded HTTP exchanges and partial response evidence.
 pub mod http;
 /// Host-neutral operation metadata, assessed effects and execution evidence.

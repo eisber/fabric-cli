@@ -2,13 +2,29 @@
 
 # Access, catalog and API commands
 
-`fabric-cli-resources` composes ACL, label, FIND and raw API commands over focused
-SDK clients, context resolution, query projection and shared output.
+`fabric-cli-resources` is a source-compatible facade over focused command
+capabilities. It no longer owns their grammar, preparation or execution:
+
+| Package | Ownership |
+| --- | --- |
+| `fabric-cli-access` | ACL/label grammar, conversion, reads, mutations and export |
+| `fabric-cli-api` | Raw API grammar, conversion, bounded input and execution |
+| `fabric-cli-catalog` | FIND, hidden-resource discovery and Domain sync |
+| `fabric-cli-command-contracts` | Existing shared values, errors, confirmation and presentation |
+
+The root parser registers the capability schemas directly; app family routing
+selects their execution adapters using the same caller-owned session. This
+preserves v2 checkpoint `61c8221914152e231e5e64f7bd38418f66264999`, including
+all v2-only aliases, help and output rules. The layout at v1 commit
+`f8cb97e92eab669785954335e0e7276d30a3377e` is prior art, not a bulk merge.
 
 ## Register and execute
 
-Use `frontdoor::register(root)`, `AccessCommand::from_matches` and `AccessHost`
-in the central command parser. Run `frontdoor::execute_local` before remote
+Existing consumers can keep `frontdoor::register(root)`,
+`AccessCommand::from_matches` and `AccessHost`, including their public struct
+literals. These adapters only translate and route to the focused packages.
+New consumers can use each capability's public parser and execution API
+directly without depending on this facade. Run `frontdoor::execute_local` before remote
 account setup so configured local label listing does not require credentials.
 
 Supply resolved supported resources, configuration, timestamp, execution,

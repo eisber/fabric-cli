@@ -11,6 +11,117 @@ use fabric_cli_v2::{
 };
 use serde_json::json;
 
+#[test]
+fn public_local_types_are_identity_preserving_shared_contract_reexports() {
+    let result: fabric_cli_output::outcome::OperationResult =
+        OperationResult::succeeded(json!({"value":null}));
+    let _: OperationResult = result;
+    let error: fabric_cli_output::outcome::CliError = CliError::new("InvalidInput", "Invalid.");
+    let _: CliError = error;
+}
+
+#[test]
+fn pure_json_plans_preserve_the_existing_envelope_stream_and_exit_matrix() {
+    for (status, exit) in [
+        (Status::Succeeded, 0),
+        (Status::Prepared, 0),
+        (Status::Handoff, 0),
+        (Status::Accepted, 0),
+        (Status::Partial, 1),
+        (Status::Unknown, 1),
+    ] {
+        let result = OperationResult::new(status, json!({"missingIsAbsent":null,"empty":[]}));
+        let expected = json!({
+            "schemaVersion":"0.1",
+            "command":"cli show",
+            "status":status,
+            "data":{"missingIsAbsent":null,"empty":[]},
+            "effects":[],
+            "error":null,
+        });
+        let prepared = output::render_outcome("cli show", Ok(result), Format::Json).unwrap();
+        let mut bytes = serde_json::to_vec(&expected).unwrap();
+        bytes.push(b'\n');
+        assert_eq!(prepared.plan.exit_code, exit);
+        assert_eq!(prepared.plan.records.len(), 1);
+        assert_eq!(
+            prepared.plan.records[0].stream,
+            fabric_cli_output::OutputStream::Stdout
+        );
+        assert_eq!(prepared.plan.records[0].payload, bytes);
+        assert_eq!(prepared.outcome.unwrap().status, status);
+    }
+    for (code, exit) in [("InvalidInput", 2), ("Unauthorized", 1), ("Cancelled", 1)] {
+        for format in [Format::Json, Format::Text] {
+            let prepared = output::render_outcome(
+                "cli show",
+                Err(CliError::new(code, "Original diagnostic.")),
+                format,
+            )
+            .unwrap();
+            assert_eq!(prepared.plan.exit_code, exit);
+            assert!(
+                prepared
+                    .plan
+                    .records
+                    .iter()
+                    .all(|record| { record.stream == fabric_cli_output::OutputStream::Stderr })
+            );
+            assert_eq!(
+                prepared.outcome.unwrap_err().message,
+                "Original diagnostic."
+            );
+        }
+    }
+}
+
+#[test]
+fn pure_text_plan_is_the_existing_key_value_presentation_not_tabular_inference() {
+    use fabric_cli_output::{
+        production_unicode::{key_formatter, value_formatter},
+        text::{Presentation, render_key_values},
+    };
+    let data = json!([{"x":1},{"unrelated":null}]);
+    let expected = render_key_values(
+        &json!({
+            "schema_version":"0.1",
+            "command":"cli show",
+            "status":"succeeded",
+            "data":data,
+            "effects":[],
+            "error":null,
+        }),
+        key_formatter,
+        value_formatter,
+        Presentation::default(),
+    )
+    .unwrap();
+    let prepared = output::render_outcome(
+        "cli show",
+        Ok(OperationResult::succeeded(data)),
+        Format::Text,
+    )
+    .unwrap();
+    assert_eq!(prepared.plan, expected);
+}
+
+#[test]
+fn text_render_failure_retains_the_original_accepted_local_effect() {
+    use fabric_cli_output::{outcome::Recovery, presentation::PresentationError};
+
+    let result = OperationResult::new(
+        Status::Accepted,
+        json!({"preview":"x".repeat(4 * 1024 * 1024 + 1)}),
+    )
+    .with_effect(EffectKind::Installation, EffectState::Pending);
+    let failure = output::render_outcome("cli upgrade", Ok(result), Format::Text).unwrap_err();
+    assert!(matches!(failure.error, PresentationError::Text(_)));
+    let original = failure.outcome.unwrap();
+    assert_eq!(original.status, Status::Accepted);
+    assert_eq!(original.effects[0].state, EffectState::Pending);
+    assert_eq!(failure.recovery, Recovery::Reconcile);
+}
+
 struct BrokenWriter;
 
 impl Write for BrokenWriter {

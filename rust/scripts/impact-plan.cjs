@@ -454,6 +454,27 @@ function featureSet(packages, features = [], roots = [...packages.keys()]) {
   }
   return active;
 }
+
+/** Resolve target availability using the executor's actual Cargo invocation roots and features. */
+function testGroupResolver({metadata, root}) {
+  const {packages} = metadataModel(metadata, rootPath(root));
+  return groups => sorted(groups.flatMap(group => {
+    const roots = strings(group.packages, 'test group packages');
+    assert(roots.length > 0 && roots.every(name => packages.has(name)), 'Unknown or empty test group packages');
+    const selectors = strings(group.targets, 'test group targets');
+    assert(selectors.length > 0, 'Empty test group targets');
+    const active = featureSet(packages, strings(group.features, 'test group features'), roots);
+    return roots.flatMap(name => {
+      const pkg = packages.get(name);
+      for (const selector of selectors) assert(selector === 'all' || pkg.targets.has(selector),
+        `Unknown test group target: ${name}/${selector}`);
+      return [...pkg.targets.values()].filter(target =>
+        (selectors.includes('all') || selectors.includes(target.name)) &&
+        target.required.every(feature => active.has(`${name}/${feature}`)))
+        .map(target => `${name}/${target.name}`);
+    });
+  }));
+}
 // A feature on a consumer does not make all of that consumer's ordinary
 // dependencies feature obligations. Follow only declarations on the feature
 // path, then include the compile inputs of dependencies that path selects.
@@ -495,6 +516,63 @@ function documentation(file) {
     /^\.changes\/unreleased\/[^/]+\.ya?ml$/i.test(file) ||
     /^rust\/(?:authoring-docs|docs)\/.+\.md$/i.test(file) ||
     file === 'rust/AGENTS.md' || file === 'rust/README.md';
+}
+
+/** Inventory the same conservative Cargo edges and capability inputs used by the planner. */
+function dependencyInventory({metadata, graph, root, files, manifests}) {
+  root = rootPath(root);
+  const {packages, consumers} = metadataModel(metadata, root);
+  const rules = graphModel(graph, packages);
+  const documents = Array.isArray(metadata) ? metadata : [metadata];
+  for (const document of documents) assert(Array.isArray(document.workspace_default_members),
+    'Metadata is missing workspace_default_members');
+  const defaults = new Set(documents.flatMap(document =>
+    strings(document.workspace_default_members, 'workspace_default_members')));
+  const ids = new Set([...packages.values()].map(pkg => pkg.id));
+  assert([...defaults].every(id => ids.has(id)), 'Unknown default workspace member');
+  const declarations = new Map(documents.flatMap(document =>
+    document.packages.filter(pkg => document.workspace_members.includes(pkg.id)).map(pkg => [pkg.name, pkg])));
+  const declared = sorted([...packages.values()].map(pkg => pkg.manifest));
+  const discovered = strings(manifests, 'discovered package manifests').map(file => relative(file));
+  assert(stable(declared) === stable(sorted(discovered)),
+    'Discovered package manifests differ from Cargo workspace members (unregistered or missing crate)');
+  files = strings(files, 'source files').map(file => relative(file));
+  return {
+    packages: sorted(packages.keys()).map(name => {
+      const pkg = packages.get(name);
+      const dependencies = sorted(pkg.dependencies.map(dep => stable({
+        package: dep.name, alias: dep.rename || dep.name, kind: dep.kind || 'normal',
+        optional: dep.optional === true, target: dep.target || null,
+        default_features: dep.uses_default_features !== false,
+        features: strings(dep.features, 'dependency features'),
+        internal: dep.path != null,
+      }))).map(value => JSON.parse(value));
+      return {name, manifest: pkg.manifest,
+        layer: declarations.get(name).metadata?.fabric?.layer ?? null,
+        cargo_targets: declarations.get(name).targets.length,
+        default_member: defaults.has(pkg.id), dependencies,
+        forward_dependencies: sorted(closure([name], id => packages.get(id).deps)).filter(id => id !== name),
+        entry_kind_closures: Object.fromEntries(['normal', 'build', 'dev'].map(kind => [kind,
+          sorted(closure(dependencies.filter(dep => dep.internal && dep.kind === kind).map(dep => dep.package),
+            id => packages.get(id).deps))])),
+        reverse_consumers: sorted(closure([name], id => consumers.get(id))).filter(id => id !== name),
+        probe: [...pkg.targets.values()].find(target => target.name === 'lib')?.src ??
+          [...pkg.targets.values()].find(target => target.name.startsWith('bin:'))?.src ??
+          [...pkg.targets.values()][0]?.src ?? null,
+      };
+    }),
+    components: sorted(rules.components.keys()).map(id => {
+      const component = rules.components.get(id);
+      return {id, package: component.package, coverage: component.coverage,
+        files: files.filter(file => component.inputs.some(input => input.match.test(file)))};
+    }),
+    profiles: sorted(rules.profiles.keys()).map(id => {
+      const profile = rules.profiles.get(id);
+      return {id, packages: profile.packages, features: profile.features, platforms: profile.platforms,
+        feature_path_dependencies: sorted(featureDependencies(packages, profile)),
+        conservative_compile_dependencies: sorted(closure(profile.packages, name => packages.get(name).deps))};
+    }),
+  };
 }
 
 /**
@@ -712,7 +790,7 @@ function plan({metadata, baseMetadata, graph, files, root, full = false, reason}
     ![...testSelections.values()].some(other => other.package === test.package && other.target === 'all'));
   tests = tests.map(test => {
     const pkg = packages.get(test.package);
-    const targets = test.target === 'all' ? [...pkg.targets.values()].filter(target => target.test) :
+    const targets = test.target === 'all' ? [...pkg.targets.values()] :
       [pkg.targets.get(test.target)];
     const required = sorted(targets.flatMap(target => target.required));
     const missing = targets.filter(target =>
@@ -1090,7 +1168,8 @@ function verifyPlan(selection, {root = selection.inputs?.root, exec, read} = {})
     evidence_scope: selection.evidence_scope};
 }
 
-module.exports = {plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata};
+module.exports = {LOADED_SOURCE_DIGEST: SCRIPT_DIGEST,
+  plan, commands, main, reverseConsumers, verifyPlan, baseManifestMetadata, dependencyInventory, testGroupResolver};
 if (require.main === module) {
   try { main(); } catch (error) {
     console.error(`Impact planning failed: ${error.message}`);
