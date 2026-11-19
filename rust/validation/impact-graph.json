@@ -741,6 +741,10 @@
       "inputs": [
         "rust/clients/cli/app/src/spark_job_definition_create.rs",
         "rust/clients/cli/app/tests/spark_job_definition_create.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/src/v2_livy_list_main.rs",
+        "rust/clients/cli/app/tests/create_binding_composition.rs",
         "rust/authoring-docs/spark-job-definition-create.md"
       ],
       "depends_on": ["cli-create-host", "sdk-items", "operations", "http"],
@@ -3672,6 +3676,21 @@
       "id": "v2-create-sparkjobdefinition-headless",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-create-sparkjobdefinition", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-sparkjobdefinition-composed",
+      "packages": ["fabric-cli"],
+      "features": [
+        "fabric-cli/v2-create-sparkjobdefinition",
+        "fabric-cli/v2-create-eventhouse",
+        "fabric-cli/v2-kql-database-create",
+        "fabric-cli/v2-copyjob-create",
+        "fabric-cli/v2-create-semantic-model",
+        "fabric-cli/headless",
+        "fabric-cli/runtime-v2"
+      ],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["dependency-graph"]
     },

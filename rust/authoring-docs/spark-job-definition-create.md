@@ -128,4 +128,11 @@ tenant reads/writes. Native execution and the automatic full Windows, Linux,
 macOS and aggregate CI results must be recorded for the exact published head
 separately; source availability is not a claim that those gates passed.
 
+The `v2-create-sparkjobdefinition-composed` validation profile enables Spark,
+Eventhouse, KQL, CopyJob, SemanticModel, headless and runtime-v2 together.
+It retains Spark's multi-owner schema, policy and runtime-root help assertions
+instead of compiling those assertions out of isolated profiles. The impact
+catalog also maps shared create dispatch and help inputs to the Spark contracts.
+Registering this profile is not evidence that native CI executed it.
+
 [api]: https://learn.microsoft.com/en-us/rest/api/fabric/sparkjobdefinition/items/create-spark-job-definition
