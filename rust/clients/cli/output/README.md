@@ -63,6 +63,39 @@ presentation. Callers supply formatting options, width measurement and writers.
 Keep output plans until delivery completes: a partial write is an error, not
 permission to retry the associated operation.
 
+## Typed outcomes, presentation and delivery
+
+`outcome::CommandOutcome<T>` keeps command data, evidence status and observed
+local effects separate from presentation. `OperationResult`, `CliError`,
+`Status` and the effect types are the existing local v2 contracts, now shared
+here and publicly reexported unchanged by `fabric-cli-v2`. This does not replace
+resource-specific SDK receipts or the Python-compatible `CommandError`.
+
+The host selects `presentation::PresentationSource` explicitly: source-silent,
+raw JSON, exact bytes, the existing envelope, an ordered `TextPlan`, or an
+explicit `TabularTable` and codec. Raw JSON arrays/objects are never inferred to
+be tables. Silent output, missing keys, nulls, empty arrays and empty byte
+payloads remain distinct. Envelope normalization and tabular format limits are
+unchanged; JSON data files and raw JSON/envelope framing remain different.
+
+`PreparedOutput<T>` pairs the rendered plan with the original typed evidence
+and a `Recovery` constraint. Construction retains that evidence in
+`RenderFailure<T, E>` if serialization fails. Delivery accepts only writers,
+not an operation callback: `DeliveryFailure<T>` retains the original evidence,
+intended plan, confirmed byte counts for both streams, and write/flush phase.
+Cancellation is not rollback; a failed write cannot turn remote acceptance into
+completion, erase partial effects, or authorize a mutation replay.
+
+Current consumers are the local v2 host's JSON/text outcomes, the explicit
+v2 DataAgent link host's native receipt/projection/delivery path, and the existing
+declared tabular export host's CSV/JSON/Parquet encoding and JSON receipts. The DataAgent
+list host also uses shared raw JSON presentation, retaining its existing
+bounded/exclusive file and supervised stream delivery. The link `write_to` and
+local `write_outcome` APIs remain compatibility adapters with unchanged wire
+bytes, diagnostics, stream choices, flush behavior and exit codes. Other
+resource-family evidence and the front-end-neutral engine tabular contract
+remain in their existing owners; no new format package or dependency is added.
+
 ## Unicode text
 
 The default text callbacks use an immutable embedded property database for full

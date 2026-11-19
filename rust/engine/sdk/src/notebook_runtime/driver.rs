@@ -102,7 +102,10 @@ pub trait NotebookChannel: Send {
     ) -> NativeFuture<'a, Result<(), NativeError>>;
 }
 
-/// Alarm supplied by the caller's existing async runtime; no runtime is installed.
+/// Legacy alarm supplied by the caller's existing runtime; no runtime is installed.
+///
+/// An injected [`NativeDeadline`] uses its own scheduling clock instead, keeping
+/// pending channel/sink waits in the same time domain as deadline checks.
 pub trait DeadlineAlarm: Send + Sync {
     /// Wake and complete at the supplied deadline, never early.
     ///
@@ -668,8 +671,11 @@ async fn until<T>(
     alarm: &dyn DeadlineAlarm,
     mut operation: NativeFuture<'_, Result<T, NativeError>>,
 ) -> Result<T, NativeError> {
-    deadline.remaining()?;
-    let mut timeout = alarm.wait(deadline);
+    let remaining = deadline.remaining()?;
+    let mut timeout = match deadline.clock() {
+        Some(clock) => clock.sleep(remaining),
+        None => alarm.wait(deadline),
+    };
     poll_fn(|context| {
         if deadline.remaining().is_err() || timeout.as_mut().poll(context).is_ready() {
             return Poll::Ready(Err(NativeError::TimedOut));
