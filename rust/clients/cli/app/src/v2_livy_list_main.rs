@@ -96,6 +96,8 @@ async fn execute(args: Vec<OsString>, root_help: bool, deadline: Instant) -> Res
         let text = format!("{text}\n\n{}", super::KQL_CREATE_HELP);
         #[cfg(feature = "v2-create-eventhouse")]
         let text = format!("{text}\n\n{}", super::EVENTHOUSE_CREATE_HELP);
+        #[cfg(feature = "docs-search")]
+        let text = format!("{text}\n\n{}", super::DOCS_HELP);
         #[cfg(feature = "v2-link-kql")]
         let text = format!("{text}\n\n{}", super::KQL_LINK_HELP);
         return host::write_stream(OutputStream::Stdout, text.into_bytes(), deadline)

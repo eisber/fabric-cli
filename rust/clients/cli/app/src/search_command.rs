@@ -76,7 +76,7 @@ pub enum SearchArgumentError {
 
 /// Builds the thin CLI projection of the SDK search operation.
 pub fn search_command() -> Command {
-    Command::new("search")
+    let command = Command::new("search")
         .about("Preview bounded Catalog and explicit Relevance Engine discovery")
         .args_override_self(false)
         .infer_long_args(false)
@@ -93,7 +93,10 @@ pub fn search_command() -> Command {
         .arg(Arg::new("timeout").long("timeout").num_args(1).default_value("30s").value_parser(parse_duration))
         .arg(Arg::new("format").long("format").num_args(1).default_value("json").value_parser(["json"]))
         .arg(Arg::new("project").long("project").short('q').num_args(1))
-        .arg(Arg::new("output").long("output").short('o').num_args(1).value_parser(clap::builder::OsStringValueParser::new()))
+        .arg(Arg::new("output").long("output").short('o').num_args(1).value_parser(clap::builder::OsStringValueParser::new()));
+    #[cfg(feature = "docs-search")]
+    let command = command.before_help("For credential-free embedded documentation, use search docs --text QUERY or search docs --help. The scope and provider options below apply only to remote metadata discovery.");
+    command
 }
 
 /// Parses search without reading environment, files, identity or network.

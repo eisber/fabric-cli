@@ -79,7 +79,10 @@ impl OperationExecutor for Wire {
         request: OperationRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
     {
-        self.raw_bodies.lock().unwrap().push(request.body().to_vec());
+        self.raw_bodies
+            .lock()
+            .unwrap()
+            .push(request.body().to_vec());
         self.calls.lock().unwrap().push((
             request.method(),
             request.url().to_string(),
@@ -161,16 +164,14 @@ async fn approval_and_dispatch_share_exact_raw_patch_and_selected_endpoint_once(
         let context = RequestContext::with_endpoint(
             credential.clone(),
             CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
-            EndpointBinding::with_host(ServiceOrigin::Fabric, "dailyapi.fabric.microsoft.com").unwrap(),
+            EndpointBinding::with_host(ServiceOrigin::Fabric, "dailyapi.fabric.microsoft.com")
+                .unwrap(),
         );
-        let update = PreparedUpdate::new(
-            target(owner, ITEM, "metadata"),
-            raw,
-            UpdateOptions::patch(),
-        )
-        .unwrap()
-        .with_context(context, OperationLimits::default())
-        .unwrap();
+        let update =
+            PreparedUpdate::new(target(owner, ITEM, "metadata"), raw, UpdateOptions::patch())
+                .unwrap()
+                .with_context(context, OperationLimits::default())
+                .unwrap();
         let expected_url =
             format!("https://dailyapi.fabric.microsoft.com/v1/workspaces/{WS}/{collection}/{ITEM}");
         let request = &update.prepared().input()["request"];
@@ -188,7 +189,10 @@ async fn approval_and_dispatch_share_exact_raw_patch_and_selected_endpoint_once(
         let report = update::execute(&update, &approval, backend.clone(), pending())
             .await
             .unwrap();
-        assert!(matches!(report.receipt.outcome(), Outcome::Succeeded { .. }));
+        assert!(matches!(
+            report.receipt.outcome(),
+            Outcome::Succeeded { .. }
+        ));
         assert_eq!(backend.calls.lock().unwrap()[0].0, ResourceMethod::Patch);
         assert_eq!(backend.calls.lock().unwrap()[0].1, expected_url);
         assert_eq!(*backend.raw_bodies.lock().unwrap(), vec![raw.to_vec()]);

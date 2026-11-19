@@ -54,6 +54,10 @@ pub fn observe(input: &Value) -> Option<Value> {
             json!({"error": true})
         }
         Ok(Invocation::Delete(_)) => json!({"error": true}),
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsSearch(_)) => json!({"error": true}),
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsBrowse(_)) => json!({"error": true}),
         #[cfg(feature = "semantic-model")]
         Ok(Invocation::SemanticModel(_)) => json!({"error": true}),
         #[cfg(any(feature = "windows-broker", feature = "interactive"))]

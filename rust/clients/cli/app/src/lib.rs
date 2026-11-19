@@ -18,6 +18,10 @@ pub mod create_command;
 pub mod create_notebook;
 pub mod delete;
 pub mod deploy;
+#[cfg(feature = "docs-search")]
+pub mod docs_browse;
+#[cfg(feature = "docs-search")]
+pub mod docs_search;
 mod errors;
 #[cfg(feature = "v2-create-eventhouse")]
 pub mod eventhouse_create;
