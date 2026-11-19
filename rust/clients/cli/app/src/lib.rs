@@ -76,6 +76,8 @@ pub mod v2_schema_native;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;
+#[cfg(any(all(windows, feature = "windows-broker"), feature = "interactive"))]
+pub mod workload_auth;
 
 pub use folder_reads::FolderReadHost;
 pub use projection::{NoQuery, Projection, PythonQuery};

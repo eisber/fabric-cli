@@ -419,6 +419,11 @@ impl InteractiveCredential {
         &self.identity
     }
 
+    /// Application bound to this credential's protected refresh session.
+    pub fn client_id(&self) -> &str {
+        self.options.client()
+    }
+
     /// Silently validates/acquires the three login resources, returning no secrets.
     ///
     /// # Errors

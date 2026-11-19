@@ -385,10 +385,7 @@ impl NativeCredential {
                         })?;
                     fabric_identity::WindowsCredential::connect(options)
                         .await
-                        .map(|credential| {
-                            credential
-                                as std::sync::Arc<dyn azure_core::credentials::TokenCredential>
-                        })
+                        .map(fabric_cli::workload_auth::broker)
                         .map_err(|error| {
                             let (code, message) = crate::auth::broker_error(error);
                             failure(code, message, 1)
@@ -414,9 +411,7 @@ impl NativeCredential {
                     selection.store,
                 )
                 .await
-                .map(|credential| {
-                    credential as std::sync::Arc<dyn azure_core::credentials::TokenCredential>
-                })
+                .map(fabric_cli::workload_auth::device_code)
                 .map_err(|error| {
                     let (code, message) = crate::interactive::failure(error);
                     failure(code, message, 1)

@@ -1,0 +1,63 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Kusto workload authentication
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/kusto-workload-auth.yml"
+      - "rust/engine/core/auth/**"
+      - "rust/clients/cli/app/Cargo.toml"
+      - "rust/clients/cli/app/src/workload_auth.rs"
+      - "rust/clients/cli/app/src/native_read.rs"
+      - "rust/clients/cli/app/src/interactive_binding.rs"
+      - "rust/clients/cli/app/src/auth_binding.rs"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kusto-workload-auth-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    name: Kusto workload auth (Windows, offline)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: rust
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_DIR: ${{ runner.temp }}/kusto-workload-auth-target
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record pinned compiler and restore locked dependencies
+        run: |
+          rustc -Vv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo -V
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fetch --locked --target x86_64-pc-windows-msvc
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check actual native credential composition and all test targets
+        run: cargo check --locked --offline -p fabric-cli --all-targets --features native-read,interactive,headless
+      - name: Test broker lifecycle including both client logout domains
+        run: cargo test --locked --offline -p fabric-identity --features windows-broker --lib windows::tests -- --test-threads=1
+      - name: Test device-code regressions without live sign-in or storage
+        run: cargo test --locked --offline -p fabric-identity --features interactive --lib interactive::tests -- --test-threads=1
+      - name: Test exact workload routing and incompatible device-code sessions
+        run: cargo test --locked --offline -p fabric-cli --features native-read,interactive,headless --lib workload_auth::tests -- --test-threads=1
+      - name: Lint both changed packages and native composition
+        run: cargo clippy --locked --offline -p fabric-identity -p fabric-cli --all-targets --features fabric-identity/windows-broker,fabric-identity/interactive,fabric-cli/native-read,fabric-cli/interactive,fabric-cli/headless -- -D warnings

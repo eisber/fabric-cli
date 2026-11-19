@@ -53,6 +53,17 @@ Fabric CLI/authentication-team review is a separate required premerge gate;
 offline fixtures or an independent agent review do not satisfy that human review.
 No live sign-in, token acquisition or consent is required for the offline tests.
 
+The optional Windows `WindowsCredential::get_token_for_client` API lets an
+explicit host request one closed audience with another public client, retaining
+the original tenant and validated native account. Original and target client
+domains both guard acquisition, cancellation, teardown and token publication.
+It never changes the original credential's client or implicitly signs in.
+An account identifier that differs between applications fails closed.
+The provider itself contains no Azure CLI application-selection policy; the
+[CLI workload policy](../../../../clients/cli/app/README.md#kusto-workload-application)
+is applied only by native CLI credential composition. Direct provider requests
+retain their originally selected client.
+
 The optional device-code session's macOS protected-store isolation, explicit
 helper trust, legacy Keychain identity, finite protocol and offline validation
 selectors are described in [isolated macOS protected storage](protected-store-macos.md).
