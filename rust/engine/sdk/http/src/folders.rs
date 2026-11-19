@@ -13,7 +13,7 @@ impl FolderExecutor for HttpExecutor {
         request: FolderRequest<'a>,
     ) -> ExecutionFuture<'a, Result<FolderResponse, FolderExecutionError>> {
         Box::pin(async move {
-            self.execute(
+            self.execute_fabric(
                 Method::Get,
                 request.url(),
                 request.token(),

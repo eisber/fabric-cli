@@ -15,7 +15,7 @@ impl CapacityExecutor for HttpExecutor {
         request: CapacityRequest<'a>,
     ) -> ExecutionFuture<'a, Result<CapacityResponse, CapacityExecutionError>> {
         Box::pin(async move {
-            self.execute(
+            self.execute_fabric(
                 Method::Get,
                 request.url(),
                 request.token(),

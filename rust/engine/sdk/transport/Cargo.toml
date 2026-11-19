@@ -1,0 +1,56 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Compatible native transport imports and optional Notebook WebSocket adapter"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[features]
+default = []
+hyper-rustls = ["fabric-http-transport/hyper-rustls"]
+notebook-websocket = ["dep:fabric-sdk", "dep:tokio-tungstenite", "dep:futures-util"]
+
+[dependencies]
+fabric-http.workspace = true
+fabric-http-transport.workspace = true
+fabric-sdk = { workspace = true, optional = true }
+tokio.workspace = true
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true, features = ["sink"] }
+
+[dev-dependencies]
+azure_core.workspace = true
+async-trait.workspace = true
+fabric-core.workspace = true
+fabric-sdk.workspace = true
+fabric-sdk-http.workspace = true
+serde_json.workspace = true
+flate2.workspace = true
+futures-util.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+
+[[example]]
+name = "sdk_consumer"
+required-features = ["hyper-rustls"]
+test = true
+
+[[test]]
+name = "http_services"
+required-features = ["hyper-rustls"]
+
+[[test]]
+name = "notebook_websocket"
+required-features = ["notebook-websocket"]
+
+[lints]
+workspace = true

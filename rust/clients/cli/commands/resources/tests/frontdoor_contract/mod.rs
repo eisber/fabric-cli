@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 use super::*;
+mod capability_consumers;
 mod mutations;
 mod raw;
 mod trial_ux;
