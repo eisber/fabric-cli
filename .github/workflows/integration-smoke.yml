@@ -41,6 +41,7 @@ jobs:
           rust/scripts/integration-update-smoke.test.cjs
           rust/scripts/integration-dataagent-smoke.test.cjs
           rust/scripts/integration-dataagent-link-smoke.test.cjs
+          rust/scripts/integration-http-cli57-smoke.test.cjs
       - name: Build two profiles once and exercise isolated offline entry points
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
@@ -123,6 +124,284 @@ jobs:
         run: >-
           node rust/scripts/integration-schema-smoke.cjs
           "$env:RUNNER_TEMP/integration-smoke-receipts/schema"
+      - name: Check the owned HTTP candidate's default CLI57 paths offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/http-cli57-ci-1de-20261119' &&
+          github.event.pull_request.head.repo.full_name == 'eisber/fabric-cli' &&
+          github.event.pull_request.base.repo.full_name == 'eisber/fabric-cli' &&
+          github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/integration-smoke-receipts
+        shell: pwsh
+        run: |
+          @'
+          'use strict';
+          const started = Date.now(), deadline = started + 570000;
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const {capture, sourcePin, requireUnchanged} = require('./rust/scripts/integration-smoke.cjs');
+          const {sourceInventory, sourceDifferences} = require('./rust/scripts/validate-impact.cjs');
+          const {registeredTests} = require('./rust/scripts/integration-update-smoke.cjs');
+          const {testObservations} = require('./rust/scripts/integration-dataagent-smoke.cjs');
+          // BEGIN HTTP57 CONTRACT
+          const original = '1de59573e6a683c1141213bf40b6ea3e92ed366c';
+          const integration = 'af846fe7e3ea444051aae3881491078323527d5f';
+          const candidate = 'dev/marcozo/http-cli57-ci-1de-20261119';
+          const targetBranch = 'dev/marcozo/fab-cli-v2-integration-20261104';
+          const mandatory = {
+            fabric_cli: [
+              'folder_reads::tests::scheduler_preserves_root_first_and_in_pass_discovery_order',
+              'folder_reads::tests::reversed_deep_graph_is_bounded_without_recursive_equality_or_drop',
+              'reads::list_selection::tests::exact_list_and_get_paths_keep_literal_punctuation',
+              'tabular_export::mounting_preserves_command_and_leaf_declaration_order',
+            ],
+            http_architecture: [
+              'all_http_foundation_features_exclude_services_facade_and_providers',
+              'optional_transitive_service_edges_are_rejected_not_hidden_by_features',
+            ],
+            workspace_contract: [
+              'recursive_discovery_includes_new_sdk_and_frontend_leaves_not_grouping_directories',
+              'workspace_members_and_internal_edges_respect_library_boundaries',
+              'focused_crates_are_not_limited_to_the_initial_five',
+              'missing_and_unknown_layers_fail_closed',
+              'dependency_policy_covers_every_layer_direction',
+              'reviewed_output_json_edge_is_not_a_general_cli_to_core_permission',
+              'reviewed_json_core_cannot_hide_a_forbidden_transitive_edge',
+              'additional_crates_cannot_hide_a_forbidden_transitive_edge',
+              'additional_crates_inherit_package_and_azure_feature_checks',
+              'windows_feature_selects_only_the_optional_windows_native_edge',
+              'default_sdk_cli_and_identity_graphs_exclude_native_broker',
+              'terminal_editor_is_only_selected_through_the_optional_cli_repl_feature',
+            ],
+            get_options: [
+              'metadata_roots_match_the_exact_source_string_rule',
+              'metadata_flags_preserve_no_option_bytes_requests_and_empty_silence',
+              'workspace_flags_do_not_change_depth_projection_or_streams',
+              'definition_queries_stay_explicitly_unsupported_after_target_resolution',
+              'output_combinations_never_fall_through_to_success_or_file_io',
+              'invalid_format_cancellation_and_missing_target_precede_metadata_reads',
+              'service_failure_remains_failure_with_its_existing_exit_and_stream_contract',
+              'failed_output_delivery_remains_an_error_not_a_successful_write',
+              'direct_read_host_uses_the_same_option_gate_without_a_session_wrapper',
+              'read_dispatch_evidence_preserves_success_and_quiet_noop_plans',
+              'read_dispatch_evidence_keeps_original_cancellation_without_requests',
+              'read_dispatch_evidence_keeps_original_service_and_unexpected_errors_without_plan_inference',
+              'read_dispatch_evidence_returns_render_failures_without_command_error_substitution',
+              'read_dispatch_evidence_retains_source_workspace_operation_errors',
+              'read_dispatch_preserves_empty_operation_message_in_legacy_and_evidence_output',
+              'read_dispatch_evidence_retains_inflight_source_workspace_operation_cancellation',
+              'read_dispatch_evidence_retains_terminal_cancelled_operation_id_raw_error_and_output_failure',
+              'read_dispatch_evidence_retains_accepted_id_when_cancelled_before_polling_without_replay',
+            ],
+            get_host: [
+              'source_definition_prompt_precedes_specialized_metadata_and_real_decode_enrichment_projection',
+              'no_query_discovers_paths_in_the_decoded_value_not_just_metadata',
+              'metadata_queries_bypass_definition_consent_but_keep_source_enrichment_and_verbose_is_inert',
+              'force_warns_before_retrieval_and_decline_eof_ui_failure_are_not_retrieval',
+              'get_unsupported_types_fail_and_ml_types_use_specialized_metadata_without_definition',
+              'projected_output_not_envelope_is_written_even_when_falsey_with_source_scalar_spelling',
+              'file_output_uses_decoded_projected_values_and_explicit_windows_newlines',
+              'lakehouse_policy_uses_ascii_single_suffix_and_never_uses_local_serialization',
+              'file_errors_and_cancellation_retain_completed_directory_and_partial_write_without_replay',
+              'definition_denial_preserves_source_metadata_fallback_and_denial_receipt',
+              'accepted_definition_reuses_shared_reconciliation_and_incomplete_acceptance_is_not_success',
+              'decoded_payload_type_is_preserved_through_identity_and_scalar_projection',
+              'metadata_property_queries_preserve_embedded_payloads_without_consent_or_decoding',
+              'projected_scalar_types_control_source_filename_suffix_and_falsey_stdout',
+              'completed_definition_without_result_location_keeps_initial_body_and_never_fetches_result',
+              'cancellation_after_definition_acceptance_retains_operation_and_never_replays_or_enriches',
+              'binary_wide_and_nonfinite_decoded_values_fail_before_projection_or_files',
+              'environment_and_mirroring_source_enrichment_sequences_have_distinct_failure_shapes',
+              'invalid_query_missing_file_host_empty_output_invalid_format_and_precancel_are_truthful',
+              'real_session_discovery_selects_new_definition_path_and_writer_failure_keeps_receipts',
+              'local_timestamp_requires_a_valid_explicit_wall_clock_name',
+            ],
+          };
+          const testArgs = ['test', '--offline', '--locked', '--jobs', '2', '-p', 'fabric-cli', '--lib',
+            '--test', 'http_architecture', '--test', 'workspace_contract', '--test', 'get_options', '--test', 'get_host'];
+          const commandPlan = () => [
+            {id: 'windows-dependencies', args: ['fetch', '--locked', '--target', 'x86_64-pc-windows-msvc'], cap: 570000},
+            {id: 'compile', args: [...testArgs, '--no-run'], cap: 600000},
+            {id: 'runtime', args: [...testArgs], cap: 300000},
+          ].map(item => ({...item, state: 'UNRUN'}));
+          function eventContract(event, name) {
+            assert.equal(name, 'pull_request');
+            assert.equal(event.repository?.full_name, 'eisber/fabric-cli');
+            assert.equal(event.pull_request?.head?.repo?.full_name, 'eisber/fabric-cli');
+            assert.equal(event.pull_request?.base?.repo?.full_name, 'eisber/fabric-cli');
+            assert.equal(event.pull_request.head.ref, candidate);
+            assert.equal(event.pull_request.base.ref, targetBranch);
+            assert.equal(event.pull_request.base.sha, integration, 'Stale or moved integration event; fresh draft/rebinding required');
+          }
+          function remaining(now = Date.now()) {
+            assert.ok(now < deadline, 'Absolute HTTP CLI57 phase expired');
+            return deadline - now;
+          }
+          function verifyTargets(stdout, stderr, compileOnly, inspect, compiled = []) {
+            const pattern = compileOnly ? /^\s*Executable (.+) \(([^()\r\n]+\.exe)\)\s*$/gm
+              : /^\s*Running (.+) \(([^()\r\n]+\.exe)\)\s*$/gm;
+            const binaries = [...stderr.matchAll(pattern)];
+            assert.equal(binaries.length, 5, 'All five actual CLI targets required');
+            const starts = [...stdout.matchAll(/^running (\d+) tests?\r?$/gm)];
+            const ends = [...stdout.matchAll(/^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out;[^\r\n]*$/gm)];
+            const named = [...stdout.matchAll(/^test ([^\r\n]+) \.\.\. ([^\r\n]+)\r?$/gm)];
+            if (compileOnly) {
+              assert.doesNotMatch(stdout + stderr, /(?:^|\n)\s*Running\s|(?:^|\n)running \d+ tests?\r?$|(?:^|\n)test .+ \.\.\. |test result:/m);
+            } else {
+              assert.equal(starts.length, 5); assert.equal(ends.length, 5);
+              assert.equal([...stdout.matchAll(/^running\b[^\r\n]*$/gm)].length, 5);
+              assert.equal([...stdout.matchAll(/^test result:[^\r\n]*$/gm)].length, 5);
+              assert.equal([...stderr.matchAll(/^\s*Running\b[^\r\n]*$/gm)].length, 5);
+              assert.doesNotMatch(stderr, /^running\b|^test result:|^test [^\r\n]+ \.\.\. /m);
+              assert.doesNotMatch(stdout, /^\s*Running\b/m);
+              for (const [i, start] of starts.entries()) {
+                assert.ok(start.index + start[0].length < ends[i].index);
+                if (i) assert.ok(ends[i - 1].index + ends[i - 1][0].length < start.index);
+              }
+              for (const item of named) {
+                assert.equal(item[2], 'ok');
+                assert.equal(starts.filter((start, i) =>
+                  item.index > start.index + start[0].length && item.index < ends[i].index).length, 1);
+              }
+            }
+            const seen = new Set();
+            const observations = compileOnly ? [] : testObservations(stdout);
+            assert.equal(observations.length, compileOnly ? 0 : 5);
+            const proofs = binaries.map((match, index) => {
+              const display = match[1].replace(/\\/g, '/');
+              const target = display === 'unittests src/lib.rs' ? 'fabric_cli' :
+                Object.keys(mandatory).find(name => display === `tests/${name}.rs`);
+              assert.ok(target && !seen.has(target), 'Unexpected or duplicate harness');
+              seen.add(target);
+              assert.match(path.win32.basename(match[2]), new RegExp(`^${target}-[a-f0-9]+\\.exe$`));
+              const binary = inspect(match[2]);
+              if (!compileOnly) {
+                const originalBinary = compiled.find(item => item.target === target);
+                assert.ok(originalBinary);
+                assert.equal(binary.path, originalBinary.path); assert.equal(binary.sha256, originalBinary.sha256);
+                const section = named.filter(item => item.index > starts[index].index && item.index < ends[index].index);
+                const names = section.map(item => item[1]);
+                assert.equal(new Set(names).size, names.length);
+                for (const required of mandatory[target]) assert.ok(names.includes(required), `Missing mandatory case: ${required}`);
+                const observation = observations[index];
+                assert.equal(observation.status, 'ok');
+                assert.deepEqual([observation.failed, observation.ignored, observation.measured, observation.filtered], [0, 0, 0, 0]);
+                assert.equal(observation.passed, names.length);
+                assert.equal(Number(starts[index][1]), names.length);
+                binary.cases = names; binary.observation = observation;
+                binary.additional_cases = names.filter(name => !mandatory[target].includes(name));
+              }
+              return {target, ...binary, feature_profile: 'manifest defaults; no feature or name filters',
+                cargo_args: compileOnly ? [...testArgs, '--no-run'] : [...testArgs], behavior_pass_credit: !compileOnly};
+            });
+            assert.deepEqual([...seen].sort(), Object.keys(mandatory).sort());
+            return proofs;
+          }
+          function executeCommands(plan, run, observe, checkpoint) {
+            for (const item of plan) {
+              item.state = 'RUNNING'; checkpoint();
+              const result = run(item);
+              assert.equal(result.status, 0, `HTTP command failed: ${item.id}`);
+              observe(item, result); remaining();
+              item.state = 'PASSED'; checkpoint();
+            }
+          }
+          // END HTTP57 CONTRACT
+          const root = fs.realpathSync(process.cwd()), rust = path.join(root, 'rust');
+          const artifacts = path.join(process.env.RUNNER_TEMP, 'integration-smoke-receipts', 'http-cli57');
+          const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+          fs.mkdirSync(artifacts, {recursive: false});
+          const report = {schema: 1, passed: false, original_source: original, integration_base: integration,
+            qualification: 'hosted Windows CLI software coverage only; NOT local cache/profile/native-controller qualification',
+            plan: commandPlan(), commands: [], mandatory, actual_case_count: 0,
+            run_id: process.env.GITHUB_RUN_ID, run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+            phase: {started_unix_ms: started, deadline_unix_ms: deadline, workflow_step_minutes: 10},
+            enclosing_job_minutes: 45, provider_job_deadline_verified: false};
+          const save = () => fs.writeFileSync(path.join(artifacts, 'receipt.json'), JSON.stringify(report, null, 2));
+          const persist = (_, result) => {
+            const prefix = String(report.commands.length).padStart(2, '0');
+            for (const stream of ['stdout', 'stderr']) {
+              fs.writeFileSync(path.join(artifacts, `${prefix}-${stream}.log`), result[stream] || '');
+            }
+            save();
+          };
+          const run = (file, args, cap = 30000, cwd = root) => capture(file, args,
+            {cwd, timeout: Math.min(cap, remaining())}, report, persist);
+          const git = args => { const result = run('git', args); assert.equal(result.status, 0); return result.stdout.trim(); };
+          let before;
+          try {
+            save();
+            assert.equal(process.platform, 'win32'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
+            assert.equal(process.env.RUNNER_OS, 'Windows'); assert.equal(process.env.CARGO_BUILD_JOBS, '2');
+            assert.equal(process.env.RUST_TEST_THREADS, '1');
+            assert.equal(path.resolve(process.env.CARGO_TARGET_DIR), path.join(process.env.RUNNER_TEMP, 'integration-smoke-target'));
+            const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+            eventContract(event, process.env.GITHUB_EVENT_NAME);
+            report.source = sourcePin('pull_request', event, process.env.GITHUB_REF, process.env.GITHUB_SHA,
+              git(['rev-parse', 'HEAD']), git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
+            git(['merge-base', '--is-ancestor', original, event.pull_request.head.sha]);
+            assert.equal(git(['status', '--porcelain']), '');
+            report.tree = git(['rev-parse', 'HEAD^{tree}']);
+            before = sourceInventory(root);
+            fs.writeFileSync(path.join(artifacts, 'source-before.json'), JSON.stringify(before, null, 2));
+            const inputs = ['.github/workflows/integration-smoke.yml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
+              'rust/clients/cli/app/Cargo.toml', 'rust/clients/cli/app/src/lib.rs',
+              'rust/clients/cli/app/src/folder_reads.rs', 'rust/clients/cli/app/src/reads/list_selection.rs',
+              'rust/clients/cli/app/src/tabular_export.rs', ...Object.keys(mandatory).filter(name => name !== 'fabric_cli')
+                .map(name => `rust/clients/cli/app/tests/${name}.rs`)];
+            report.input_hashes = Object.fromEntries(inputs.map(file => [file, digest(fs.readFileSync(path.join(root, file)))]));
+            for (const [target, names] of Object.entries(mandatory)) {
+              if (target !== 'fabric_cli') for (const name of names) {
+                assert.ok(registeredTests(`rust/clients/cli/app/tests/${target}.rs`).includes(name));
+              }
+            }
+            const inspect = file => {
+              const resolved = fs.realpathSync(path.resolve(rust, file)), stat = fs.lstatSync(resolved);
+              assert.ok(resolved.startsWith(fs.realpathSync(process.env.CARGO_TARGET_DIR) + path.sep));
+              assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0);
+              return {path: resolved, bytes: stat.size, sha256: digest(fs.readFileSync(resolved))};
+            };
+            let compiled;
+            executeCommands(report.plan, item => run('cargo', item.args, item.cap, rust), (item, result) => {
+              if (item.id === 'compile') item.executables = compiled = verifyTargets(result.stdout, result.stderr, true, inspect);
+              if (item.id === 'runtime') {
+                item.executables = verifyTargets(result.stdout, result.stderr, false, inspect, compiled);
+                report.actual_case_count = item.executables.reduce((sum, item) => sum + item.cases.length, 0);
+                report.mandatory_passed = 57;
+              }
+            }, save);
+            remaining(); report.passed = true;
+          } catch (error) {
+            const active = report.plan.find(item => item.state === 'RUNNING');
+            if (active) active.state = 'FAILED';
+            report.error = error.message; process.exitCode = 1;
+          } finally {
+            try {
+              if (before) {
+                const after = sourceInventory(root);
+                fs.writeFileSync(path.join(artifacts, 'source-after.json'), JSON.stringify(after, null, 2));
+                fs.writeFileSync(path.join(artifacts, 'source-differences.json'), JSON.stringify(sourceDifferences(before, after), null, 2));
+                requireUnchanged(before, after);
+              }
+            } catch (error) { report.passed = false; report.integrity_error = error.message; process.exitCode = 1; }
+            finally {
+              report.elapsed_ms = Date.now() - started; report.remaining_after_finalization_ms = deadline - Date.now();
+              if (report.remaining_after_finalization_ms <= 0) { report.passed = false; process.exitCode = 1; }
+              save();
+              if (Date.now() >= deadline) { report.passed = false; process.exitCode = 1; save(); }
+            }
+          }
+          '@ | node
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check the Report66 conflict candidate's optional shared paths offline
         if: >-
           github.event_name == 'pull_request' &&
