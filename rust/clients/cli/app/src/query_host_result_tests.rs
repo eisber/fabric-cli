@@ -3,8 +3,7 @@
 
 #![deny(unnameable_test_items)]
 
-#[path = "../../../../engine/data-plane/aihub-query/examples/support/mod.rs"]
-mod support;
+use crate::query_host::test_support as support;
 
 use super::*;
 use crate::{

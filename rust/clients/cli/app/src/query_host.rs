@@ -43,6 +43,10 @@ pub mod result;
 pub mod native;
 
 #[cfg(test)]
+#[path = "../../../../engine/data-plane/aihub-query/examples/support/mod.rs"]
+mod test_support;
+
+#[cfg(test)]
 #[path = "query_host_tests.rs"]
 mod tests;
 
