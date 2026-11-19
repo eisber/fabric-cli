@@ -8,6 +8,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {test} = require('node:test');
 const {sourcePin} = require('./integration-smoke.cjs');
+const target = require('./integration-target-witness.cjs');
 const {registeredTests} = require('./integration-update-smoke.cjs');
 const {testObservations} = require('./integration-dataagent-smoke.cjs');
 const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/integration-smoke.yml'), 'utf8')
@@ -23,8 +24,10 @@ function load(now = () => 0) {
 }
 const c = load();
 const event = {
+  number: 122,
   repository: {full_name: 'eisber/fabric-cli'},
   pull_request: {
+    number: 122,
     head: {ref: c.candidate, sha: '2'.repeat(40), repo: {full_name: 'eisber/fabric-cli'}},
     base: {ref: 'dev/marcozo/fab-cli-v2-integration-20261104', sha: c.integration,
       repo: {full_name: 'eisber/fabric-cli'}},
@@ -68,15 +71,29 @@ test('HTTP workflow route is exact-owned-repository branch and integration PR on
 
 test('stale PR112 base event refuses and exact merge parents still use shared sourcePin', () => {
   c.eventContract(event, 'pull_request');
-  const stale = structuredClone(event);
-  stale.pull_request.base.sha = '61c8221914152e231e5e64f7bd38418f66264999';
-  assert.throws(() => c.eventContract(stale, 'pull_request'));
+  for (const base of ['61c8221914152e231e5e64f7bd38418f66264999',
+    'af846fe7e3ea444051aae3881491078323527d5f']) {
+    const stale = structuredClone(event);
+    stale.pull_request.base.sha = base;
+    assert.throws(() => c.eventContract(stale, 'pull_request'));
+  }
   assert.equal(c.original, '1de59573e6a683c1141213bf40b6ea3e92ed366c');
   const checkout = '3'.repeat(40), parents = [c.integration, event.pull_request.head.sha];
-  assert.equal(sourcePin('pull_request', event, 'refs/pull/999/merge', checkout, checkout, parents, false).base,
-    c.integration);
-  assert.throws(() => sourcePin('pull_request', event, 'refs/pull/999/merge', checkout, checkout,
-    parents.slice().reverse(), false));
+  const ref = 'refs/pull/122/merge';
+  const runEnv = {GITHUB_EVENT_NAME: 'pull_request', GITHUB_REPOSITORY: 'eisber/fabric-cli',
+    GITHUB_REF: ref, GITHUB_SHA: checkout, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_JOB: 'smoke', GITHUB_SERVER_URL: 'https://github.com', GITHUB_API_URL: 'https://api.github.com'};
+  const witness = {schema: 1, kind: 'github-rest-exact-target-ref',
+    ...target.witnessContext(event, runEnv), checkout_base: c.integration, endpoint: target.ENDPOINT,
+    requested_at: '2026-01-01T00:00:00.000Z', provider_date: 'Thu, 01 Jan 2026 00:00:00 GMT',
+    observed_at: '2026-01-01T00:00:00.000Z'};
+  const pin = (ordered = parents, observed = witness) => sourcePin('pull_request', event, ref,
+    checkout, checkout, ordered, false, observed, runEnv);
+  assert.equal(pin().checkout_base, c.integration);
+  assert.throws(() => pin(parents.slice().reverse()));
+  assert.throws(() => pin(parents, {...witness, checkout_base: '4'.repeat(40)}),
+    {code: 'TARGET_DRIFT'});
+  assert.ok(inline.includes("assert.equal(report.source.checkout_base, integration,"));
   assert.ok(inline.includes("git(['merge-base', '--is-ancestor', original, event.pull_request.head.sha])"));
 });
 

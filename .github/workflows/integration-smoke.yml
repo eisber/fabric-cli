@@ -196,7 +196,7 @@ jobs:
           const {testObservations} = require('./rust/scripts/integration-dataagent-smoke.cjs');
           // BEGIN HTTP57 CONTRACT
           const original = '1de59573e6a683c1141213bf40b6ea3e92ed366c';
-          const integration = 'af846fe7e3ea444051aae3881491078323527d5f';
+          const integration = '3a9a7ab29235d2a4093a88c93d704a3324f4ffc5';
           const candidate = 'dev/marcozo/http-cli57-ci-1de-20261119';
           const targetBranch = 'dev/marcozo/fab-cli-v2-integration-20261104';
           const mandatory = {
@@ -390,6 +390,7 @@ jobs:
             eventContract(event, process.env.GITHUB_EVENT_NAME);
             report.source = sourcePin('pull_request', event, process.env.GITHUB_REF, process.env.GITHUB_SHA,
               git(['rev-parse', 'HEAD']), git(['show', '-s', '--format=%P', 'HEAD']).split(' '), false);
+            assert.equal(report.source.checkout_base, integration, 'Witnessed target moved; fresh candidate rebinding required');
             git(['merge-base', '--is-ancestor', original, event.pull_request.head.sha]);
             assert.equal(git(['status', '--porcelain']), '');
             report.tree = git(['rev-parse', 'HEAD^{tree}']);
