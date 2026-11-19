@@ -1,0 +1,107 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust embedded docs
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-docs-search.yml"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/engine/control-plane/search/docs/**"
+      - "rust/clients/cli/app/**"
+      - "rust/scripts/*docs*"
+      - "rust/tests/performance/*docs*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-search-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Embedded docs contracts (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+      RUST_TEST_THREADS: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record exact source and check lightweight contracts
+        run: |
+          mkdir -p "$RUNNER_TEMP/docs-results"
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/docs-target" >> "$GITHUB_ENV"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/docs-results/source.txt"
+          rustc --version --verbose | tee "$RUNNER_TEMP/docs-results/rustc.txt"
+          cargo --version | tee "$RUNNER_TEMP/docs-results/cargo.txt"
+          node scripts/source-inventory.cjs "$RUNNER_TEMP/docs-results/source-before.json"
+          cargo fmt --all -- --check
+          python -B -m unittest discover -s tests/performance -p 'test_docs*.py' -q
+          python -B -m unittest discover -s scripts -p test_prepare_docs_corpus.py -q
+          node --test scripts/impact-plan.test.cjs scripts/validate-impact.test.cjs scripts/validation-checks.test.cjs
+      - name: Restore locked dependencies and test the offline SDK producer
+        run: |
+          cargo fetch --locked
+          cargo test --offline --locked -p fabric-docs-search --features index-builder --all-targets 2>&1 | tee "$RUNNER_TEMP/docs-results/sdk-tests.log"
+          cargo clippy --offline --locked -p fabric-docs-search --features index-builder --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/docs-results/sdk-clippy.log"
+      - name: Acquire the pinned public text corpus and build the full index
+        run: |
+          python -B scripts/prepare_docs_corpus.py --output "$RUNNER_TEMP/fabric-docs-source" | tee "$RUNNER_TEMP/docs-results/acquisition.json"
+          cargo run --offline --locked -p fabric-docs-search --features index-builder --bin build-docs-index -- \
+            --source "$RUNNER_TEMP/fabric-docs-source" --output "$RUNNER_TEMP/fabric-docs-index" \
+            --revision 3ae7afc73169ac57b874d5aee09217bb35a4f8fc --compression zstd --profile full \
+            > "$RUNNER_TEMP/docs-results/bundle.json"
+      - name: Test the actual embedded CLI with existing runtime and create routes
+        env:
+          FAB_DOCS_INDEX: ${{ runner.temp }}/fabric-docs-index
+        run: |
+          cargo test --offline --locked -p fabric-cli --no-default-features --features docs-search,headless,runtime-v2,v2-create \
+            --lib --test docs_search --test docs_browse --test search_command --test search_wire \
+            --test v2_search_binary --test v2_get_binary --test livy_list_entry --test create_host \
+            2>&1 | tee "$RUNNER_TEMP/docs-results/cli-tests.log"
+          cargo clippy --offline --locked -p fabric-cli --no-default-features --features docs-search,headless,runtime-v2,v2-create \
+            --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/docs-results/cli-clippy.log"
+          "$CARGO_TARGET_DIR/debug/fab-rs" search docs --corpus-info > "$RUNNER_TEMP/docs-results/corpus-probe.json"
+          python -B - "$RUNNER_TEMP/docs-results" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          manifest = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
+          probe = json.loads((root / "corpus-probe.json").read_text(encoding="utf-8"))
+          assert probe["status"] == "succeeded"
+          assert probe["source"] == "embeddedFabricDocs"
+          assert probe["data"] == manifest, "Tests must use the actual full generated bundle"
+          assert manifest["source_commit"] == "3ae7afc73169ac57b874d5aee09217bb35a4f8fc"
+          assert all(manifest["features"].values())
+          PY
+      - name: Verify source and lock integrity
+        if: always()
+        run: |
+          node scripts/source-inventory.cjs "$RUNNER_TEMP/docs-results/source-after.json" "$RUNNER_TEMP/docs-results/source-before.json"
+          git diff --exit-code
+      - name: Retain exact-head results and full bundle provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-search-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/docs-results
+          if-no-files-found: error
+          retention-days: 7

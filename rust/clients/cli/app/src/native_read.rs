@@ -44,6 +44,29 @@ mod delete;
 #[path = "native_run_notebook.rs"]
 mod run_notebook;
 
+#[cfg(all(feature = "v2-query", any(windows, feature = "headless")))]
+#[path = "native_query.rs"]
+mod query;
+
+#[cfg(feature = "v2-query")]
+pub(crate) fn run_query(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    {
+        query::run(command)
+    }
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = command;
+        write_error(failure(
+            "unsupported",
+            "Query requires a supported explicit native identity host.",
+            1,
+        ))
+    }
+}
+
 #[cfg(feature = "v2-run")]
 pub(crate) fn run_notebook(
     command: &fabric_cli::native_tabular::NativeCommand,
@@ -73,6 +96,27 @@ pub(crate) fn run_delete(
 #[cfg(any(windows, feature = "headless"))]
 #[path = "native_execute.rs"]
 mod execute;
+
+#[cfg(any(windows, feature = "headless"))]
+#[path = "native_dataflow_queries.rs"]
+mod dataflow_queries;
+
+pub(crate) fn run_dataflow_queries(
+    command: &fabric_cli::get_dataflow_queries::ListQueriesCommand,
+    state: &mut BatchState,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    return dataflow_queries::run(command, state);
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = (command, state);
+        write_error(failure(
+            "unsupported",
+            "The native discovery host is unavailable.",
+            1,
+        ))
+    }
+}
 
 #[cfg(all(test, feature = "headless"))]
 #[path = "headless_host_tests.rs"]
@@ -196,7 +240,7 @@ fn interrupted_failure(code: &'static str, message: &str, exit: u8) -> Failure {
 }
 
 #[cfg(any(windows, feature = "headless", feature = "interactive", test))]
-fn finish_runtime<T>(runtime: tokio::runtime::Runtime, result: T) -> T {
+pub(crate) fn finish_runtime<T>(runtime: tokio::runtime::Runtime, result: T) -> T {
     // Runtime Drop waits indefinitely for blocking syscalls; a bounded wait does
     // not cancel those calls or erase their possible filesystem effects.
     runtime.shutdown_timeout(std::time::Duration::from_secs(1));
@@ -204,7 +248,7 @@ fn finish_runtime<T>(runtime: tokio::runtime::Runtime, result: T) -> T {
 }
 
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
-fn native_runtime() -> Result<tokio::runtime::Runtime, Failure> {
+pub(crate) fn native_runtime() -> Result<tokio::runtime::Runtime, Failure> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -264,7 +308,7 @@ fn required(name: &str) -> Result<String, Failure> {
 }
 
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
-enum NativeCredential {
+pub(crate) enum NativeCredential {
     Broker {
         tenant: String,
         account: String,
@@ -427,7 +471,7 @@ impl NativeCredential {
 }
 
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
-fn selected_credential() -> Result<NativeCredential, Failure> {
+pub(crate) fn selected_credential() -> Result<NativeCredential, Failure> {
     let mode = match std::env::var("FAB_RUST_AUTH_MODE") {
         Ok(mode) if !mode.is_empty() => mode,
         Err(std::env::VarError::NotPresent) => {
@@ -521,7 +565,9 @@ fn selected_credential() -> Result<NativeCredential, Failure> {
     ))
 }
 
-fn selected_endpoint(value: Option<std::ffi::OsString>) -> Result<EndpointBinding, Failure> {
+pub(crate) fn selected_endpoint(
+    value: Option<std::ffi::OsString>,
+) -> Result<EndpointBinding, Failure> {
     match value {
         None => Ok(EndpointBinding::public(ServiceOrigin::Fabric)),
         Some(value) => value
@@ -1071,13 +1117,13 @@ async fn execute_delivery(
 }
 
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
-type NativeClients = (
+pub(crate) type NativeClients = (
     std::sync::Arc<dyn azure_core::http::HttpClient>,
     std::sync::Arc<dyn azure_core::http::HttpClient>,
 );
 
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
-fn native_clients(
+pub(crate) fn native_clients(
     credential: &NativeCredential,
     execution: bool,
 ) -> Result<NativeClients, Failure> {
@@ -1241,7 +1287,7 @@ async fn execute_injected_delivery(
 }
 
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
-async fn connect_native(
+pub(crate) async fn connect_native(
     credential: NativeCredential,
     client: std::sync::Arc<dyn azure_core::http::HttpClient>,
     identity_client: std::sync::Arc<dyn azure_core::http::HttpClient>,

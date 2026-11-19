@@ -2,21 +2,11 @@
 // Licensed under the MIT License.
 
 use super::{RunError, RunTargetKind};
-use crate::JobFuture;
-use std::{
-    future::{Future, poll_fn},
-    pin::{Pin, pin},
-    task::Poll,
-    time::Duration,
-};
+use fabric_core::execution::{ExecutionContext, Interruption};
+use std::{future::Future, pin::Pin, time::Duration};
 
 /// Caller-owned monotonic clock and asynchronous timer; no new runtime is made.
-pub trait RunClock: Send + Sync {
-    /// Time since an arbitrary fixed monotonic origin, never wall-clock time.
-    fn now(&self) -> Duration;
-    /// Complete after at least the delay; drop releases the local timer.
-    fn sleep(&self, delay: Duration) -> JobFuture<'_, ()>;
-}
+pub use fabric_core::execution::ExecutionClock as RunClock;
 
 /// Validated positive integer duration, bounded inclusively by 24 hours.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,32 +98,15 @@ impl RunDeadline {
     pub async fn guard<T>(
         self,
         clock: &dyn RunClock,
-        mut cancelled: Pin<&mut (dyn Future<Output = ()> + Send + '_)>,
+        cancelled: Pin<&mut (dyn Future<Output = ()> + Send + '_)>,
         operation: impl Future<Output = T>,
     ) -> Result<T, RunError> {
-        let remaining = self.remaining(clock)?;
-        let mut timer = clock.sleep(remaining);
-        let mut operation = pin!(operation);
-        poll_fn(|cx| {
-            if cancelled.as_mut().poll(cx).is_ready() {
-                return Poll::Ready(Err(RunError::Interrupted));
-            }
-            if self.remaining(clock).is_err() || timer.as_mut().poll(cx).is_ready() {
-                return Poll::Ready(Err(RunError::Deadline));
-            }
-            match operation.as_mut().poll(cx) {
-                Poll::Ready(value) => {
-                    if cancelled.as_mut().poll(cx).is_ready() {
-                        Poll::Ready(Err(RunError::Interrupted))
-                    } else if self.remaining(clock).is_err() {
-                        Poll::Ready(Err(RunError::Deadline))
-                    } else {
-                        Poll::Ready(Ok(value))
-                    }
-                }
-                Poll::Pending => Poll::Pending,
-            }
-        })
-        .await
+        ExecutionContext::new(clock, self.shared, cancelled)
+            .guard(operation)
+            .await
+            .map_err(|error| match error {
+                Interruption::Cancelled => RunError::Interrupted,
+                Interruption::Deadline => RunError::Deadline,
+            })
     }
 }

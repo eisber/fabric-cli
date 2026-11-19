@@ -124,12 +124,24 @@ That recording is historical behavior, not proof of the current full schema or
 collision guarantees. This typed leaf uses the official specialized endpoint
 and does not send the generic-only `type` field or redundant null folder.
 
-Only the authorized shared-host logical diffs are consumed:
-`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and the separately
-released `0454fb4` prepared-approval/submission-evidence, `caf2f7f`
-workspace-root/strict-lint, `0ec3848` unexpected-result-status and `44576b0`
-bounded strict-response updates.
-Notebook leaf implementation and producer ancestry are not adopted.
+The integration update adopts pinned checkpoint
+`abf9e02d8e0e636f6bc5920ef1cfb1cb3717a348` by ordinary merge. Its newer shared
+create parser/host, item policy and HTTP/LRO producers remain unchanged. CopyJob
+is an additive typed binding alongside Notebook, Report, Warehouse and optional
+SemanticModel, KQLDatabase and Eventhouse; it does not replace their dispatch,
+schemas, help or feature gates. Runtime/Livy root help also discloses CopyJob
+when enabled. Query and Dataflow M remain under `query`, not `execute`.
+
+The earlier headless-only refusal fixture now checks that disabled CopyJob
+creation is absent, rather than asserting that all `create` help is absent:
+other owners legitimately share `v2-create`. The combined binding suite adds
+CopyJob help, schema isolation and pre-input policy/target refusals, preserving
+the other owners' negative coverage. Eventhouse/KQL binary disabled-owner cases
+remain enforced in isolated profiles, while combined profiles accept their
+enabled bindings and still reject unsupported/lowercase/nonmetadata targets.
+Duplicate-key JSON is rejected by strict input parsing as `InvalidInput`,
+before typed schema policy validation; the combined fixture asserts that exact
+classification rather than broadening its accepted error set.
 
 `engine/sdk/tests/copyjob_create.rs` covers schema, unsupported policies and
 immutable raw-byte binding. `clients/cli/app/tests/copyjob_create.rs` exercises
@@ -141,7 +153,7 @@ submission evidence are asserted on these real paths. A root-folder regression
 also rejects treating an existing folder child as an exact workspace-root skip.
 Tests cover root-plus-nested cardinality, malformed folder values, complete and
 failed paging, completed wrong-folder identity and protected acceptance folder
-evidence. The released root helper still requires actual native execution.
+evidence. The shared root helper requires actual native execution.
 Its headless profile exercises the real binary,
 blocked stdin deadline and portable closed-reader stdout/stderr pipes.
 The impact graph includes isolated and headless feature profiles on all three

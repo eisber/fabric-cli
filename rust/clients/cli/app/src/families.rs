@@ -34,7 +34,7 @@ use fabric_cli_output::{
 };
 use fabric_cli_resources::{
     FamilyPresentation,
-    frontdoor::{self, AccessHost, AccessKind, ApiClients},
+    frontdoor::{self, AccessKind},
 };
 use fabric_cli_storage_files::{ResourceFileError, ResourceFileHost, ResourceFileResult};
 use fabric_cli_transfer::{
@@ -457,28 +457,58 @@ impl FamilySession<'_, '_> {
                     .get("local_definition_labels")
                     .and_then(Value::as_str)
                     .map(Path::new);
-                let result = AccessHost {
-                    clients: ApiClients {
-                        fabric: &fabric,
-                        onelake: Some(&storage),
-                        arm: Some(&arm),
-                        powerbi: Some(&fabric),
-                    },
-                    targets: &resolver,
-                    label_definitions: labels,
-                    confirmation: self.confirmation.as_mut().map(|confirmation| {
-                        &mut **confirmation as &mut dyn fabric_cli_resources::Confirmation
-                    }),
-                    multipart_boundary: "fabric-cli-native-multipart",
-                    limits: Default::default(),
-                    request_bounds: Default::default(),
-                }
-                .execute_for_output(
-                    command,
-                    if tabular { OutputFormat::Json } else { format },
-                    cancelled.as_mut(),
-                )
-                .await;
+                let result = if command.skill.is_some() {
+                    Err(fabric_cli_resources::CommandError::new(
+                        "NotSupported",
+                        "Skill headers require a configured shared host binding",
+                    ))
+                } else {
+                    match &command.kind {
+                        AccessKind::Api(options) => {
+                            fabric_cli_api::ApiClients {
+                                fabric: &fabric,
+                                onelake: Some(&storage),
+                                arm: Some(&arm),
+                                powerbi: Some(&fabric),
+                            }
+                            .execute(
+                                options,
+                                "fabric-cli-native-multipart",
+                                Default::default(),
+                                Default::default(),
+                                cancelled.as_mut(),
+                            )
+                            .await
+                        }
+                        AccessKind::Find(options) => {
+                            fabric_cli_catalog::execute(
+                                &fabric,
+                                options,
+                                Default::default(),
+                                cancelled.as_mut(),
+                            )
+                            .await
+                        }
+                        _ => {
+                            fabric_cli_access::host::AccessHost {
+                                client: &fabric,
+                                targets: &resolver,
+                                label_definitions: labels,
+                                confirmation: self.confirmation.as_mut().map(|confirmation| {
+                                    &mut **confirmation
+                                        as &mut dyn fabric_cli_resources::Confirmation
+                                }),
+                                limits: Default::default(),
+                            }
+                            .execute_for_output(
+                                &command.access().expect("access variant"),
+                                if tabular { OutputFormat::Json } else { format },
+                                cancelled.as_mut(),
+                            )
+                            .await
+                        }
+                    }
+                };
                 if tabular {
                     return Ok(FamilyOutput {
                         plan: TextPlan {

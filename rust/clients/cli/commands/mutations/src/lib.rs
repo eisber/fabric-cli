@@ -7,6 +7,7 @@
 //! is installed. The additive [`frontdoor`] module provides family registration.
 //! See the README for the exact source pin and the intentionally incomplete matrix.
 
+mod blank_semantic_model;
 mod create;
 mod errors;
 mod execution;
@@ -35,6 +36,7 @@ use fabric_sdk_workspaces::mutations::{
 use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
+pub use blank_semantic_model::BlankSemanticModelCreate;
 pub use create::{CapacitySelection, CreateOptions};
 pub use errors::operation_error_output;
 pub use execution::FabricMutationBackend;

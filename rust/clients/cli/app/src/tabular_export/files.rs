@@ -13,15 +13,21 @@ pub struct FileSink {
 
 impl ExportSink for FileSink {
     fn preflight(&mut self, request: &ExportRequest) -> io::Result<()> {
-        self.destination = Some(Destination::prepare(&checked_destination(
-            &request.output,
-        )?)?);
-        self.output = Some(request.output.clone());
-        Ok(())
+        self.preflight_bytes(&request.output)
     }
 
     fn publish(&mut self, request: &ExportRequest, bytes: &[u8]) -> io::Result<()> {
-        if self.output.as_deref() != Some(request.output.as_path()) {
+        self.publish_bytes(&request.output, bytes)
+    }
+
+    fn preflight_bytes(&mut self, output: &std::path::Path) -> io::Result<()> {
+        self.destination = Some(Destination::prepare(&checked_destination(output)?)?);
+        self.output = Some(output.to_owned());
+        Ok(())
+    }
+
+    fn publish_bytes(&mut self, output: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
+        if self.output.as_deref() != Some(output) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Export destination changed",

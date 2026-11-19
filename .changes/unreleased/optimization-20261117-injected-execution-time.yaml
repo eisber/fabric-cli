@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: optimization
+body: Consolidate experimental Rust v2 monotonic execution budgets and injected scheduling, preserving cancellation, operation evidence, finite polling and compatibility imports.
+time: 2026-11-17T11:18:00Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

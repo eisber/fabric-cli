@@ -40,7 +40,7 @@ fn actual_head_help_and_version_never_need_identity() {
 fn default_head_does_not_mount_copyjob_create() {
     let help = run(&["--help"]);
     assert!(help.status.success());
-    assert!(!String::from_utf8_lossy(&help.stdout).contains("fab-cli-v2 create"));
+    assert!(!String::from_utf8_lossy(&help.stdout).contains(".CopyJob"));
     let output = run(&["create", &format!("/{WS}.Workspace/Exact.CopyJob")]);
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());

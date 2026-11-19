@@ -35,6 +35,8 @@ impl From<BatchOutcome> for CommandOutcome {
 }
 
 pub(crate) struct BatchState {
+    #[cfg(feature = "docs-search")]
+    pending_capture: bool,
     interactive: bool,
     initial: Result<(String, bool), fabric_cli_output::CommandError>,
     pub(crate) navigation: Option<NavigationState>,
@@ -55,6 +57,27 @@ impl BatchState {
         Self::new(crate::local_host::context_selection())
     }
 
+    #[cfg(feature = "docs-search")]
+    pub(crate) fn capture_deferred() -> Self {
+        let mut state = Self::new(Ok(("/".into(), false)));
+        state.pending_capture = true;
+        state
+    }
+
+    #[cfg(feature = "docs-search")]
+    pub(crate) fn capture_if_needed(&mut self) {
+        if self.pending_capture {
+            self.initial =
+                crate::local_host::context_selection().map_err(|error| error.command_error());
+            self.pending_capture = false;
+        }
+    }
+
+    #[cfg(feature = "docs-search")]
+    pub(crate) fn is_deferred(&self) -> bool {
+        self.pending_capture
+    }
+
     #[cfg(feature = "repl")]
     pub(crate) fn capture_interactive() -> Self {
         Self::new_interactive(crate::local_host::context_selection_for(false))
@@ -69,6 +92,8 @@ impl BatchState {
 
     fn new(initial: Result<(String, bool), LocalError>) -> Self {
         Self {
+            #[cfg(feature = "docs-search")]
+            pending_capture: false,
             interactive: false,
             initial: initial.map_err(|error| error.command_error()),
             navigation: None,

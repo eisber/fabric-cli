@@ -11,6 +11,7 @@ mod auth;
 mod auth_binding;
 mod batch_state;
 mod delete_host;
+mod feedback_host;
 #[cfg(feature = "headless")]
 mod headless;
 #[cfg(feature = "interactive")]
@@ -98,6 +99,32 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(&arguments);
+    #[cfg(feature = "docs-search")]
+    if let Ok(Invocation::Display(text)) = &invocation {
+        write!(io::stdout().lock(), "{text}")?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    #[cfg(feature = "docs-search")]
+    if let Ok(Invocation::DocsSearch(command)) = &invocation {
+        return fabric_cli::docs_search::write(
+            command,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        )
+        .map(ExitCode::from);
+    }
+    #[cfg(feature = "docs-search")]
+    if let Ok(Invocation::DocsBrowse(command)) = &invocation {
+        return fabric_cli::docs_browse::write(
+            command,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        )
+        .map(ExitCode::from);
+    }
+    if let Ok(Invocation::Feedback(command)) = &invocation {
+        return feedback_host::run(command).map(exit_status);
+    }
     if let Err(error) = &invocation
         && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
     {
@@ -124,6 +151,13 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         );
     }
     if let Ok(Invocation::NativeTabular(command)) = &invocation {
+        #[cfg(feature = "v2-query")]
+        if matches!(
+            command.operation,
+            fabric_cli::native_tabular::Operation::Query(_)
+        ) {
+            return dispatch_query(command).map(exit_status);
+        }
         #[cfg(feature = "v2-run")]
         if matches!(
             command.operation,
@@ -142,6 +176,13 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
             return Ok(exit_status(outcome));
         }
     }
+    #[cfg(feature = "docs-search")]
+    let mut state = if matches!(&invocation, Ok(Invocation::Batch(_))) {
+        BatchState::capture_deferred()
+    } else {
+        BatchState::capture()
+    };
+    #[cfg(not(feature = "docs-search"))]
     let mut state = BatchState::capture();
     dispatch(invocation, &mut state).map(exit_status)
 }
@@ -154,12 +195,34 @@ fn exit_status(outcome: CommandOutcome) -> ExitCode {
     }
 }
 
+#[cfg(feature = "v2-query")]
+fn dispatch_query(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    #[cfg(feature = "native-host")]
+    {
+        native_read::run_query(command)
+    }
+    #[cfg(not(feature = "native-host"))]
+    {
+        write_export(fabric_cli::query_host::not_configured(command))
+    }
+}
+
 fn dispatch(
     invocation: Result<Invocation, clap::Error>,
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        Ok(Invocation::Feedback(command)) => return feedback_host::run(&command),
         Ok(Invocation::NativeTabular(command)) => {
+            #[cfg(feature = "v2-query")]
+            if matches!(
+                command.operation,
+                fabric_cli::native_tabular::Operation::Query(_)
+            ) {
+                return dispatch_query(&command);
+            }
             #[cfg(feature = "v2-run")]
             if matches!(
                 command.operation,
@@ -215,6 +278,24 @@ fn dispatch(
         Ok(Invocation::Display(text)) => {
             write!(io::stdout().lock(), "{text}")?;
             return Ok(CommandOutcome::Returned(0));
+        }
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsSearch(command)) => {
+            return fabric_cli::docs_search::write(
+                &command,
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            )
+            .map(CommandOutcome::Returned);
+        }
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsBrowse(command)) => {
+            return fabric_cli::docs_browse::write(
+                &command,
+                &mut io::stdout().lock(),
+                &mut io::stderr().lock(),
+            )
+            .map(CommandOutcome::Returned);
         }
         #[cfg(feature = "semantic-model")]
         Ok(Invocation::SemanticModel(command)) => return semantic_model::run(&command),
@@ -283,6 +364,10 @@ fn dispatch(
             return native_read::run_execute(&command, local_state);
         }
         #[cfg(feature = "native-host")]
+        Ok(Invocation::DataflowQueries(command)) => {
+            return native_read::run_dataflow_queries(&command, local_state);
+        }
+        #[cfg(feature = "native-host")]
         Ok(Invocation::JobRead(command)) => return native_read::run_job(&command, local_state),
         #[cfg(feature = "native-host")]
         Ok(Invocation::JobRun(command)) => {
@@ -297,6 +382,7 @@ fn dispatch(
             Invocation::Read(_)
             | Invocation::MlEndpoint(_)
             | Invocation::Execute(_)
+            | Invocation::DataflowQueries(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_),
@@ -436,6 +522,15 @@ impl BatchHost for BatchExecution<'_> {
             dispatch(Ok(invocation), self.local_state)?;
             return Ok(BatchOutcome::Stop(2));
         }
+        #[cfg(feature = "docs-search")]
+        if !(matches!(
+            &invocation,
+            Invocation::DocsSearch(_) | Invocation::DocsBrowse(_)
+        ) || matches!(&invocation, Invocation::Display(_))
+            && arguments.first() == Some(&"search"))
+        {
+            self.local_state.capture_if_needed();
+        }
         let outcome = dispatch(Ok(invocation), self.local_state)?;
         Ok(match outcome {
             CommandOutcome::Returned(exit) if exits => BatchOutcome::Stop(exit),
@@ -448,7 +543,11 @@ impl BatchHost for BatchExecution<'_> {
     }
 
     fn summary(&mut self, invocation: &BatchInvocation) -> io::Result<()> {
-        let configured = if invocation.output_format.is_none() {
+        #[cfg(feature = "docs-search")]
+        let use_configuration = !self.local_state.is_deferred();
+        #[cfg(not(feature = "docs-search"))]
+        let use_configuration = true;
+        let configured = if invocation.output_format.is_none() && use_configuration {
             local_host::available_store()
                 .map_err(io::Error::other)?
                 .map(|store| store.read())

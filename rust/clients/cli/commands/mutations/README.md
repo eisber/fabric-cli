@@ -9,7 +9,10 @@ registrations and typed command conversion.
 
 The separate [create v2 contract](../../../../authoring-docs/create-v2-contract.md) specifies
 the target existence policies and receipt boundaries. It does not describe the
-current v1 `create` alias or establish a v2 executable root or service-host mount.
+current v1 `create` alias. The opt-in `fabric-cli` `v2-create` host now composes
+the same parser and SDK policy for Notebook only; see the contract's native mount
+section and [shared host interface](../../../../authoring-docs/create-host.md).
+The v1 `MutationHost` and its force/confirmation behavior below are unchanged.
 
 ## Host composition
 
@@ -81,6 +84,12 @@ fixtures and expected outputs are unchanged.
 `create_with_template_enumeration` accepts a complete ordered template tree.
 See [creation templates](templates/README.md) for path validation, dependent
 creation and ordering rules.
+
+`BlankSemanticModelCreate` exposes only the existing five-part blank template
+with validated outer display name and optional description. It preserves all
+embedded bytes and placeholders and accepts no user definition or connection.
+The separate [native v2 binding](../../../../authoring-docs/semantic-model-create.md)
+consumes this CLI-layer adapter without changing v1 creation.
 
 ## Storage and definitions
 

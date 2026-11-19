@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add explicit raw Power Query M input and named-query discovery to experimental native Dataflow execution, with exact-document approval, bounded definition metadata, preserved query names and explicit incomplete discovery coverage without evaluating queries or changing connections.
+time: 2026-11-18T21:57:26Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

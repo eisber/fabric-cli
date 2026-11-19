@@ -29,9 +29,74 @@ path = "tests/copyjob_create.rs"
 required-features = ["v2-copyjob-create"]
 
 [[test]]
+name = "semantic_model_create"
+path = "tests/semantic_model_create.rs"
+required-features = ["v2-create-semantic-model"]
+
+[[test]]
+name = "semantic_model_create_entry"
+path = "tests/semantic_model_create_entry.rs"
+required-features = ["headless", "v2-create-semantic-model"]
+
+[[test]]
+name = "warehouse_create_wire"
+path = "tests/warehouse_create_wire.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "warehouse_create_binary"
+path = "tests/warehouse_create_binary.rs"
+required-features = ["v2-create", "headless"]
+
+[[test]]
+name = "kql_database_create"
+path = "tests/kql_database_create.rs"
+required-features = ["v2-kql-database-create"]
+
+[[test]]
+name = "kql_database_create_binary"
+path = "tests/kql_database_create_binary.rs"
+required-features = ["v2-kql-database-create", "headless"]
+
+[[test]]
+name = "eventhouse_create"
+path = "tests/eventhouse_create.rs"
+required-features = ["v2-create-eventhouse"]
+
+[[test]]
+name = "eventhouse_create_binary"
+path = "tests/eventhouse_create_binary.rs"
+required-features = ["v2-create-eventhouse", "headless"]
+
+[[test]]
+name = "create_binding_composition"
+path = "tests/create_binding_composition.rs"
+required-features = ["v2-create-eventhouse", "v2-kql-database-create", "headless"]
+
+[[test]]
+name = "create_v2"
+path = "tests/create_v2.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "create_v2_process"
+path = "tests/create_v2_process.rs"
+required-features = ["v2-create", "headless"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
+
+[[test]]
+name = "v2_link_dataagent_process"
+path = "tests/v2_link_dataagent_process.rs"
+required-features = ["headless"]
+
+[[test]]
+name = "v2_link_kql_host"
+path = "tests/v2_link_kql_host.rs"
+required-features = ["v2-link-kql"]
 
 [[test]]
 name = "run_notebook_wire"
@@ -81,25 +146,39 @@ path = "tests/v2_preview_entry.rs"
 name = "interactive_arguments"
 required-features = ["interactive"]
 
+[[test]]
+name = "docs_search"
+required-features = ["docs-search"]
+
+[[test]]
+name = "docs_browse"
+required-features = ["docs-search"]
+
 [features]
 default = []
+docs-search = ["dep:fabric-docs-search"]
 semantic-model = ["dep:fabric-cli-semantic-model"]
 semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
 v2-create = []
 v2-copyjob-create = ["v2-create"]
+v2-create-semantic-model = ["v2-create"]
+v2-kql-database-create = ["v2-create"]
+v2-create-eventhouse = ["v2-create"]
 v2-run = []
+v2-query = ["dep:fabric-cli-query-commands", "dep:fabric-sdk-aihub-query", "dep:fabric-sdk-query", "dep:fabric-sdk-query-tabular"]
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []
 v2-deploy = []
+v2-link-kql = []
 v2-discovery = ["dep:fabric-sdk-discovery"]
 runtime-v2 = []
 v2-preview = ["dep:fabric-cli-ontology"]
 interactive = ["native-host", "fabric-identity/interactive"]
 repl = ["dep:fabric-cli-repl", "fabric-cli-repl/reedline-editor"]
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
-native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:chrono"]
+native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls"]
 native-read = ["native-host", "windows-broker"]
 headless = ["native-host", "fabric-identity/headless"]
 certificate-store-windows = ["headless", "fabric-identity/certificate-store-windows"]
@@ -108,9 +187,12 @@ certificate-store-macos = ["headless", "fabric-identity/certificate-store-macos"
 self-update = ["dep:fabric-cli-update", "fabric-cli-update/bounded-helper", "dep:ring", "dep:tokio", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls"]
 
 [dependencies]
+fabric-docs-search = { workspace = true, optional = true }
 fabric-cli-semantic-model = { workspace = true, optional = true }
 fabric-cli-ontology = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
+chrono.workspace = true
+getrandom.workspace = true
+uuid.workspace = true
 fabric-cli-repl = { workspace = true, optional = true }
 fabric-cli-update = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
@@ -118,10 +200,14 @@ clap.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-cli-query.workspace = true
+fabric-cli-query-commands = { workspace = true, optional = true }
 fabric-cli-jobs.workspace = true
 fabric-cli-local.workspace = true
 fabric-cli-mutations.workspace = true
 fabric-cli-resources.workspace = true
+fabric-cli-access.workspace = true
+fabric-cli-api.workspace = true
+fabric-cli-catalog.workspace = true
 fabric-cli-transfer.workspace = true
 fabric-cli-tables.workspace = true
 fabric-cli-storage-files.workspace = true
@@ -139,6 +225,9 @@ fabric-sdk-graph = { workspace = true, optional = true }
 fabric-sdk-operations.workspace = true
 fabric-sdk-tables.workspace = true
 fabric-sdk-dataflow.workspace = true
+fabric-sdk-aihub-query = { workspace = true, optional = true }
+fabric-sdk-query = { workspace = true, optional = true }
+fabric-sdk-query-tabular = { workspace = true, optional = true, features = ["aihub"] }
 fabric-sdk-tabular.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
@@ -173,9 +262,29 @@ path = "tests/runtime_v2.rs"
 required-features = ["runtime-v2"]
 
 [[test]]
+name = "runtime_native_host"
+path = "tests/runtime_native_host.rs"
+required-features = ["runtime-v2", "native-host"]
+
+[[test]]
+name = "livy_list_native"
+path = "tests/livy_list_native.rs"
+required-features = ["runtime-v2", "native-host"]
+
+[[test]]
+name = "livy_list_entry"
+path = "tests/livy_list_entry.rs"
+required-features = ["runtime-v2", "headless"]
+
+[[test]]
 name = "graph_refresh_v2"
 path = "tests/graph_refresh_v2.rs"
 required-features = ["v2-refresh"]
+
+[[test]]
+name = "query_binary"
+path = "tests/query_binary.rs"
+required-features = ["v2-query", "headless"]
 
 [lints]
 workspace = true
