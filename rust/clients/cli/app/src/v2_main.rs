@@ -34,11 +34,17 @@ mod v2_create_main;
 mod v2_dataagent_list_main;
 mod v2_exists_main;
 mod v2_link_dataagent_main;
+#[cfg(feature = "v2-link-kql")]
+mod v2_link_kql_main;
 #[cfg(feature = "runtime-v2")]
 mod v2_livy_list_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
+#[cfg(all(test, any(feature = "v2-link-kql", feature = "v2-refresh")))]
+#[allow(dead_code)]
+#[path = "../../../../tests/compatibility/jobs/support.rs"]
+mod v2_test_support;
 mod v2_update_notebook_host;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
@@ -77,6 +83,10 @@ fn main() -> std::process::ExitCode {
             v2_link_dataagent_main::run(args),
             &mut io::stderr().lock(),
         ));
+    }
+    #[cfg(feature = "v2-link-kql")]
+    if v2_link_kql_main::handles(&args) {
+        return std::process::ExitCode::from(v2_link_kql_main::run(args));
     }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
@@ -127,6 +137,9 @@ const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  
 
 #[cfg(feature = "v2-create-eventhouse")]
 const EVENTHOUSE_CREATE_HELP: &str = "Opt-in: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Eventhouse [OPTIONS]\nMetadata-only Eventhouse creation requires immediate terminal approval. Run create --help.\nThe provider may create a same-name default KQL database and incur capacity or storage consumption; the client issues no child POST.";
+
+#[cfg(feature = "v2-link-kql")]
+const KQL_LINK_HELP: &str = "KQL links: artifact kql-database link <typed-shortcut-destination> --input FILE|- [--wait]\nRoot link selects the explicit DataAgent or KQLDatabase owner. Run artifact kql-database link --help.\nExplicit controlling-terminal approval is required; query acceleration may incur costs.";
 
 fn failed(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), Value::Null, exit)
@@ -200,6 +213,9 @@ fn run() -> Result<(), Failure> {
         #[cfg(feature = "v2-create-eventhouse")]
         writeln!(io::stdout().lock(), "\n{EVENTHOUSE_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-link-kql")]
+        writeln!(io::stdout().lock(), "\n{KQL_LINK_HELP}")
+            .map_err(|_| failed("OutputFailed", "Link help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {

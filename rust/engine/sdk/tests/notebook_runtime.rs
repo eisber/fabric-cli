@@ -1908,16 +1908,53 @@ async fn head_metadata_preserves_http_failures_and_rejects_non_head_success_shap
 
 mod managed_driver_tests {
     use super::*;
+    use fabric_core::execution::{ExecutionClock, ExecutionFuture};
     use fabric_sdk::notebook_runtime::driver::{
         DeadlineAlarm, DriverEvent, DriverLimits, DriverOptions, DriverState, ManagedExecution,
         NotebookChannel, OutputSink, ReadySession, RemoteOutcome,
     };
     use fabric_sdk::runtime::{NativeDeadline, NativeFuture};
     use std::{
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
         task::{Context, Poll, Waker},
         time::Duration,
     };
+
+    #[derive(Default)]
+    struct DriverClock {
+        milliseconds: AtomicU64,
+        waiters: Mutex<Vec<Waker>>,
+    }
+
+    impl DriverClock {
+        fn advance(&self, milliseconds: u64) {
+            self.milliseconds.fetch_add(milliseconds, Ordering::SeqCst);
+            for waker in self.waiters.lock().unwrap().drain(..) {
+                waker.wake();
+            }
+        }
+    }
+
+    impl ExecutionClock for DriverClock {
+        fn now(&self) -> Duration {
+            Duration::from_millis(self.milliseconds.load(Ordering::SeqCst))
+        }
+
+        fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
+            let end = self.now() + delay;
+            Box::pin(std::future::poll_fn(move |cx| {
+                self.waiters.lock().unwrap().push(cx.waker().clone());
+                if self.now() >= end {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            }))
+        }
+    }
 
     #[derive(Default)]
     struct DriverWire {
@@ -2119,7 +2156,8 @@ mod managed_driver_tests {
     }
 
     fn driver_deadline() -> NativeDeadline {
-        NativeDeadline::new(Duration::from_secs(30)).unwrap()
+        NativeDeadline::with_clock(Duration::from_secs(30), Arc::new(DriverClock::default()))
+            .unwrap()
     }
 
     fn assert_driver_pending<F: Future>(mut future: Pin<&mut F>) {
@@ -2532,16 +2570,25 @@ mod managed_driver_tests {
                 wire.pending_send = stage == "send";
                 wire.pending_read = stage == "receive";
             }
-            let deadline = NativeDeadline::new(Duration::from_millis(100)).unwrap();
+            let clock = Arc::new(DriverClock::default());
+            let deadline =
+                NativeDeadline::with_clock(Duration::from_millis(100), clock.clone()).unwrap();
             let mut driver = managed_driver(&wire, DriverLimits::default(), deadline);
             let mut sink = driver_sink(&wire);
             if stage == "sink" {
                 sink.gate = Some(Arc::new(tokio::sync::Notify::new()));
             }
-            let failure = tokio::time::timeout(Duration::from_secs(2), driver.run(&mut sink))
-                .await
-                .expect("driver did not enforce its pending-I/O deadline")
-                .unwrap_err();
+            let mut work = Box::pin(driver.run(&mut sink));
+            assert_driver_pending(work.as_mut());
+            clock.advance(99);
+            assert_driver_pending(work.as_mut());
+            clock.advance(1);
+            let Poll::Ready(Err(failure)) =
+                work.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+            else {
+                panic!("driver did not enforce its exact virtual deadline");
+            };
+            drop(work);
             assert_eq!(failure.cause, NativeError::TimedOut);
             assert_eq!(failure.remote, RemoteOutcome::Unknown);
             assert_eq!(wire.lock().unwrap().sent.len(), 1);
@@ -2642,17 +2689,26 @@ mod managed_driver_tests {
                 wire.close_error = (stage == "error").then_some(NativeError::OutcomeUnknown);
                 wire.pending_close = stage != "error";
             }
-            let deadline = NativeDeadline::new(Duration::from_millis(100)).unwrap();
+            let clock = Arc::new(DriverClock::default());
+            let deadline =
+                NativeDeadline::with_clock(Duration::from_millis(100), clock.clone()).unwrap();
             let mut driver = managed_driver(&wire, DriverLimits::default(), deadline);
             if stage == "drop" {
                 let mut close = Box::pin(driver.close());
                 assert_driver_pending(close.as_mut());
                 drop(close);
             } else {
-                let failure = tokio::time::timeout(Duration::from_secs(2), driver.close())
-                    .await
-                    .unwrap()
-                    .unwrap_err();
+                let mut close = Box::pin(driver.close());
+                if stage == "timeout" {
+                    assert_driver_pending(close.as_mut());
+                    clock.advance(100);
+                }
+                let Poll::Ready(Err(failure)) =
+                    close.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+                else {
+                    panic!("close did not finish at its original virtual deadline");
+                };
+                drop(close);
                 assert_eq!(failure.remote, RemoteOutcome::NotSubmitted);
                 assert_eq!(
                     failure.cause,
@@ -2674,9 +2730,11 @@ mod managed_driver_tests {
     #[tokio::test]
     async fn driver_expired_original_deadline_prevents_submit_and_close_io() {
         let wire = driver_wire(vec![]);
-        let deadline = NativeDeadline::new(Duration::from_millis(100)).unwrap();
+        let clock = Arc::new(DriverClock::default());
+        let deadline =
+            NativeDeadline::with_clock(Duration::from_millis(100), clock.clone()).unwrap();
         let mut driver = managed_driver(&wire, DriverLimits::default(), deadline);
-        tokio::time::sleep(Duration::from_millis(120)).await;
+        clock.advance(100);
         let failure = driver.submit().await.unwrap_err();
         assert_eq!(failure.cause, NativeError::TimedOut);
         assert_eq!(failure.remote, RemoteOutcome::NotSubmitted);
