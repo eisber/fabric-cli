@@ -12,7 +12,7 @@ use azure_core::{
 use fabric_core::CredentialSelection;
 use serde_json::{Value, json};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     future::{pending, poll_fn, ready},
     sync::{
         Arc, Mutex,

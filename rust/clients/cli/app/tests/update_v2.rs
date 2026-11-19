@@ -298,6 +298,80 @@ fn standalone_head_plans_locally_and_refuses_unapproved_mutation() {
     );
 }
 
+#[cfg(feature = "headless")]
+#[test]
+fn notebook_process_preflights_strict_input_and_output_before_identity_or_approval() {
+    for input in [
+        "{",
+        r#"{"displayName":null}"#,
+        r#"{"displayName":"a","displayName":"b"}"#,
+        r#"{"definition":{}}"#,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("metadata.json");
+        std::fs::write(&path, input).unwrap();
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+            .args([
+                "artifact", "notebook", "update", TARGET, "--mode", "patch", "--input",
+            ])
+            .arg(path)
+            .env("FAB_RUST_AUTH_MODE", "invalid-mode-that-must-not-be-read")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+            "UpdateFailed"
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("metadata.json");
+    let receipt = dir.path().join("receipt.json");
+    std::fs::write(&input, br#"{"description":""}"#).unwrap();
+    std::fs::write(&receipt, b"preserve").unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+        .args(["update", TARGET, "--mode", "patch", "--input"])
+        .arg(input)
+        .arg("--output")
+        .arg(&receipt)
+        .env("FAB_RUST_AUTH_MODE", "invalid-mode-that-must-not-be-read")
+        .output()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+        "UpdateFailed"
+    );
+    assert_eq!(std::fs::read(receipt).unwrap(), b"preserve");
+}
+
+#[cfg(feature = "headless")]
+#[test]
+fn notebook_facade_stdin_plan_is_local() {
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+        .args([
+            "artifact", "notebook", "update", TARGET, "--input", "-", "--mode", "patch", "--plan",
+        ])
+        .env_remove("FAB_RUST_AUTH_MODE")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"description":""}"#)
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["meta"]["executionMode"], "plan");
+    assert_eq!(value["meta"]["target"]["identity"]["itemId"], ITEM);
+}
+
 #[tokio::test]
 async fn typed_scalar_identity_and_null_projection_preserve_json_and_protected_meta() {
     let dir = tempfile::tempdir().unwrap();

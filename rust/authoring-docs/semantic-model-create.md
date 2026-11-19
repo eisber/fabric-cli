@@ -6,6 +6,10 @@ The opt-in `v2-create-semantic-model` feature selects one blank SemanticModel
 binding in the `fab-cli-v2` head (`headless,v2-create-semantic-model`). The shared
 `v2-create` feature alone installs no SemanticModel leaf. Default builds, Python, the v1
 `create`/`mkdir` alias, semantic-model reads and BPA are unchanged.
+The current shared dispatcher retains Notebook, Report and Warehouse creation
+and separately enabled KQLDatabase/Eventhouse bindings. SemanticModel is an
+additive exact-owner selection, not an exclusive replacement create host.
+Create help and both ordinary and Livy root help disclose the enabled binding.
 
 ```text
 fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.SemanticModel

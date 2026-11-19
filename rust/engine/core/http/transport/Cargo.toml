@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 [package]
-name = "fabric-sdk-transport"
+name = "fabric-http-transport"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,11 +15,6 @@ layer = "sdk"
 
 [features]
 default = []
-notebook-websocket = [
-    "dep:fabric-sdk",
-    "dep:tokio-tungstenite",
-    "dep:futures-util",
-]
 hyper-rustls = [
     "dep:async-trait",
     "dep:azure_core",
@@ -39,7 +34,7 @@ hyper-rustls = [
 ]
 
 [dependencies]
-fabric-sdk-http.workspace = true
+fabric-http.workspace = true
 tokio.workspace = true
 async-trait = { workspace = true, optional = true }
 azure_core = { workspace = true, optional = true }
@@ -55,28 +50,15 @@ rustls-platform-verifier = { workspace = true, optional = true }
 async-compression = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true, features = ["sink"] }
-fabric-sdk = { workspace = true, optional = true }
-tokio-tungstenite = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rustls-native-certs = { workspace = true, optional = true }
 
 [dev-dependencies]
-fabric-core.workspace = true
-fabric-sdk.workspace = true
 rcgen.workspace = true
 tokio-rustls.workspace = true
 flate2.workspace = true
 serde_json.workspace = true
-
-[[example]]
-name = "sdk_consumer"
-required-features = ["hyper-rustls"]
-test = true
-
-[[test]]
-name = "notebook_websocket"
-required-features = ["notebook-websocket"]
 
 [lints]
 workspace = true

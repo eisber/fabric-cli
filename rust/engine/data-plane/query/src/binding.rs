@@ -142,10 +142,16 @@ impl fmt::Debug for EngineBinding {
 }
 
 /// Honest capability state of the injected engine adapter.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum QueryCapability {
     /// An offline scripted executor with no service or credential access.
     ScriptedOffline,
+    /// Fixed Kusto v2 read policy over an exact-audience, single-dispatch adapter.
+    ///
+    /// This is a structural implementation promise, not evidence that a live
+    /// tenant enforces permissions or read-only policy. Implementers must
+    /// validate the exact request before credentials and again before dispatch.
+    ReadOnlyKustoV2,
     /// Native read enforcement/audience wiring has not been verified.
     ///
     /// This state always rejects Query before opening a stream. There is no
@@ -158,8 +164,9 @@ pub enum QueryCapability {
 /// Implementations own their existing credential/HTTP/time stack. They must
 /// match every binding field, honor the absolute deadline/byte limits, disable
 /// redirects and automatic retries, and release local I/O when dropped.
-/// Returning `ScriptedOffline` is a promise of offline execution, not a mechanism
-/// for granting production permission. No production implementation is supplied.
+/// Returning either admitted capability is an implementation promise, not a
+/// cryptographic attestation or a live authorization/read-enforcement test.
+/// `ScriptedOffline` must never be used for a network implementation.
 pub trait EngineExecutor: NativeStreamExecutor {
     /// Exact context used by this adapter, checked before submission.
     fn binding(&self) -> &EngineBinding;

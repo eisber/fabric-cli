@@ -73,7 +73,15 @@ fn selected_help_and_v1_behavior_are_local_and_truthful() {
     assert!(help.contains("Selected native owner: SemanticModel."));
     assert!(help.contains("/<workspaceGUID>.Workspace/<literal-name>.SemanticModel"));
     assert!(help.contains("Enabled policies: error and skip."));
-    assert!(!help.contains("Selected native owner: Notebook"));
+    for owner in ["Notebook", "Report", "Warehouse"] {
+        assert!(help.contains(&format!("Selected native owner: {owner}.")));
+    }
+    let root = invoke(&["--help"], None);
+    assert!(root.status.success());
+    assert!(root.stderr.is_empty());
+    let root = String::from_utf8(root.stdout).unwrap();
+    assert!(root.contains("native blank SemanticModel creation"));
+    assert!(root.contains("/<workspaceGUID>.Workspace/<literal-name>.SemanticModel"));
     let v1 = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
         .arg("--help")
         .output()
@@ -114,7 +122,7 @@ fn malformed_or_unrelated_input_fails_without_ambient_identity_or_fallback() {
             ],
             None,
         ),
-        "InvalidInput",
+        "CreatePolicyRejected",
     );
     error(
         &invoke(

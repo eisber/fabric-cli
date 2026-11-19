@@ -1,74 +1,29 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Shared SDK HTTP execution
+# Neutral HTTP execution
 
-`HttpExecutor` adapts a caller-owned `azure_core::http::HttpClient` and
-`ExecutionTimer` to focused SDK executor interfaces. Clients can supply other
-executors without depending on this adapter.
+`fabric-http` executes bounded HTTP exchanges over a caller-owned Azure HTTP
+client and asynchronous timer. Its request, response, execution and progress
+contracts live in `fabric-core::http`. It has no production dependency on the
+Fabric SDK facade, capability clients, credential providers, CLI or runtime.
 
-## Execution policy
+The existing SDK logical layer is retained; physical placement under `core/`
+does not relax the workspace layer policy. Architecture tests additionally
+reject direct, optional, dev and transitive service dependencies from this engine
+and `fabric-http-transport`.
 
-`HttpExecutor::new` validates finite options without sending requests.
-Default execution uses a 240-second overall deadline and a maximum 60-second
-retry/poll delay. Responses are streamed into bounded buffers.
+The buffered policy is unchanged: one finite deadline, bounded decoded bodies,
+GET-only status retries and no automatic mutation replay. Progress reports
+headers, bounded partial prefixes, completion and body omission without
+manufacturing a complete response after failure. The caller still owns
+credential selection, cancellation, operation reconciliation and rendering.
 
-GET retries share one policy. Mutations are never automatically replayed.
-Raw status, headers and bytes remain available to service-specific completion
-policies; HTTP acceptance is not interpreted as completed work.
+Use `HttpExecution::execute_http(HttpRequest, progress)` for an injectable
+service-neutral seam, or the existing explicit bound-origin methods. Tokens
+remain opaque; the caller must acquire the selected origin's audience.
+`execute_prepared` is the lower-level seam for adapters with their own fixed
+endpoint policy: it does not validate an origin or acquire credentials.
 
-`execute_fabric` exposes the same execution engine to Fabric service adapters.
-`wait_for` uses the supplied asynchronous timer; zero delays do not sleep and
-excessive delays fail.
-
-## Endpoint binding
-
-`with_endpoint(EndpointBinding)` selects an explicit validated service endpoint.
-Its binding must match the service client's request context. Fabric-only methods
-reject storage, ARM and Power BI selections before transport I/O.
-
-`execute_bound` supports explicitly selected public-origin families:
-
-| Origin | Default HTTPS host | Audience |
-| --- | --- | --- |
-| Fabric | `api.fabric.microsoft.com` | Fabric |
-| OneLake | `onelake.dfs.fabric.microsoft.com` | Storage |
-| ARM | `management.azure.com` | ARM |
-| Power BI | `api.powerbi.com` | Fabric |
-
-Requests cannot infer credentials or audiences from URLs. Origin mismatches,
-userinfo, fragments, non-HTTPS ports and unsafe headers are rejected.
-Authentication, host, proxy credentials, cookies and hop-by-hop headers cannot
-be overridden. URL, body and header allocations remain bounded.
-
-## Operation integration
-
-The `OperationExecutor` adapter translates typed request and response fields
-and delegates execution and waits. `OperationSession` retains ownership of
-credentials, cancellation, operation budgets, polls and result retrieval.
-There is no second long-running-operation loop.
-
-Dropping a future stops local waiting and releases owned resources; it does not
-roll back a dispatched mutation. Errors retain original status and uncertainty.
-No transport implementation, identity provider, CLI, deployment engine or
-global runtime is installed by this crate.
-
-## Pull-based native Fabric streaming
-
-`native_stream::NativeFabricStreamExecutor::new(context, http)` implements the
-SDK's `NativeStreamExecutor` using the same explicit Fabric credential and
-endpoint policy as `NativeFabricExecutor`. `open` returns the actual HTTP body
-without collecting or polling it. Every method, including GET and inline POST,
-dispatches once; this stream path does not enter the buffered retry loop.
-
-`NativeStreamLimits` bounds exposed fragments and total HTTP body bytes before
-copying. One absolute `NativeDeadline` covers credentials, headers, pending body
-reads and caller pauses. The existing injected timer races pending work, and
-supplying a fresh read deadline cannot extend the opening deadline. EOF,
-errors, dropping a body or cancelling a polled read dispose local resources,
-never remote work. Actual statuses/media/headers and mutation uncertainty remain
-explicit.
-
-See [native streaming boundaries and evidence](../../../../authoring-docs/native-stream-http.md)
-for disposal semantics, metadata bounds, offline instrumented tests and the
-Azure header-duplicate visibility limitation. No new transport/runtime/auth
-engine, native/MWC origin policy or live-service support claim is implied.
+Service implementations and compatible `fabric-sdk-http` imports now live in
+[`engine/sdk/http`](../../../sdk/http/README.md). Their wrapper delegates to this
+single engine; it does not install a second retry, deadline or streaming policy.

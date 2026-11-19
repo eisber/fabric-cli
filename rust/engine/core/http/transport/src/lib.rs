@@ -11,9 +11,6 @@
 mod timer;
 pub use timer::TokioTimer;
 
-#[cfg(feature = "notebook-websocket")]
-pub mod notebook_websocket;
-
 #[cfg(feature = "hyper-rustls")]
 mod config;
 #[cfg(feature = "hyper-rustls")]
