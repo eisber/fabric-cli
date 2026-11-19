@@ -7,9 +7,7 @@ use super::{Failure, NativeSession, capture_fabric_selection, failed};
 use fabric_cli::update::{
     PreparedUpdateCommand, UpdateCommand, UpdateCommandError, UpdateDelivery,
 };
-use fabric_sdk::{
-    items::update::contract::{ApprovalPolicy, Outcome, PreparedOperation},
-};
+use fabric_sdk::items::update::contract::{ApprovalPolicy, Outcome, PreparedOperation};
 use fabric_sdk_operations::{OperationExecutor, OperationLimits};
 use futures_util::FutureExt;
 use serde_json::Value;

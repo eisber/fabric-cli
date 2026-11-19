@@ -239,10 +239,7 @@ async fn prompt_and_single_use_policy_bind_exact_body_context_options_and_condit
         request["url"],
         format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/notebooks/{ITEM}")
     );
-    assert_eq!(
-        request["body"],
-        r#"{"displayName":"new","description":""}"#
-    );
+    assert_eq!(request["body"], r#"{"displayName":"new","description":""}"#);
     assert!(question.contains(r#"\"displayName\":\"new\""#));
     let other = bound(dir.path(), &[]);
     let backend = wire(200, metadata(), false);

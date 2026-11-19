@@ -34,6 +34,26 @@ function assertOtherCandidateTimeouts(workflow) {
   }
 }
 
+const HISTORICAL_KQL_FORMAT_JOINS = [
+  [
+    `${' '.repeat(24)}let writer =\n${' '.repeat(28)}owned_output::owned_stream(OutputStream::Stderr, true).unwrap();`,
+    `${' '.repeat(24)}let writer = owned_output::owned_stream(OutputStream::Stderr, true).unwrap();`,
+  ],
+  [
+    `${' '.repeat(8)}let delivery =\n${' '.repeat(12)}host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;`,
+    `${' '.repeat(8)}let delivery = host::Delivery::execute(prepared, &mut operations, Some(&mut approval)).await;`,
+  ],
+];
+
+function formattedHistoricalKqlExpected(source) {
+  let expected = source.replace(/\r\n/g, '\n');
+  for (const [before, after] of HISTORICAL_KQL_FORMAT_JOINS) {
+    assert.equal(expected.split(before).length - 1, 1, 'Expected exactly one pinned historical formatter join');
+    expected = expected.replace(before, after);
+  }
+  return expected;
+}
+
 // Lexical scope check only; actual Rust compilation/registration remains required.
 function rustCode(source) {
   const code = source.split('');
@@ -179,10 +199,10 @@ test('both KQL host and main test files keep every declaration at module scope a
   }
   assert.deepEqual(moduleTestDeclarations(read(main)), previous.map(test => test.name),
     'No previous test declaration is lost, renamed or reordered');
-  const beforeOwned = rustTestItem(historical.stdout, owned);
+  const beforeOwned = rustTestItem(formattedHistoricalKqlExpected(historical.stdout), owned);
   const afterOwned = rustTestItem(read(main), owned);
   assert.equal(afterOwned.text, beforeOwned.text.replace(/^ {12}/gm, ''),
-    'The entire process-test attribute/body/assertions move by exact deindent only');
+    'Keep the entire process-test body after exact deindent and two guarded historical formatter joins');
   const beforeStalled = rustTestItem(beforeOwned.remaining, stalled);
   const afterStalled = rustTestItem(afterOwned.remaining, stalled);
   const nonblank = text => text.replace(/\r\n/g, '\n').split('\n').filter(line => line.trim()).join('\n');
@@ -190,6 +210,24 @@ test('both KQL host and main test files keep every declaration at module scope a
     'Async attribute/body and both Write fixtures remain intact after extracting the inner test');
   assert.equal(nonblank(afterStalled.remaining), nonblank(beforeStalled.remaining),
     'Every other nonblank main-test line, including outer classification loop and deny lint, is unchanged');
+});
+
+test('historical KQL formatter exception permits only two guarded expected-source joins', () => {
+  const prefix = 'assert!(condition);\nconst LABEL: &str = "unchanged literal";\n';
+  const historical = prefix + HISTORICAL_KQL_FORMAT_JOINS.map(([before]) => before).join('\n');
+  const expected = prefix + HISTORICAL_KQL_FORMAT_JOINS.map(([, after]) => after).join('\n');
+  assert.equal(formattedHistoricalKqlExpected(historical), expected);
+  for (const actual of [
+    expected.replace('assert!(condition);', 'assert!(!condition);'),
+    expected.replace('"unchanged literal"', '"changed literal"'),
+  ]) {
+    assert.throws(() => assert.equal(actual, formattedHistoricalKqlExpected(historical)));
+  }
+  for (const [before] of HISTORICAL_KQL_FORMAT_JOINS) {
+    for (const invalid of [historical.replace(before, ''), `${historical}\n${before}`]) {
+      assert.throws(() => formattedHistoricalKqlExpected(invalid), /exactly one pinned historical/);
+    }
+  }
 });
 
 test('lexical test placement ignores Rust comments and literals but rejects nested blocks regardless of indentation', () => {
