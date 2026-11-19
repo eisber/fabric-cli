@@ -131,14 +131,13 @@ fn legacy_read_probe_explicitly_rejects_job_invocations() {
 }
 
 #[test]
-fn legacy_read_probe_explicitly_rejects_execute_invocations() {
+fn legacy_read_probe_explicitly_rejects_dataflow_query_invocations() {
     let input = serde_json::json!({
-        "id": "execute-is-not-a-read-probe-command",
+        "id": "dataflow-query-is-not-a-read-probe-command",
         "parse_only": true,
         "command": [
-            "execute",
+            "query",
             "/11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Dataflow/queries/Orders",
-            "--wait",
         ],
     });
     let arguments = input["command"]

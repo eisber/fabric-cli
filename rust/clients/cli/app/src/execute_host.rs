@@ -27,6 +27,7 @@ use std::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct QueryInput {
     custom_mashup_document: Option<String>,
+    m_expression: Option<String>,
     arrow_version: Option<u8>,
 }
 
@@ -50,6 +51,44 @@ pub struct PreparedExecution {
     target: ExecuteQueryTarget,
     request: ExecuteQueryRequest,
     approval_input: String,
+}
+
+/// Combine a raw M expression with optional JSON parameters into one input document.
+///
+/// Without an expression the parameters are returned unchanged. With one, the
+/// parameters must be a strict input document without its own M source.
+///
+/// # Errors
+/// Rejects non-UTF-8 or oversized expressions and invalid or conflicting parameters.
+pub fn compose_input(
+    parameters: Option<Vec<u8>>,
+    expression: Option<&[u8]>,
+) -> Result<Option<Vec<u8>>, PreparationError> {
+    let invalid = || PreparationError::InvalidInput;
+    let Some(expression) = expression else {
+        return Ok(parameters);
+    };
+    if expression.is_empty() || expression.len() > MAX_INPUT_BYTES {
+        return Err(invalid());
+    }
+    let expression = std::str::from_utf8(expression).map_err(|_| invalid())?;
+    let mut document = serde_json::Map::new();
+    if let Some(bytes) = parameters {
+        let strict: QueryInput = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+        if strict.custom_mashup_document.is_some() || strict.m_expression.is_some() {
+            return Err(invalid());
+        }
+        let serde_json::Value::Object(object) =
+            serde_json::from_slice(&bytes).map_err(|_| invalid())?
+        else {
+            return Err(invalid());
+        };
+        document = object;
+    }
+    document.insert("mExpression".into(), expression.into());
+    serde_json::to_vec(&document)
+        .map(Some)
+        .map_err(|_| invalid())
 }
 
 impl PreparedExecution {
@@ -79,6 +118,7 @@ impl PreparedExecution {
         let input = match input {
             None => QueryInput {
                 custom_mashup_document: None,
+                m_expression: None,
                 arrow_version: None,
             },
             Some(bytes) => {
@@ -108,12 +148,21 @@ impl PreparedExecution {
         };
         let target = ExecuteQueryTarget::new(&command.target.workspace, &command.target.dataflow)
             .map_err(|_| invalid())?;
+        if input.custom_mashup_document.is_some() && input.m_expression.is_some() {
+            return Err(invalid());
+        }
+        let document = match input.m_expression {
+            Some(expression) => {
+                Some(super::m::document(&command.target.query, &expression).ok_or_else(invalid)?)
+            }
+            None => input.custom_mashup_document,
+        };
         let mut request = ExecuteQueryRequest::new(command.target.query.clone(), version)
             .map_err(|_| invalid())?;
         let mut approval = serde_json::json!({
             "arrowVersion": input.arrow_version.unwrap_or(1),
         });
-        if let Some(document) = input.custom_mashup_document {
+        if let Some(document) = document {
             approval["customMashupDocument"] = serde_json::Value::String(document.clone());
             request = request
                 .with_custom_mashup_document(document)
@@ -212,7 +261,9 @@ pub struct ExecutionResult {
 }
 
 /// Reconciliation facts without inventing an error classification on success.
-#[derive(Clone, Debug)]
+///
+/// Debug output redacts source-sensitive values; explicit fields retain them.
+#[derive(Clone)]
 pub struct ExecutionEvidence {
     /// Actual native accepted operation ID, when one was returned.
     pub operation_id: Option<String>,
@@ -222,6 +273,27 @@ pub struct ExecutionEvidence {
     pub http_status: Option<u16>,
     /// Exact structured service failure, when the shared engine retained one.
     pub raw_service_error: Option<Box<serde_json::Value>>,
+}
+
+impl std::fmt::Debug for ExecutionEvidence {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecutionEvidence")
+            .field(
+                "operation_id",
+                &self.operation_id.as_ref().map(|_| "<retained>"),
+            )
+            .field(
+                "mutation_may_have_occurred",
+                &self.mutation_may_have_occurred,
+            )
+            .field("http_status", &self.http_status)
+            .field(
+                "raw_service_error",
+                &self.raw_service_error.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl From<&OperationError> for ExecutionEvidence {
@@ -239,7 +311,9 @@ impl From<&OperationError> for ExecutionEvidence {
 }
 
 /// Typed native execution or result-format failure; never a successful receipt.
-#[derive(Debug, thiserror::Error)]
+///
+/// Debug output omits native payloads without changing explicit error evidence.
+#[derive(thiserror::Error)]
 pub enum ExecutionFailure {
     /// Native service errors preserve their original operation and response.
     #[error("Native Dataflow query failed or its completion is unconfirmed.")]
@@ -254,6 +328,23 @@ pub enum ExecutionFailure {
         /// Original operation reconciliation evidence.
         evidence: Box<OperationError>,
     },
+}
+
+impl std::fmt::Debug for ExecutionFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Query(error) => formatter
+                .debug_struct("Query")
+                .field("kind", &error.kind())
+                .finish_non_exhaustive(),
+            Self::Result { .. } => formatter
+                .debug_struct("Result")
+                .field("error", &"<redacted>")
+                .field("response", &"<redacted>")
+                .field("evidence", &"<retained>")
+                .finish(),
+        }
+    }
 }
 
 fn encode_response<E: OperationExecutor>(

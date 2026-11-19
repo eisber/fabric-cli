@@ -1688,7 +1688,9 @@ mod binary {
         let help = String::from_utf8(help.stdout).unwrap();
         assert!(help.contains("Selected native owner: SparkJobDefinition."));
         assert!(help.contains("Enabled policies: error and skip."));
-        assert!(!help.contains("Selected native owner: Notebook"));
+        assert!(help.contains("Selected native owner: Notebook."));
+        assert!(help.contains("Selected native owner: Report."));
+        assert!(help.contains("Selected native owner: Warehouse."));
         let output = command().args(["create", TARGET]).output().unwrap();
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stdout.is_empty());
@@ -1724,7 +1726,9 @@ mod binary {
         }
         for path in [
             "/bad.Workspace/Exact.SparkJobDefinition",
-            "/11111111-1111-1111-1111-111111111111.Workspace/Exact.Notebook",
+            "/11111111-1111-1111-1111-111111111111.Workspace/Exact.sparkjobdefinition",
+            "/11111111-1111-1111-1111-111111111111.Workspace/Exact.SparkJobDefinition/src/definition",
+            "/11111111-1111-1111-1111-111111111111.Workspace/Exact.Lakehouse",
         ] {
             let output = command().args(["create", path]).output().unwrap();
             assert_eq!(output.status.code(), Some(2));

@@ -5,7 +5,9 @@
 `fabric-sdk-query` implements a caller-injected KQL request/result adapter,
 not JMESPath projection or a new production CLI host. It consumes the existing
 `NativeStreamExecutor`, `NativeStreamBody`, `NativeDeadline` and cancellation
-primitive. It installs no HTTP client, identity provider, timer, runtime or retry.
+primitive. `KustoQueryExecutor` composes the caller's `TokenCredential`, streaming
+Azure `HttpClient` and shared `ExecutionTimer`; it installs no HTTP client,
+identity provider, timer, runtime or retry.
 
 ## Exact binding seam
 
@@ -16,13 +18,28 @@ that same immutable descriptor; `query_kql` rejects any mismatch before opening.
 The descriptor is reusable by Execute for its separately approved management
 request. It is not a write approval, query safety certificate or token proof.
 
-The existing Fabric-only native HTTP adapter cannot authenticate or execute this
-Kusto route. Native production bindings therefore default to
-`UnverifiedProduction` and fail before dispatch. `ScriptedOffline` admits only
-an injected offline implementation, as demonstrated by executable integration
-tests; it is not a production enable switch. A later production adapter needs
-independent exact-audience, permissions and native enforcement evidence.
-No live query or authentication was used to implement this slice.
+The existing Fabric-only native HTTP adapter cannot authenticate this Kusto
+route. Use `KustoCredentialContext::new(credential, account, tenant, scope)` and
+`KustoQueryExecutor::new(binding, credentials, http_client, timer)` instead.
+Construction checks exact account, tenant and audience equality without I/O.
+The caller must bind the injected provider to those selectors; the shared
+credential trait does not expose verifiable account/tenant claims. The adapter
+requests precisely the supplied supported scope, never a Fabric default or a
+hostname-derived scope, and never selects another identity after failure.
+
+`ReadOnlyKustoV2` denotes structural adapter qualification: exact binding,
+fixed query/read policy, explicit audience and single-dispatch streaming. It
+does **not** certify live authorization, service read enforcement or an
+independently attested transport implementation. `QueryEvidence.adapter_capability`
+records that actual promise; the legacy `production_verified` field stays
+`false`, even after a successful production exchange. No live query, login or
+tenant-enforcement test was performed.
+
+Arbitrary `EngineExecutor` implementations still default to
+`UnverifiedProduction` and fail before dispatch. Public trait implementations
+are responsible for any admitted capability they explicitly promise; this is
+not cryptographic proof. `ScriptedOffline` remains an offline-only promise and
+must never label a network implementation. There is no production-enable boolean.
 
 ## Native read policy and results
 
@@ -33,10 +50,23 @@ user-supplied options object, language flag, parameter substitution, management
 prefix routing, SQL compatibility fallback or identity fallback.
 
 An explicit server timeout must be positive, millisecond-representable, at most
-one hour and within the remaining local deadline. It is never rounded/clamped.
-The shared absolute deadline covers opening and every body read. The injected
-host must enforce it while I/O is pending. Local cancellation drops local work;
-it neither cancels the remote request nor implies rollback or replay.
+one hour and within the remaining local deadline. Production calls require
+`KqlQuery::with_server_timeout`; no timeout is inferred or silently clamped.
+The fixed route, method, exact body shape, database, read-policy options and
+correlation metadata are validated before credentials and again before dispatch.
+The request, `properties` and `Options` must each be JSON objects, never
+positional arrays or null. Duplicate or unknown fields and extra request headers
+are rejected without normalizing or reserializing the original body bytes.
+Credential acquisition can exhaust the deadline or leave less than the explicit
+server timeout: that fails before dispatch instead of weakening the request.
+The same absolute deadline covers credentials, opening, all reads and result
+validation. The shared stack enforces pending I/O; no query-local clock is
+installed. Local cancellation drops local work; it neither cancels the remote
+request nor implies rollback or replay.
+Cancellation is observed at each open/read and native frame/row validation
+boundary, including immediately ready streams; it is not checked only when I/O
+happens to suspend. Cancellation during validation retains bounded provider bytes
+and already validated tables as incomplete forensic evidence, never completion.
 
 Success requires JSON media, actual HTTP EOF, a non-progressive `v2.0` header,
 well-formed tables and terminal completion without errors/cancellation or native
@@ -66,12 +96,48 @@ Kusto can flush incorrect values, so consumers must not use it as query results.
 Debug/Display omit input, response data, endpoints and identity selectors.
 
 The separate unprojected `QueryEvidence` records binding, language/transport,
-version, policy, correlation IDs and completeness. A correlation ID is not an
+version, policy, adapter capability, correlation IDs, actual HTTP EOF and native
+completeness. HTTP EOF alone does not establish a successful query. A correlation ID is not an
 async handle. No continuation, LRO, polling or automatic remote cancel is
 invented. Output bounds do not bound scans, memory on the service or capacity
 costs. Arrow/CSV/Parquet conversion, file input/output, facade/path resolution,
-native parameter schemas and production CLI/SDK/MCP composition are not
-implemented by this prerequisite.
+native parameter schemas and production CLI/MCP composition are not implemented
+by this SDK.
+
+## Direct SDK use and support boundaries
+
+The public consumer example `examples/kusto_query.rs` runs the production
+adapter with synthetic HTTP and credential fixtures. It does not discover
+credentials, connect to its illustrative endpoint or query tenant data:
+
+```text
+cargo run --locked -p fabric-sdk-query --example kusto_query
+```
+
+In a real host, inject its existing streaming client and timer and an explicitly
+selected credential. The client must disable redirects and automatic retries
+and release local resources when dropped. The SDK cannot inspect an arbitrary
+trait implementation to prove those promises. Do not wrap a retrying HTTP client
+or use an ambient/default credential chain. An HTTP 200 response still requires
+valid media, actual EOF, all ordered primary tables and a clean terminal frame;
+401/403/429/transient failures never cause token/identity refresh or replay here.
+
+| Surface | Supported contract | Not established or unsupported |
+| --- | --- | --- |
+| Platforms | Runtime-neutral Rust on Windows, Linux and macOS with caller-provided HTTP/TLS/time | Native platform/live acceptance must be qualified separately |
+| Audience | Exact public Kusto `https://api.kusto.windows.net/.default` | Fabric REST, ARM, SQL, arbitrary inferred and sovereign scopes |
+| Endpoint | Exact caller-resolved HTTPS origin on port 443, one database and owner | Endpoint discovery, ingestion, management, redirects and route fallback |
+| Identity | Injected `TokenCredential`, explicitly matching account and tenant selectors | Token-claim proof, login, consent, ambient credential discovery and provider fallback |
+| Permissions | Caller supplies a credential authorized to query the exact database; Kusto Database Viewer or a suitably scoped equivalent must be provisioned by its owner | No permission is granted or tested by construction; service policy/tenant proof remains external |
+| Runtime | Existing shared streaming HTTP engine and caller timer, one absolute `NativeDeadline` | New runtime, transport, global timer or retry stack |
+| Protocol | KQL v2 nonprogressive query, finite limits, all native primary results and diagnostics | SQL compatibility, progressive response, management, remote cancellation and output codecs |
+
+Database query rights do not imply that every table or query is authorized.
+The hardline flags are sent on every request but are not a cost quota or a
+substitute for service-side authorization. A write/management-looking string is
+sent unchanged to the same query route under the same policy, never rerouted.
+Keep provider bodies, positional rows, diagnostics and serialized binding
+metadata out of logs: only sanitized error formatting is safe by default.
 
 ## Source and offline evidence
 

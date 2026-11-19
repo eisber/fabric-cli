@@ -2,6 +2,9 @@
 // Licensed under the MIT License.
 #![deny(unnameable_test_items)]
 
+#[path = "native_execute_diagnostics_tests.rs"]
+mod diagnostics_tests;
+
 use super::*;
 use arrow_array::{Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
@@ -133,21 +136,33 @@ async fn invoke_bounded(
     format: &str,
     max_bytes: Option<usize>,
 ) -> get::Delivery {
+    invoke_with_output(wire, timeout, format, max_bytes, None).await
+}
+
+async fn invoke_with_output(
+    wire: Arc<Wire>,
+    timeout: Duration,
+    format: &str,
+    max_bytes: Option<usize>,
+    output: Option<&std::path::Path>,
+) -> get::Delivery {
     let mut arguments = vec![
         "fab-rs".to_owned(),
-        "execute".into(),
+        "query".into(),
         TARGET.into(),
-        "--wait".into(),
         "--format".into(),
         format.into(),
     ];
     if let Some(max_bytes) = max_bytes {
         arguments.extend(["--max-bytes".into(), max_bytes.to_string()]);
     }
+    if let Some(output) = output {
+        arguments.extend(["--output".into(), output.to_str().unwrap().to_owned()]);
+    }
     let fabric_cli::parser::Invocation::Execute(command) =
         fabric_cli::parser::parse_args(arguments).unwrap()
     else {
-        panic!("root execute")
+        panic!("Dataflow query")
     };
     let approved = PreparedExecution::new(&command, None)
         .unwrap()
@@ -302,10 +317,12 @@ fn native_unknown_metadata_evidence_is_retained_on_stderr_not_data_stdout() {
         diagnostic["metadataEvidence"][0]["classification"],
         "Unknown"
     );
-    assert_eq!(
-        diagnostic["metadataEvidence"][0]["value"],
-        "{\"message\":\"synthetic failure\"}"
-    );
+    assert_eq!(diagnostic["metadataEvidence"][0]["value"], "<redacted>");
+    let fabric_sdk_tabular::TabularError::Metadata { evidence } = &error else {
+        panic!("original metadata evidence");
+    };
+    assert_eq!(evidence[0].value, "{\"message\":\"synthetic failure\"}");
+    assert_eq!(diagnostic["metadataEvidenceRedacted"], true);
 }
 
 struct Release(Option<mpsc::Sender<()>>);
@@ -686,7 +703,7 @@ async fn bounded_stdout_requires_a_successful_flush_without_replaying_the_query(
 fn windows_console_policy_requires_a_file_or_redirect_before_host_effects() {
     for format in ["json", "csv"] {
         for output in [None, Some("-"), Some("unicode-result.data")] {
-            let mut args = vec!["fab-rs", "execute", TARGET, "--wait", "--format", format];
+            let mut args = vec!["fab-rs", "query", TARGET, "--format", format];
             if let Some(output) = output {
                 args.extend(["--output", output]);
             }
@@ -862,6 +879,20 @@ async fn native_http_authorization_errors_retain_status_effects_and_operation_wi
                 delivery.evidence.as_ref().unwrap().http_status,
                 Some(status_number)
             );
+            let original_service_error = if body.is_empty() {
+                None
+            } else {
+                Some(serde_json::from_slice::<serde_json::Value>(&body).unwrap())
+            };
+            assert_eq!(
+                delivery
+                    .evidence
+                    .as_ref()
+                    .unwrap()
+                    .raw_service_error
+                    .as_deref(),
+                original_service_error.as_ref()
+            );
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             assert_eq!(
@@ -886,7 +917,7 @@ async fn native_http_authorization_errors_retain_status_effects_and_operation_wi
             } else {
                 assert_eq!(
                     diagnostic["operation"]["serviceError"],
-                    serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+                    serde_json::json!({ "redacted": true })
                 );
             }
             assert_eq!(

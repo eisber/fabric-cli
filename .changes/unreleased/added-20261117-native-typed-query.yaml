@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in Rust root query composition for explicitly configured typed DataAgent MCP and artifact-native KQL providers, preserving declared result schemas, bounded JSON/CSV/Parquet output, all resultsets, atomic no-clobber file delivery, and execution evidence without fallback or replay. Default behavior and Dataflow execute semantics remain unchanged; live service support and authentication review require separate qualification.
+time: 2026-11-17T16:20:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

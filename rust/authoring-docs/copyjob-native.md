@@ -8,6 +8,10 @@ the existing item reader, shared operation executor, credentials, byte bounds,
 time/cancellation and observer. It installs no runtime, HTTP engine or poller.
 V1 commands, generic item definitions and source oracles remain unchanged.
 
+The separate opt-in [metadata-only CopyJob create binding](copyjob-create.md)
+adds one specialized CREATE route. It does not configure or run a copy job and
+does not expand these read descriptors or their definition schema.
+
 ## Scope and native routes
 
 All routes use the caller-selected Fabric endpoint, public-cloud audience

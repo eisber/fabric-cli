@@ -10,6 +10,12 @@ The existing `fabric-cli-mutations::v2_create` parser and
 `fabric-sdk-items::create` planner remain the grammar and policy authorities.
 Default builds and the v1 `create`/`mkdir` alias are unchanged.
 
+The additive `v2-create-sparkjobdefinition` binding mounts
+[empty SparkJobDefinition creation](spark-job-definition-create.md) alongside
+the current Notebook, Report, Warehouse and optional typed owners. It reuses
+this host without changing the shared parser, SDK policy or LRO APIs. Enabling
+this leaf does not make `create --help` exclusive to SparkJobDefinition.
+
 ## Typed binding interface
 
 A native leaf implements `CreateBinding: CreateInputValidator`:
@@ -128,6 +134,11 @@ malformed or mismatched final results in `meta.submission.resource`, outside
 data projection. Those fields are accepted evidence, not completed resources;
 the failed/unknown outcome remains nonzero and never becomes success.
 An unparsed acceptance body is preserved as explicitly labeled base64 evidence.
+Every nonempty actual create/result response uses the same bounded strict JSON
+decoder as retained acceptance evidence. Duplicate keys at any depth, including
+escape-equivalent keys, reject instead of collapsing to a last value. The
+outcome stays unknown/nonzero, exact bounded response bytes remain labeled
+base64 evidence, and prior accepted identity/handles survive independently.
 An unexpected success-class status on an operation result remains an invalid,
 unknown outcome, not a provider-confirmed rejection. The original shared-engine
 typed HTTP error/status is retained independently of the receipt classification.
@@ -149,8 +160,87 @@ bindings, validators, capability evidence, dispatch selection and tests. They
 must not duplicate policy, HTTP, identity, approval or output engines.
 No sibling provider is enabled by this helper alone.
 
+The standalone [Eventhouse binding](eventhouse-create.md) consumes only the five
+authorized generic helper logical diffs, independently of the Notebook leaf.
+Its documented same-name default KQL database and anticipated service-side
+effects require exact typed discovery and explicit approval disclosure; a
+single client POST must not be presented as evidence of no server-created child.
+
 `tests/create_host.rs` exercises the helper with a synthetic typed binding,
 independently of any native Notebook leaf. Native leaves additionally need real
 parser-to-host-to-SDK-to-scripted-HTTP tests and executable boundary tests.
 The impact graph includes an explicit `v2-create` profile so the feature-gated
 helper tests cannot silently count as an empty default target.
+
+The provisional integration smoke's ordinary `headless` build does not enable
+`v2-create` or `runtime-v2`. The Report66 conflict candidate additionally runs
+bounded offline Windows tests, after restoring locked Windows dependency sources,
+for the shared LRO and create policy, Report SDK,
+and the combined `headless,v2-create,runtime-v2` CLI. Combined root help must
+disclose both Report creation and Livy listing; dispatch retains both opt-ins.
+That candidate-only check is not full Report qualification or a replacement for
+the native platform matrix.
+
+The KQL73 integration candidate adds a separate, candidate-branch-only Windows
+check of the same shared LRO/policy/Report SDK targets and the combined
+`headless,v2-kql-database-create,runtime-v2` CLI, including KQL leaf and binary
+tests plus Report and Livy regressions. `v2-kql-database-create` enables the shared
+`v2-create` feature. The already-parsed exact metadata target selects Report or
+KQLDatabase before input I/O; no suffix-only dispatch or fallback binding is used.
+Create help renders each enabled binding's existing selected grammar, and root
+help retains Report, KQL and Livy disclosures. This bounded candidate proof is
+not the full feature/platform qualification.
+
+The released Eventhouse76 integration candidate adds its own bounded Windows
+step, with the original ten-minute bound and locked Windows dependency fetch.
+It exercises Eventhouse wire and executable tests alongside the shared LRO,
+create policy, Report SDK, shared host, Report, KQL and Livy regressions using
+`headless,v2-create-eventhouse,v2-kql-database-create,runtime-v2`.
+The exact parsed metadata target selects the enabled binding before input I/O.
+Combined root help retains every enabled disclosure, including anticipated
+provider-created KQL children and capacity/storage consumption. This is
+provisional candidate evidence, not full Eventhouse or platform qualification.
+The Eventhouse and KQL executable suites retain their disabled-owner refusal
+cases in their respective isolated feature sets. Those cases are conditional
+when the other owner is enabled; lowercase, unsupported-owner and nonmetadata
+refusals remain unconditional. Rejecting a valid enabled owner before input I/O
+would contradict additive dispatch. A separate combined executable suite enables both and checks
+typed schema selection, cross-owner input rejection, local approval fencing
+and help without changing those original expectations.
+
+The PR63 Notebook integration candidate adds a ten-minute, candidate-only
+offline Windows check. It retains the complete Notebook HTTP, shared-host and
+process targets, plus SDK Notebook/Report, shared policy/LRO (including prepared
+wire-view), Report/KQL/Eventhouse and Livy composition targets. Each selected
+target must actually execute nonzero tests without ignored or filtered cases;
+the receipt records actual per-target counts, exits, streams and source hashes.
+The generic headless and post-push smoke profiles remain unchanged.
+
+Notebook now shares the existing `v2-create` opt-in with Report. The executable
+fixtures consequently disclose both mounted owners, test each selected schema,
+and reject unsupported owners and nonmetadata targets before input I/O.
+Earlier Notebook-only/Notebook-disabled assertions are replaced by these
+combined dispatch assertions, not by looser receipt or approval expectations.
+The 65 Notebook HTTP fixtures and protected acceptance/projection assertions
+are unchanged. This bounded proof does not establish full native-platform,
+live-service or release qualification.
+
+The [Warehouse binding](warehouse-create-v2.md) is another `v2-create` consumer.
+Its integration update preserves these producer APIs and registers the typed
+Warehouse schema alongside Notebook and Report, with KQLDatabase and Eventhouse
+remaining separately enabled. Combined executable tests also cover Warehouse
+collation input, cross-owner schema rejection, unsupported-policy admission
+before input I/O and every enabled help disclosure, including the Livy root.
+
+The optional [blank SemanticModel binding](semantic-model-create.md) also uses
+these unchanged shared producers. Exact parsed owner selection and create/root
+help register it additively alongside Notebook, Report, Warehouse and enabled
+KQLDatabase/Eventhouse bindings, including the Livy root. Its metadata-only
+input cannot select another owner's schema or change embedded template bytes.
+
+The optional [CopyJob binding](copyjob-create.md) adds metadata-only empty-item
+creation through `v2-copyjob-create`, without changing these shared producers.
+Exact parsed CopyJob owner selection, root/create help and Livy root help compose
+with all enabled bindings. The combined executable suite retains cross-owner
+schema refusals, rejects nonmetadata targets and unsupported policies before
+input I/O, and verifies that metadata creation is not runnable-job provisioning.

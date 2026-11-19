@@ -3,6 +3,8 @@
 
 //! Standalone consumers exercise only public APIs, not test-only library helpers.
 
+#[path = "consumer/presentation.rs"]
+mod presentation;
 mod support;
 
 use fabric_cli_output::{

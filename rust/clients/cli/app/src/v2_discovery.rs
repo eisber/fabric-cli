@@ -11,8 +11,8 @@
 //!
 //! Bare `schema` means backend data metadata, not operation input or readable
 //! `docs/schema`. Only typed Lakehouse `Tables` paths are admitted in this slice.
-//! Embedders inject [`DataSchemaProvider`]; the standalone binary supplies none
-//! and does not initialize settings, identity, transport or an async runtime.
+//! Embedders inject [`DataSchemaProvider`]; default standalone builds supply none.
+//! Opt-in native hosts initialize identity/transport only for bare data schema.
 //! [`DeltaDataSchemaProvider`] reuses the existing resolver and TABLE SDK.
 
 use clap::{Arg, ArgAction, ArgMatches, Command, error::ErrorKind};
@@ -49,6 +49,7 @@ mod help;
 pub const MAX_DOCUMENT_BYTES: usize = 4 * 1024 * 1024;
 
 const BOUNDARIES: &str = "Discovery preview; no mutation execution; no MCP server; live data host not configured. \
+    Native builds can bind bare schema with explicit native identity configuration; local help never probes that configuration. \
     Operation --schema reads no payload, files, stdin, settings or credentials. \
     A known contract is not resolved identity or permission. Bare schema is backend data metadata, \
     not operation input or docs/schema. Mutation crates remain package dependencies but cannot dispatch in this head.";
@@ -511,7 +512,7 @@ pub enum DiscoveryDocument {
 /// Reusable immutable injected host. Construction has no side effects.
 #[derive(Default)]
 pub struct DiscoveryHost<'a> {
-    /// Absent in the standalone binary. Operation discovery does not consult it.
+    /// Absent in default standalone builds. Operation discovery never consults it.
     pub data_schema: Option<&'a dyn DataSchemaProvider>,
 }
 

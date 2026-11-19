@@ -34,8 +34,14 @@ cargo run --locked -p fabric-cli --features native-read -- deploy --help
 Help, version and local command setup do not authenticate. Default and
 broker-only builds do not install a remote execution host.
 
+The optional `docs-search` feature adds credential-free `search docs` over a
+compile-time documentation snapshot. Set `FAB_DOCS_INDEX` to a finalized bundle
+when building a self-contained executable; without it the feature is engine-only
+and search fails explicitly. See [embedded documentation search](../../../authoring-docs/docs-search.md)
+for corpus preparation, offline attribution, query limits, and benchmarks.
+
 The offline legacy read probes accept only read invocations. Job and Dataflow
-`execute` invocations remain explicit errors in those probes; their dedicated
+`query` invocations remain explicit errors in those probes; their dedicated
 command tests cover execution separately.
 
 In a `native-read` build, `fab-rs auth login` uses the saved selection or opens
@@ -107,9 +113,9 @@ Unicode, and JSON does not require width lookup.
 
 | Feature | Host capability |
 | --- | --- |
-| Default | Arguments, local commands and unconfigured-host diagnostics |
+| Default | Arguments, local commands, offline feedback preview and unconfigured-host diagnostics |
 | `windows-broker` | Explicit experimental Windows login, status and logout |
-| `native-read` | Windows service command host, including reads, jobs, transfers and deployment |
+| `native-read` | Windows service command host, including reads, jobs, transfers, deployment and explicit feedback submission |
 | `headless` | Cross-platform service host with explicitly selected unattended credentials |
 | `repl` | Optional Reedline shell for terminal-only, no-argument invocation |
 | `self-update` | Optional signed-release checking and standalone update host |
@@ -117,6 +123,90 @@ Unicode, and JSON does not require width lookup.
 See [native host configuration](../../../authoring-docs/native-read-host.md) and
 [Windows authentication](../../../README.md#windows-authentication) for selectors,
 platform limits and live-operation requirements.
+
+## OCV feedback preview and submission
+
+`fab-rs feedback` (alias `report`) prepares authenticated OCV feedback. It is
+an additive integration, not a Python command port. The separate `fab-cli`
+binary's manual `report` command is unchanged.
+
+Preview works in every build and never reads identity, navigation or saved
+configuration. Submission requires Windows and `--features native-read`, the
+selected Windows broker account, and explicit `--send`. Other credential modes
+fail explicitly; there is no anonymous or production fallback. Python, Azure
+CLI and raw access-token inputs are not used.
+
+| Environment variable | Meaning |
+| --- | --- |
+| `FAB_RUST_FEEDBACK_ENVIRONMENT` | `ppe` or `prod`. Required for `--send`; offline preview defaults to `prod`. Selects the built-in endpoint, matching token scope and OCV app ID together. Both profiles use the same app ID, `2931`. |
+| `FAB_RUST_FEEDBACK_FEATURE_AREA` | Optional owner-provided routing area, at most 256 UTF-8 bytes. No area is invented when absent. |
+
+Production uses `https://petrol.office.microsoft.com/v1/feedback/authenticated`;
+PPE uses `https://petrol-int.office.microsoft.com/v1/feedback/authenticated`.
+Their respective token scopes are
+`https://petrol.office.microsoft.com/Feedback.ReadWrite` and
+`https://petrol-int.office.microsoft.com/Feedback.ReadWrite`.
+Preauthorization is environment-specific; successful PPE authorization does
+not establish production authorization.
+
+From `rust/`, build the Windows executable and select your work account and the
+first-party client used for the PPE integration:
+
+```powershell
+cargo build --locked -p fabric-cli --features native-read --bin fab-rs
+$fab = (Join-Path ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).target_directory) 'debug\fab-rs.exe')
+$env:FAB_RUST_AUTH_MODE = 'broker'
+$env:FAB_RUST_TENANT = '<tenant-guid>'
+$env:FAB_RUST_ACCOUNT = '<work-account-upn>'
+$env:FAB_RUST_CLIENT_ID = '5814bfb4-2705-4994-b8d6-39aabeb5eaeb'
+$env:FAB_RUST_FEEDBACK_ENVIRONMENT = 'ppe'
+$feedbackArgs = @(
+    'feedback', '--title', '[PPE TEST] Fabric CLI feedback',
+    '--message', 'Synthetic feedback submitted by the native fab-rs command.',
+    '--output_format', 'json'
+)
+& $fab @feedbackArgs           # Offline: inspect the payload and PPE destination.
+& $fab @feedbackArgs --send    # Sends real feedback; run only when intended.
+```
+
+If silent broker access requires interaction, run `auth login --tenant
+<tenant-guid> --account <work-account-upn>` explicitly; feedback never opens a
+sign-in dialog. The environment-bound first-party registration must already
+allow the selected delegated permission.
+
+The title is limited to 256 UTF-8 bytes and the message to 16,384 UTF-8 bytes;
+the complete JSON manifest must fit in 64 KiB after escaping. Content is supplied
+explicitly and shown in preview, including its response-content representation.
+Do not include secrets or sensitive data. The command collects no email,
+attachments, screenshots or device diagnostics. It declares only AAD
+authentication, no email consent requested and no content-sample consent; it
+does not assert tenant-policy approval. Application/tenant owners must establish
+app routing, feedback policy and privacy requirements before broader rollout.
+The only automatic app metadata is the CLI name/version and selected environment.
+
+The CLI automatically generates a random version-4 feedback UUID once per
+invocation and prints it with the result. No ID-generation command is needed.
+`--feedback-id <nonzero-uuid>` remains an optional override for troubleshooting
+or carrying a preview's correlation ID into an explicitly authorized submission.
+Separate preview/send invocations otherwise generate different IDs. This UUID
+is correlation only, not a provider receipt or an idempotency guarantee; retain
+it for reconciliation. The shared OCV routing app ID `2931` is built in, not
+selected by an additional environment variable. The earlier
+`FAB_RUST_FEEDBACK_APP_ID` override is no longer supported. A legacy value of
+`2931` is tolerated for compatibility; any other value produces an explicit
+error with unset guidance, never a silent change of routing.
+PPE HTTP acceptance does not verify downstream routing.
+
+Successful submission writes `delivery: accepted` and the HTTP status to stdout
+with exit 0. This proves ingestion HTTP acceptance only, not downstream display,
+delivery or ADO promotion. `not_sent`, `rejected` and `unknown` write sanitized
+results to stderr with nonzero exit; provider bodies and tokens are never printed.
+A pre-send stderr record preserves correlation if stdout is lost. No POST is
+automatically retried, including on throttling, server errors, lost responses,
+cancellation or timeouts. `unknown` may already have been ingested: reconcile the
+correlation ID before sending again. Cancellation stops local waiting, not remote
+ingestion or outstanding broker cleanup. Explicit `--output_format text` renders
+the same status/correlation and includes the manifest for preview.
 
 ## Bounded Ontology v2 preview
 
@@ -533,14 +623,116 @@ caller's blocking executor. Deferred path selection preserves classification
 order and limits local authority to explicit arguments or trusted local
 configuration documents.
 
+## Native root queries
+
+A single `native-read,v2-query` (Windows) or `headless,v2-query` build combines
+three separate roots without shadowing or fallback between them:
+
+```text
+fab-rs query PATH --text TEXT|--file FILE [--engine ENGINE] [--format json|csv|parquet|xlsx --output FILE]
+fab-rs query /WS.Workspace/DF.Dataflow/queries/NAME [--text M|--file FILE|-] [--parameters FILE|-]
+             [--format json|csv|parquet] [--output FILE] [--timeout DURATION] [--limit ROWS] [--max-bytes BYTES]
+fab-rs get   /WS.Workspace/DF.Dataflow --list-queries [--timeout DURATION] [--max-bytes BYTES] [-q JMESPATH]
+```
+
+`query` covers DataAgent/AIHub (DAX, SQL, KQL datasources), artifact-native
+KQL and Dataflow Power Query. A path segment ending in `.Dataflow` selects the
+Dataflow grammar; every other target keeps the DAX/KQL/SQL grammar. There is no
+`execute` root in the executable; it is reserved for statements with intended
+side effects. Dataflow query discovery is a read under `get`.
+
+The additive Rust feature `v2-query` registers `query_host` over the existing
+root query grammar, with explicit file representations:
+
+```text
+fab-rs query PATH --text TEXT [--engine ENGINE]
+fab-rs query PATH --file FILE|- [--engine ENGINE]
+fab-rs query PATH --text TEXT --format json|csv|parquet --output NEW_FILE
+fab-rs query /WORKSPACE.Workspace/AGENT.DataAgent --text "SELECT 1 AS SyntheticId" --format xlsx --output native.xlsx
+```
+
+`--parameters` remains recognized but the current native providers reject it
+before input or credential I/O because neither exposes a supported native
+parameter schema. No provider, resultset, or language selector is introduced.
+The host binds the exact parsed path to one authoritative target snapshot.
+Supported DataAgent datasource targets select the typed AIHub route by default;
+an explicitly advertised artifact-native KQL engine remains available.
+Bare artifacts do not become fictitious DataAgents, query text never selects
+an engine, and provider failures never cause fallback or replay.
+
+The query command capability calls the real SDKs and retains native declared
+schemas, every dataset, selected datasource/stage, and execution evidence.
+Rich output uses `fabric-sdk-tabular`, not legacy JSON row-object inference.
+Normal presentation can retain multiple datasets; explicit single-file output
+requires exactly one. File format is explicit and independent of the extension.
+See the [capability matrix and integration status](../commands/query/README.md).
+
+Default builds remain unchanged. `fab-rs` needs an existing supported native
+identity profile as well as `v2-query`; `fab-cli-v2` retains its existing headless
+selection. Both reuse their existing credential, HTTP, runtime and configuration
+factories. Native KQL resolves typed database metadata without AIHub settings.
+DataAgent queries additionally require the documented optional non-secret
+`query_connection`, verified datasource and explicit stage. Its endpoint must
+match the selected trusted service origin, exact supported MCP profile path and
+allowed audience before any query token is acquired. No connection is guessed,
+no login is added, and the feature never writes settings.
+
+The native pipeline consumes the actual SDK results through the strict bridge,
+uses normal rich JSON presentation or standard atomic file delivery, and retains
+execution evidence through output failures without replay. The development
+candidate still requires authorized executable/default/native qualification;
+offline source fixtures are not a live-service support claim.
+
+### Workload-native Excel output
+
+`--format xlsx` is supported only on the configured DataAgent/AIHub query route.
+It requires an explicit new `--output FILE`; binary stdout (`-`) and extension
+inference are not supported. XLSX requires the explicit `.DataAgent` owner
+spelling; ID-only `/workspaces/ID/items/ID` targets cannot establish workbook
+capability without I/O and are rejected before setup. Existing typed formats
+retain their ID-only target support. Direct artifact-native KQL rejects XLSX before
+input, metadata or credential dispatch, without rerouting through AIHub.
+`fab-cli-v2 query` inherits the same parser and output behavior.
+
+Excel selects one workload execution **without** the
+`Fabric.Routing.Documents.DataAgent.TypedQueryResults` token, retaining the
+DataAgent, read-policy and configured-stage tokens. JSON, CSV, Parquet and normal
+no-export output continue to require typed JSON. The workload currently replaces
+XLSX with typed JSON rather than returning both; the CLI never executes a second
+query to obtain another representation or claims snapshot equivalence.
+
+The CLI strictly decodes exactly one embedded Excel blob and atomically saves
+the original bytes, including any sensitivity-label or protection content.
+It never fetches the resource URI, regenerates a workbook, unpacks/repackages
+Excel, executes formulas/M, or needs another runtime. Missing attachments
+(including zero-row service output), malformed base64 and multiple workbooks
+fail explicitly; output failure retains the successful native response and
+never authorizes replay. Delivery success means complete attachment bytes, not
+typed row completeness; native XLSX has no typed result ID or truncation marker.
+
+AIHub can return a cached workbook with baked-in native queries and Power Query
+connections. These use **manual refresh**, not guaranteed refresh-on-open.
+Excel refresh requires the opener's own credentials, permissions, connector
+support and any native-query consent. It re-executes the embedded native query,
+not the DataAgent/template pipeline; the cached `max_rows` cap and service
+read-policy guard are not an Excel refresh policy. Source rows may change.
+Workbooks can be data-only when the service lacks connection metadata; the CLI
+reports connectivity as unverified, does not certify labels or refreshability,
+and does not reject a protected workbook merely because it is not ZIP.
+Interactive desktop refresh and exact source-label propagation remain separate
+qualification requirements.
+
 ## Native Dataflow query execution
 
-The additive v2 `execute` root binds an explicit
+`query` on an explicit
 `/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>` target
-with required `--wait`. `--format json|csv|parquet` uses the shared native Arrow
-tabular result component; Parquet requires a new file destination. Optional
-`--input FILE|-` supplies strict JSON for `customMashupDocument` and
-`arrowVersion` (1 or 2), not SQL text.
+evaluates that Power Query and always waits within `--timeout`.
+`--format json|csv|parquet` uses the shared native Arrow tabular result
+component; Parquet requires a new file destination. `--text M` or
+`--file FILE|-` evaluates a raw M expression under the query name. Optional
+`--parameters FILE|-` supplies strict JSON for `customMashupDocument` or
+`mExpression` and `arrowVersion` (1 or 2), not SQL text. `fab-cli-v2 query`
+rejects Dataflow targets as unsupported.
 
 The host requires target/input-bound approval before credentials, performs
 no-clobber output preflight, and preserves real operation evidence on local

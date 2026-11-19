@@ -15,6 +15,13 @@ configured or runnable Spark job. It never submits a job, starts compute or a
 session, configures libraries, uploads a script, transfers OneLake data, or
 discovers a default lakehouse. No live identity or Fabric acceptance is claimed.
 
+The feature adds its binding to the current shared dispatcher; it does not
+replace the Notebook, Report, Warehouse or other enabled create owners.
+Root and create help enumerate all enabled bindings. Historical isolated
+Spark-only help and Notebook-refusal assertions are replaced by additive
+registration checks while retaining unsupported-owner, facet, casing, input
+and policy refusals.
+
 ## Input and provider contract
 
 Input may be omitted. An explicit `--input FILE|-` must be a bounded (4 MiB),

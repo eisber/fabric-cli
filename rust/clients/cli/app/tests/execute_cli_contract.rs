@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-//! Offline executable contracts for the additive root execute command.
+//! Offline executable contracts for Dataflow targets of the root query command.
 #![deny(unnameable_test_items)]
 
 use std::process::{Command, Output};
@@ -22,12 +22,21 @@ fn invoke(args: &[&str]) -> Output {
 }
 
 #[test]
-fn malformed_root_execution_has_no_data_or_identity_diagnostic() {
+fn malformed_dataflow_query_has_no_data_or_identity_diagnostic() {
     for args in [
-        vec!["execute", "sensitive-target", "--wait"],
-        vec!["execute", TARGET, "--wait", "--text", "sensitive-query"],
-        vec!["execute", TARGET, "--wait", "--force"],
-        vec!["execute", TARGET, "--wait", "--input", "-", "--input", "-"],
+        vec!["query", "/sensitive-target.Dataflow"],
+        vec![
+            "query",
+            TARGET,
+            "--text",
+            "sensitive-query",
+            "--file",
+            "m.pq",
+        ],
+        vec!["query", TARGET, "--force"],
+        vec!["query", TARGET, "--wait"],
+        vec!["query", TARGET, "--parameters", "-", "--parameters", "-"],
+        vec!["execute", TARGET, "--wait"],
     ] {
         let output = invoke(&args);
         assert_eq!(output.status.code(), Some(2));
@@ -39,8 +48,8 @@ fn malformed_root_execution_has_no_data_or_identity_diagnostic() {
 }
 
 #[test]
-fn valid_execution_needs_a_host_or_explicit_interactive_approval() {
-    let output = invoke(&["execute", TARGET, "--wait"]);
+fn valid_dataflow_query_needs_a_host_or_explicit_interactive_approval() {
+    let output = invoke(&["query", TARGET]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
@@ -52,20 +61,46 @@ fn valid_execution_needs_a_host_or_explicit_interactive_approval() {
     assert_eq!(error["error"]["code"], "unsupported");
 }
 
+#[test]
+fn explicit_discovery_needs_a_host_but_not_execution_approval_or_stdin() {
+    let item = TARGET.strip_suffix("/queries/Orders").unwrap();
+    let output = invoke(&["get", item, "--list-queries"]);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    #[cfg(not(feature = "native-host"))]
+    assert_eq!(error["error"]["code"], "NotConfigured");
+    #[cfg(all(feature = "native-host", any(windows, feature = "headless")))]
+    assert_eq!(error["error"]["code"], "invalid_configuration");
+    #[cfg(all(feature = "native-host", not(any(windows, feature = "headless"))))]
+    assert_eq!(error["error"]["code"], "unsupported");
+}
+
+#[test]
+fn removed_execute_discovery_and_invalid_get_projection_fail_before_host_setup() {
+    let item = TARGET.strip_suffix("/queries/Orders").unwrap();
+    for args in [
+        vec!["execute", item, "--list-queries"],
+        vec!["query", TARGET, "--list-queries"],
+        vec!["get", item, "--list-queries", "-q", "["],
+    ] {
+        let output = invoke(&args);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_arguments");
+    }
+}
 #[cfg(all(feature = "native-host", any(windows, feature = "headless")))]
 #[test]
 fn invalid_input_file_is_rejected_before_provider_selection() {
-    let output = invoke(&[
-        "execute",
-        TARGET,
-        "--wait",
-        "--input",
-        "nonexistent-execute-input",
-    ]);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
-    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(error["error"]["code"], "invalid_arguments");
+    for source in ["--parameters", "--file"] {
+        let output = invoke(&["query", TARGET, source, "nonexistent-dataflow-input"]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_arguments");
+    }
 }
 
 #[cfg(all(feature = "native-host", any(windows, feature = "headless")))]
@@ -84,12 +119,25 @@ fn malformed_input_and_existing_output_fail_before_approval_or_identity() {
         "{\"customMashupDocument\":null}",
     ] {
         std::fs::write(&input, value).unwrap();
+        let output = invoke(&["query", TARGET, "--parameters", input.to_str().unwrap()]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_arguments");
+    }
+    for (parameters, expression) in [
+        ("{\"mExpression\":\"1\"}", "2"),
+        ("{\"customMashupDocument\":\"section S;\"}", "2"),
+        ("{\"arrowVersion\":1}", "1;\nshared Other = 2"),
+    ] {
+        std::fs::write(&input, parameters).unwrap();
         let output = invoke(&[
-            "execute",
+            "query",
             TARGET,
-            "--wait",
-            "--input",
+            "--parameters",
             input.to_str().unwrap(),
+            "--text",
+            expression,
         ]);
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
@@ -98,13 +146,7 @@ fn malformed_input_and_existing_output_fail_before_approval_or_identity() {
     }
     std::fs::remove_file(input).unwrap();
     std::fs::write(&output_path, b"existing owner").unwrap();
-    let output = invoke(&[
-        "execute",
-        TARGET,
-        "--wait",
-        "--output",
-        output_path.to_str().unwrap(),
-    ]);
+    let output = invoke(&["query", TARGET, "--output", output_path.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();

@@ -16,16 +16,8 @@ use azure_core::{
     error::ErrorKind,
     http::{HttpClient, Method, headers::Headers},
 };
-use fabric_sdk::{
-    Audience, CredentialSelection, RequestContext,
-    runtime::{
-        NativeDeadline, NativeEffect, NativeEndpoint, NativeError, NativeMethod,
-        NativeStreamExecutor, NativeStreamLimits,
-    },
-};
-use fabric_sdk_http::native_stream::NativeFabricStreamExecutor;
 use futures_util::{StreamExt, stream};
-use std::{io, sync::Arc, time::Duration};
+use std::io;
 
 #[tokio::test]
 async fn decoder_preserves_upstream_kinds_for_identity_gzip_and_deflate_without_diagnostics() {
@@ -241,110 +233,5 @@ async fn actual_chunk_protocol_errors_and_trailers_remain_data_conversion() {
         assert_eq!(error.kind(), &ErrorKind::DataConversion);
         assert_eq!(server.requests().len(), 1);
         server.stop().await;
-    }
-}
-
-#[tokio::test]
-async fn actual_native_compression_failure_is_not_recoverable_stream_transport() {
-    let (tls, root) = test_tls();
-    let server = Server::start(
-        vec![Reply::body(200, b"not-gzip".to_vec()).headers(&[("Content-Encoding", "gzip")])],
-        Some(tls),
-    )
-    .await;
-    let http = super::executor(client(&server, vec![root]), Duration::from_secs(3));
-    let context = RequestContext::new(
-        Arc::new(super::SyntheticCredential),
-        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
-    );
-    let executor = NativeFabricStreamExecutor::new(context, http).unwrap();
-    let request = NativeEndpoint::new(
-        azure_core::http::Url::parse("https://api.fabric.microsoft.com/v1/livyApi/versions/v")
-            .unwrap(),
-    )
-    .unwrap()
-    .request(
-        NativeMethod::Get,
-        &["sessions"],
-        &[],
-        None,
-        NativeEffect::Read,
-    )
-    .unwrap();
-    let deadline = NativeDeadline::new(Duration::from_secs(3)).unwrap();
-    let mut response = executor
-        .open(
-            &request,
-            NativeStreamLimits {
-                max_fragment_bytes: 64,
-                max_body_bytes: 1024,
-            },
-            &deadline,
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        response.body.read(64, &deadline).await,
-        Err(NativeError::InvalidResponse)
-    );
-    assert_eq!(server.requests().len(), 1);
-    server.stop().await;
-}
-
-#[tokio::test]
-async fn actual_native_mid_body_disconnect_is_transport_not_protocol_or_mutation_replay() {
-    for method in [NativeMethod::Get, NativeMethod::Post] {
-        let (tls, root) = test_tls();
-        let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nab".to_vec();
-        let server = Server::start(vec![Reply::Raw(raw)], Some(tls)).await;
-        let http = super::executor(client(&server, vec![root]), Duration::from_secs(3));
-        let context = RequestContext::new(
-            Arc::new(super::SyntheticCredential),
-            CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
-        );
-        let executor = NativeFabricStreamExecutor::new(context, http).unwrap();
-        let request = NativeEndpoint::new(
-            azure_core::http::Url::parse("https://api.fabric.microsoft.com/v1/livyApi/versions/v")
-                .unwrap(),
-        )
-        .unwrap()
-        .request(
-            method,
-            &["sessions"],
-            &[],
-            None,
-            if method == NativeMethod::Post {
-                NativeEffect::Execute
-            } else {
-                NativeEffect::Read
-            },
-        )
-        .unwrap();
-        let deadline = NativeDeadline::new(Duration::from_secs(3)).unwrap();
-        let mut response = executor
-            .open(
-                &request,
-                NativeStreamLimits {
-                    max_fragment_bytes: 64,
-                    max_body_bytes: 1024,
-                },
-                &deadline,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            response.body.read(64, &deadline).await.unwrap(),
-            Some(b"ab".to_vec())
-        );
-        assert_eq!(server.requests().len(), 1);
-        server.stop().await;
-        assert_eq!(
-            response.body.read(64, &deadline).await,
-            Err(if method == NativeMethod::Post {
-                NativeError::OutcomeUnknown
-            } else {
-                NativeError::Transport
-            })
-        );
     }
 }

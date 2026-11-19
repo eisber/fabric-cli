@@ -4,10 +4,7 @@
 //! Scripted native-entry dispatch, delivery and executable exit regressions.
 #![deny(unnameable_test_items)]
 
-#[allow(dead_code)]
-#[path = "../../../../tests/compatibility/jobs/support.rs"]
-mod support;
-
+use super::super::v2_test_support as support;
 use super::*;
 use fabric_sdk_jobs::{Audience, CredentialSelection};
 use serde_json::{Value, json};

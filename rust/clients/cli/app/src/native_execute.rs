@@ -1,18 +1,21 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Root execute on the existing explicitly selected native host.
+//! Dataflow `query` on the existing explicitly selected native host.
 
 #[cfg(test)]
 #[path = "native_execute_tests.rs"]
 mod tests;
 
+#[path = "native_execute_diagnostics.rs"]
+mod diagnostics;
+
 use super::{BatchState, CommandOutcome, Failure, NativeCommand, failure, get};
 use fabric_cli::execute::{
-    ExecuteCommand,
+    ExecuteCommand, ExpressionSource,
     host::{
         ApprovedExecution, ExecutionApproval, ExecutionEvidence, ExecutionFailure, FileDestination,
-        PreparationError, PreparedExecution, read_input,
+        PreparationError, PreparedExecution, compose_input, read_input,
     },
 };
 use fabric_cli_output::{OutputStream, RenderPlan, text::TextPlan};
@@ -249,6 +252,31 @@ fn prepare_local(command: &ExecuteCommand) -> Result<PreparedExecution, Failure>
             })?)
         }
     };
+    let expression = match &command.expression {
+        None => None,
+        Some(ExpressionSource::Inline(text)) => Some(text.clone().into_bytes()),
+        Some(ExpressionSource::File(path)) if path == "-" => {
+            Some(read_input(&mut io::stdin().lock()).map_err(|_| {
+                failure(
+                    "invalid_arguments",
+                    "Unable to read the bounded M expression.",
+                    2,
+                )
+            })?)
+        }
+        Some(ExpressionSource::File(path)) => {
+            let mut file = std::fs::File::open(path)
+                .map_err(|_| failure("invalid_arguments", "Unable to open the M file.", 2))?;
+            Some(read_input(&mut file).map_err(|_| {
+                failure(
+                    "invalid_arguments",
+                    "Unable to read the bounded M expression.",
+                    2,
+                )
+            })?)
+        }
+    };
+    let bytes = compose_input(bytes, expression.as_deref()).map_err(preparation_failure)?;
     let prepared =
         PreparedExecution::new(command, bytes.as_deref()).map_err(preparation_failure)?;
     if let Some(path) = &command.output {
@@ -300,7 +328,9 @@ fn diagnostic(
             "mutationMayHaveOccurred": evidence.is_some_and(|value| value.mutation_may_have_occurred),
             "httpStatus": evidence.and_then(|value| value.http_status),
             "remoteCancellationRequested": false,
-            "serviceError": evidence.and_then(|value| value.raw_service_error.as_deref()),
+            "serviceError": evidence
+                .and_then(|value| value.raw_service_error.as_ref())
+                .map(|_| serde_json::json!({ "redacted": true })),
         }
     })).expect("bounded diagnostic values serialize");
     payload.push(b'\n');
@@ -326,10 +356,19 @@ enum Publication {
     Diagnostic(Delivery),
 }
 
-#[derive(Debug)]
 struct WriteFailure {
     error: io::Error,
     evidence: Option<ExecutionEvidence>,
+}
+
+impl std::fmt::Debug for WriteFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WriteFailure")
+            .field("kind", &self.error.kind())
+            .field("evidence", &self.evidence.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 impl std::fmt::Display for WriteFailure {
@@ -361,23 +400,13 @@ impl Delivery {
     }
 
     fn retain_tabular_evidence(mut self, error: &fabric_sdk_tabular::TabularError) -> Self {
-        if let fabric_sdk_tabular::TabularError::Metadata { evidence } = error {
+        if let Some(summary) = diagnostics::metadata_summary(error) {
             let record = &mut self.plan.records[0];
             let mut diagnostic: serde_json::Value =
                 serde_json::from_slice(&record.payload).expect("owned execution diagnostic");
-            diagnostic["metadataEvidence"] = serde_json::Value::Array(
-                evidence
-                    .iter()
-                    .map(|entry| {
-                        serde_json::json!({
-                            "location": format!("{:?}", entry.location),
-                            "classification": format!("{:?}", entry.classification),
-                            "key": entry.key.as_str(),
-                            "value": entry.value.as_str(),
-                        })
-                    })
-                    .collect(),
-            );
+            diagnostic["metadataEvidence"] = summary["entries"].clone();
+            diagnostic["metadataEvidenceCount"] = summary["count"].clone();
+            diagnostic["metadataEvidenceRedacted"] = summary["redacted"].clone();
             record.payload = serde_json::to_vec(&diagnostic).expect("bounded metadata evidence");
             record.payload.push(b'\n');
         }
@@ -629,46 +658,7 @@ pub(super) async fn dispatch(
     let result = match result {
         Ok(result) => result,
         Err(error) => {
-            let (code, message, evidence, exit) = match &error {
-                ExecutionFailure::Query(error) => {
-                    let operation = error.operation_error();
-                    let status = operation.and_then(|error| match &error.kind {
-                        OperationErrorKind::Http { status, .. } => Some(*status),
-                        _ => None,
-                    });
-                    let (code, exit) = match status {
-                        Some(401) => ("Unauthorized", 4),
-                        Some(403) => ("Forbidden", 1),
-                        _ => ("execution_failed", 1),
-                    };
-                    let message = status.map_or_else(
-                        || format!(
-                            "Native Dataflow query failed or is incomplete. Classification: {:?}. No query was replayed.",
-                            error.kind()
-                        ),
-                        |status| format!(
-                            "Native Dataflow query was rejected with HTTP {status}. No query was replayed."
-                        ),
-                    );
-                    (code, message, operation.map(ExecutionEvidence::from), exit)
-                }
-                ExecutionFailure::Result {
-                    error, evidence, ..
-                } => (
-                    "execution_failed",
-                    format!(
-                        "The complete Dataflow result could not be decoded or serialized: {error}. No query was replayed."
-                    ),
-                    Some(ExecutionEvidence::from(evidence.as_ref())),
-                    1,
-                ),
-            };
-            let mut delivery = Delivery::failed(code, &message, evidence, exit);
-            if let ExecutionFailure::Result { error, .. } = &error {
-                delivery = delivery.retain_tabular_evidence(error);
-                delivery.outcome = CommandOutcome::Stop(delivery.plan.exit_code);
-            }
-            return Ok(get::Delivery::execution(delivery));
+            return Ok(get::Delivery::execution(diagnostics::failure(&error)));
         }
     };
     if Instant::now() >= deadline {

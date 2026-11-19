@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in native v2 ReadWrite KQLDatabase creation with an explicit existing Eventhouse GUID, strict native JSON, immediate approval, shared operation evidence, and no implicit parent creation or Shortcut/query/ingestion support.
+time: 2026-11-12T14:00:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

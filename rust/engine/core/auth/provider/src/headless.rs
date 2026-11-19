@@ -518,6 +518,7 @@ impl TokenCredential for HeadlessCredential {
                 | ["https://storage.azure.com/.default"]
                 | ["https://management.azure.com/.default"]
                 | ["https://database.windows.net/.default"]
+                | [crate::PUBLIC_KUSTO_SCOPE]
         ) {
             return Err(credential_error(HeadlessError::Scope));
         }
@@ -600,6 +601,7 @@ impl HttpClient for CredentialHttp {
                                 "https://api.fabric.microsoft.com"
                                     | "https://storage.azure.com"
                                     | "https://management.azure.com"
+                                    | "https://api.kusto.windows.net"
                             )
                     })
                     .count()

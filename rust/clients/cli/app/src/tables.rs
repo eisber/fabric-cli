@@ -10,7 +10,7 @@ use crate::{
     session::ReadSession,
 };
 use azure_core::http::Method;
-use fabric_cli_context::{NodeKind, PathInput, PathKind, ResolveOptions};
+use fabric_cli_context::{NodeKind, OneLakeKind, PathInput, PathKind, ResolveOptions};
 use fabric_cli_output::{
     CommandError, OutputEnvelope, OutputStream, RenderPlan,
     text::{self, OutputFormat, Presentation, TextError, TextOptions, TextPlan},
@@ -86,24 +86,7 @@ impl TableSession<'_, '_> {
         let warnings = Warnings::default();
         let mut diagnostics = Vec::new();
         let result = async {
-            if self.reads.tenant.id() != Some(self.reads.sdk.selection().tenant())
-                || self.reads.tenant.kind() != NodeKind::Tenant
-                || self.reads.sdk.selection().audience() != fabric_sdk::Audience::Fabric
-                || !self.reads.current_path.starts_with('/')
-            {
-                return Err(errors::error("InvalidInput", "Invalid selected read context").into());
-            }
-            let storage_selection = fabric_sdk::CredentialSelection::new(
-                self.reads.sdk.selection().account(),
-                self.reads.sdk.selection().tenant(),
-                fabric_sdk::Audience::OneLake,
-            )
-            .map_err(|_| errors::error("InvalidInput", "Invalid selected storage context"))?;
-            let sdk = TableClient::new(
-                self.reads.sdk.credential().clone(),
-                self.reads.sdk.selection(),
-                &storage_selection,
-            )?;
+            let sdk = table_client(self.reads)?;
             let raw = StorageHttp(self.http);
             let completion = FabricLoadCompletion {
                 http: self.http,
@@ -145,11 +128,7 @@ impl TableSession<'_, '_> {
                     != Some("false"),
                 operations: Some(&operations),
             };
-            let resolver = Targets {
-                reads: self.reads,
-                http: self.http,
-                context: tokio::sync::Mutex::new(CommandContext::default()),
-            };
+            let resolver = Targets::new(self.reads, self.http);
             TableHost {
                 sdk: &sdk,
                 executor: &executor,
@@ -255,10 +234,51 @@ impl TableSession<'_, '_> {
     }
 }
 
-struct Targets<'a, 'session> {
+pub(crate) fn table_client(reads: &ReadSession<'_>) -> Result<TableClient, TableFailure> {
+    if reads.tenant.id() != Some(reads.sdk.selection().tenant())
+        || reads.tenant.kind() != NodeKind::Tenant
+        || reads.sdk.selection().audience() != fabric_sdk::Audience::Fabric
+        || !reads.current_path.starts_with('/')
+    {
+        return Err(errors::error("InvalidInput", "Invalid selected read context").into());
+    }
+    let storage_selection = fabric_sdk::CredentialSelection::new(
+        reads.sdk.selection().account(),
+        reads.sdk.selection().tenant(),
+        fabric_sdk::Audience::OneLake,
+    )
+    .map_err(|_| errors::error("InvalidInput", "Invalid selected storage context"))?;
+    Ok(TableClient::new(
+        reads.sdk.credential().clone(),
+        reads.sdk.selection(),
+        &storage_selection,
+    )?)
+}
+
+pub(crate) struct Targets<'a, 'session> {
     reads: &'a ReadSession<'session>,
     http: &'a HttpExecutor,
     context: tokio::sync::Mutex<CommandContext>,
+    physical_only: bool,
+}
+
+impl<'a, 'session> Targets<'a, 'session> {
+    fn new(reads: &'a ReadSession<'session>, http: &'a HttpExecutor) -> Self {
+        Self {
+            reads,
+            http,
+            context: tokio::sync::Mutex::new(CommandContext::default()),
+            physical_only: false,
+        }
+    }
+
+    #[cfg(feature = "v2-discovery")]
+    pub(crate) fn physical(reads: &'a ReadSession<'session>, http: &'a HttpExecutor) -> Self {
+        Self {
+            physical_only: true,
+            ..Self::new(reads, http)
+        }
+    }
 }
 
 impl TableResolver for Targets<'_, '_> {
@@ -298,6 +318,19 @@ impl TableResolver for Targets<'_, '_> {
                 return Err(errors::error(
                     "InvalidPath",
                     "TABLE requires a resolved OneLake path",
+                ));
+            }
+            // local_path() omits shortcut classification, so retain it here.
+            if self.physical_only
+                && (element.is_shortcut_path()
+                    || !matches!(
+                        element.kind(),
+                        PathKind::OneLake(OneLakeKind::Table | OneLakeKind::Folder)
+                    ))
+            {
+                return Err(errors::error(
+                    "NotSupported",
+                    "Data schema requires a physical OneLake table",
                 ));
             }
             let mut parent = element.parent();

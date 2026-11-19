@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add an opt-in native v2 blank SemanticModel create binding using the existing five-part embedded template, strict metadata input, and shared create policy and operation handling. This does not enable arbitrary definitions, connection binding, refresh, or live provisioning qualification.
+time: 2026-11-12T13:22:30Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
