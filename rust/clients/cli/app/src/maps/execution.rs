@@ -223,17 +223,10 @@ pub fn offline_fixture(
 /// timeout bounds token acquisition, discovery, issuance and body streaming.
 pub async fn execute(
     request: &PreparedRequest,
-    experimental_private_contract: bool,
     timeout: Duration,
     credential: Arc<dyn TokenCredential>,
     http: Arc<dyn HttpClient>,
 ) -> Result<ProcessingResult, Failure> {
-    if !experimental_private_contract {
-        return Err(Failure::new(
-            "PrivateContractOptInRequired",
-            "Maps uses a private report-oriented Shared SAS contract. Supply --experimental-private-contract only with applicable admission and entitlement; this does not qualify public Fabric v1 support.",
-        ));
-    }
     if timeout.is_zero() || timeout > Duration::from_secs(120) {
         return Err(Failure::new(
             "InvalidInput",

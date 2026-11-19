@@ -10,15 +10,6 @@ use serde_json::json;
 use std::io::{self, Read, Write};
 
 pub(crate) fn run(command: &MapsCommand) -> io::Result<u8> {
-    if command.offline_fixture.is_none() && !command.experimental_private_contract {
-        return failed(
-            Failure::new(
-                "PrivateContractOptInRequired",
-                "Maps is disabled by default. Online processing requires --experimental-private-contract and applicable private Shared client admission/entitlement; no credential or network access occurred.",
-            ),
-            2,
-        );
-    }
     let mut sink = FileSink::default();
     if let Some(export) = &command.export
         && sink.preflight(export).is_err()
@@ -193,7 +184,7 @@ fn online(command: &MapsCommand) -> Result<ProcessingResult, Failure> {
             .map_err(|_| Failure::new("TimedOut", "Maps native identity deadline elapsed; no provider processing was sent."))?
             .map_err(|_| Failure::new("IdentityUnavailable", "The existing native broker session could not connect silently; no interactive login or identity fallback was attempted."))?;
         fabric_cli::maps::execution::execute(
-            &command.request, command.experimental_private_contract, remaining()?, credential, http,
+            &command.request, remaining()?, credential, http,
         ).await
     });
     crate::native_read::finish_runtime(runtime, result)

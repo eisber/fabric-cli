@@ -20,31 +20,21 @@ fn run(args: &[&str]) -> Output {
 }
 
 #[test]
-fn native_help_version_invalidinput_and_defaultoff_do_not_require_identity() {
+fn native_help_and_invalid_input_are_offline_and_online_processing_needs_no_opt_in() {
     assert!(run(&["--version"]).status.success());
     let help = run(&["item", "maps", "--help"]);
     assert!(help.status.success());
-    assert!(
-        String::from_utf8(help.stdout)
-            .unwrap()
-            .contains("dailyhistoricalweather")
-    );
-    let invalid = run(&[
-        "item",
-        "maps",
-        "current",
-        "--coordinates",
-        "NaN,40",
-        "--experimental-private-contract",
-    ]);
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("dailyhistoricalweather"));
+    assert!(help.contains("private Shared"));
+    assert!(!help.contains("--experimental-private-contract"));
+    let invalid = run(&["item", "maps", "current", "--coordinates", "NaN,40"]);
     assert_eq!(invalid.status.code(), Some(2));
-    let blocked = run(&["item", "maps", "current", "--coordinates", "0,0"]);
-    assert_eq!(blocked.status.code(), Some(2));
-    assert!(
-        String::from_utf8(blocked.stderr)
-            .unwrap()
-            .contains("PrivateContractOptInRequired")
-    );
+    let online = run(&["item", "maps", "current", "--coordinates", "0,0"]);
+    assert_eq!(online.status.code(), Some(1));
+    let error: Value = serde_json::from_slice(&online.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "UnsupportedIdentity");
+    assert!(online.stdout.is_empty());
 }
 
 #[test]
@@ -104,14 +94,7 @@ fn actual_native_geocode_and_weather_fixture_flows_preserve_data_and_export() {
 #[test]
 fn unsupported_headless_mode_is_rejected_before_secret_configuration_capture() {
     let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
-        .args([
-            "item",
-            "maps",
-            "current",
-            "--coordinates",
-            "0,0",
-            "--experimental-private-contract",
-        ])
+        .args(["item", "maps", "current", "--coordinates", "0,0"])
         .env("FAB_RUST_AUTH_MODE", "client-secret")
         .env_remove("FAB_RUST_CLIENT_SECRET")
         .env_remove("AZURE_TENANT_ID")

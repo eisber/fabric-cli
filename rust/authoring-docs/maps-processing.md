@@ -2,7 +2,8 @@
 
 # Experimental Maps processing
 
-The default-off `maps` feature adds native `fab-rs item maps` processing commands.
+The optional `maps` Cargo feature adds native `fab-rs item maps` processing commands.
+In a Maps-enabled build, processing is enabled without an experimental opt-in flag.
 It does not build tilesets, render saved Map items, generate PNG files, modify a
 Map item, or add GeoIntel processing endpoints.
 
@@ -14,23 +15,23 @@ unqualified. Offline tests do not establish any of these.
 ## Commands
 
 Build the native executable with `--features maps,native-read,headless`. The
-`maps` Cargo feature does not enable processing by itself. Each online invocation
-also requires `--experimental-private-contract`, an existing native broker user
-identity, and applicable admission and entitlement. No command starts login,
+`maps` Cargo feature enables the processing commands without a per-invocation
+opt-in flag. Each online invocation still requires an existing native broker user
+identity and applicable admission and entitlement. No command starts login,
 opens a browser, impersonates Azure CLI, reads its credential cache, or falls
 back to another identity or endpoint.
 
 ```powershell
 fab-rs item --help
 fab-rs item maps --help
-fab-rs item maps geocode --address "1000 Fifth Avenue, New York, NY" --top 5 --experimental-private-contract
-fab-rs item maps geocode --address-line "1000 5th Ave" --locality "New York" --admin-district NY --postal-code 10028 --country-region US --experimental-private-contract
-fab-rs item maps reverse --coordinates "-73.9632,40.7794" --experimental-private-contract
-fab-rs item maps current --coordinates "-73.9632,40.7794" --units metric --details --experimental-private-contract
-fab-rs item maps dailyforecast --coordinates "-73.9632,40.7794" --duration 1 --experimental-private-contract
-fab-rs item maps dailyhistoricalweather --coordinates "-73.9632,40.7794" --start-date 2026-11-13 --end-date 2026-11-13 --experimental-private-contract
-fab-rs item maps directions --point "-73.9632,40.7794" --point "-73.959,40.783" --mode driving --traffic none --experimental-private-contract
-fab-rs item maps matrix --origin "-73.9632,40.7794" --destination "-73.959,40.783" --mode driving --traffic historical --depart-at any --experimental-private-contract
+fab-rs item maps geocode --address "1000 Fifth Avenue, New York, NY" --top 5
+fab-rs item maps geocode --address-line "1000 5th Ave" --locality "New York" --admin-district NY --postal-code 10028 --country-region US
+fab-rs item maps reverse --coordinates "-73.9632,40.7794"
+fab-rs item maps current --coordinates "-73.9632,40.7794" --units metric --details
+fab-rs item maps dailyforecast --coordinates "-73.9632,40.7794" --duration 1
+fab-rs item maps dailyhistoricalweather --coordinates "-73.9632,40.7794" --start-date 2026-11-13 --end-date 2026-11-13
+fab-rs item maps directions --point "-73.9632,40.7794" --point "-73.959,40.783" --mode driving --traffic none
+fab-rs item maps matrix --origin "-73.9632,40.7794" --destination "-73.959,40.783" --mode driving --traffic historical --depart-at any
 ```
 
 There is no top-level `maps` alias. Root help lists `item`; `item --help`
@@ -124,8 +125,8 @@ Every expected matrix pair has explicit zero-based indices and a status.
 Missing pairs have a null status, failed pairs retain their provider status,
 and either makes the command fail with exit 3 while retaining the partial data.
 Duplicate or out-of-range indices and malformed successful cells are invalid
-responses, not successful empty matrices. Exit 2 indicates invalid input or
-missing opt-in; identity/provider errors are nonzero, with 401/403 mapped to 4.
+responses, not successful empty matrices. Exit 2 indicates invalid input;
+identity/provider errors are nonzero, with 401/403 mapped to 4.
 POST timeout or transport failure includes uncertainty evidence and never
 triggers replay.
 

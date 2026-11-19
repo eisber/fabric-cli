@@ -183,8 +183,7 @@ fn nested_operations_preserve_the_existing_provider_requests_and_options() {
                 "text",
             ]
             .into_iter()
-            .chain(args.iter().copied())
-            .chain(["--experimental-private-contract"]),
+            .chain(args.iter().copied()),
         )
         .unwrap();
         let Invocation::Maps(actual) = invocation else {
@@ -197,8 +196,23 @@ fn nested_operations_preserve_the_existing_provider_requests_and_options() {
         assert_eq!(actual.request.context(), expected.request.context());
         assert_eq!(actual.timeout, Duration::from_secs(45));
         assert_eq!(actual.output_format, "text");
-        assert!(actual.experimental_private_contract);
     }
+}
+
+#[test]
+fn removed_private_contract_flag_is_not_accepted() {
+    let error = parse(
+        [
+            "current",
+            "--coordinates",
+            "0,0",
+            "--experimental-private-contract",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
 }
 
 #[test]
@@ -229,8 +243,11 @@ fn nested_parser_preserves_budgets_and_existing_root_commands() {
         "--address",
         "synthetic",
     ];
-    args.extend(std::iter::repeat_n("--experimental-private-contract", 301));
-    assert!(parse_args(args).is_err());
+    args.extend(std::iter::repeat_n("--timeout", 301));
+    assert_eq!(
+        parse_args(args).unwrap_err().kind(),
+        clap::error::ErrorKind::ValueValidation
+    );
     assert!(
         parse_args([
             "fab-rs",
@@ -288,14 +305,7 @@ async fn run(
     credential: Arc<Credential>,
     wire: Arc<Wire>,
 ) -> Result<ProcessingResult, execution::Failure> {
-    execution::execute(
-        &command.request,
-        true,
-        Duration::from_secs(2),
-        credential,
-        wire,
-    )
-    .await
+    execution::execute(&command.request, Duration::from_secs(2), credential, wire).await
 }
 
 #[test]
@@ -326,8 +336,11 @@ fn global_options_between_item_and_maps_cannot_bypass_input_budgets() {
         "--coordinates",
         "0,0",
     ];
-    args.extend(std::iter::repeat_n("--experimental-private-contract", 301));
-    assert!(parse_args(args).is_err());
+    args.extend(std::iter::repeat_n("--timeout", 301));
+    assert_eq!(
+        parse_args(args).unwrap_err().kind(),
+        clap::error::ErrorKind::ValueValidation
+    );
 }
 
 #[test]
@@ -425,23 +438,19 @@ fn all_options_validate_before_any_host_or_transport_effects() {
 }
 
 #[tokio::test]
-async fn opt_in_and_expiry_fail_before_network() {
+async fn invalid_deadlines_and_expiry_fail_before_network() {
     let c = command(&["current", "--coordinates", "0,0"]);
     let credential = credential();
     let wire = wire(response(200, synthetic_weather()));
-    assert_eq!(
-        execution::execute(
-            &c.request,
-            false,
-            c.timeout,
-            credential.clone(),
-            wire.clone()
-        )
-        .await
-        .unwrap_err()
-        .code,
-        "PrivateContractOptInRequired"
-    );
+    for timeout in [Duration::ZERO, Duration::from_secs(121)] {
+        assert_eq!(
+            execution::execute(&c.request, timeout, credential.clone(), wire.clone())
+                .await
+                .unwrap_err()
+                .code,
+            "InvalidInput"
+        );
+    }
     assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
     assert!(wire.observed.lock().unwrap().is_empty());
     let expired = Arc::new(Credential {
@@ -571,7 +580,6 @@ async fn total_deadline_retains_post_uncertainty_and_no_replay() {
     });
     let error = execution::execute(
         &c.request,
-        true,
         Duration::from_millis(10),
         credential(),
         wire.clone(),

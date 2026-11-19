@@ -10,8 +10,6 @@ use std::{ffi::OsString, path::PathBuf, time::Duration};
 pub struct MapsCommand {
     /// Complete validated provider request.
     pub request: PreparedRequest,
-    /// Per-invocation explicit private-contract consent.
-    pub experimental_private_contract: bool,
     /// One absolute budget covering acquisition, discovery, issuance and processing.
     pub timeout: Duration,
     /// Optional local synthetic provider-payload replay; never acquires credentials.
@@ -72,9 +70,8 @@ fn route(command: Command, matrix: bool) -> Command {
 pub fn maps_command() -> Command {
     Command::new("maps")
         .about("Experimental Maps processing; private Shared SAS contract, not public Fabric v1")
-        .after_help("Online execution requires --experimental-private-contract and an existing native broker identity. App-only/device-code admission, entitlement, billing and redistribution terms are unqualified. --offline-fixture reads synthetic local JSON only; it is not native/live qualification. No tileset, saved Map renderer or PNG support.")
+        .after_help("Online execution requires an existing native broker identity and applicable private Shared client admission and entitlement; no experimental opt-in flag is required. App-only/device-code admission, billing and redistribution terms are unqualified. --offline-fixture reads synthetic local JSON only; it is not native/live qualification. No tileset, saved Map renderer or PNG support.")
         .subcommand_required(true)
-        .arg(Arg::new("experimental-private-contract").long("experimental-private-contract").global(true).action(ArgAction::SetTrue))
         .arg(option("timeout").global(true).default_value("60").help("Total deadline in seconds, 1..=120"))
         .arg(option("offline-fixture").global(true).help("Offline-only synthetic provider JSON; never contacts any service"))
         .arg(option("query").global(true).help("Bounded JMESPath field/index/wildcard path only; no functions, filters, pipes or constructors"))
@@ -246,7 +243,6 @@ pub(crate) fn from_matches(matches: &ArgMatches) -> Result<MapsCommand, clap::Er
         timeout: Duration::from_secs(seconds),
         query,
         export,
-        experimental_private_contract: matches.get_flag("experimental-private-contract"),
         offline_fixture: matches
             .get_one::<String>("offline-fixture")
             .map(PathBuf::from),

@@ -69,7 +69,7 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
-    /// Opt-in Maps processing under the item command group.
+    /// Maps processing under the item command group.
     #[cfg(feature = "maps")]
     Maps(Box<crate::maps::MapsCommand>),
     /// OCV feedback preview or explicitly authorized submission.
