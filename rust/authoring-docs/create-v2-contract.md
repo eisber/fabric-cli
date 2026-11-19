@@ -236,6 +236,13 @@ contract. It does not establish a general-purpose JSON Schema validation
 capability or automatic validation of every JSON body. Valid JSON syntax alone
 is not evidence that a body satisfies the resource contract.
 
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
 The CLI library contract composes those inputs without establishing an
 executable mount. A root parser registration, service-host adapter, and
 resource-specific backend evidence are separate integration requirements.
@@ -312,7 +319,7 @@ continues to document its existing handlers separately.
 | Default/v1 executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | `fabric-sdk-items::create` remains the single offline policy and outcome-verification authority. |
 | CLI library and parsing | `fabric-cli-mutations::v2_create` owns the existing root grammar. |
-| Executable integration | Separate `fab-cli-v2` mounts Notebook and Report with `headless,v2-create`; KQLDatabase and Eventhouse have additional opt-ins. Default feature behavior is unchanged. |
+| Executable integration | Separate `fab-cli-v2` mounts Notebook, Report and [Warehouse](warehouse-create-v2.md) with `headless,v2-create`; KQLDatabase and Eventhouse have additional opt-ins. Default feature behavior is unchanged. |
 | Resource backend | Bounded typed bindings admit only their documented schemas and error/skip policies; no universal policy support claim. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 

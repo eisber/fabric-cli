@@ -67,6 +67,53 @@ fn main() -> std::process::ExitCode {
             &mut io::stderr().lock(),
         ));
     }
+    #[cfg(feature = "docs-search")]
+    if args.first().is_some_and(|value| value == "item")
+        || args.first().is_some_and(|value| value == "get")
+            && fabric_cli::docs_browse::selects_docs_get(&args)
+    {
+        let parsed = if args.first().is_some_and(|value| value == "item") {
+            fabric_cli::docs_browse::parse_item(args)
+        } else {
+            fabric_cli::docs_browse::parse_get(args)
+        };
+        let exit = match parsed {
+            Ok(command) => fabric_cli::docs_browse::write(&command,
+                &mut io::stdout().lock(), &mut io::stderr().lock()),
+            Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
+                write!(io::stdout().lock(), "{error}").map(|()|0)
+            }
+            Err(_) => {
+                writeln!(io::stderr().lock(), "{}", json!({"error":{"code":"invalid_arguments",
+                    "message":"Invalid local documentation arguments. Run fab-cli-v2 search docs --help."}})).map(|()|2)
+            }
+        };
+        return std::process::ExitCode::from(match exit {
+            Ok(exit) => exit,
+            Err(_) => finish(
+                Err(failed("OutputFailed", "Documentation output failed.", 1)),
+                &mut io::stderr().lock(),
+            ),
+        });
+    }
+    #[cfg(feature = "docs-search")]
+    if args.first().is_some_and(|value| value == "search")
+        && args.get(1).is_some_and(|value| value == "docs")
+    {
+        let result = fabric_cli::docs_search::run_args(
+            args,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        );
+        let exit = match result {
+            Ok(exit) => exit,
+            Err(_) => finish(
+                Err(failed("OutputFailed", "Docs search output failed.", 1)),
+                &mut io::stderr().lock(),
+            ),
+        };
+        return std::process::ExitCode::from(exit);
+    }
     #[cfg(feature = "runtime-v2")]
     {
         let root_help = args.as_slice() == [std::ffi::OsStr::new("--help")];
@@ -143,11 +190,17 @@ const QUERY_HELP: &str = "Opt-in typed native query:\n  fab-cli-v2 query PATH --
 
 const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 artifact data-agent list <datasource-collection> --stage draft|published [OPTIONS]\n       fab-cli-v2 link <explicit-data-agent-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 artifact data-agent link <explicit-staging-datasources-path> --input FILE|- [--wait]\n       fab-cli-v2 update <path> --input FILE|- --mode patch [--plan]\n\nRun a command with --help for its supported schema.\nUpdate plans are local; Notebook execution requires explicit terminal approval.\nDataAgent links require explicit native identity and interactive effect approval.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.";
 
+#[cfg(feature = "docs-search")]
+const DOCS_HELP: &str = "Offline exception: fab-cli-v2 search docs --text QUERY, get docs/<article-path>, and item lakehouse docs use only the embedded documentation snapshot and require no identity.";
+
 #[cfg(feature = "v2-create")]
 const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
 
 #[cfg(feature = "v2-create")]
 const NOTEBOOK_CREATE_HELP: &str = "Opt-in native Notebook creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Notebook [OPTIONS]\nPolicies: error and skip. Run create --help. Explicit terminal approval required.";
+
+#[cfg(feature = "v2-create")]
+const WAREHOUSE_CREATE_HELP: &str = "Opt-in create: fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Warehouse [OPTIONS]\nWarehouse JSON: optional displayName (exact target), description (at most 256 characters), creationPayload.collationType (Latin1_General_100_BIN2_UTF8 by default or Latin1_General_100_CI_AS_KS_WS_SC_UTF8).\nOnly native error/skip policies; explicit terminal approval. No SQL, definitions or child provisioning.";
 
 #[cfg(feature = "v2-kql-database-create")]
 const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<name>.KQLDatabase --input FILE|-\nReadWrite only; creationPayload requires an existing parentEventhouseItemId GUID.\nNo implicit Eventhouse creation, Shortcut, definition, query or ingestion.";
@@ -227,11 +280,17 @@ fn run() -> Result<(), Failure> {
         #[cfg(feature = "v2-create")]
         writeln!(io::stdout().lock(), "\n{NOTEBOOK_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create")]
+        writeln!(io::stdout().lock(), "\n{WAREHOUSE_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-kql-database-create")]
         writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-create-eventhouse")]
         writeln!(io::stdout().lock(), "\n{EVENTHOUSE_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "docs-search")]
+        writeln!(io::stdout().lock(), "\n{DOCS_HELP}")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-link-kql")]
         writeln!(io::stdout().lock(), "\n{KQL_LINK_HELP}")

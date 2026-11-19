@@ -28,6 +28,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             let bindings: &[&dyn CreateBinding] = &[
                 &fabric_cli::v2_create_report::ReportCreateBinding,
                 &fabric_cli::create_notebook::NotebookBinding,
+                &fabric_cli::warehouse_create::WarehouseCreateBinding,
                 #[cfg(feature = "v2-kql-database-create")]
                 &fabric_cli::kql_database_create::KqlReadWriteCreate,
                 #[cfg(feature = "v2-create-eventhouse")]
@@ -156,6 +157,7 @@ fn selected_binding(destination: &OsStr) -> Result<&'static dyn CreateBinding, C
     match owner.as_str() {
         "Report" => Ok(&fabric_cli::v2_create_report::ReportCreateBinding),
         "Notebook" => Ok(&fabric_cli::create_notebook::NotebookBinding),
+        "Warehouse" => Ok(&fabric_cli::warehouse_create::WarehouseCreateBinding),
         #[cfg(feature = "v2-kql-database-create")]
         "KQLDatabase" => Ok(&fabric_cli::kql_database_create::KqlReadWriteCreate),
         #[cfg(feature = "v2-create-eventhouse")]

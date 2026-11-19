@@ -1,0 +1,108 @@
+{
+  "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "description": "Offline corpus-grounded domain probes, NOT observed user traffic or a relevance training set. Expectations are source-based and must not be derived from retrieved results.",
+  "schema": "Each case has a unique id, query text (Tantivy Boolean/phrase syntax), limit 1..50, optional exact workload (null or lower-hyphen directory), fuzzy 0..2, grounding, and expected. Expected kind source_path means at least one of the returned top-limit sections has exactly value; source_prefix means at least one source_path starts with value; no_hits requires an empty result set and value null. Source paths must be safe docs-relative paths with exactly .md, .yml or .yaml extensions, including indexed Landing/Hub pages. A false judgment is retained and causes a nonzero benchmark exit. Counts describe returned sections, not distinct articles. Schema 1 permits 1..32 cases, at most 2048 UTF-8 bytes per query, and no credentials, network or custom executable arguments.",
+  "source_commit": "3ae7afc73169ac57b874d5aee09217bb35a4f8fc",
+  "cases": [
+    {
+      "id": "onelake-shortcuts",
+      "text": "OneLake shortcuts",
+      "limit": 10,
+      "workload": null,
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/onelake/onelake-shortcuts.md"},
+      "grounding": "The pinned OneLake shortcuts overview describes shortcuts in OneLake."
+    },
+    {
+      "id": "workspace-identity-phrase",
+      "text": "\"workspace identity\"",
+      "limit": 10,
+      "workload": "security",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/security/workspace-identity.md"},
+      "grounding": "The pinned security article is titled Workspace identity."
+    },
+    {
+      "id": "v-order",
+      "text": "V-Order",
+      "limit": 10,
+      "workload": "data-engineering",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/data-engineering/delta-optimization-and-v-order.md"},
+      "grounding": "The pinned Delta optimization article documents V-Order."
+    },
+    {
+      "id": "optimize",
+      "text": "OPTIMIZE",
+      "limit": 10,
+      "workload": "data-engineering",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/data-engineering/delta-optimization-and-v-order.md"},
+      "grounding": "The pinned Delta optimization article contains OPTIMIZE examples."
+    },
+    {
+      "id": "boolean-group",
+      "text": "(\"V-Order\" OR OPTIMIZE) AND Delta",
+      "limit": 10,
+      "workload": "data-engineering",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/data-engineering/delta-optimization-and-v-order.md"},
+      "grounding": "The same Delta article supplies these Boolean alternatives; this is a section-level retrieval expectation, not a rank-one assertion."
+    },
+    {
+      "id": "phrase-proximity",
+      "text": "\"workspace identity\"~2",
+      "limit": 10,
+      "workload": "security",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/security/workspace-identity.md"},
+      "grounding": "The workspace identity phrase in the pinned security article also satisfies a two-position proximity query."
+    },
+    {
+      "id": "scoped-heading",
+      "text": "title:\"workspace identity\"",
+      "limit": 10,
+      "workload": "security",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/security/workspace-identity.md"},
+      "grounding": "The source article title grounds the explicit title field scope."
+    },
+    {
+      "id": "fuzzy-onlake",
+      "text": "onlake",
+      "limit": 10,
+      "workload": "onelake",
+      "fuzzy": 1,
+      "expected": {"kind": "source_prefix", "value": "docs/onelake/"},
+      "grounding": "OneLake is the source workload term; the intentional one-character deletion does not predict a particular article."
+    },
+    {
+      "id": "code-dotted-identifier",
+      "text": "identifiers:spark.sql.parquet.vorder.default",
+      "limit": 10,
+      "workload": "data-engineering",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/data-engineering/delta-optimization-and-v-order.md"},
+      "grounding": "The pinned Delta optimization article documents the exact Spark configuration key spark.sql.parquet.vorder.default."
+    },
+    {
+      "id": "identity-permissions-firewall",
+      "text": "\"workspace identity\" AND (permissions OR firewall OR trusted)",
+      "limit": 10,
+      "workload": "security",
+      "fuzzy": 0,
+      "expected": {"kind": "source_path", "value": "docs/security/workspace-identity.md"},
+      "grounding": "The pinned identity article discusses permissions and trusted access/firewall scenarios. OR avoids assuming all terms occur in one indexed section."
+    },
+    {
+      "id": "no-hit-sentinel",
+      "text": "zzfabricdocsnohit3ae7afc73169ac57b874d5aee09217bb35a4f8fczz",
+      "limit": 10,
+      "workload": null,
+      "fuzzy": 0,
+      "expected": {"kind": "no_hits", "value": null},
+      "grounding": "Deliberately invented exact token, not a corpus/domain relevance claim. Any hit must fail this negative control."
+    }
+  ]
+}

@@ -1512,6 +1512,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create', 'warehouse_create_wire', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-kql-database-create', 'kql_database_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create-eventhouse', 'eventhouse_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_v2', 'rust/clients/cli/app/Cargo.toml'],
@@ -1538,6 +1539,29 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
   }
+});
+
+test('Warehouse create executable tests require the real headless feature composition on all hosts', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const profile = graph.profiles.find(item => item.id === 'v2-create-headless');
+  assert.deepEqual(profile.features, ['fabric-cli/v2-create', 'fabric-cli/headless']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  const component = graph.components.find(item => item.id === 'cli-warehouse-create');
+  assert.deepEqual(component.depends_on, ['cli-create-host']);
+  assert.deepEqual(component.tests.map(item => item.target), [
+    'test:warehouse_create_wire', 'test:warehouse_create_binary',
+    'test:create_binding_composition', 'bin:fab-cli-v2',
+  ]);
+  for (const file of [
+    'src/warehouse_create.rs', 'src/v2_create_main.rs', 'src/v2_main.rs',
+    'src/v2_livy_list_main.rs', 'tests/create_binding_composition.rs',
+  ]) {
+    assert.ok(component.inputs.includes(`rust/clients/cli/app/${file}`), file);
+  }
+  const manifest = fs.readFileSync(path.join(root, 'rust/clients/cli/app/Cargo.toml'), 'utf8');
+  const section = manifest.split('[[test]]').find(item => item.includes('name = "warehouse_create_binary"'));
+  assert.ok(section.includes('required-features = ["v2-create", "headless"]'));
 });
 
 test('Livy executable and shared host tests require an actual native runtime feature profile', () => {
@@ -1602,7 +1626,8 @@ test('combined Eventhouse and KQL executable tests require both bindings and the
     'fabric-cli/v2-create-eventhouse', 'fabric-cli/v2-kql-database-create', 'fabric-cli/headless',
   ]);
   assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
-  const component = graph.components.find(item => item.package === 'fabric-cli' &&
+  const component = graph.components.find(item => item.id === 'cli-eventhouse-create' &&
+    item.package === 'fabric-cli' &&
     item.tests.some(test => test.target === 'test:create_binding_composition'));
   assert.ok(component);
   for (const file of [
