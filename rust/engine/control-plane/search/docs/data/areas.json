@@ -1,0 +1,52 @@
+{
+  "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_repository": "https://github.com/MicrosoftDocs/fabric-docs",
+  "source_commit": "3ae7afc73169ac57b874d5aee09217bb35a4f8fc",
+  "policy": "Partial, reviewed documentation-area membership, not article item_type classification or exclusive ownership. Only the exact source-pinned paths below are included. No path-prefix, prose-mention, recursive-link, or whole-workload inference. Other resource areas may share these articles. Missing indexed articles remain explicitly unavailable.",
+  "areas": [
+    {
+      "id": "Lakehouse",
+      "name": "Lakehouse",
+      "item_type": "Lakehouse",
+      "root_article": "docs/data-engineering/lakehouse-overview.md",
+      "description": "Partial Lakehouse documentation area: the reviewed Store and manage / Lakehouse TOC subtree and two explicitly reviewed overview related links. Membership does not classify an article as a Lakehouse item or exclude it from other resource areas.",
+      "coverage": "partial",
+      "rules": [
+        {
+          "kind": "reviewed_toc_subtree",
+          "evidence": {
+            "source_path": "docs/data-engineering/toc.yml",
+            "lines": [52, 77],
+            "node_names": ["Store and manage", "Lakehouse"]
+          },
+          "source_paths": [
+            "docs/data-engineering/lakehouse-overview.md",
+            "docs/data-engineering/create-lakehouse.md",
+            "docs/data-engineering/navigate-lakehouse-explorer.md",
+            "docs/data-engineering/lakehouse-query-explorer.md",
+            "docs/data-engineering/lakehouse-table-maintenance.md",
+            "docs/data-engineering/high-concurrency-for-lakehouse-operations.md",
+            "docs/data-engineering/lakehouse-schemas.md",
+            "docs/data-engineering/lakehouse-shortcuts.md",
+            "docs/data-engineering/lakehouse-spark-views.md",
+            "docs/data-engineering/lakehouse-git-deployment-pipelines.md",
+            "docs/data-engineering/lakehouse-api.md"
+          ]
+        },
+        {
+          "kind": "reviewed_related_links",
+          "evidence": {
+            "source_path": "docs/data-engineering/lakehouse-overview.md",
+            "lines": [123, 127],
+            "node_names": ["Related content"]
+          },
+          "source_paths": [
+            "docs/data-engineering/load-data-lakehouse.md",
+            "docs/data-engineering/lakehouse-sql-analytics-endpoint.md"
+          ]
+        }
+      ]
+    }
+  ]
+}

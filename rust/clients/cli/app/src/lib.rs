@@ -18,6 +18,10 @@ pub mod create_command;
 pub mod create_notebook;
 pub mod delete;
 pub mod deploy;
+#[cfg(feature = "docs-search")]
+pub mod docs_browse;
+#[cfg(feature = "docs-search")]
+pub mod docs_search;
 mod errors;
 #[cfg(feature = "v2-create-eventhouse")]
 pub mod eventhouse_create;
@@ -30,6 +34,7 @@ mod folder_reads;
 pub mod get_backend;
 mod get_budget;
 pub mod get_command;
+pub mod get_dataflow_queries;
 pub mod get_metadata;
 mod get_report;
 pub mod get_resolution;
@@ -73,6 +78,8 @@ pub mod v2_preview;
 /// Native TABLE composition for opt-in physical Lakehouse data-schema reads.
 #[cfg(all(feature = "v2-discovery", feature = "native-host"))]
 pub mod v2_schema_native;
+#[cfg(feature = "v2-create")]
+pub mod warehouse_create;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;

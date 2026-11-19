@@ -74,6 +74,27 @@ pub(crate) fn run_delete(
 #[path = "native_execute.rs"]
 mod execute;
 
+#[cfg(any(windows, feature = "headless"))]
+#[path = "native_dataflow_queries.rs"]
+mod dataflow_queries;
+
+pub(crate) fn run_dataflow_queries(
+    command: &fabric_cli::get_dataflow_queries::ListQueriesCommand,
+    state: &mut BatchState,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    return dataflow_queries::run(command, state);
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = (command, state);
+        write_error(failure(
+            "unsupported",
+            "The native discovery host is unavailable.",
+            1,
+        ))
+    }
+}
+
 #[cfg(all(test, feature = "headless"))]
 #[path = "headless_host_tests.rs"]
 mod headless_host_tests;

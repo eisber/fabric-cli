@@ -10,6 +10,7 @@ use std::process::{Command, Output, Stdio};
 const ROOT: &str = "/11111111-1111-1111-1111-111111111111.Workspace/Exact";
 const EVENTHOUSE: &[u8] = br#"{"displayName":"Exact","description":"metadata only"}"#;
 const KQL: &[u8] = br#"{"displayName":"Exact","creationPayload":{"databaseType":"ReadWrite","parentEventhouseItemId":"22222222-2222-2222-2222-222222222222"}}"#;
+const WAREHOUSE: &[u8] = br#"{"displayName":"Exact","creationPayload":{"collationType":"Latin1_General_100_CI_AS_KS_WS_SC_UTF8"}}"#;
 
 fn run(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
@@ -40,7 +41,13 @@ fn combined_help_retains_each_owner_and_eventhouse_effect_disclosures() {
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         let text = String::from_utf8(output.stdout).unwrap();
-        for owner in ["Report", "Notebook", "KQLDatabase", "Eventhouse"] {
+        for owner in [
+            "Report",
+            "Notebook",
+            "KQLDatabase",
+            "Eventhouse",
+            "Warehouse",
+        ] {
             assert!(text.contains(owner), "{text}");
             if args[0] == "create" {
                 assert!(text.contains(&format!("Selected native owner: {owner}.")));
@@ -64,11 +71,18 @@ fn combined_dispatch_validates_each_schema_before_approval_or_identity() {
         ("Eventhouse", EVENTHOUSE, 1, "ApprovalRequired"),
         ("KQLDatabase", KQL, 1, "ApprovalRequired"),
         ("Notebook", EVENTHOUSE, 1, "ApprovalRequired"),
+        ("Warehouse", EVENTHOUSE, 1, "ApprovalRequired"),
+        ("Warehouse", WAREHOUSE, 1, "ApprovalRequired"),
         ("Eventhouse", KQL, 2, "CreatePolicyRejected"),
         ("KQLDatabase", EVENTHOUSE, 2, "CreatePolicyRejected"),
         ("Report", EVENTHOUSE, 2, "CreatePolicyRejected"),
         ("Report", KQL, 2, "CreatePolicyRejected"),
         ("Notebook", KQL, 2, "CreatePolicyRejected"),
+        ("Warehouse", KQL, 2, "CreatePolicyRejected"),
+        ("Eventhouse", WAREHOUSE, 2, "CreatePolicyRejected"),
+        ("KQLDatabase", WAREHOUSE, 2, "CreatePolicyRejected"),
+        ("Report", WAREHOUSE, 2, "CreatePolicyRejected"),
+        ("Notebook", WAREHOUSE, 2, "CreatePolicyRejected"),
     ] {
         std::fs::write(&input, bytes).unwrap();
         error(
@@ -92,6 +106,8 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
         format!("{ROOT}.Notebook/src/definition"),
         format!("{ROOT}.Eventhouse/src/definition"),
         format!("{ROOT}.KQLDatabase/src/definition"),
+        format!("{ROOT}.Warehouse/src/definition"),
+        format!("{ROOT}.warehouse"),
     ] {
         error(
             &run(&["create", &destination, "--input", "nonexistent.json"]),
@@ -99,7 +115,13 @@ fn combined_dispatch_rejects_nonmetadata_or_unknown_targets_before_input_io() {
             "InvalidInput",
         );
     }
-    for owner in ["Eventhouse", "KQLDatabase", "Report", "Notebook"] {
+    for owner in [
+        "Eventhouse",
+        "KQLDatabase",
+        "Report",
+        "Notebook",
+        "Warehouse",
+    ] {
         error(
             &run(&[
                 "create",
