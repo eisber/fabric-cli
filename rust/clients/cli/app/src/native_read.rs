@@ -79,7 +79,7 @@ mod execute;
 mod dataflow_queries;
 
 pub(crate) fn run_dataflow_queries(
-    command: &fabric_cli::execute::ListQueriesCommand,
+    command: &fabric_cli::get_dataflow_queries::ListQueriesCommand,
     state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     #[cfg(any(windows, feature = "headless"))]

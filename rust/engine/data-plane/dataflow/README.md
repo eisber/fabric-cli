@@ -136,7 +136,7 @@ from the AIHub/KQL root `query` providers. Neither should silently fall back to
 the other after a service failure. See the
 [CLI custom-document example](../../../authoring-docs/dataflow-execution.md#input-and-execution-lifecycle).
 Explicit named-query discovery is a separate SDK facade operation,
-`fabric_sdk::dataflow_queries::list_queries`, and CLI `execute <Dataflow path>
+`fabric_sdk::dataflow_queries::list_queries`, and CLI `get <Dataflow path>
 --list-queries`. It reuses definition retrieval and generic operation observation
 and projects the documented `queryMetadata.json` index without M evaluation or
 connection data. Missing optional index coverage is reported explicitly; it is

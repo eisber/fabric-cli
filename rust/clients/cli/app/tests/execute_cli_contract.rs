@@ -55,7 +55,7 @@ fn valid_execution_needs_a_host_or_explicit_interactive_approval() {
 #[test]
 fn explicit_discovery_needs_a_host_but_not_execution_approval_or_stdin() {
     let item = TARGET.strip_suffix("/queries/Orders").unwrap();
-    let output = invoke(&["execute", item, "--list-queries"]);
+    let output = invoke(&["get", item, "--list-queries"]);
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
@@ -67,6 +67,21 @@ fn explicit_discovery_needs_a_host_but_not_execution_approval_or_stdin() {
     assert_eq!(error["error"]["code"], "unsupported");
 }
 
+#[test]
+fn removed_execute_discovery_and_invalid_get_projection_fail_before_host_setup() {
+    let item = TARGET.strip_suffix("/queries/Orders").unwrap();
+    for args in [
+        vec!["execute", item, "--list-queries"],
+        vec!["execute", TARGET, "--wait", "--list-queries"],
+        vec!["get", item, "--list-queries", "-q", "["],
+    ] {
+        let output = invoke(&args);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_arguments");
+    }
+}
 #[cfg(all(feature = "native-host", any(windows, feature = "headless")))]
 #[test]
 fn invalid_input_file_is_rejected_before_provider_selection() {

@@ -86,7 +86,8 @@ Discovery is an explicit, separate operation; normal execution never downloads
 a definition to guess a query name:
 
 ```powershell
-fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow" --list-queries --timeout 30s > queries.json
+fab-rs get "/<workspace-id>.Workspace/<dataflow-id>.Dataflow" --list-queries --timeout 30s > queries.json
+fab-rs get "/<workspace-id>.Workspace/<dataflow-id>.Dataflow" --list-queries -q "queries[].queryName"
 ```
 
 This uses the existing native `getDefinition` reader, including its actual
@@ -122,7 +123,14 @@ The existing observer permits at most 100 status/result requests and a maximum
 Discovery rejects execution-only `--wait`, `--input`, `--format`, `--output` and
 `--limit`, rather than silently ignoring them. Redirect stdout for a file;
 attached Windows console output is refused before credentials to preserve exact
-Unicode. Cancellation or an interrupted write can leave partial output, so the
+Unicode.
+
+`get -q` applies JMESPath locally to the inventory after complete bounded
+retrieval; it cannot change acquisition or hide an exceeded source bound.
+Without `--list-queries`, ordinary `get` metadata and its projection remain
+unchanged. Discovery-specific `--timeout` and `--max-bytes` require the flag.
+The evaluation-only `execute` command rejects `--list-queries`; no alias remains.
+Cancellation or an interrupted write can leave partial output, so the
 host stops rather than continuing another batch command.
 Error delivery also uses an owned stderr handle within the remaining deadline
 (at most one second). If the error pipe is blocked or time has expired, delivery

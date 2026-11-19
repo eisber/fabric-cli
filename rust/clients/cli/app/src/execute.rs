@@ -98,54 +98,17 @@ pub struct ExecuteCommand {
     pub max_bytes: usize,
 }
 
-/// An explicit metadata-only query listing; never an evaluation request.
-#[derive(Clone, Debug)]
-pub struct ListQueriesCommand {
-    /// Validated workspace/Dataflow identifiers.
-    pub target: fabric_sdk_dataflow::ExecuteQueryTarget,
-    /// One total definition retrieval and output budget.
-    pub timeout: Duration,
-    /// Complete definition-response and JSON output ceiling.
-    pub max_bytes: usize,
-}
-
-/// Parse metadata-only discovery without accepting ignored execution options.
-///
-/// # Errors
-/// Rejects named-query paths, execution flags and invalid finite budgets.
-pub fn list_queries_from_matches(values: &ArgMatches) -> Result<ListQueriesCommand, clap::Error> {
-    use clap::parser::ValueSource;
-    for field in ["input", "format", "output", "wait", "max_rows"] {
-        if values.value_source(field) == Some(ValueSource::CommandLine) {
-            return Err(invalid());
-        }
-    }
-    let path = values.get_one::<String>("path").ok_or_else(invalid)?;
-    let target = QueryTarget::parse(&format!("{path}/queries/_discovery"))?;
-    let max_bytes = *values.get_one::<usize>("max_bytes").ok_or_else(invalid)?;
-    if !(1..=16 * 1024 * 1024).contains(&max_bytes) {
-        return Err(invalid());
-    }
-    Ok(ListQueriesCommand {
-        target: fabric_sdk_dataflow::ExecuteQueryTarget::new(&target.workspace, &target.dataflow)
-            .map_err(|_| invalid())?,
-        timeout: duration(values.get_one::<String>("timeout").ok_or_else(invalid)?)?,
-        max_bytes,
-    })
-}
-
 /// Additive root command. Existing v1 command schemas remain unchanged.
 pub fn command() -> Command {
     Command::new("execute")
         .args_override_self(false)
         .about("Execute an explicitly addressed Dataflow Power Query (v2 preview)")
-        .after_help("Evaluation target: /<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>. Requires explicit approval and --wait. Input JSON: optional customMashupDocument OR mExpression, plus arrowVersion (1 or 2). Discovery: execute /<workspace-id>.Workspace/<dataflow-id>.Dataflow --list-queries; returns query metadata as JSON without evaluating M. No automatic connection changes or query replay. Detailed refresh-log download remains an API gap.")
+        .after_help("Evaluation target: /<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>. Requires explicit approval and --wait. Input JSON: optional customMashupDocument OR mExpression, plus arrowVersion (1 or 2). Discover query names separately with get <Dataflow path> --list-queries. No automatic connection changes or query replay. Detailed refresh-log download remains an API gap.")
         .arg(Arg::new("path").required(true))
         .arg(Arg::new("input").long("input"))
         .arg(Arg::new("format").long("format").value_parser(["json", "csv", "parquet"]).default_value("json"))
         .arg(Arg::new("output").long("output").short('o'))
-        .arg(Arg::new("wait").long("wait").action(ArgAction::SetTrue).required_unless_present("list_queries"))
-        .arg(Arg::new("list_queries").long("list-queries").action(ArgAction::SetTrue).conflicts_with("wait"))
+        .arg(Arg::new("wait").long("wait").action(ArgAction::SetTrue).required(true))
         .arg(Arg::new("timeout").long("timeout").default_value("5m"))
         .arg(Arg::new("max_rows").long("limit").value_parser(clap::value_parser!(usize)).default_value("100000"))
         .arg(Arg::new("max_bytes").long("max-bytes").value_parser(clap::value_parser!(usize)).default_value("16777216"))
@@ -197,7 +160,7 @@ pub fn from_matches(values: &ArgMatches) -> Result<ExecuteCommand, clap::Error> 
     })
 }
 
-fn duration(value: &str) -> Result<Duration, clap::Error> {
+pub(crate) fn duration(value: &str) -> Result<Duration, clap::Error> {
     let (digits, factor) = if let Some(value) = value.strip_suffix("ms") {
         (value, 1)
     } else if let Some(value) = value.strip_suffix('s') {
