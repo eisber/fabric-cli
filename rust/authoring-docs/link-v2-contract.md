@@ -5,9 +5,81 @@
 The additive `fabric_cli_mutations::v2_link` module composes native relationship
 requests with caller-owned resolution, input, approval, and execution. It does
 not replace the Python CLI, Rust `ln`/`mklink`, or their compatibility fixtures.
-Its standalone command schema is not mounted in the production executable.
-Central registry, SDK facade, native file/resolver adapters, and executable
-composition remain separate integration requirements.
+Its standalone all-family command schema is not mounted in the default executable.
+The experimental `fab-cli-v2` head retains the bounded DataAgent staging host.
+The optional `fabric-cli` feature `v2-link-kql`, together with `headless`, adds
+the KQL leaf through `v2_link_kql_host`. Other link families still require
+separate executable composition.
+
+## KQL executable scope
+
+```text
+fab-cli-v2 artifact kql-database link /workspace.Workspace/database.KQLDatabase/Tables/name.Shortcut --input FILE|- [--wait]
+fab-cli-v2 link /workspace.Workspace/database.KQLDatabase/Tables/name.Shortcut --input FILE|- [--wait]
+```
+
+Root `link` dispatches by the explicit `.DataAgent` or `.KQLDatabase` owner,
+including malformed children, before any input or identity work. Option values
+never select an owner. Unqualified `link --help` retains the DataAgent schema;
+KQL help is available through its typed root target or artifact facade.
+The KQL destination must be one literal
+`.Shortcut` child of `Tables`, not an existing table's contents, `Files`, a
+collection, an item root, or another owner type. Workspace/database selectors
+may be names or GUIDs; complete bounded discovery uses the existing SDK resolver
+and rejects ambiguity. Explicit GUIDs avoid discovery. The relationship suffix
+is parsed separately from its metadata-only owner prefix. No implicit current
+context, URL normalization, source access probe, or identity fallback is used.
+The shortcut name is ASCII with no surrounding whitespace or native-invalid
+characters (including wildcards); these paths fail before identity or input I/O.
+
+The executable uses the existing explicit `FAB_RUST_AUTH_MODE` selection and
+validated `FAB_RUST_FABRIC_HOST` binding. It has a 120-second invocation bound,
+1 MiB input/discovery/response bounds and at most 32 operation requests.
+`--input -` reads strict JSON from stdin; approval is read separately from the
+controlling terminal (`CONIN$` or `/dev/tty`). An explicit yes is required after
+displaying the captured workspace, database, shortcut, exact POST/input,
+immutable endpoint, account, tenant, audience, and effects. Missing
+terminal, EOF, decline, prompt failure, cancellation, or timeout prevents
+submission. Enabling query acceleration explicitly discloses cache, indexing,
+storage, and compute costs. A body field is never approval.
+
+Input example (use actual existing workspace/item references):
+
+```json
+{
+  "name": "sales_ref",
+  "enableQueryAcceleration": false,
+  "target": {
+    "oneLake": {
+      "workspaceId": "11111111-1111-4111-8111-111111111111",
+      "itemId": "22222222-2222-4222-8222-222222222222",
+      "path": "Tables/sales"
+    }
+  }
+}
+```
+
+For that input the addressed child must be `sales_ref.Shortcut`. There is no
+destination `path` field or conflict-policy query. Only the six native KQL
+provider kinds described below are admitted. There is no `--force`, overwrite,
+copy, query, ACL grant, connection creation, publication, or unrelated database
+mutation.
+
+The host retains the original `LinkReceipt`/`LinkFailure` and displays a small
+JSON projection with destination/name, effects, accepted/completed classification,
+HTTP status, known operation ID, mutation uncertainty, and explicit
+`remoteCancelled: false` / `remoteReplayed: false`. Native service details and
+rejected observations remain available to programmatic consumers; request/source
+contents and service message bodies are not echoed. Output write/flush failure
+returns a nonzero exit with best-effort reconciliation evidence on stderr.
+Neither output failure nor interrupted observation causes resubmission.
+Output delivery uses the original invocation deadline; an expired, interrupted,
+or failed delivery retains the known operation evidence and never replays it.
+Output workers own duplicated OS handles, never global Rust stream locks.
+Diagnostic delivery is bounded by the same deadline, with no synchronous fallback.
+Offline host tests are not proof of live Fabric permission, deployed provider
+availability, authentication, or compute execution. Required combined/platform
+validation still gates integration.
 
 ## Operation and command surface
 
@@ -80,6 +152,66 @@ They need their own native representation, permission, and partial-effect
 contracts, not a generic fallback.
 
 ## Caller composition
+
+### Bounded DataAgent executable host
+
+`cargo build --locked -p fabric-cli --features headless --bin fab-cli-v2`
+selects the existing explicit native identity/HTTP host. The DataAgent-only
+leaf and its same-owner root alias are:
+
+```text
+fab-cli-v2 artifact data-agent link /<workspace-id>.Workspace/<agent-id>.DataAgent/settings/staging/datasources --input FILE|- [--wait]
+fab-cli-v2 link /<workspace-id>.Workspace/<agent-id>.DataAgent/settings/staging/datasources --input FILE|- [--wait]
+```
+
+Both destination selectors must be GUIDs. This bounded host does not resolve
+names or use a current workspace. The explicitly selected staging collection
+maps to the native create endpoint; the service allocates the datasource ID.
+It does not accept a guessed datasource ID, published settings, an owner-only
+path, other artifact owners or a generic item expansion.
+
+The host reads at most 1 MiB from a regular file or explicit stdin, validates
+UTF-8 and the shared strict JSON schema, then captures the explicit headless
+credential selection and Fabric endpoint. No token acquisition or service
+request is needed for malformed input. Approval uses the real console, never
+the JSON stdin stream, and presents the exact POST body, destination, selected
+tenant/account/audience/endpoint and reference-only effect. There is no `--yes`, `--force`
+or unattended environment bypass. Missing, declined or failed approval sends
+zero service requests.
+
+After approval, the same native request context reads the destination's generic
+item metadata and the referenced source's metadata. Exact ID/type mismatches,
+unusable metadata, unsupported source types and permission failures prevent the
+POST. `LakehouseTables` requires a Lakehouse; `FabricItem` accepts the official
+create API's supported Fabric item types. These reads do not prove write
+permission: the service still enforces DataAgent read/write permission and
+access to the source under the same identity. No alternate identity is tried.
+
+Execution uses the existing `OperationSession`, native HTTP transport and
+bounded cancellation/LRO policy. Input, approval and execution share a
+five-minute deadline, including observation and output delivery. At most one
+staging-create POST is submitted. The output retains
+`accepted`, `completed`, `partial` (malformed completed resource) or `unknown`
+(uncertain mutation) distinctly. A failed stdout write or flush reports actual
+bytes delivered and retains the original native receipt/failure for
+reconciliation; it never submits the link again or promises rollback.
+
+This is an additive v2 native leaf, not Python parity, a default `fab-rs`/legacy
+`ln` change, live permission proof or implementation of the other link facades.
+Selected source: grouped Link revision 12 and DataAgent facade revision 4,
+captured November 4, 2026; the native create API supplies the strict payload and
+service-allocated identity contract.
+
+The PR52 integration candidate uses the existing DataAgent impact/leaf runner,
+with source `1785a96cb74c325c6ee94bcffad72f98a9882ac9` and accepted LIST base
+`313271f4104a562d853318503f8e14f552ac6dc2`. Its candidate-only hosted Windows
+step retains source inventories, locked metadata, isolated feature groups,
+actual qualified test cases and stdout/stderr hashes. The ordinary post-merge
+step runs the two actual default/headless binaries; LINK fixtures remain
+offline. Neither step establishes live permissions, native Linux/macOS coverage
+or finished-feature/release qualification.
+
+### Injected library consumers
 
 1. Parse arguments with `v2_link::parse_args`, or mount the shared
    `link_command` leaf in a reviewed v2 host.

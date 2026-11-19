@@ -14,22 +14,34 @@ pub mod cancel;
 pub mod console;
 #[cfg(feature = "v2-create")]
 pub mod create_command;
+#[cfg(feature = "v2-create")]
+pub mod create_notebook;
 pub mod delete;
 pub mod deploy;
+#[cfg(feature = "docs-search")]
+pub mod docs_browse;
+#[cfg(feature = "docs-search")]
+pub mod docs_search;
 mod errors;
+#[cfg(feature = "v2-create-eventhouse")]
+pub mod eventhouse_create;
 pub mod execute;
 pub mod exists_command;
 #[cfg(feature = "native-host")]
 pub mod families;
+pub mod feedback;
 mod folder_reads;
 pub mod get_backend;
 mod get_budget;
 pub mod get_command;
+pub mod get_dataflow_queries;
 pub mod get_metadata;
 mod get_report;
 pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;
+#[cfg(feature = "v2-kql-database-create")]
+pub mod kql_database_create;
 pub mod local_commands;
 pub mod ml_endpoint;
 pub mod native_tabular;
@@ -50,11 +62,22 @@ pub mod stage_deploy;
 pub mod tables;
 pub mod tabular_export;
 pub mod update;
+/// Native Report definition binding for the separately opted-in shared create host.
+#[cfg(feature = "v2-create")]
+pub mod v2_create_report;
+pub mod v2_dataagent_list_host;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
+pub mod v2_link_dataagent_host;
+pub mod v2_link_dispatch;
+#[cfg(feature = "v2-link-kql")]
+pub mod v2_link_kql_host;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
+/// Native TABLE composition for opt-in physical Lakehouse data-schema reads.
+#[cfg(all(feature = "v2-discovery", feature = "native-host"))]
+pub mod v2_schema_native;
 #[cfg(feature = "v2-create")]
 pub mod warehouse_create;
 mod workspace_get;

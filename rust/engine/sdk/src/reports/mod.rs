@@ -7,6 +7,7 @@
 //! neither creates a model nor resolves/authorizes a referenced model. Credentials,
 //! cancellation, total deadlines and observation remain caller-owned.
 
+pub mod create;
 mod definition;
 mod registry;
 

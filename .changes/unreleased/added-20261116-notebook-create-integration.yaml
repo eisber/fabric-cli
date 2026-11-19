@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Integrate opt-in typed Notebook creation with the shared experimental Rust v2 create host, preserving existing Report, KQL Database, Eventhouse, approval, and operation evidence behavior.
+time: 2026-11-16T15:00:00Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber

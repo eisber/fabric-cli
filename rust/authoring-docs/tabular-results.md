@@ -28,6 +28,11 @@ and output contracts are unchanged.
 - HTTP success and a valid Arrow stream are not sufficient proof of application
   success. Dataflow can return error evidence in `PQ Arrow Metadata`. Inspect
   that evidence before reporting successful output.
+- Keep source-sensitive native error evidence separate from default CLI
+  diagnostics. Connection-aware guidance does not print raw service messages
+  or `PQ Arrow Metadata` values, infer a specific cause from arbitrary text,
+  or turn an unknown failure into success. Explicit SDK error/result fields
+  retain the original evidence for caller-controlled handling.
 
 See the shared `fabric-sdk-tabular` component README for the exact JSON shape,
 CSV null/escaping convention, supported Arrow types, and serialization limits.

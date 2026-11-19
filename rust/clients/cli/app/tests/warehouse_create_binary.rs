@@ -42,14 +42,25 @@ fn assert_error(output: Output, exit: i32, code: &str) {
 }
 
 #[test]
-fn selected_help_and_root_discovery_name_only_the_warehouse_create_scope() {
+fn selected_help_and_root_discovery_preserve_each_enabled_create_scope() {
     for args in [vec!["--help"], vec!["create", "--help"]] {
         let output = run(&args);
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         let help = String::from_utf8(output.stdout).unwrap();
         assert!(help.contains("Warehouse"));
-        assert!(!help.contains("Selected native owner: Notebook"));
+        for owner in ["Notebook", "Report", "Warehouse"] {
+            assert!(help.contains(owner));
+            if args[0] == "create" {
+                assert!(help.contains(&format!("Selected native owner: {owner}.")));
+            }
+        }
+        if args[0] == "--help" {
+            assert!(help.contains("creationPayload.collationType"));
+            assert!(help.contains("No SQL, definitions or child provisioning."));
+            #[cfg(feature = "runtime-v2")]
+            assert!(help.contains("Livy"));
+        }
     }
     let output = run(&["create", "--help"]);
     let help = String::from_utf8(output.stdout).unwrap();

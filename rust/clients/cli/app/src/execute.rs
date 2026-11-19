@@ -9,6 +9,9 @@ use std::time::Duration;
 #[path = "execute_host.rs"]
 pub mod host;
 
+#[path = "execute_m.rs"]
+mod m;
+
 /// Maximum structured request input, independent of the result budget.
 pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
 /// Hard allocation ceiling for a single native result or encoded output.
@@ -100,7 +103,7 @@ pub fn command() -> Command {
     Command::new("execute")
         .args_override_self(false)
         .about("Execute an explicitly addressed Dataflow Power Query (v2 preview)")
-        .after_help("Target: /<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>. Currently only Dataflow Execute Query is bound; SQL/KQL and other engines are not implemented here. Requires explicit approval and --wait. Input JSON: optional customMashupDocument and arrowVersion (1 or 2). Output is fresh query evaluation, not saved refresh data. Detailed refresh-log download remains an API gap.")
+        .after_help("Evaluation target: /<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>. Requires explicit approval and --wait. Input JSON: optional customMashupDocument OR mExpression, plus arrowVersion (1 or 2). Discover query names separately with get <Dataflow path> --list-queries. No automatic connection changes or query replay. Detailed refresh-log download remains an API gap.")
         .arg(Arg::new("path").required(true))
         .arg(Arg::new("input").long("input"))
         .arg(Arg::new("format").long("format").value_parser(["json", "csv", "parquet"]).default_value("json"))
@@ -157,7 +160,7 @@ pub fn from_matches(values: &ArgMatches) -> Result<ExecuteCommand, clap::Error> 
     })
 }
 
-fn duration(value: &str) -> Result<Duration, clap::Error> {
+pub(crate) fn duration(value: &str) -> Result<Duration, clap::Error> {
     let (digits, factor) = if let Some(value) = value.strip_suffix("ms") {
         (value, 1)
     } else if let Some(value) = value.strip_suffix('s') {

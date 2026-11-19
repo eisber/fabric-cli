@@ -118,11 +118,18 @@ alternative choices but uses the current documented field; it does not claim
 live proof that the legacy spelling is accepted. Broader optional API fields and
 definition-based creation are outside this bounded binding.
 
-The consumed shared-create changes are the logical diffs
+The original lane consumed shared-create logical diffs
 `e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, `0454fb4`, `caf2f7f`, and
-`0ec3848`, and `44576b0`. There is no Notebook leaf or producer ancestry adoption,
-custom authentication, parser, policy,
-transport, LRO or output engine. See [the shared host](create-host.md).
+`0ec3848`, and `44576b0`, before the Notebook producer landed. The PR79 integration
+update merges checkpoint `380322954dff38c28c886a12cd6a686372edc038` into original
+Warehouse head `10dd5c74d6d8ae2e00d350751f37e8549b304bb6`. It preserves the
+checkpoint's newer shared create host, SDK policy, strict-response decoder and
+LRO implementation unchanged; only the Warehouse binding, registration and
+contracts are added to those APIs. The executable selects Warehouse alongside
+Notebook and Report, plus separately enabled KQLDatabase and Eventhouse.
+Both ordinary and Livy-enabled root help retain every enabled owner disclosure.
+There is no custom authentication, parser, policy, transport, LRO or output
+engine. See [the shared host](create-host.md).
 
 ## Offline coverage
 
@@ -159,3 +166,37 @@ test compilation reached the fixed work cutoff. Its timeout is not a full-plan
 pass or frozen-oracle, feature-profile, Linux or macOS proof. The final update
 after that revision changes documentation only; automated current-head CI and
 independent frontier review remain separate acceptance requirements.
+
+### November 19 integration update
+
+The local Windows update against checkpoint
+`380322954dff38c28c886a12cd6a686372edc038` used pinned Rust 1.99.1, one serial
+Cargo process, two build workers, serial tests and session-owned artifacts.
+Cargo metadata and the existing impact planner selected 60 packages and a
+conservative full validation plan. All 60 package formatting checks, all-target
+check and strict Clippy passed. Actual all-target check and strict Clippy also
+passed for the registered `headless`, `v2-create`, `v2-create-headless` and
+`v2-create-eventhouse-kql-headless` profiles, plus the metadata-derived union of
+combined create, native runtime and documentation-search features.
+
+The six shared SDK/LRO/workspace/mutation packages executed 974 all-target tests
+and 7 doctests. The complete CLI all-target run with
+`headless,v2-create,runtime-v2,docs-search` passed 1,108 tests, including all
+34 Warehouse wire, 7 Warehouse executable, 9 shared host, 65 Notebook HTTP,
+7 Notebook process, 36 Report, 16 feedback, 21 documentation and 21 Livy tests.
+The architecture target separately passed 12 tests. Isolated Eventhouse and KQL
+binary targets retained their original feature sets and passed 6 and 7 tests.
+Combined-owner targets passed 101 tests, including 3 strengthened composition
+tests, 30 Eventhouse, 27 KQL and the 41 Warehouse tests. The native Warehouse
+binary build and all 126 impact-planner tests passed. These runs used complete
+targets, with no ignored or filtered tests.
+
+The broad check exposed an existing missing `BTreeMap` import in workspace SDK
+unit tests; adding that test-only import restored compilation without changing
+production SDK or identity behavior. Shared create, policy and LRO production
+files remain byte-identical to the integration checkpoint. The session retains
+the `pr79` metadata, full impact plan, source inventories, exact commands,
+counts, exits and logs. The full impact plan's remaining optional profiles,
+frozen-oracle checks, Linux and macOS matrix were not executed. This is local
+provisional integration evidence, not fresh provider CI, independent review,
+live-service, authentication-policy or release qualification.

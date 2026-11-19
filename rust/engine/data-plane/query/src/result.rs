@@ -1,11 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{EngineBinding, QueryError, QueryErrorKind, QueryLimits};
+use crate::kql::check_observation;
+use crate::{EngineBinding, QueryCapability, QueryError, QueryErrorKind, QueryLimits};
 use fabric_sdk::runtime::NativeDeadline;
 use serde::Serialize;
 use serde_json::Value;
-use std::{collections::BTreeSet, fmt};
+use std::{collections::BTreeSet, fmt, future::Future, pin::Pin};
 
 /// Native column metadata; unknown type names are retained, not guessed.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -55,8 +56,15 @@ pub struct QueryEvidence {
     pub protocol_version: &'static str,
     /// Adapter-owned read-only request policy; not live enforcement proof.
     pub read_policy: &'static str,
-    /// Production enforcement is not established by an offline fixture.
+    /// Structural capability promised by the actual injected adapter.
+    pub adapter_capability: QueryCapability,
+    /// Live production enforcement has not been tested by this SDK.
+    ///
+    /// Always false, including for the production adapter. Constructor checks,
+    /// request policy and synthetic fixtures do not establish tenant behavior.
     pub production_verified: bool,
+    /// Actual HTTP EOF was observed, independently of native completion status.
+    pub http_eof: bool,
     /// Actual response status, if headers were returned.
     pub http_status: Option<u16>,
     /// Actual response media metadata, not an inferred output format.
@@ -145,12 +153,18 @@ impl fmt::Debug for QueryDiagnostic {
     }
 }
 
-pub(crate) fn decode(
+pub(crate) async fn decode(
     bytes: Vec<u8>,
     limits: QueryLimits,
     evidence: QueryEvidence,
     deadline: &NativeDeadline,
+    mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
 ) -> Result<QueryResult, QueryError> {
+    check_observation(deadline, cancelled.as_mut())
+        .await
+        .map_err(|kind| {
+            QueryError::observed(kind, evidence.clone()).with_provider_body(bytes.clone())
+        })?;
     let frames: Vec<Value> = serde_json::from_slice(&bytes).map_err(|_| {
         QueryError::observed(QueryErrorKind::InvalidResponse, evidence.clone())
             .with_provider_body(bytes.clone())
@@ -166,7 +180,7 @@ pub(crate) fn decode(
             .unwrap_or(Value::Null),
         evidence,
     };
-    match decode_frames(&frames, limits, &mut result, deadline) {
+    match decode_frames(&frames, limits, &mut result, deadline, cancelled.as_mut()).await {
         Ok(()) => {
             result.evidence.completed = true;
             Ok(result)
@@ -175,12 +189,14 @@ pub(crate) fn decode(
     }
 }
 
-fn decode_frames(
+async fn decode_frames(
     frames: &[Value],
     limits: QueryLimits,
     result: &mut QueryResult,
     deadline: &NativeDeadline,
+    mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
 ) -> Result<(), QueryErrorKind> {
+    check_observation(deadline, cancelled.as_mut()).await?;
     if frames.len() > limits.max_frames() {
         return Err(QueryErrorKind::ResponseLimit);
     }
@@ -198,7 +214,7 @@ fn decode_frames(
     let mut remaining = limits.max_rows();
     let last_table = frames.len() - usize::from(!result.completion.is_null());
     for frame in &frames[1..last_table] {
-        deadline.remaining().map_err(QueryErrorKind::Native)?;
+        check_observation(deadline, cancelled.as_mut()).await?;
         if frame["FrameType"] != "DataTable" {
             return Err(QueryErrorKind::UnsupportedResponse);
         }
@@ -229,7 +245,7 @@ fn decode_frames(
             .as_array()
             .ok_or(QueryErrorKind::InvalidResponse)?;
         for (row_index, row) in rows.iter().enumerate() {
-            deadline.remaining().map_err(QueryErrorKind::Native)?;
+            check_observation(deadline, cancelled.as_mut()).await?;
             if inline_error(row) {
                 result.diagnostics.push(QueryDiagnostic {
                     table_id,
@@ -270,18 +286,18 @@ fn decode_frames(
     }
     let completion = &result.completion;
     let has_errors = completion["HasErrors"].as_bool();
-    let cancelled = completion["Cancelled"].as_bool();
+    let backend_cancelled = completion["Cancelled"].as_bool();
     if completion["FrameType"] != "DataSetCompletion"
         || has_errors.is_none()
-        || cancelled.is_none()
+        || backend_cancelled.is_none()
         || completion
             .get("OneApiErrors")
             .is_some_and(|errors| !errors.is_array())
     {
         return Err(QueryErrorKind::InvalidResponse);
     }
-    deadline.remaining().map_err(QueryErrorKind::Native)?;
-    if cancelled == Some(true) {
+    check_observation(deadline, cancelled.as_mut()).await?;
+    if backend_cancelled == Some(true) {
         Err(QueryErrorKind::BackendCancelled)
     } else if has_errors == Some(true)
         || completion

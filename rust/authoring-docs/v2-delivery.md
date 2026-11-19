@@ -292,6 +292,34 @@ or proposed synchronization is a published or completed feature.
 
 ## Central merge pipeline
 
+### Provisional integration policy (2026-11-12)
+
+For `dev/marcozo/fab-cli-v2-integration-20261104` only, the owner approved
+smoke-first integration followed by diagnostic repairs. The
+[Windows integration smoke gate](build-validation.md#provisional-v2-integration-smoke)
+supersedes the full-matrix-before-every-merge requirements below for provisional
+integration, not for finished-feature, promotion or release qualification.
+All other branches retain their existing gates. Existing full suites are kept
+for scheduled/manual and post-integration diagnosis; unexecuted or failing
+diagnostics are never relabeled passing.
+
+The explicitly assigned integration driver is the sole merger; a coordinator
+does not acquire merge authority merely by scheduling work. Use a reviewed PR,
+normal ancestry-preserving merge and exact-head guard, verify the current
+source/base and provider policies, then verify the actual provider merge SHA
+and combined-branch smoke before any next authorized entry. Target movement
+invalidates the previous combined candidate and requires fresh smoke.
+Independent narrow diff/stage sanity review is required. Known material
+security/authentication/data-loss findings and provider mandatory gates still
+block. This policy does not install a merger, bypass protections, enable
+auto-complete, or authorize merging any other PR.
+
+Full qualification and formal review-channel readiness retain their independent
+exact-head review and CI requirements; a provisional smoke result is not that
+handoff. The historical full-validation process below continues to describe
+qualification and explicitly requested diagnostics, not a second implicit
+provisional-integration gate.
+
 ### Combined candidate checkpoint
 
 The common branch now composes the committed CLI local host, name hints,
@@ -377,8 +405,12 @@ access to the signed-in GitHub account or renew an authorized owner login; do
 not borrow another session's credentials or publish to a different fork as a
 success-shaped fallback.
 
-The existing Rust scaffold workflow runs on lane PRs, pushes to the common v2
-branch, merge-group candidates, and explicit full-validation dispatch. It keeps
+The existing Rust scaffold workflow keeps its full checks on non-integration
+lane PRs, other configured pushes, merge-group candidates, schedules and explicit
+full-validation dispatch. On named integration PRs/pushes its selector/native/
+**Rust validation** jobs are skipped, not presented as full-suite success; the
+separate provisional **Integration smoke (Windows, provisional)** job gates
+the basic combined candidate instead. The full workflow keeps
 the dependency-impact selector, frozen source checks, native Windows/Linux/macOS
 matrix, and stable fail-closed **Rust validation** job. Push validation for this
 branch shares a concurrency group and never cancels the running check. GitHub
@@ -388,4 +420,5 @@ for the exact current candidate counts; this is not a per-commit FIFO queue.
 This setup does not install a privileged automatic merger, enable branch
 protections or GitHub's merge queue, waive reviews, or change the workflow's
 read-only token permissions. Until an independently authorized controller exists,
-the coordinator operates the serial queue above and honors all provider gates.
+the explicitly assigned integration driver operates the serial queue above and
+honors all provider gates.

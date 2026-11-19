@@ -10,7 +10,196 @@ The Python workflows and packaging are unchanged.
 
 The [bounded candidate preflight](fast-check.md) documents the separate Linux
 fast workflow, immutable product/CI receipts, and guarded native-dispatch relay.
-Fast success is not a replacement for the three native OS gates.
+Fast success is not a replacement for the three native OS qualification gates.
+
+## Provisional v2 integration smoke
+
+The PR51 owned integration candidate additionally runs
+`scripts/integration-dataagent-smoke.cjs` on hosted Windows only. It pins the
+original DataAgent source and integration base, records actual Cargo metadata
+and the dependency-impact selection, and runs both original DataAgent targets
+with `headless` (including the supervised output case), then combined routing
+and affected consumer targets with their actual required features. SDK
+DataAgent/representation cases, shared read/output, Notebook CREATE/UPDATE,
+Report/KQL/Eventhouse, Livy, schema, workspace and ML consumers retain their
+existing assertions. The one combined-help assertion preserves Livy ownership
+of unqualified help while checking typed DataAgent/facade equality.
+Named test commands retain separate manifest/source feature sets: isolated
+Eventhouse and KQL binary fixtures reject the other owner before input I/O,
+while the explicit composition target enables both. The union is used only
+for compilation/lints, never to change those process-fixture contracts.
+Explicit component profile obligations also apply to internally gated test
+modules. Report uses the existing `v2-create-headless` profile and requires
+every registered root, host, HTTP, status and process case; five ungated parser
+passes cannot stand in for the compiled-out host/process suites.
+Receipts reject zero-test, ignored, filtered or missing complete targets and
+retain argv, exits, output hashes, source/driver/lock pins, metadata and source
+inventories. Broader profile/oracle obligations are recorded, not claimed.
+This candidate-only leaf is not rerun or claimed on postmerge pushes and is
+not live-provider, canonical frontier, three-OS or release qualification.
+
+The PR55 owned integration candidate additionally runs
+`scripts/integration-kql-link-smoke.cjs` on hosted Windows only, pinned to source
+`e1baaee16dc6eb4917c5310224c27fcd258564ef` and integration base
+`61c8221914152e231e5e64f7bd38418f66264999`. The small entry wrapper reuses the
+DataAgent runner's actual locked/offline Cargo metadata, impact planner,
+output/exit receipts and before/after source inventories. The explicitly admitted
+`kql-link-full-qualification-v2` policy gives only this exact candidate/source/base
+and PR106 a single 1,140-second absolute qualification deadline in a 20-minute
+step. Pins, metadata, planning, commands and source-inventory finalization share
+that deadline; no command or failure restarts it. Per-command time remains at
+most eight minutes, and the complete ordered Cargo work inventory is capped at
+64 descriptors, retained with its hash before work starts. This ceiling does
+not authorize a run, an additional attempt, or omitted coverage. The earlier
+570-second attempt remains failed evidence.
+All other entry defaults remain 570 seconds and ten-minute steps; arbitrary
+policy IDs, phases, budgets or different candidate/source/base bindings fail.
+The enclosing job stays at 45 minutes. The explicitly accepted estimated-anchor
+policy records the first workflow-step time before checkout/build, exclusively
+creates its file, and binds repository, candidate/source/base/checkout, original
+source, run ID and attempt. Admission requires an anchor age of at most 20
+minutes and reserves an estimated three minutes for cleanup/artifacts beyond
+the remaining 19-minute phase. Missing, malformed, mismatched, future, changed,
+stale or insufficient timing fails; no current-time substitute or reset exists.
+Anchor bytes are retained and checked unchanged before every command and during
+finalization. The receipt labels this as an estimate: provider job start,
+pre-anchor elapsed time and true provider headroom remain unknown. The
+20-minute entry-age bound plus 19-minute work plus three-minute estimated
+retention margin fits 42 minutes after the anchor, not necessarily after true
+job start. Unknown pre-anchor overhead may still cause provider cancellation;
+retention is best effort, and incomplete evidence is failed/censored, never a
+pass or permission to rerun. The hard provider timeout remains authoritative.
+This accounting policy does not grant a hosted slot, push or native execution.
+The KQL host suite explicitly enables `headless,v2-link-kql`, including its
+headless executable case; generic headless-only zero tests cannot satisfy it.
+KQL and current DataAgent binary-host unit namespaces use qualified test names
+derived from the current registered source tests, not frozen counts, under both
+`headless,v2-link-kql` and the combined refresh profile. Original
+DataAgent LINK host/process and LIST targets remain selected alongside the shared
+mutation wire and SDK link contracts and metadata-selected current consumers.
+The entry also runs actual all-target check and strict Clippy for default,
+headless-only, KQL registration-only, and combined
+`headless,runtime-v2,v2-link-kql,v2-refresh` profiles. Selected consumer tests retain
+their own features: isolated Eventhouse/KQL CREATE process suites never acquire
+the other owner's feature; explicit composition remains separate. Report retains
+its complete qualified root/host/HTTP/status/process inventory.
+The input set explicitly includes coupled shared LINK, the common typed-owner
+dispatch module and current main-module consumers; it is not the complete
+candidate diff. Broader reverse-consumer,
+profile and contract obligations remain in the receipt as deferred, not passed
+qualification. Cheap synthetic-metadata regressions test the real scoped path
+mappings and fail when their removal drops the KQL leaf; those fixtures are not
+Cargo or native evidence. Configuring this candidate-only leaf is not a recorded
+native pass, postmerge-push proof, live-service, three-OS or release qualification.
+
+The PR56 owned integration candidate additionally runs
+`scripts/integration-update-smoke.cjs` on hosted Windows only. It pins the
+original metadata UPDATE source and integration base and reuses the process,
+source-inventory and result-count guards. Strict parser, SDK, actual headless
+binary-host and process fixtures run offline, including exact raw PATCH
+approval/dispatch, selected endpoints, cancellation, protected uncertainty and
+no-clobber delivery. Existing Notebook/CREATE, shared route, HTTP and OCV
+consumers run with their explicit required features. Every registered UPDATE
+test must pass; empty, ignored or missing suites fail. The binary-host namespace
+filter is explicit and retains its actual unrelated filtered count. This
+candidate-only leaf is not rerun or claimed on postmerge pushes and is not
+live-provider, canonical frontier, three-OS or release qualification.
+
+The PR97 owned integration candidate additionally runs
+`scripts/integration-ocv-smoke.cjs` on hosted Windows only. It pins the original
+OCV source and integration base, reuses the smoke process/source-integrity guards
+and existing shared-consumer target selections, and retains actual output hashes,
+exits and nonempty test counts. Default and explicit `native-read` feedback tests,
+fake broker cleanup, Windows identity and HTTP executor tests remain offline.
+This candidate-only leaf does not run on the integration push and does not
+qualify live authentication, feedback submission or a release.
+
+The owner-approved 2026-11-12 policy reduces the premerge gate only for
+`dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli`.
+**Integration smoke (Windows, provisional)** runs in one `windows-2025` job on
+PRs targeting that exact branch and on pushes to that exact ref. It builds the
+actual `fabric-cli` headless `fab-cli-v2` binary, then the default `fab-rs` binary,
+once per debug feature profile. Headless explicitly disables default features and
+enables only `headless`; it is not the separate grouped `fab-cli` local host.
+The first locked build can restore public Cargo dependencies; the subsequent
+baseline build is offline. Executable cases are help, exact version, and
+deterministic sanitized invalid-input failures, with explicit exit/stream/JSON
+assertions and an isolated environment without credentials or external tools.
+No live identity or service operation is invoked.
+
+The PR checkout is the exact event merge commit, with exactly two ordered
+parents: the independently witnessed target commit, then the exact event source.
+The embedded PR `base.sha` can lag the target used by GitHub's merge checkout;
+it is retained as `event_base`, not substituted for independent target evidence.
+Before any native work, `integration-target-witness.cjs` makes one bounded,
+read-only, cache-disabled GitHub REST request for the exact repository's integration branch ref.
+It validates repository/ref URLs, commit type and SHA, and requires that SHA to
+equal the actual first parent. A moved target fails with `TARGET_DRIFT`; there
+is no retry, ancestor substitution or source-only fallback.
+
+The immutable witness binds repository, target ref, PR merge ref, event base,
+source, checkout, run ID, attempt and job, with its endpoint and observation
+time. Nonzero cache age, a missing/stale provider date, or a request interval over
+30 seconds fails closed (the HTTP request itself has a 15-second deadline).
+The provider date must fall within the request interval, allowing one second for
+HTTP date precision/clock skew. The witness is exclusively created for that attempt and retained with artifacts;
+its SHA-256 travels through the workflow environment, never a credential.
+Every shared `sourcePin` caller verifies the digest and those bindings.
+Missing, changed, wrong-run or wrong-source witnesses fail even when the
+recorded event base matches. Receipts distinguish `event_base` and
+`checkout_base`; the legacy PR `base` field aliases the witnessed `checkout_base`.
+Candidate-only drivers additionally keep both their recorded-base and
+witnessed-base hard pins. Old PR52/KQL and other candidate qualifications are
+not retargeted or made valid by this generic repair.
+The existing `contents: read` workflow token is scoped only to the witness step,
+not persisted in receipts, passed to executable smoke cases, or used to change
+provider state. Acquisition failures retain a sanitized failed witness receipt.
+Provider HTTP status and numeric retry/reset hints are retained without response
+bodies or credentials; the script never retries them automatically.
+This additional provider read can fail or rate-limit; such failures block native
+work rather than accepting stale evidence.
+
+Push receipts still bind the actual commit and the
+previous ref, which must remain an ancestor (multi-commit fast forwards are
+allowed). Receipts retain source/base/checkout, toolchain, lock hash, binary
+hashes, command exits/output logs and timings, plus before/after per-file source
+inventories. Failure and missing evidence never become a pass. Cheap contracts:
+
+```text
+node --test rust/scripts/integration-smoke.test.cjs rust/scripts/integration-target-witness.test.cjs
+```
+
+There is deliberately no cross-run build cache in this narrow bootstrap.
+Windows cold compilation and dependency restoration can take minutes; the
+45-minute job and 20-minute per-build limits are bounds, not timing claims.
+The second profile reuses dependencies in the same target, not a purported
+subsecond full validation. Receipts measure actual elapsed time. No warm-run
+speedup is claimed without a measured run.
+
+On integration PRs/pushes the old selector, three-OS native jobs and stable
+**Rust validation** gate are visibly skipped, not reported as full validation
+success. Optional TOM is likewise skipped for integration PRs. All existing
+full suites remain on their previous other-branch, merge-group, scheduled and
+manual paths; manual dispatch at the integration ref can diagnose the combined
+branch. Broad failures remain visible repair debt. Smoke is not full-feature,
+cross-platform, Python parity, authentication or release qualification.
+Known material security, authentication and data-loss blockers and mandatory
+provider checks/reviews still apply. The serial integration driver must recheck
+source/base/conflicts and authority before merging and require postmerge basic
+smoke before the next separately authorized queue entry.
+
+The PR54 integration candidate additionally runs a candidate-branch-only Windows
+offline schema proof after the generic minimum. It checks SDK schema documents,
+the native provider and discovery/help/process targets with
+`v2-discovery,headless`. Legacy TABLE mounting runs separately with its required
+`native-read` feature as well; a feature-gated empty target is rejected, not
+counted as a pass. The discovery binary's registered schema test module
+includes the shared-undrained-pipe deadline/cancellation cases and their existing
+four-second bounds. Separate receipts retain actual counts, filtered tests, exits,
+both output hashes and unchanged source inventories. This optional leaf proof is
+not rerun on postmerge pushes and is not broker, live-service or three-OS evidence.
+
+## Full qualification and historical evidence
 
 Current local and PR selection uses the shared
 [dependency-aware validator](dependency-validation.md). Cargo metadata supplies
@@ -21,9 +210,9 @@ The command registry and executor are identical locally and in CI. The
 historical results below describe their recorded checkpoints, not a pass of a
 newly generated impact plan.
 
-Formatting is checked with one `cargo fmt --package <name> -- --check`
-invocation per selected package. This preserves the formatting gate while
-avoiding Windows' aggregate rustfmt command-line length limit.
+On Windows, formatting uses one `cargo fmt --package <name> -- --check`
+invocation per selected package, avoiding the aggregate rustfmt command-line
+length limit. POSIX hosts combine the selected packages.
 The acceptance inventory is checked against captured, locked/offline Cargo
 metadata, not a hand-maintained target list. Empty/all-skipped test execution
 and empty dependency graphs cannot satisfy a selected check.
@@ -37,21 +226,22 @@ Certificate profiles inherit the headless host. Their offline checks retain
 the same exit, stream, sanitization and credential-isolation assertions, with
 the diagnostic expected for the selected feature profile.
 
-The native workflow first runs all 33 existing engineering-harness tests and
-five additional bounded-PTY unit tests with an explicit inventory and the
-original Windows-only POSIX-PTY skip. It then
-preflights every workspace target and feature under strict Clippy and exercises
-all CLI targets with every feature before the
-unchanged full dependency-selected plan. Failure in either preflight remains
-blocking; these early checks do not replace native feature profiles or frozen
-source comparisons. Engineering receipts record the exact source SHA, host,
-case counts and observed PTY cleanup data.
+The native workflow partitions the dependency-selected plan across bounded
+native jobs. One shard per OS runs the engineering harness against the explicit
+inventory in `rust/scripts/engineering-inventory.json`, including the exact
+Windows-only POSIX-PTY skips. Engineering receipts record the exact source SHA,
+host, case counts and observed PTY cleanup data.
+Full plans also preflight every workspace target and feature under strict
+Clippy and exercise all CLI targets with every feature, as separate shards.
+Failure remains blocking; these checks do not replace isolated feature profiles
+or frozen source comparisons. Affected plans run their selected target and
+feature obligations instead of unconditional all-workspace preflights.
 The CLI preflight keeps executing remaining targets after a failed target to
 expose all failures in one bounded run; its final failure still blocks the plan.
 
-Early CLI tests and the shared validator provide explicit artifact-only identity
-and updater fixture roots. The preflight creates its directory under
-`RUNNER_TEMP`; the full validator injects its existing artifact root. Tests do
+CLI tests and the shared validator provide explicit artifact-only identity
+and updater fixture roots. Each shard injects its owned artifact root under
+`RUNNER_TEMP`. Tests do
 not require a writable ambient profile or fall back to source-tree fixtures.
 Batch authentication expectations follow the actual selected platform/provider:
 on POSIX, the default device-code method either reports missing explicit
@@ -76,8 +266,8 @@ their actual Windows-broker and interactive callers. POSIX broker-only builds
 retain their explicit unsupported-provider behavior without an unused
 presentation helper or a lint suppression.
 
-The complete CLI preflight creates its isolated test directory under
-`RUNNER_TEMP` and supplies the identity, updater and impact test-root bindings.
+The complete CLI preflight receives an isolated test directory under
+`RUNNER_TEMP` and the identity and updater test-root bindings.
 Its artifacts are retained with the native results; tests never need a fallback
 directory inside the checkout.
 
@@ -91,10 +281,11 @@ The same-source historical full run
 [42922714994](https://github.com/eisber/fabric-cli/actions/runs/42922714994)
 completed 305 commands in 119.66 minutes, with about three minutes of work from
 the first `read-parity` command through the final integrity check.
-The Windows plan therefore receives a finite 135-minute budget while preserving
-the outer job limit, per-command and contract deadlines, full selection and
-fail-closed aggregate gate. Historical timing motivates the bound; it does not
-replace a complete current-head native run or establish that a new run passed.
+The historical serial workflow therefore granted Windows a finite 135-minute
+plan budget. Local unsharded execution retains that explicit maximum; the
+current native CI partitions the plan into 15-minute jobs instead. Neither
+historical timing nor configured limits replace a complete current-head native
+run or establish that a new run passed.
 
 PTY cleanup drains already queued output while reaping only the owned child
 within the existing wait budget. A confirmed process-tree cleanup is distinct

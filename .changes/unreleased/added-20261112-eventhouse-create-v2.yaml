@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add opt-in standalone native Eventhouse metadata creation to the experimental Rust v2 CLI, with explicit approval, bounded input, shared operation evidence, and no client-created KQL dependency.
+time: 2026-11-12T13:16:51Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber

@@ -60,6 +60,12 @@ The opt-in [workspace v2 read slice](authoring-docs/workspace-v2-reads.md) uses 
 executable and the native GET `fab-cli-v2` entry point; no preview overwrites
 another's Cargo output or selects a provider implicitly.
 
+The opt-in [ReadWrite KQLDatabase create slice](authoring-docs/kql-database-create.md)
+mounts the selected CREATE grammar in `fab-cli-v2` with
+`v2-kql-database-create,headless`. It requires strict native JSON and an explicit
+existing Eventhouse GUID; it never creates a parent, Shortcut, connection or
+query/ingestion workload. Default and v1 creation behavior is unchanged.
+
 The source roots separate reusable functionality from CLI-specific interaction.
 Paths below are relative to this directory; each package leaf retains its own
 manifest, source, tests, examples and assets:
@@ -126,7 +132,7 @@ responsibilities and unchanged dependency-layer rules.
 | --- | --- |
 | [Fabric SDK](engine/sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
 | [Artifact-first tables](authoring-docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
-| [HTTP execution](engine/core/http/executor/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
+| [HTTP execution](engine/core/http/executor/README.md) | Neutral bounded execution and progress; [SDK service adapters](engine/sdk/http/README.md) preserve existing imports |
 | [Native transport](engine/core/http/transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](engine/control-plane/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](clients/cli/app/README.md) | Argument parsing, command sessions and native host composition |

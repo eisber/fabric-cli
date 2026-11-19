@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use fabric_sdk_http::{ExecutionFuture, ExecutionTimer};
+use fabric_http::{ExecutionFuture, ExecutionTimer};
 use std::time::Duration;
 
 /// An asynchronous timer on the caller's Tokio runtime.

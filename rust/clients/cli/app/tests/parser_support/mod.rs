@@ -35,6 +35,7 @@ pub fn observe(input: &Value) -> Option<Value> {
         Ok(Invocation::Display(_)) => json!({"display": true}),
         Ok(
             Invocation::NativeTabular(_)
+            | Invocation::Feedback(_)
             | Invocation::MlEndpoint(_)
             | Invocation::Tabular(_)
             | Invocation::Batch(_)
@@ -42,6 +43,7 @@ pub fn observe(input: &Value) -> Option<Value> {
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_)
             | Invocation::Execute(_)
+            | Invocation::DataflowQueries(_)
             | Invocation::Local(_)
             | Invocation::Access(_)
             | Invocation::Resource(_)
@@ -52,6 +54,10 @@ pub fn observe(input: &Value) -> Option<Value> {
             json!({"error": true})
         }
         Ok(Invocation::Delete(_)) => json!({"error": true}),
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsSearch(_)) => json!({"error": true}),
+        #[cfg(feature = "docs-search")]
+        Ok(Invocation::DocsBrowse(_)) => json!({"error": true}),
         #[cfg(feature = "semantic-model")]
         Ok(Invocation::SemanticModel(_)) => json!({"error": true}),
         #[cfg(any(feature = "windows-broker", feature = "interactive"))]

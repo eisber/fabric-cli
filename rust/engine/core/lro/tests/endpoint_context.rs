@@ -374,6 +374,175 @@ async fn explicit_source_read_keeps_relative_locations_and_opaque_id_opt_in() {
 }
 
 #[tokio::test]
+async fn definition_cluster_locations_are_inert_and_polling_stays_on_selected_endpoint() {
+    let credential = Arc::new(Credential::default());
+    let context = context(credential.clone());
+    let executor = Executor::default();
+    let cluster = "https://df-msit-scus-redirect.analysis.windows.net";
+    executor.responses.lock().unwrap().extend([
+        response(
+            202,
+            "null",
+            &[
+                ("Location", &format!("{cluster}/v1/operations/{ID}")),
+                ("x-ms-operation-id", ID),
+                ("Retry-After", "0"),
+            ],
+        ),
+        response(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[("Location", &format!("{cluster}/v1/operations/{ID}/result"))],
+        ),
+        response(200, r#"{"definition":{"parts":[]}}"#, &[]),
+    ]);
+    let mut session = OperationSession::with_context(
+        &context,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let operation = FabricOperation::new(
+        ResourceMethod::Post,
+        "/v1/workspaces/ws/items/item/getDefinition",
+        Vec::new(),
+        CompletionPolicy::PythonSynchronous,
+    )
+    .unwrap()
+    .with_bound_definition_polling()
+    .unwrap();
+    let result = session.execute(operation).await.unwrap();
+    assert_eq!(result.body, br#"{"definition":{"parts":[]}}"#);
+    let requests = executor.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[1].url, format!("{ROOT}/v1/operations/{ID}"));
+    assert_eq!(requests[2].url, format!("{ROOT}/v1/operations/{ID}/result"));
+    assert!(requests.iter().all(|request| request.url.starts_with(ROOT)));
+}
+
+#[tokio::test]
+async fn definition_polling_rejects_mismatched_paths_and_unsafe_links_before_polling() {
+    let cluster = "https://df-msit-scus-redirect.analysis.windows.net";
+    for location in [
+        format!("{cluster}/v1/operations/{ID}/result"),
+        format!("{cluster}/v1/other/{ID}"),
+        format!("http://df-msit-scus-redirect.analysis.windows.net/v1/operations/{ID}"),
+        format!("https://user@df-msit-scus-redirect.analysis.windows.net/v1/operations/{ID}"),
+        format!("{cluster}/v1/operations/{ID}?query"),
+        format!("{cluster}/v1/other/../operations/{ID}"),
+    ] {
+        let credential = Arc::new(Credential::default());
+        let context = context(credential);
+        let executor = Executor::default();
+        executor.responses.lock().unwrap().push_back(response(
+            202,
+            "null",
+            &[("Location", &location), ("x-ms-operation-id", ID)],
+        ));
+        let mut session = OperationSession::with_context(
+            &context,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
+        );
+        let operation = FabricOperation::new(
+            ResourceMethod::Post,
+            "/v1/workspaces/ws/items/item/getDefinition",
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap()
+        .with_bound_definition_polling()
+        .unwrap();
+        assert_eq!(
+            session.execute(operation).await.unwrap_err().kind,
+            OperationErrorKind::InvalidLink
+        );
+        assert_eq!(executor.requests.lock().unwrap().len(), 1);
+    }
+    assert!(
+        operation(ResourceMethod::Get, CompletionPolicy::PythonSynchronous)
+            .with_bound_definition_polling()
+            .is_err()
+    );
+    assert!(
+        operation(ResourceMethod::Post, CompletionPolicy::PythonSynchronous)
+            .with_bound_definition_polling()
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn definition_polling_rejects_foreign_initial_and_result_origins_without_followup() {
+    for foreign in [
+        "https://api.fabric.microsoft.com",
+        "https://other.dailyapi.fabric.microsoft.com",
+        "https://api.powerbi.com",
+        "https://cluster.example.invalid",
+        "https://cluster.analysis.windows.net.unrelated.example",
+        "https://cluster.analysis.windows.net:444",
+        "https://user@cluster.analysis.windows.net",
+    ] {
+        for at_result in [false, true] {
+            let credential = Arc::new(Credential::default());
+            let context = context(credential.clone());
+            let executor = Executor::default();
+            let path = format!("/v1/operations/{ID}");
+            let location = if at_result {
+                format!("{ROOT}{path}")
+            } else {
+                format!("{foreign}{path}")
+            };
+            executor.responses.lock().unwrap().push_back(response(
+                202,
+                "null",
+                &[
+                    ("Location", &location),
+                    ("x-ms-operation-id", ID),
+                    ("Retry-After", "0"),
+                ],
+            ));
+            if at_result {
+                executor.responses.lock().unwrap().push_back(response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("Location", &format!("{foreign}{path}/result"))],
+                ));
+            }
+            let mut session = OperationSession::with_context(
+                &context,
+                executor.clone(),
+                OperationLimits::default(),
+                pending(),
+            );
+            let operation = FabricOperation::new(
+                ResourceMethod::Post,
+                "/v1/workspaces/ws/items/item/getDefinition",
+                Vec::new(),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .unwrap()
+            .with_bound_definition_polling()
+            .unwrap();
+            let error = session.execute(operation).await.unwrap_err();
+            assert_eq!(error.kind, OperationErrorKind::InvalidLink);
+            assert!(error.mutation_may_have_occurred);
+            let requests = executor.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1 + usize::from(at_result));
+            assert_eq!(credential.scopes.lock().unwrap().len(), requests.len());
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|r| r.method == ResourceMethod::Post)
+                    .count(),
+                1
+            );
+            assert!(requests.iter().all(|r| r.url.starts_with(ROOT)));
+        }
+    }
+}
+
+#[tokio::test]
 async fn other_microsoft_hosts_are_not_trusted_for_initial_or_result_links() {
     for completion in [
         CompletionPolicy::ReturnAccepted,

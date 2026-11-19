@@ -29,6 +29,12 @@ cargo run --locked -p fabric-cli --features native-read -- deploy --help
 Help, version and local command setup do not authenticate. Default and
 broker-only builds do not install a remote execution host.
 
+The optional `docs-search` feature adds credential-free `search docs` over a
+compile-time documentation snapshot. Set `FAB_DOCS_INDEX` to a finalized bundle
+when building a self-contained executable; without it the feature is engine-only
+and search fails explicitly. See [embedded documentation search](../../../authoring-docs/docs-search.md)
+for corpus preparation, offline attribution, query limits, and benchmarks.
+
 The offline legacy read probes accept only read invocations. Job and Dataflow
 `execute` invocations remain explicit errors in those probes; their dedicated
 command tests cover execution separately.
@@ -102,9 +108,9 @@ Unicode, and JSON does not require width lookup.
 
 | Feature | Host capability |
 | --- | --- |
-| Default | Arguments, local commands and unconfigured-host diagnostics |
+| Default | Arguments, local commands, offline feedback preview and unconfigured-host diagnostics |
 | `windows-broker` | Explicit experimental Windows login, status and logout |
-| `native-read` | Windows service command host, including reads, jobs, transfers and deployment |
+| `native-read` | Windows service command host, including reads, jobs, transfers, deployment and explicit feedback submission |
 | `headless` | Cross-platform service host with explicitly selected unattended credentials |
 | `repl` | Optional Reedline shell for terminal-only, no-argument invocation |
 | `self-update` | Optional signed-release checking and standalone update host |
@@ -112,6 +118,90 @@ Unicode, and JSON does not require width lookup.
 See [native host configuration](../../../authoring-docs/native-read-host.md) and
 [Windows authentication](../../../README.md#windows-authentication) for selectors,
 platform limits and live-operation requirements.
+
+## OCV feedback preview and submission
+
+`fab-rs feedback` (alias `report`) prepares authenticated OCV feedback. It is
+an additive integration, not a Python command port. The separate `fab-cli`
+binary's manual `report` command is unchanged.
+
+Preview works in every build and never reads identity, navigation or saved
+configuration. Submission requires Windows and `--features native-read`, the
+selected Windows broker account, and explicit `--send`. Other credential modes
+fail explicitly; there is no anonymous or production fallback. Python, Azure
+CLI and raw access-token inputs are not used.
+
+| Environment variable | Meaning |
+| --- | --- |
+| `FAB_RUST_FEEDBACK_ENVIRONMENT` | `ppe` or `prod`. Required for `--send`; offline preview defaults to `prod`. Selects the built-in endpoint, matching token scope and OCV app ID together. Both profiles use the same app ID, `2931`. |
+| `FAB_RUST_FEEDBACK_FEATURE_AREA` | Optional owner-provided routing area, at most 256 UTF-8 bytes. No area is invented when absent. |
+
+Production uses `https://petrol.office.microsoft.com/v1/feedback/authenticated`;
+PPE uses `https://petrol-int.office.microsoft.com/v1/feedback/authenticated`.
+Their respective token scopes are
+`https://petrol.office.microsoft.com/Feedback.ReadWrite` and
+`https://petrol-int.office.microsoft.com/Feedback.ReadWrite`.
+Preauthorization is environment-specific; successful PPE authorization does
+not establish production authorization.
+
+From `rust/`, build the Windows executable and select your work account and the
+first-party client used for the PPE integration:
+
+```powershell
+cargo build --locked -p fabric-cli --features native-read --bin fab-rs
+$fab = (Join-Path ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).target_directory) 'debug\fab-rs.exe')
+$env:FAB_RUST_AUTH_MODE = 'broker'
+$env:FAB_RUST_TENANT = '<tenant-guid>'
+$env:FAB_RUST_ACCOUNT = '<work-account-upn>'
+$env:FAB_RUST_CLIENT_ID = '5814bfb4-2705-4994-b8d6-39aabeb5eaeb'
+$env:FAB_RUST_FEEDBACK_ENVIRONMENT = 'ppe'
+$feedbackArgs = @(
+    'feedback', '--title', '[PPE TEST] Fabric CLI feedback',
+    '--message', 'Synthetic feedback submitted by the native fab-rs command.',
+    '--output_format', 'json'
+)
+& $fab @feedbackArgs           # Offline: inspect the payload and PPE destination.
+& $fab @feedbackArgs --send    # Sends real feedback; run only when intended.
+```
+
+If silent broker access requires interaction, run `auth login --tenant
+<tenant-guid> --account <work-account-upn>` explicitly; feedback never opens a
+sign-in dialog. The environment-bound first-party registration must already
+allow the selected delegated permission.
+
+The title is limited to 256 UTF-8 bytes and the message to 16,384 UTF-8 bytes;
+the complete JSON manifest must fit in 64 KiB after escaping. Content is supplied
+explicitly and shown in preview, including its response-content representation.
+Do not include secrets or sensitive data. The command collects no email,
+attachments, screenshots or device diagnostics. It declares only AAD
+authentication, no email consent requested and no content-sample consent; it
+does not assert tenant-policy approval. Application/tenant owners must establish
+app routing, feedback policy and privacy requirements before broader rollout.
+The only automatic app metadata is the CLI name/version and selected environment.
+
+The CLI automatically generates a random version-4 feedback UUID once per
+invocation and prints it with the result. No ID-generation command is needed.
+`--feedback-id <nonzero-uuid>` remains an optional override for troubleshooting
+or carrying a preview's correlation ID into an explicitly authorized submission.
+Separate preview/send invocations otherwise generate different IDs. This UUID
+is correlation only, not a provider receipt or an idempotency guarantee; retain
+it for reconciliation. The shared OCV routing app ID `2931` is built in, not
+selected by an additional environment variable. The earlier
+`FAB_RUST_FEEDBACK_APP_ID` override is no longer supported. A legacy value of
+`2931` is tolerated for compatibility; any other value produces an explicit
+error with unset guidance, never a silent change of routing.
+PPE HTTP acceptance does not verify downstream routing.
+
+Successful submission writes `delivery: accepted` and the HTTP status to stdout
+with exit 0. This proves ingestion HTTP acceptance only, not downstream display,
+delivery or ADO promotion. `not_sent`, `rejected` and `unknown` write sanitized
+results to stderr with nonzero exit; provider bodies and tokens are never printed.
+A pre-send stderr record preserves correlation if stdout is lost. No POST is
+automatically retried, including on throttling, server errors, lost responses,
+cancellation or timeouts. `unknown` may already have been ingested: reconcile the
+correlation ID before sending again. Cancellation stops local waiting, not remote
+ingestion or outstanding broker cleanup. Explicit `--output_format text` renders
+the same status/correlation and includes the manifest for preview.
 
 ## Bounded Ontology v2 preview
 

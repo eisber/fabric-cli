@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   offline-tom:
+    if: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104') }}
     runs-on: windows-2025
     timeout-minutes: 45
     env:
