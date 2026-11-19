@@ -797,51 +797,55 @@ async fn managed_identity_process_child() {
         "app-service" => ManagedHost::app_service("http://127.0.0.1:49152/msi/token").unwrap(),
         _ => panic!("unknown test host"),
     };
-    for client_id in [None, Some(CLIENT.to_owned())] {
-        let expires = azure_core::time::OffsetDateTime::now_utc().unix_timestamp() + 3600;
-        let http = FakeHttp::new([response(
-            200,
-            format!(
-                r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"https://api.fabric.microsoft.com"}}"#
-            ),
-        )]);
-        let credential = HeadlessCredential::new(
-            HeadlessInput::ManagedIdentity {
-                host: host.clone(),
-                client_id: client_id.clone(),
-            },
-            http.clone(),
-        )
-        .unwrap();
-        assert!(http.requests.lock().unwrap().is_empty());
-        let token = credential.get_token(&[FABRIC], None).await.unwrap();
-        assert_eq!(token.token.secret(), "synthetic-managed-token");
-        credential.get_token(&[FABRIC], None).await.unwrap();
-        let requests = http.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        let request = &requests[0];
-        assert_eq!(request.method(), Method::Get);
-        let query = request.url().query_pairs().collect::<Vec<_>>();
-        assert!(
-            query
-                .iter()
-                .any(|(name, value)| name == "resource"
-                    && value == "https://api.fabric.microsoft.com")
-        );
-        assert_eq!(
-            query
-                .iter()
-                .find(|(name, _)| name == "client_id")
-                .map(|(_, value)| value.as_ref()),
-            client_id.as_deref()
-        );
-        let header = request.headers().get_str(&"x-identity-header".into()).ok();
-        if matches!(host, ManagedHost::AppService { .. }) {
-            assert_eq!(request.url().host_str(), Some("127.0.0.1"));
-            assert_eq!(header, Some("synthetic-platform-header"));
-        } else {
-            assert_eq!(request.url().host_str(), Some("169.254.169.254"));
-            assert!(header.is_none());
+    for (scope, resource) in [
+        (FABRIC, "https://api.fabric.microsoft.com"),
+        (PUBLIC_KUSTO_SCOPE, "https://api.kusto.windows.net"),
+    ] {
+        for client_id in [None, Some(CLIENT.to_owned())] {
+            let expires = azure_core::time::OffsetDateTime::now_utc().unix_timestamp() + 3600;
+            let http = FakeHttp::new([response(
+                200,
+                format!(
+                    r#"{{"access_token":"synthetic-managed-token","expires_on":"{expires}","token_type":"Bearer","resource":"{resource}"}}"#
+                ),
+            )]);
+            let credential = HeadlessCredential::new(
+                HeadlessInput::ManagedIdentity {
+                    host: host.clone(),
+                    client_id: client_id.clone(),
+                },
+                http.clone(),
+            )
+            .unwrap();
+            assert!(http.requests.lock().unwrap().is_empty());
+            let token = credential.get_token(&[scope], None).await.unwrap();
+            assert_eq!(token.token.secret(), "synthetic-managed-token");
+            credential.get_token(&[scope], None).await.unwrap();
+            let requests = http.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            let request = &requests[0];
+            assert_eq!(request.method(), Method::Get);
+            let query = request.url().query_pairs().collect::<Vec<_>>();
+            assert!(
+                query
+                    .iter()
+                    .any(|(name, value)| name == "resource" && value == resource)
+            );
+            assert_eq!(
+                query
+                    .iter()
+                    .find(|(name, _)| name == "client_id")
+                    .map(|(_, value)| value.as_ref()),
+                client_id.as_deref()
+            );
+            let header = request.headers().get_str(&"x-identity-header".into()).ok();
+            if matches!(host, ManagedHost::AppService { .. }) {
+                assert_eq!(request.url().host_str(), Some("127.0.0.1"));
+                assert_eq!(header, Some("synthetic-platform-header"));
+            } else {
+                assert_eq!(request.url().host_str(), Some("169.254.169.254"));
+                assert!(header.is_none());
+            }
         }
     }
     println!("managed-provider-exercised");
